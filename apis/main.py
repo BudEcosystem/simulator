@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from .routers import models, hardware
+from .health import router as health_router
 from src.hardware_registry import HardwareRegistry
 
 # Create FastAPI app
@@ -36,6 +37,7 @@ app.mount("/logos", StaticFiles(directory=str(logos_dir)), name="logos")
 # Include routers
 app.include_router(models.router, prefix="/api/models", tags=["models"])
 app.include_router(hardware.router, tags=["hardware"])  # hardware router already has /api/hardware prefix
+app.include_router(health_router, prefix="/api", tags=["health"])
 
 # Root endpoint
 @app.get("/")
@@ -48,11 +50,7 @@ async def root():
         "redoc": "/redoc"
     }
 
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy"}
+
 
 # Startup event
 @app.on_event("startup")
