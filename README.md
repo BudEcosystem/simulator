@@ -80,9 +80,18 @@ If you prefer manual setup:
 
 7. **Start the servers**
    
-   Backend:
+   Backend (stable mode - recommended):
    ```bash
    python run_api.py
+   ```
+   
+   Backend (with hot-reload for development):
+   ```bash
+   # Unix/Linux/macOS
+   RELOAD=true python run_api.py
+   
+   # Windows
+   set RELOAD=true && python run_api.py
    ```
    
    Frontend (new terminal):

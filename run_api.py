@@ -14,11 +14,14 @@ if __name__ == "__main__":
     # Get port from environment variable or use default
     port = int(os.environ.get("BACKEND_PORT", 8000))
     
+    # Get reload setting from environment variable (default to False for stability)
+    reload = os.environ.get("RELOAD", "false").lower() == "true"
+    
     # Run the FastAPI app
     uvicorn.run(
         "apis.main:app",
         host="0.0.0.0",
         port=port,
-        reload=True,
+        reload=reload,
         log_level="info"
     ) 

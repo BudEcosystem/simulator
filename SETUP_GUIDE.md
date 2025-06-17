@@ -162,10 +162,66 @@ To restart BudSimulator after stopping:
    npm start
    ```
 
+## Server Configuration
+
+### Backend Server Options
+
+The backend server (`run_api.py`) has been optimized to avoid common issues:
+
+- **Default Mode (Stable)**: Server runs without hot-reload to prevent virtual environment issues
+  ```bash
+  python run_api.py
+  ```
+
+- **Development Mode (Hot-Reload)**: Enable file watching for active development
+  ```bash
+  # Unix/Linux/macOS
+  RELOAD=true python run_api.py
+  
+  # Windows
+  set RELOAD=true && python run_api.py
+  ```
+
+### Why No Default Hot-Reload?
+
+The server previously crashed due to file watchers monitoring the virtual environment directory. To ensure stability:
+- Hot-reload is disabled by default
+- Virtual environment changes won't trigger server restarts
+- Use `RELOAD=true` only when actively developing
+
+### Port Configuration
+
+You can customize the backend port:
+```bash
+# Unix/Linux/macOS
+BACKEND_PORT=8080 python run_api.py
+
+# Windows
+set BACKEND_PORT=8080 && python run_api.py
+```
+
 ## Troubleshooting
 
 ### Port Conflicts
 The setup script automatically finds available ports if defaults (3000, 8000) are in use.
+
+### Server Crashes Due to File Watching
+If the server keeps restarting with "WatchFiles detected changes" messages:
+- This happens when hot-reload monitors the virtual environment
+- Solution: Run without reload (default): `python run_api.py`
+- Only use `RELOAD=true` when actively developing code
+
+### Missing Module Errors (e.g., psutil)
+If you get "ModuleNotFoundError" when starting the server:
+```bash
+# Ensure virtual environment is activated
+source env/bin/activate  # Unix/Linux/macOS
+# or
+env\Scripts\activate  # Windows
+
+# Install missing dependencies
+pip install psutil python-multipart aiofiles colorama
+```
 
 ### Database Issues
 ```bash

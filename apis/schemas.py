@@ -69,12 +69,32 @@ class AddModelFromConfigRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
 
 
+class ConfigSubmitRequest(BaseModel):
+    """Request model for submitting a gated model configuration."""
+    model_uri: str = Field(..., description="HuggingFace model URI", example="meta-llama/Llama-3.1-8B-Instruct")
+    config: Dict[str, Any] = Field(..., description="Model configuration from config.json")
+
+
+class ConfigSubmitResponse(BaseModel):
+    """Response model for config submission."""
+    success: bool = Field(..., description="Whether the config was saved successfully")
+    message: str = Field(..., description="Success or error message")
+    model_id: str = Field(..., description="The model ID")
+    validation: Optional[Dict[str, Any]] = Field(None, description="Validation results if successful")
+    error_code: Optional[str] = Field(None, description="Error code if failed")
+    missing_fields: Optional[List[str]] = Field(None, description="List of missing required fields")
+
+
 # Response Models
 
 class ValidateModelResponse(BaseModel):
     """Response model for model validation."""
     valid: bool = Field(..., description="Whether the model URL is valid")
     error: Optional[str] = Field(None, description="Error message if invalid")
+    error_code: Optional[str] = Field(None, description="Error code for specific error types")
+    model_id: Optional[str] = Field(None, description="Model ID if validation succeeded or gated")
+    requires_config: bool = Field(False, description="Whether model requires manual config")
+    config_submission_url: Optional[str] = Field(None, description="URL for config submission")
 
 
 class ModelConfig(BaseModel):

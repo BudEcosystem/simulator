@@ -97,6 +97,12 @@ class ModelManager:
         Returns:
             Model configuration dictionary or None if not found
         """
+        # First check user-provided configs for gated models
+        user_config = self.get_user_model_config(model_id)
+        if user_config:
+            return user_config
+            
+        # Then check regular models table
         model = self.get_model(model_id)
         if model and model.get('config_json'):
             config = json.loads(model['config_json'])
@@ -488,4 +494,99 @@ class ModelManager:
                 'avg': round(param_result['avg_params'], 2) if param_result['avg_params'] else None
             }
         
-        return stats 
+        return stats
+    
+    def save_user_model_config(self, model_uri: str, config: Dict[str, Any]) -> int:
+        """Save a user-provided configuration for a gated model.
+        
+        Args:
+            model_uri: Model URI (e.g., "meta-llama/Llama-3.1-8B-Instruct")
+            config: Model configuration dictionary
+            
+        Returns:
+            ID of the inserted/updated record
+        """
+        # Check if config already exists
+        existing = self.db.execute_one(
+            "SELECT id FROM user_model_configs WHERE model_uri = ?",
+            (model_uri,)
+        )
+        
+        config_json = json.dumps(config)
+        
+        if existing:
+            # Update existing config
+            self.db.update(
+                'user_model_configs',
+                {
+                    'config_json': config_json,
+                    'validated': 1,
+                    'updated_at': datetime.now().isoformat()
+                },
+                'id = ?',
+                (existing['id'],)
+            )
+            logger.info(f"Updated user config for {model_uri}")
+            return existing['id']
+        else:
+            # Insert new config
+            data = {
+                'model_uri': model_uri,
+                'config_json': config_json,
+                'validated': 1
+            }
+            config_id = self.db.insert('user_model_configs', data)
+            logger.info(f"Saved new user config for {model_uri}")
+            return config_id
+    
+    def get_user_model_config(self, model_uri: str) -> Optional[Dict[str, Any]]:
+        """Get a user-provided configuration for a gated model.
+        
+        Args:
+            model_uri: Model URI
+            
+        Returns:
+            Configuration dictionary or None if not found
+        """
+        result = self.db.execute_one(
+            "SELECT config_json FROM user_model_configs WHERE model_uri = ? AND validated = 1",
+            (model_uri,)
+        )
+        
+        if result and result['config_json']:
+            return json.loads(result['config_json'])
+        return None
+    
+    def list_user_configs(self) -> List[Dict[str, Any]]:
+        """List all user-provided model configurations.
+        
+        Returns:
+            List of user config records
+        """
+        query = """
+            SELECT model_uri, validated, created_at, updated_at 
+            FROM user_model_configs 
+            ORDER BY updated_at DESC
+        """
+        results = self.db.execute(query)
+        return [self._row_to_dict(row) for row in results]
+    
+    def delete_user_config(self, model_uri: str) -> bool:
+        """Delete a user-provided configuration.
+        
+        Args:
+            model_uri: Model URI
+            
+        Returns:
+            True if deleted, False if not found
+        """
+        rows_affected = self.db.delete(
+            'user_model_configs',
+            'model_uri = ?',
+            (model_uri,)
+        )
+        
+        if rows_affected > 0:
+            logger.info(f"Deleted user config for {model_uri}")
+            return True
+        return False 

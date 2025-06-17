@@ -25,7 +25,7 @@ from ..schemas import (
     SequenceAnalysis, AnalysisInsights, PopularModel,
     ListModelsResponse, FilterModelsResponse, ModelSummary,
     AddModelFromHFRequest, AddModelFromConfigRequest, AddModelResponse,
-    ModelDetailResponse
+    ModelDetailResponse, ConfigSubmitRequest, ConfigSubmitResponse
 )
 
 # Import BudSimulator modules
@@ -106,23 +106,33 @@ async def validate_model(request: ValidateModelRequest):
         # Try to fetch from HuggingFace
         try:
             config = hf_loader.fetch_model_config(request.model_url)
-            return ValidateModelResponse(valid=True, error=None)
+            return ValidateModelResponse(
+                valid=True, 
+                error=None,
+                model_id=request.model_url
+            )
         except Exception as e:
             error_msg = str(e)
-            if "gated" in error_msg.lower():
+            if "gated" in error_msg.lower() or "403" in error_msg:
                 return ValidateModelResponse(
                     valid=False,
-                    error="Model is gated and requires access approval"
+                    error="This model is gated and requires authentication. Please provide the config.json manually.",
+                    error_code="MODEL_GATED",
+                    model_id=request.model_url,
+                    requires_config=True,
+                    config_submission_url="/api/models/config/submit"
                 )
-            elif "not found" in error_msg.lower():
+            elif "not found" in error_msg.lower() or "404" in error_msg:
                 return ValidateModelResponse(
                     valid=False,
-                    error="Model not found on HuggingFace Hub"
+                    error="Model not found on HuggingFace Hub",
+                    error_code="NOT_FOUND"
                 )
             else:
                 return ValidateModelResponse(
                     valid=False,
-                    error=f"Failed to access model: {error_msg}"
+                    error=f"Failed to access model: {error_msg}",
+                    error_code="ACCESS_ERROR"
                 )
                 
     except Exception as e:
@@ -176,6 +186,16 @@ async def get_model_config(model_id: str, request: Request):
                 parameter_count = config.get('num_parameters')
                 logo = None  # No logo for models not in database
             except Exception as e:
+                error_msg = str(e)
+                if "gated" in error_msg.lower() or "403" in error_msg:
+                    raise HTTPException(
+                        status_code=403, 
+                        detail={
+                            "error": "This model is gated and requires authentication. Please provide the config.json manually.",
+                            "error_code": "MODEL_GATED",
+                            "model_id": model_id
+                        }
+                    )
                 raise HTTPException(status_code=404, detail=f"Model not found: {str(e)}")
         
         # Get model info for metadata
@@ -253,12 +273,22 @@ async def calculate_memory(request: CalculateMemoryRequest):
     try:
         # Get model configuration
         try:
-            # Try database first
+            # Try database first (including user configs)
             config = model_manager.get_model_config(request.model_id)
             if not config:
                 # Fetch from HuggingFace
                 config = hf_loader.get_model_config(request.model_id)
         except Exception as e:
+            error_msg = str(e)
+            if "gated" in error_msg.lower() or "403" in error_msg:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": "This model is gated and requires authentication. Please provide the config.json manually.",
+                        "error_code": "MODEL_GATED",
+                        "model_id": request.model_id
+                    }
+                )
             raise HTTPException(status_code=404, detail=f"Model not found: {str(e)}")
         
         # Calculate memory
@@ -378,6 +408,16 @@ async def analyze_model(request: AnalyzeModelRequest):
             if not config:
                 config = hf_loader.get_model_config(request.model_id)
         except Exception as e:
+            error_msg = str(e)
+            if "gated" in error_msg.lower() or "403" in error_msg:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": "This model is gated and requires authentication. Please provide the config.json manually.",
+                        "error_code": "MODEL_GATED",
+                        "model_id": request.model_id
+                    }
+                )
             raise HTTPException(status_code=404, detail=f"Model not found: {str(e)}")
         
         # Detect attention type
@@ -463,6 +503,81 @@ async def analyze_model(request: AnalyzeModelRequest):
     except Exception as e:
         logging.error(f"Error analyzing model {request.model_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.post("/config/submit", response_model=ConfigSubmitResponse)
+async def submit_model_config(request: ConfigSubmitRequest):
+    """
+    Submit a configuration for a gated model.
+    
+    This endpoint allows users to manually provide configurations for gated models
+    that require authentication to access on HuggingFace Hub.
+    """
+    try:
+        # Validate required fields in config
+        required_fields = ['model_type', 'hidden_size', 'num_hidden_layers', 'num_attention_heads']
+        missing_fields = []
+        
+        for field in required_fields:
+            if field not in request.config:
+                missing_fields.append(field)
+        
+        if missing_fields:
+            return ConfigSubmitResponse(
+                success=False,
+                message="Configuration is missing required fields",
+                model_id=request.model_uri,
+                error_code="INVALID_CONFIG",
+                missing_fields=missing_fields
+            )
+        
+        # Save the configuration
+        try:
+            model_manager.save_user_model_config(request.model_uri, request.config)
+        except Exception as e:
+            logging.error(f"Failed to save config for {request.model_uri}: {e}")
+            return ConfigSubmitResponse(
+                success=False,
+                message=f"Failed to save configuration: {str(e)}",
+                model_id=request.model_uri,
+                error_code="SAVE_ERROR"
+            )
+        
+        # Try to detect model type and attention type
+        try:
+            model_type = memory_calculator.detect_model_type(request.config)
+            attention_type = memory_calculator.detect_attention_type(request.config)
+            parameter_count = request.config.get('num_parameters')
+            
+            validation = {
+                'valid': True,
+                'model_type': model_type,
+                'attention_type': attention_type,
+                'parameter_count': parameter_count
+            }
+        except:
+            validation = {
+                'valid': True,
+                'model_type': 'unknown',
+                'attention_type': 'unknown',
+                'parameter_count': None
+            }
+        
+        return ConfigSubmitResponse(
+            success=True,
+            message="Configuration saved successfully",
+            model_id=request.model_uri,
+            validation=validation
+        )
+        
+    except Exception as e:
+        logging.error(f"Error submitting config for {request.model_uri}: {e}")
+        return ConfigSubmitResponse(
+            success=False,
+            message=f"Internal error: {str(e)}",
+            model_id=request.model_uri,
+            error_code="INTERNAL_ERROR"
+        )
 
 
 @router.get("/popular", response_model=PopularModelsResponse)

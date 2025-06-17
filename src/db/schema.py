@@ -2,7 +2,7 @@
 Database schema for model management.
 """
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # SQL statements for creating tables
 CREATE_TABLES = """
@@ -58,6 +58,16 @@ CREATE TABLE IF NOT EXISTS model_quality_metrics (
     FOREIGN KEY (model_id) REFERENCES models(model_id) ON DELETE CASCADE
 );
 
+-- User-provided model configs for gated models
+CREATE TABLE IF NOT EXISTS user_model_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_uri TEXT UNIQUE NOT NULL,  -- e.g., "meta-llama/Llama-3.1-8B-Instruct"
+    config_json TEXT NOT NULL,       -- User-provided configuration as JSON
+    validated BOOLEAN DEFAULT 0,     -- Whether config has been validated
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Schema version table for migrations
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY,
@@ -81,6 +91,14 @@ BEGIN
 END;
 """
 
+UPDATE_USER_CONFIGS_TIMESTAMP_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS update_user_configs_timestamp 
+AFTER UPDATE ON user_model_configs
+BEGIN
+    UPDATE user_model_configs SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+"""
+
 def get_schema_statements():
     """Get all SQL statements needed to create the schema."""
-    return [CREATE_TABLES, UPDATE_TIMESTAMP_TRIGGER] 
+    return [CREATE_TABLES, UPDATE_TIMESTAMP_TRIGGER, UPDATE_USER_CONFIGS_TIMESTAMP_TRIGGER] 

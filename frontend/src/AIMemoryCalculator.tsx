@@ -129,6 +129,30 @@ interface ModelSummary {
   logo?: string;
 }
 
+// Enhanced response for gated model support
+interface ValidateResponse {
+  valid: boolean;
+  error?: string;
+  error_code?: string;
+  model_id?: string;
+  requires_config?: boolean;
+  config_submission_url?: string;
+}
+
+interface ConfigSubmitResponse {
+  success: boolean;
+  message: string;
+  model_id: string;
+  validation?: {
+    valid: boolean;
+    model_type: string;
+    attention_type: string;
+    parameter_count: number;
+  };
+  error_code?: string;
+  missing_fields?: string[];
+}
+
 // =============================================================================
 // LOGO COMPONENT
 // =============================================================================
@@ -237,6 +261,20 @@ const AIMemoryCalculator = () => {
   // Error states
   const [validationError, setValidationError] = useState('');
   const [calculationError, setCalculationError] = useState('');
+  
+  // Gated model support states
+  const [showConfigInput, setShowConfigInput] = useState(false);
+  const [gatedModelId, setGatedModelId] = useState<string | null>(null);
+  const [configJson, setConfigJson] = useState('');
+  const [configSubmissionError, setConfigSubmissionError] = useState('');
+  const [isSubmittingConfig, setIsSubmittingConfig] = useState(false);
+  
+  // Pending action for continuing flow after config submission
+  interface PendingAction {
+    type: 'calculate' | 'analyze' | 'compare' | 'validate';
+    params?: any;
+  }
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   // API Base URL - replace with your actual backend URL
   const API_BASE = 'http://localhost:8000/api';
@@ -418,7 +456,7 @@ const AIMemoryCalculator = () => {
   // API FUNCTIONS
   // =============================================================================
 
-  const validateModelUrl = async (url: string) => {
+  const validateModelUrl = async (url: string, continueWithAction: boolean = false): Promise<ValidateResponse> => {
     setIsValidating(true);
     setValidationError('');
     
@@ -431,25 +469,39 @@ const AIMemoryCalculator = () => {
         body: JSON.stringify({ model_url: url }),
       });
       
-      const data = await response.json();
+      const data: ValidateResponse = await response.json();
       
       if (!response.ok) {
         throw new Error(data.error || 'Validation failed');
       }
       
       if (!data.valid) {
+        // Check if it's a gated model
+        if (data.error_code === 'MODEL_GATED') {
+          setGatedModelId(data.model_id || url);
+          setShowConfigInput(true);
+          
+          // Store the pending action if needed
+          if (continueWithAction && pendingAction) {
+            // Keep the existing pending action
+          } else if (continueWithAction) {
+            // Store a validate action to continue after config submission
+            setPendingAction({ type: 'validate', params: { url } });
+          }
+        }
+        
         setValidationError(data.error || 'Invalid model URL');
-        return false;
+        return data;
       }
       
-      return true;
+      return data;
     } catch (error) {
-      if (error instanceof Error) {
-        setValidationError(error.message);
-      } else {
-        setValidationError('An unknown error occurred');
-      }
-      return false;
+      const errorResponse: ValidateResponse = {
+        valid: false,
+        error: error instanceof Error ? error.message : 'An unknown error occurred'
+      };
+      setValidationError(errorResponse.error || '');
+      return errorResponse;
     } finally {
       setIsValidating(false);
     }
@@ -459,17 +511,105 @@ const AIMemoryCalculator = () => {
     try {
       const response = await fetch(`${API_BASE}/models/${encodeURIComponent(modelId)}/config`);
       
+      const data = await response.json();
+      
       if (!response.ok) {
-        throw new Error('Failed to fetch model configuration');
+        // Check if it's a gated model error (can be in data or data.detail)
+        const errorData = data.detail || data;
+        if (errorData.error_code === 'MODEL_GATED' || response.status === 403) {
+          setGatedModelId(modelId);
+          setShowConfigInput(true);
+          setPendingAction({ type: 'validate', params: { url: modelId } });
+          return null;
+        }
+        throw new Error(errorData.error || data.error || 'Failed to fetch model configuration');
       }
       
-      const data = await response.json();
       setModelConfig(data);
       return data;
     } catch (error) {
       console.error("Error fetching model config:", error);
       setValidationError(error instanceof Error ? error.message : 'An unknown error occurred');
       return null;
+    }
+  };
+  
+  const submitConfig = async () => {
+    if (!gatedModelId) return;
+    
+    setIsSubmittingConfig(true);
+    setConfigSubmissionError('');
+    
+    try {
+      // Parse the config JSON
+      let config;
+      try {
+        config = JSON.parse(configJson);
+      } catch (e) {
+        throw new Error('Invalid JSON format. Please paste a valid config.json');
+      }
+      
+      const response = await fetch(`${API_BASE}/models/config/submit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model_uri: gatedModelId,
+          config: config
+        }),
+      });
+      
+      const data: ConfigSubmitResponse = await response.json();
+      
+      if (!response.ok || !data.success) {
+        if (data.error_code === 'INVALID_CONFIG' && data.missing_fields) {
+          throw new Error(`Missing required fields: ${data.missing_fields.join(', ')}`);
+        }
+        throw new Error(data.message || 'Failed to submit configuration');
+      }
+      
+      // Config saved successfully, hide the input
+      setShowConfigInput(false);
+      setConfigJson('');
+      setGatedModelId(null);
+      
+      // Continue with the pending action
+      if (pendingAction) {
+        switch (pendingAction.type) {
+          case 'validate':
+            // Fetch the model config and continue
+            await fetchModelConfig(data.model_id);
+            setCurrentStep(2);
+            break;
+            
+          case 'calculate':
+            // Fetch config first, then calculate
+            await fetchModelConfig(data.model_id);
+            await calculateMemory();
+            break;
+            
+          case 'analyze':
+            // Fetch config first, then analyze
+            await fetchModelConfig(data.model_id);
+            await analyzeModel();
+            break;
+            
+          case 'compare':
+            // Handle comparison case
+            if (pendingAction.params) {
+              await compareModels(pendingAction.params);
+            }
+            break;
+        }
+        
+        setPendingAction(null);
+      }
+      
+    } catch (error) {
+      setConfigSubmissionError(error instanceof Error ? error.message : 'Failed to submit configuration');
+    } finally {
+      setIsSubmittingConfig(false);
     }
   };
 
@@ -499,11 +639,24 @@ const AIMemoryCalculator = () => {
         }),
       });
       
+      const data = await response.json();
+      
       if (!response.ok) {
-        throw new Error('Calculation failed');
+        // Check if it's a gated model error (can be in data or data.detail)
+        const errorData = data.detail || data;
+        if (errorData.error_code === 'MODEL_GATED' || response.status === 403) {
+          setGatedModelId(modelConfig.model_id);
+          setShowConfigInput(true);
+          setPendingAction({ 
+            type: 'calculate',
+            params: userConfig 
+          });
+          setIsCalculating(false);
+          return;
+        }
+        throw new Error(errorData.error || data.error || 'Calculation failed');
       }
       
-      const data = await response.json();
       setResults(data);
       setCurrentScreen('results');
     } catch (error) {
@@ -557,11 +710,24 @@ const AIMemoryCalculator = () => {
         }),
       });
       
+      const data = await response.json();
+      
       if (!response.ok) {
-        throw new Error('Analysis failed');
+        // Check if it's a gated model error (can be in data or data.detail)
+        const errorData = data.detail || data;
+        if (errorData.error_code === 'MODEL_GATED' || response.status === 403) {
+          setGatedModelId(modelConfig.model_id);
+          setShowConfigInput(true);
+          setPendingAction({ 
+            type: 'analyze',
+            params: { precision: userConfig.precision, batch_size: userConfig.batchSize }
+          });
+          setIsAnalyzing(false);
+          return;
+        }
+        throw new Error(errorData.error || data.error || 'Analysis failed');
       }
       
-      const data = await response.json();
       setAnalysisResults(data);
       setCurrentScreen('analysis');
     } catch (error) {
@@ -597,11 +763,12 @@ const AIMemoryCalculator = () => {
 
   // Handle model URL submission
   const handleModelUrlSubmit = async (url: string) => {
-    const isValid = await validateModelUrl(url);
-    if (isValid) {
+    const response = await validateModelUrl(url, true);
+    if (response.valid) {
       await fetchModelConfig(url);
       setCurrentStep(2);
     }
+    // If it's a gated model, the validateModelUrl function will handle showing the config input
   };
 
   // Handle configuration and calculation
@@ -914,6 +1081,90 @@ const AIMemoryCalculator = () => {
                     </div>
                   </div>
                 )}
+                
+                {/* Gated Model Config Input */}
+                {showConfigInput && (
+                  <div className="bg-amber-900/20 border border-amber-500/20 rounded-lg p-6 space-y-4">
+                    <div className="flex items-start space-x-3">
+                      <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5" />
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-amber-300 mb-2">Gated Model Detected</h3>
+                        <p className="text-gray-300 text-sm mb-4">
+                          This model is gated and requires authentication to access. Please provide the model's config.json manually:
+                        </p>
+                        
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">
+                              Paste config.json contents
+                            </label>
+                            <textarea
+                              value={configJson}
+                              onChange={(e) => setConfigJson(e.target.value)}
+                              placeholder={`{
+  "model_type": "llama",
+  "hidden_size": 4096,
+  "num_hidden_layers": 32,
+  "num_attention_heads": 32,
+  ...
+}`}
+                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none font-mono text-sm min-h-[200px]"
+                            />
+                          </div>
+                          
+                          {configSubmissionError && (
+                            <div className="bg-red-900/20 border border-red-500/20 rounded-lg p-3">
+                              <div className="flex items-center space-x-2">
+                                <AlertCircle className="w-4 h-4 text-red-500" />
+                                <span className="text-red-300 text-sm">{configSubmissionError}</span>
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className="flex space-x-3">
+                            <button
+                              onClick={submitConfig}
+                              disabled={!configJson.trim() || isSubmittingConfig}
+                              className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium transition-all duration-200"
+                            >
+                              <div className="flex items-center justify-center space-x-2">
+                                {isSubmittingConfig ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    <span>Submitting...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle className="w-4 h-4" />
+                                    <span>Submit Config</span>
+                                  </>
+                                )}
+                              </div>
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                setShowConfigInput(false);
+                                setGatedModelId(null);
+                                setConfigJson('');
+                                setConfigSubmissionError('');
+                                setPendingAction(null);
+                              }}
+                              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-medium transition-all duration-200 border border-gray-600"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          
+                          <div className="text-xs text-gray-400 space-y-1">
+                            <p>You can find config.json on the model's HuggingFace page under "Files and versions".</p>
+                            <p>Make sure you have access to the model before downloading the config.</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <button
                   onClick={() => handleModelUrlSubmit(modelUrl)}
@@ -1105,6 +1356,89 @@ const AIMemoryCalculator = () => {
                   <div className="flex items-center space-x-2">
                     <AlertCircle className="w-5 h-5 text-red-500" />
                     <span className="text-red-300">{calculationError}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Gated Model Config Input for Calculate/Analyze */}
+              {showConfigInput && (
+                <div className="mt-4 bg-amber-900/20 border border-amber-500/20 rounded-lg p-6 space-y-4">
+                  <div className="flex items-start space-x-3">
+                    <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5" />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-amber-300 mb-2">Gated Model Detected</h3>
+                      <p className="text-gray-300 text-sm mb-4">
+                        This model is gated and requires authentication to access. Please provide the model's config.json manually:
+                      </p>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Paste config.json contents
+                          </label>
+                          <textarea
+                            value={configJson}
+                            onChange={(e) => setConfigJson(e.target.value)}
+                            placeholder={`{
+  "model_type": "llama",
+  "hidden_size": 4096,
+  "num_hidden_layers": 32,
+  "num_attention_heads": 32,
+  ...
+}`}
+                            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none font-mono text-sm min-h-[200px]"
+                          />
+                        </div>
+                        
+                        {configSubmissionError && (
+                          <div className="bg-red-900/20 border border-red-500/20 rounded-lg p-3">
+                            <div className="flex items-center space-x-2">
+                              <AlertCircle className="w-4 h-4 text-red-500" />
+                              <span className="text-red-300 text-sm">{configSubmissionError}</span>
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div className="flex space-x-3">
+                          <button
+                            onClick={submitConfig}
+                            disabled={!configJson.trim() || isSubmittingConfig}
+                            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium transition-all duration-200"
+                          >
+                            <div className="flex items-center justify-center space-x-2">
+                              {isSubmittingConfig ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  <span>Submitting...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle className="w-4 h-4" />
+                                  <span>Submit Config & Continue</span>
+                                </>
+                              )}
+                            </div>
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              setShowConfigInput(false);
+                              setGatedModelId(null);
+                              setConfigJson('');
+                              setConfigSubmissionError('');
+                              setPendingAction(null);
+                            }}
+                            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-medium transition-all duration-200 border border-gray-600"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        
+                        <div className="text-xs text-gray-400 space-y-1">
+                          <p>After submitting, we'll automatically continue with your calculation.</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
