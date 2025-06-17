@@ -13,3 +13,11 @@ pillow
 ipywidgets
 Jinja2
 genz-llm
+tabulate
+fastapi
+uvicorn[standard]
+pydantic>=2.0
+requests
+beautifulsoup4
+json_repair
+lxml

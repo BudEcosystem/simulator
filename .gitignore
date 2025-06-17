@@ -2,4 +2,82 @@
 data/model/*.csv
 venv
 GenZ_LLM_Analyzer.egg-info
+genz_llm.egg-info/
 dist/
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.staging
+*.env
+.env.*
+
+# Environment directories
+env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Claude AI
+.claude/
+
+# macOS
+.DS_Store
+
+# Editor directories
+.vscode/
+.idea/
+.cursor/
+
+# Temporary files
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Test coverage
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite3
+
+# Temporary directories
+tmp/
+temp/

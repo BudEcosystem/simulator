@@ -81,6 +81,13 @@ def get_inference_system(system_name='A100_40GB_GPU', bits='bf16', ceff=1, meff=
     ##################################################################################################
     ### System Declaration
     ##################################################################################################
+    # Check if it's a CPUSystem object
+    from GenZ.cpu.cpu_system import CPUSystem
+    if isinstance(system_name, CPUSystem):
+        # Return the CPUSystem itself, not just the base_system
+        # This preserves CPU-specific functionality
+        return system_name
+    
     if isinstance(system_name, str):
         if system_name in system_configs:
             system_name = system_configs[system_name]

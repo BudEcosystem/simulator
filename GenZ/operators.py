@@ -404,3 +404,32 @@ class Special_Func(Operator):          ## Vector Execution Unit
         # TODO might have some problems
         return 0, 0, 0, 1
 
+# ---- LoRA Operators -------------------------------------------------
+class LoraMerge(GEMM):
+    """Cost model: treat as GEMM (B@A) of rank plus add. Inherit GEMM."""
+    pass
+
+class LoraA(GEMM):
+    pass
+
+class LoraB(GEMM):
+    pass
+
+class Add(Operator):
+    def __init__(self, dim, density=(1.0,1.0,1.0)):
+        # dim expected [M, N, precision]
+        self.name = dim[0] if isinstance(dim[0], str) else 'Add'
+        self.M = int(dim[1])
+        self.N = int(dim[2])
+        self.precision = dim[3] if len(dim) > 3 else 2
+        super().__init__(dim=[self.M, self.N, 1], density=density)
+
+    def get_effective_dim_len(self):
+        return 2
+
+    def get_tensors(self):
+        return (self.M, self.N), (self.M, self.N), (self.M, self.N)
+
+    def get_num_ops(self):
+        return self.M * self.N
+

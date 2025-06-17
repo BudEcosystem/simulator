@@ -110,7 +110,9 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     #     total_latency = ((num_micro_batches-1) * (decode_latency / pipeline_parallel)) + micro_batch_latency
     #     thrpt = 1000 * batch_size / total_latency
     # else:
-    thrpt = 1000 * batch_size / decode_latency
+    thrpt = 1000 * batch_size / decode_latency  # Requests per second
+    # For decode, each request generates one token per iteration
+    tokens_per_sec = thrpt  # Since decode generates 1 token per request per iteration
 
 
     linear_time = summary_table[f'Linear Latency ({unit.unit_time})'].values[0]                ## In milliseconds
@@ -126,6 +128,7 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     return ModdelingOutput(
                         Latency=decode_latency,
                         Throughput=thrpt,
+                        Throughput_tokens_per_sec=tokens_per_sec,
                         Runtime_breakdown=runtime_breakdown,
                         is_offload=is_offloaded,
                         model_df = model_df,

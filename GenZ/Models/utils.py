@@ -18,6 +18,11 @@ class OpType(IntEnum):
     Norm = 15
     Avg = 16
     Special_Func = 17
+    # LoRA op types
+    LORA_MERGE = 18
+    GEMM_LORA_A = 19
+    GEMM_LORA_B = 20
+    ADD = 21
 
 
 class ResidencyInfo(IntEnum):

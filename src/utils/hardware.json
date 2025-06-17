@@ -1,0 +1,1384 @@
+{
+    "SapphireRapids_CPU": {
+      "Flops": 33,
+      "Memory_size": 300,
+      "Power": 434,
+      "Memory_BW": 180,
+      "ICN": 100,
+      "real_values": false,
+      "name": "Intel 4th Gen Xeon Scalable (Sapphire Rapids)",
+      "manufacturer": "Intel",
+      "type": "cpu",
+      "url": "https://www.intel.com/content/www/us/en/products/docs/processors/xeon/4th-gen-xeon-scalable-processors.html",
+      "description": "Up to 56-core server CPU featuring Advanced Matrix Extensions (AMX) for accelerated BF16/INT8 AI operations.",
+      "advantages": [
+        "AMX instructions for AI acceleration",
+        "Supports DDR5 and PCIe Gen5",
+        "Widely available in standard x86 server ecosystems"
+      ],
+      "disadvantages": [
+        "Lower deep-learning performance compared to GPUs/ASICs",
+        "No specialized on-chip high-speed fabric for multi-accelerator use"
+      ],
+      "on_prem_price": {
+        "lower_bound": "N/A",
+        "upper_bound": "N/A"
+      },
+      "on_prem_vendors": [
+        "HPE",
+        "Dell",
+        "Lenovo",
+        "Supermicro"
+      ],
+      "cloud_pricing": {
+        "lower_bound": "N/A",
+        "upper_bound": "N/A"
+      },
+      "supported_clouds": []
+    },
+    "EmeraldRapids_CPU": {
+      "Flops": 47,
+      "Memory_size": 300,
+      "Memory_BW": 350,
+      "Power":289,
+      "ICN": 125,
+      "real_values": false,
+      "name": "Intel 5th Gen Xeon Scalable (Emerald Rapids)",
+      "manufacturer": "Intel",
+      "type": "cpu",
+      "url": "https://www.intel.com/content/www/us/en/newsroom/news/future-xeon-emerald-rapids.html",
+      "description": "Successor to Sapphire Rapids with more cores/cache, improved DDR5 speeds, and faster UPI links.",
+      "advantages": [
+        "Enhanced AMX performance",
+        "Higher memory bandwidth vs previous gen",
+        "Incremental IPC improvements"
+      ],
+      "disadvantages": [
+        "Still lags specialized accelerators for AI training",
+        "Exact performance gains may be modest in real workloads"
+      ],
+      "on_prem_price": {
+        "lower_bound": "N/A",
+        "upper_bound": "N/A"
+      },
+      "on_prem_vendors": [
+        "HPE",
+        "Dell",
+        "Lenovo"
+      ],
+      "cloud_pricing": {
+        "lower_bound": "N/A",
+        "upper_bound": "N/A"
+      },
+      "supported_clouds": []
+    },
+    "GrandRidge_CPU": {
+      "Flops": 26,
+      "Memory_size": 0,
+      "Memory_BW": 90,
+      "ICN": 0,
+      "real_values": false,
+      "name": "Intel Grand Ridge SoC (Atom-based)",
+      "manufacturer": "Intel",
+      "type": "cpu",
+      "url": "https://www.intel.com",
+      "description": "Upcoming 24-core Atom processor targeting network/edge with AVX-VNNI extensions for AI inference.",
+      "advantages": [
+        "Low power for edge deployments",
+        "Hardware AI instructions (INT8/BF16) for inference",
+        "Integrated SoC design for networking/5G"
+      ],
+      "disadvantages": [
+        "Limited raw AI performance vs server-class parts",
+        "Primarily for specialized embedded/edge markets"
+      ],
+      "on_prem_price": {
+        "lower_bound": "N/A",
+        "upper_bound": "N/A"
+      },
+      "on_prem_vendors": [],
+      "cloud_pricing": {
+        "lower_bound": "N/A",
+        "upper_bound": "N/A"
+      },
+      "supported_clouds": []
+    },
+    "PonteVecchio_GPU": {
+      "Flops": 52,
+      "Memory_size": 128,
+      "Memory_BW": 3200,
+      "ICN": 350,
+      "real_values": false,
+      "name": "Intel Data Center GPU Max (Ponte Vecchio)",
+      "manufacturer": "Intel",
+      "type": "gpu",
+      "url": "https://www.intel.com/content/www/us/en/products/details/discrete-gpus/data-center-gpu-max.html",
+      "description": "Intel’s 1st generation HPC/AI GPU with a multi-tile design, large on-package HBM, and Xe Link interconnect.",
+      "advantages": [
+        "128 GB HBM memory for large models",
+        "High FP64 performance for HPC workloads",
+        "oneAPI + SYCL portability from CUDA"
+      ],
+      "disadvantages": [
+        "600W TDP and complex packaging",
+        "Early software ecosystem vs mature CUDA",
+        "Limited availability mostly in supercomputers or select OEMs"
+      ],
+      "on_prem_price": {
+        "lower_bound": "15000",
+        "upper_bound": "20000"
+      },
+      "on_prem_vendors": [
+        "Dell",
+        "HPE"
+      ],
+      "cloud_pricing": {
+        "lower_bound": "N/A",
+        "upper_bound": "N/A"
+      },
+      "supported_clouds": []
+    },
+    "Gaudi2": {
+    "Flops": 432,
+    "Memory_size": 96,
+    "Memory_BW": 2450,
+    "ICN": 300,
+    "Power": 350,
+    "real_values": false,
+    "name": "Intel Habana Gaudi2",
+    "manufacturer": "Intel",
+    "type": "accelerator",
+    "url": "https://www.intel.com/content/www/us/en/products/details/accelerators/habana.html",
+    "description": "Second-generation AI training accelerator from Habana Labs, delivering competitive price-performance with 96GB HBM2e and integrated 100GbE.",
+    "advantages": [
+      "Competitive with A100 in training throughput",
+      "Cost-efficient",
+      "Optimized for large-scale deep learning"
+    ],
+    "disadvantages": [
+      "Requires the SynapseAI software stack",
+      "Less community support than NVIDIA GPUs",
+      "Limited public cloud availability"
+    ],
+    "on_prem_price": {
+      "lower_bound": 10000,
+      "upper_bound": null
+    },
+    "on_prem_vendors": [
+      "Supermicro",
+      "Dell"
+    ],
+    "cloud_pricing": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "supported_clouds": [
+      {
+        "cloud_name": "AWS (Preview for Gaudi2)",
+        "regions": [],
+        "instance_name": [
+          "dl2"
+        ]
+      }
+    ]
+  },
+    
+        "H100_SXM_GPU": {
+          "Flops": 1979,
+          "Memory_size": 80,
+          "Memory_BW": 3350,
+          "ICN": 900,
+          "Power": 700,
+          "real_values": false,
+          "name": "NVIDIA H100 (Hopper) - SXM",
+          "manufacturer": "NVIDIA",
+          "type": "gpu",
+          "url": "https://www.nvidia.com/en-us/data-center/h100",
+          "description": "NVIDIA’s flagship training accelerator based on the Hopper architecture, featuring 80GB HBM3, advanced FP8 support, and up to 9x faster training versus A100.",
+          "advantages": [
+            "Industry-leading HPC and AI performance",
+            "MIG partitioning support",
+            "Advanced FP8 and sparsity acceleration"
+          ],
+          "disadvantages": [
+            "Very high cost (~$30k+)",
+            "High power consumption (up to 700W)",
+            "Requires specialized servers (SXM form factor)"
+          ],
+          "on_prem_price": {
+            "lower_bound": 30000,
+            "upper_bound": 35000
+          },
+          "on_prem_vendors": [
+            "HPE",
+            "Dell",
+            "Lenovo",
+            "Supermicro"
+          ],
+          "cloud_pricing": {
+            "lower_bound": 3.0,
+            "upper_bound": 10.0
+          },
+          "supported_clouds": [
+            {
+              "cloud_name": "AWS",
+              "regions": [
+                "multiple"
+              ],
+              "instance_name": [
+                "p5"
+              ]
+            },
+            {
+              "cloud_name": "Google Cloud",
+              "regions": [
+                "multiple"
+              ],
+              "instance_name": [
+                "G2"
+              ]
+            },
+            {
+              "cloud_name": "Microsoft Azure",
+              "regions": [
+                "multiple"
+              ],
+              "instance_name": [
+                "ND H100 v5"
+              ]
+            },
+            {
+              "cloud_name": "Oracle Cloud",
+              "regions": [
+                "multiple"
+              ],
+              "instance_name": []
+            },
+            {
+              "cloud_name": "CoreWeave",
+              "regions": [
+                "multiple"
+              ],
+              "instance_name": [
+                "H100"
+              ]
+            },
+            {
+              "cloud_name": "DenvrData",
+              "regions": [
+                "multiple"
+              ],
+              "instance_name": [
+                "H100"
+              ]
+            },
+            {
+              "cloud_name": "Yotta Cloud",
+              "regions": [
+                "multiple"
+              ],
+              "instance_name": [
+                "H100"
+              ]
+            }
+          ]
+        },
+    "H100_PCIe_GPU": {
+    "Flops": 1513,
+    "Memory_size": 80,
+    "Memory_BW": 2000,
+    "ICN": 900,
+    "Power": 350,
+    "real_values": false,
+    "name": "NVIDIA H100 (Hopper) - PCIe",
+    "manufacturer": "NVIDIA",
+    "type": "gpu",
+    "url": "https://www.nvidia.com/en-us/data-center/h100",
+    "description": "NVIDIA’s flagship training accelerator in PCIe form, offering high performance with 80GB HBM3 and advanced FP8 support.",
+    "advantages": [
+      "High training speed with MIG partitioning",
+      "Industry-leading AI performance",
+      "Broad cloud and on-premise support"
+    ],
+    "disadvantages": [
+      "High cost and power usage",
+      "Requires specialized high-end PCIe systems"
+    ],
+    "on_prem_price": {
+      "lower_bound": 30000,
+      "upper_bound": 35000
+    },
+    "on_prem_vendors": [
+      "HPE",
+      "Dell",
+      "Lenovo",
+      "Supermicro"
+    ],
+    "cloud_pricing": {
+      "lower_bound": 3.0,
+      "upper_bound": 10.0
+    },
+    "supported_clouds": [
+      {
+        "cloud_name": "AWS",
+        "regions": [
+          "multiple"
+        ],
+        "instance_name": [
+          "p5"
+        ]
+      },
+      {
+        "cloud_name": "Google Cloud",
+        "regions": [
+          "multiple"
+        ],
+        "instance_name": [
+          "G2"
+        ]
+      },
+      {
+        "cloud_name": "Microsoft Azure",
+        "regions": [
+          "multiple"
+        ],
+        "instance_name": [
+          "ND H100 v5"
+        ]
+      },
+      {
+        "cloud_name": "Oracle Cloud",
+        "regions": [
+          "multiple"
+        ],
+        "instance_name": []
+      }
+    ]
+  },
+    "H800_GPU": {
+      "Flops": 1513,
+      "Memory_size": 80,
+      "Memory_BW": 2000,
+      "ICN": 400,
+      "real_values": false,
+      "name": "NVIDIA H800",
+      "manufacturer": "NVIDIA",
+      "type": "gpu",
+      "url": "N/A (OEM docs)",
+      "description": "Hopper-based variant for export-controlled regions, with reduced interconnect and memory speed.",
+      "advantages": [
+        "Hopper architecture for markets where H100 is restricted",
+        "Transformer Engine and FP8 support",
+        "Comparable core specs to H100"
+      ],
+      "disadvantages": [
+        "Lower NVLink bandwidth than H100",
+        "Primarily unavailable in North America",
+        "Limited official documentation"
+      ],
+      "on_prem_price": {
+        "lower_bound": "25000",
+        "upper_bound": "35000"
+      },
+      "on_prem_vendors": [
+        "Lenovo"
+      ],
+      "cloud_pricing": {
+        "lower_bound": "N/A",
+        "upper_bound": "N/A"
+      },
+      "supported_clouds": [
+        {
+          "cloud_name": "Alibaba Cloud",
+          "regions": [],
+          "instance_name": []
+        }
+      ]
+    },
+    "A100_GPU": {
+    "Flops": 312,
+    "Memory_size": 80,
+    "Memory_BW": 2000,
+    "ICN": 600,
+    "Power": 400,
+    "real_values": false,
+    "name": "NVIDIA A100 (Ampere)",
+    "manufacturer": "NVIDIA",
+    "type": "gpu",
+    "url": "https://www.nvidia.com/en-us/data-center/a100",
+    "description": "Widely deployed Ampere-based GPU with support for MIG, high FP64 performance, and available in both 40GB and 80GB configurations.",
+    "advantages": [
+      "Strong training and inference performance",
+      "MIG partitioning for multi-tenant use",
+      "Broad cloud availability"
+    ],
+    "disadvantages": [
+      "No native FP8 support",
+      "Outclassed by H100 in peak performance"
+    ],
+    "on_prem_price": {
+      "lower_bound": 10000,
+      "upper_bound": 15000
+    },
+    "on_prem_vendors": [
+      "HPE",
+      "Dell",
+      "Lenovo",
+      "Supermicro"
+    ],
+    "cloud_pricing": {
+      "lower_bound": 2.0,
+      "upper_bound": 4.0
+    },
+    "supported_clouds": [
+      {
+        "cloud_name": "AWS",
+        "regions": [
+          "multiple"
+        ],
+        "instance_name": [
+          "p4d",
+          "p4de"
+        ]
+      },
+      {
+        "cloud_name": "Microsoft Azure",
+        "regions": [
+          "multiple"
+        ],
+        "instance_name": [
+          "NDv4"
+        ]
+      },
+      {
+        "cloud_name": "Google Cloud",
+        "regions": [
+          "multiple"
+        ],
+        "instance_name": [
+          "A2"
+        ]
+      }
+    ]
+  },
+  "V100_GPU": {
+    "Flops": 157,
+    "Memory_size": 32,
+    "Memory_BW": 900,
+    "ICN": 600,
+    "Power": 300,
+    "real_values": false,
+    "name": "NVIDIA V100 (Volta)",
+    "manufacturer": "NVIDIA",
+    "type": "gpu",
+    "url": "https://www.nvidia.com/en-us/data-center/v100",
+    "description": "Volta-based GPU featuring Tensor Cores and high FP64 performance, available in both PCIe and SXM2 forms.",
+    "advantages": [
+      "Proven performance in AI training and inference",
+      "Robust ecosystem support",
+      "Widely available in research and cloud environments"
+    ],
+    "disadvantages": [
+      "Lower performance compared to newer GPUs",
+      "Higher power consumption in SXM2 form"
+    ],
+    "on_prem_price": {
+      "lower_bound": 8000,
+      "upper_bound": 10000
+    },
+    "on_prem_vendors": [
+      "HPE",
+      "Dell",
+      "Lenovo"
+    ],
+    "cloud_pricing": {
+      "lower_bound": 2.5,
+      "upper_bound": 3.0
+    },
+    "supported_clouds": [
+      {
+        "cloud_name": "AWS",
+        "regions": [
+          "multiple"
+        ],
+        "instance_name": [
+          "p3",
+          "p3dn"
+        ]
+      },
+      {
+        "cloud_name": "Microsoft Azure",
+        "regions": [
+          "multiple"
+        ],
+        "instance_name": [
+          "NC_v3",
+          "ND_v2"
+        ]
+      },
+      {
+        "cloud_name": "Google Cloud",
+        "regions": [
+          "multiple"
+        ],
+        "instance_name": [
+          "V100"
+        ]
+      }
+    ]
+  },
+  "Tesla_P100_GPU": {
+    "Flops": 106,
+    "Memory_size": 16,
+    "Memory_BW": 720,
+    "ICN": 600,
+    "Power": 300,
+    "real_values": false,
+    "name": "NVIDIA Tesla P100 (Pascal)",
+    "manufacturer": "NVIDIA",
+    "type": "gpu",
+    "url": "https://www.nvidia.com/en-us/data-center/p100",
+    "description": "Pascal-based GPU optimized for HPC and early deep learning workloads, available in both PCIe and SXM2 forms.",
+    "advantages": [
+      "High FP64 performance for HPC",
+      "Solid performance for AI inference",
+      "Mature software ecosystem"
+    ],
+    "disadvantages": [
+      "No Tensor Cores",
+      "Now outperformed by newer generations"
+    ],
+    "on_prem_price": {
+      "lower_bound": 5000,
+      "upper_bound": 7000
+    },
+    "on_prem_vendors": [
+      "HPE",
+      "Dell"
+    ],
+    "cloud_pricing": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "supported_clouds": []
+  },
+  "Tesla_K80_GPU": {
+    "Flops": 87,
+    "Memory_size": 24,
+    "Memory_BW": 480,
+    "ICN": 0,
+    "Power": 300,
+    "real_values": false,
+    "name": "NVIDIA Tesla K80 (Kepler)",
+    "manufacturer": "NVIDIA",
+    "type": "gpu",
+    "url": "https://www.nvidia.com/en-us/data-center/k80",
+    "description": "Dual-GPU Kepler card with a total of 24GB memory, once popular for large-scale inference but now considered legacy.",
+    "advantages": [
+      "Cost-effective for legacy workloads",
+      "Widely available on the secondary market"
+    ],
+    "disadvantages": [
+      "Obsolete performance",
+      "High power consumption relative to performance"
+    ],
+    "on_prem_price": {
+      "lower_bound": 200,
+      "upper_bound": 500
+    },
+    "on_prem_vendors": [
+      "Secondary market"
+    ],
+    "cloud_pricing": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "supported_clouds": []
+  },
+  "MI100_GPU": {
+    "Flops": 231,
+    "Memory_size": 32,
+    "Memory_BW": 1200,
+    "ICN": 100,
+    "Power": 300,
+    "real_values": false,
+    "name": "AMD Instinct MI100",
+    "manufacturer": "AMD",
+    "type": "gpu",
+    "url": "https://www.amd.com/en/products/server-accelerators/instinct-mi100",
+    "description": "First-generation CDNA GPU optimized for HPC and AI with 32GB HBM2 and high mixed-precision throughput.",
+    "advantages": [
+      "Competitive FP64 performance",
+      "High BF16 throughput",
+      "Cost-effective for scientific workloads"
+    ],
+    "disadvantages": [
+      "Limited cloud availability",
+      "Ecosystem less mature compared to NVIDIA"
+    ],
+    "on_prem_price": {
+      "lower_bound": 6500,
+      "upper_bound": 8000
+    },
+    "on_prem_vendors": [
+      "HPE",
+      "Dell"
+    ],
+    "cloud_pricing": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "supported_clouds": []
+  },
+  "MI250X_GPU": {
+    "Flops": 957,
+    "Memory_size": 128,
+    "Memory_BW": 3200,
+    "ICN": 200,
+    "Power": 500,
+    "real_values": false,
+    "name": "AMD Instinct MI250X",
+    "manufacturer": "AMD",
+    "type": "gpu",
+    "url": "https://www.amd.com/en/products/instinct-mi250",
+    "description": "Dual-die CDNA2 GPU featuring 128GB HBM2e, optimized for FP64 and BF16 workloads with breakthrough matrix performance.",
+    "advantages": [
+      "High FP64 and BF16 throughput",
+      "Advanced chiplet design for scaling",
+      "Strong performance in HPC applications"
+    ],
+    "disadvantages": [
+      "Limited availability in mainstream clouds",
+      "Requires specialized systems for optimal cooling"
+    ],
+    "on_prem_price": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "on_prem_vendors": [
+      "HPE",
+      "Supermicro"
+    ],
+    "cloud_pricing": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "supported_clouds": []
+  },
+    "A10_GPU": {
+      "Flops": 125,
+      "Memory_size": 24,
+      "Memory_BW": 600,
+      "ICN": 0,
+      "real_values": false,
+      "name": "NVIDIA A10",
+      "manufacturer": "NVIDIA",
+      "type": "gpu",
+      "url": "https://www.nvidia.com/en-us/data-center/a10",
+      "description": "A single-slot data-center GPU (Ampere) for AI inference, rendering, and virtual desktop workloads.",
+      "advantages": [
+        "24 GB memory with decent bandwidth",
+        "Lower power (150 W) vs A100",
+        "Versatile for graphics and AI"
+      ],
+      "disadvantages": [
+        "No NVLink (limited multi-GPU scaling)",
+        "Less raw compute than A100",
+        "Primarily targeted at inference or mid-scale training"
+      ],
+      "on_prem_price": {
+        "lower_bound": "3000",
+        "upper_bound": "5000"
+      },
+      "on_prem_vendors": [
+        "HPE",
+        "Dell",
+        "Lenovo"
+      ],
+      "cloud_pricing": {
+        "lower_bound": "0.90",
+        "upper_bound": "1.50"
+      },
+      "supported_clouds": [
+        {
+          "cloud_name": "AWS",
+          "regions": [
+            "multiple"
+          ],
+          "instance_name": [
+            "g5"
+          ]
+        },
+        {
+          "cloud_name": "Google Cloud",
+          "regions": [
+            "multiple"
+          ],
+          "instance_name": [
+            "G2 (A10G)"
+          ]
+        }
+      ]
+    },
+    "L40_GPU": {
+      "Flops": 362,
+      "Memory_size": 48,
+      "Memory_BW": 864,
+      "ICN": 0,
+      "real_values": false,
+      "name": "NVIDIA L40 (Ada Lovelace)",
+      "manufacturer": "NVIDIA",
+      "type": "gpu",
+      "url": "https://www.nvidia.com/en-us/data-center/l40",
+      "description": "Data-center Ada GPU with 48GB GDDR6, designed for AI, graphics, virtualization, and Omniverse workflows.",
+      "advantages": [
+        "Large 48GB VRAM",
+        "4th-gen Tensor Cores and advanced ray-tracing",
+        "Supports vGPU for workstation virtualization"
+      ],
+      "disadvantages": [
+        "No NVLink for multi-GPU memory pooling",
+        "Less specialized for pure training vs H100"
+      ],
+      "on_prem_price": {
+        "lower_bound": "7500",
+        "upper_bound": "9000"
+      },
+      "on_prem_vendors": [
+        "Dell",
+        "HPE",
+        "Lenovo"
+      ],
+      "cloud_pricing": {
+        "lower_bound": "1.5",
+        "upper_bound": "2.0"
+      },
+      "supported_clouds": []
+    },
+    "RTX4090_GPU": {
+      "Flops": 661,
+      "Memory_size": 24,
+      "Memory_BW": 1008,
+      "ICN": 0,
+      "real_values": false,
+      "name": "NVIDIA GeForce RTX 4090",
+      "manufacturer": "NVIDIA",
+      "type": "gpu",
+      "url": "https://www.nvidia.com/en-us/geforce/graphics-cards/40-series/rtx-4090",
+      "description": "High-end consumer Ada GPU with 24GB GDDR6X, popular for AI prototyping and gaming.",
+      "advantages": [
+        "High compute performance for a single consumer card",
+        "24GB VRAM at a relatively accessible price",
+        "FP8 and sparsity acceleration support"
+      ],
+      "disadvantages": [
+        "No ECC or data-center reliability features",
+        "No NVLink/multi-GPU bridging on 40-series",
+        "Designed for desktop power/cooling constraints"
+      ],
+      "on_prem_price": {
+        "lower_bound": "1600",
+        "upper_bound": "2000"
+      },
+      "on_prem_vendors": [
+        "Retailers (Newegg, Amazon, Micro Center, etc.)"
+      ],
+      "cloud_pricing": {
+        "lower_bound": "0.5",
+        "upper_bound": "0.8"
+      },
+      "supported_clouds": [
+        {
+          "cloud_name": "Paperspace",
+          "regions": [
+            "multiple"
+          ],
+          "instance_name": [
+            "RTX 4090"
+          ]
+        },
+        {
+          "cloud_name": "RunPod",
+          "regions": [
+            "multiple"
+          ],
+          "instance_name": [
+            "RTX 4090"
+          ]
+        }
+      ]
+    },
+    "TPU_v3": {
+        "Flops": 420,
+        "Memory_size": 32,
+        "Memory_BW": 1200,
+        "ICN": 300,
+        "Power": 450,
+        "real_values": false,
+        "name": "Google TPU v3",
+        "manufacturer": "Google",
+        "type": "asic",
+        "url": "https://cloud.google.com/tpu/docs/system-architecture-tpu-v3",
+        "description": "Enhanced TPU with 32GB HBM per chip, offering 420 TFLOPS BF16 performance per device and liquid cooling for sustained high throughput.",
+        "advantages": [
+          "Significantly higher performance than TPU v2",
+          "Efficient scaling in TPU pods",
+          "Optimized for deep learning training"
+        ],
+        "disadvantages": [
+          "Higher power consumption",
+          "Limited to Google Cloud"
+        ],
+        "on_prem_price": {
+          "lower_bound": null,
+          "upper_bound": null
+        },
+        "on_prem_vendors": [],
+        "cloud_pricing": {
+          "lower_bound": 8.0,
+          "upper_bound": 8.0
+        },
+        "supported_clouds": [
+          {
+            "cloud_name": "Google Cloud",
+            "regions": [
+              "us-central1",
+              "europe-west4"
+            ],
+            "instance_name": [
+              "TPU v3"
+            ]
+          }
+        ]
+      },
+      "TPU_v4": {
+        "Flops": 275,
+        "Memory_size": 32,
+        "Memory_BW": 1200,
+        "ICN": 300,
+        "Power": 800,
+        "real_values": false,
+        "name": "Google TPU v4",
+        "manufacturer": "Google",
+        "type": "asic",
+        "url": "https://cloud.google.com/tpu/docs/system-architecture-tpu-v4",
+        "description": "Latest TPU generation delivering up to 275 TFLOPS BF16 per chip, scalable in large pods with optical interconnects.",
+        "advantages": [
+          "Superior training speed for large models",
+          "Efficient cost-per-FLOP performance",
+          "Scalable TPU pod configurations"
+        ],
+        "disadvantages": [
+          "Requires TPU-optimized software stack",
+          "Limited regions and access"
+        ],
+        "on_prem_price": {
+          "lower_bound": null,
+          "upper_bound": null
+        },
+        "on_prem_vendors": [],
+        "cloud_pricing": {
+          "lower_bound": null,
+          "upper_bound": null
+        },
+        "supported_clouds": [
+          {
+            "cloud_name": "Google Cloud",
+            "regions": [
+              "us-central2",
+              "europe-west4"
+            ],
+            "instance_name": [
+              "TPU v4"
+            ]
+          }
+        ]
+      },
+    "TPUv4": {
+      "Flops": 275,
+      "Memory_size": 32,
+      "Memory_BW": 1200,
+      "ICN": 300,
+      "real_values": false,
+      "name": "Google TPU v4",
+      "manufacturer": "Google",
+      "type": "asic",
+      "url": "https://cloud.google.com/tpu/docs/system-architecture-tpu-v4",
+      "description": "Google’s 4th-gen Tensor Processing Unit for large-scale training with BF16 or INT8 precision.",
+      "advantages": [
+        "Fully managed on Google Cloud with TPU pods up to thousands of chips",
+        "High memory bandwidth and fast interconnect",
+        "Optimized for TensorFlow/JAX with XLA"
+      ],
+      "disadvantages": [
+        "Less flexible than GPUs for dynamic or custom ops",
+        "Cannot be purchased off-cloud (Google-only)",
+        "No native FP32 except emulation"
+      ],
+      "on_prem_price": {
+        "lower_bound": "N/A",
+        "upper_bound": "N/A"
+      },
+      "on_prem_vendors": [
+        null
+      ],
+      "cloud_pricing": {
+        "lower_bound": "3.22",
+        "upper_bound": "3.50"
+      },
+      "supported_clouds": [
+        {
+          "cloud_name": "Google Cloud",
+          "regions": [
+            "multiple"
+          ],
+          "instance_name": [
+            "Cloud TPU v4"
+          ]
+        }
+      ]
+    },
+    "TPU_v2": {
+    "Flops": 180,
+    "Memory_size": 16,
+    "Memory_BW": 600,
+    "ICN": 300,
+    "Power": 280,
+    "real_values": false,
+    "name": "Google TPU v2",
+    "manufacturer": "Google",
+    "type": "asic",
+    "url": "https://cloud.google.com/tpu/docs/system-architecture-tpu-v2",
+    "description": "Second-generation TPU designed for both training and inference, delivering 180 TFLOPS BF16 performance per device.",
+    "advantages": [
+      "High throughput for training large models",
+      "Integrated with TensorFlow and JAX",
+      "Cost-effective for scaled ML workloads"
+    ],
+    "disadvantages": [
+      "Limited flexibility outside TensorFlow",
+      "Older generation compared to TPU v3/v4"
+    ],
+    "on_prem_price": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "on_prem_vendors": [],
+    "cloud_pricing": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "supported_clouds": [
+      {
+        "cloud_name": "Google Cloud",
+        "regions": [
+          "us-central1",
+          "europe-west1"
+        ],
+        "instance_name": [
+          "TPU v2"
+        ]
+      }
+    ]
+  },
+    "TPUv5e": {
+      "Flops": 197,
+      "Memory_size": 16,
+      "Memory_BW": 819,
+      "ICN": 200,
+      "real_values": false,
+      "name": "Google TPU v5e",
+      "manufacturer": "Google",
+      "type": "asic",
+      "url": "https://cloud.google.com/blog/products/ai-machine-learning/introducing-cloud-tpu-v5e",
+      "description": "A cost-optimized TPU generation for both training and inference with lower per-chip specs than v4.",
+      "advantages": [
+        "Lower cost than TPU v4",
+        "Flexible partitioning for multi-tenant usage",
+        "Supports BF16 and INT8"
+      ],
+      "disadvantages": [
+        "Less memory per chip (16GB)",
+        "Lower performance than TPU v4—requires more chips for large training jobs"
+      ],
+      "on_prem_price": {
+        "lower_bound": "N/A",
+        "upper_bound": "N/A"
+      },
+      "on_prem_vendors": [
+        null
+      ],
+      "cloud_pricing": {
+        "lower_bound": "1.0",
+        "upper_bound": "1.5"
+      },
+      "supported_clouds": [
+        {
+          "cloud_name": "Google Cloud",
+          "regions": [
+            "multiple"
+          ],
+          "instance_name": [
+            "Cloud TPU v5e"
+          ]
+        }
+      ]
+    },
+    "TPUv6_Trillium": {
+      "Flops": 1300,
+      "Memory_size": 64,
+      "Memory_BW": 2400,
+      "ICN": 600,
+      "real_values": false,
+      "name": "Google Trillium TPU (v6)",
+      "manufacturer": "Google",
+      "type": "asic",
+      "url": "https://cloud.google.com/blog",
+      "description": "6th-gen TPU with ~4.7x the performance of TPU v4, larger HBM, and improved efficiency, aimed at ultra-large model training.",
+      "advantages": [
+        "Extreme performance scaling with large pods",
+        "Significant memory and bandwidth increase vs older TPUs",
+        "Reported strong cost-efficiency for giant LLMs"
+      ],
+      "disadvantages": [
+        "Proprietary to Google Cloud only",
+        "Still requires XLA-compiled workloads",
+        "Pricing not fully disclosed"
+      ],
+      "on_prem_price": {
+        "lower_bound": "N/A",
+        "upper_bound": "N/A"
+      },
+      "on_prem_vendors": [
+        null
+      ],
+      "cloud_pricing": {
+        "lower_bound": "N/A",
+        "upper_bound": "N/A"
+      },
+      "supported_clouds": [
+        {
+          "cloud_name": "Google Cloud",
+          "regions": [
+            "limited preview"
+          ],
+          "instance_name": [
+            "Trillium TPU (v6)"
+          ]
+        }
+      ]
+    },
+    "Trainium_Trn1": {
+    "Flops": 190,
+    "Memory_size": 32,
+    "Memory_BW": 610,
+    "ICN": 600,
+    "Power": 400,
+    "real_values": false,
+    "name": "AWS Trainium (Trn1)",
+    "manufacturer": "AWS",
+    "type": "accelerator",
+    "url": "https://aws.amazon.com/ec2/instance-types/trn1",
+    "description": "AWS’s in-house ML training chip optimized for BF16/FP16 training, offering significant cost savings compared to GPUs.",
+    "advantages": [
+      "Up to 50% lower training cost",
+      "Integrated with the AWS ecosystem",
+      "Scalable in high-performance clusters"
+    ],
+    "disadvantages": [
+      "AWS cloud-only",
+      "Requires AWS Neuron SDK",
+      "Limited third-party benchmarks"
+    ],
+    "on_prem_price": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "on_prem_vendors": [],
+    "cloud_pricing": {
+      "lower_bound": 1.34,
+      "upper_bound": 2.0
+    },
+    "supported_clouds": [
+      {
+        "cloud_name": "AWS",
+        "regions": [
+          "us-east-1",
+          "us-west-2",
+          "others"
+        ],
+        "instance_name": [
+          "trn1.32xlarge"
+        ]
+      }
+    ]
+  },
+    "Inferentia2_Inf2": {
+    "Flops": 190,
+    "Memory_size": 32,
+    "Memory_BW": 1000,
+    "ICN": 600,
+    "Power": 75,
+    "real_values": false,
+    "name": "AWS Inferentia2 (Inf2)",
+    "manufacturer": "AWS",
+    "type": "accelerator",
+    "url": "https://aws.amazon.com/ec2/instance-types/inf2",
+    "description": "Second-generation AWS inference chip with enhanced INT8, BF16, and configurable FP8 support for cost-effective, large-scale model inference.",
+    "advantages": [
+      "Significantly lower inference cost",
+      "Large on-chip memory",
+      "Efficient for scaled model deployments"
+    ],
+    "disadvantages": [
+      "AWS-only",
+      "Requires AWS Neuron SDK",
+      "Relatively new with fewer benchmarks"
+    ],
+    "on_prem_price": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "on_prem_vendors": [],
+    "cloud_pricing": {
+      "lower_bound": 1.08,
+      "upper_bound": 2.0
+    },
+    "supported_clouds": [
+      {
+        "cloud_name": "AWS",
+        "regions": [
+          "multiple"
+        ],
+        "instance_name": [
+          "inf2.*"
+        ]
+      }
+    ]
+  },
+    "Groq_LPU": {
+      "Flops": 200,
+      "Memory_size": 0.23,
+      "Memory_BW": 80000,
+      "ICN": 400,
+      "real_values": false,
+      "name": "Groq LPU (GroqChip)",
+      "manufacturer": "Groq",
+      "type": "accelerator",
+      "url": "https://groq.com",
+      "description": "A single-core, statically scheduled tensor streaming processor with ultra-low latency and on-chip SRAM.",
+      "advantages": [
+        "Deterministic, extremely low latency",
+        "Massive on-chip bandwidth with minimal caching",
+        "Scales up to 8–16 chips in a single server"
+      ],
+      "disadvantages": [
+        "Limited on-chip memory for large models",
+        "No native training support (inference only)",
+        "Specialized compiler & software stack"
+      ],
+      "on_prem_price": {
+        "lower_bound": "2000",
+        "upper_bound": "3000"
+      },
+      "on_prem_vendors": [
+        null
+      ],
+      "cloud_pricing": {
+        "lower_bound": "2.0",
+        "upper_bound": "3.0"
+      },
+      "supported_clouds": [
+        {
+          "cloud_name": "Groq Cloud (Beta)",
+          "regions": [],
+          "instance_name": []
+        }
+      ]
+    },
+   "Graphcore_IPU": {
+    "Flops": 250,
+    "Memory_size": 0.9,
+    "Memory_BW": 450,
+    "ICN": 100,
+    "Power": 150,
+    "real_values": false,
+    "name": "Graphcore Colossus MK2 IPU (GC200)",
+    "manufacturer": "Graphcore",
+    "type": "accelerator",
+    "url": "https://www.graphcore.ai/products/ipu",
+    "description": "A massively parallel Intelligence Processing Unit designed for fine-grained parallelism, featuring 1,472 cores and 900MB high-bandwidth local memory.",
+    "advantages": [
+      "Optimized for irregular workloads",
+      "Fine-grained parallelism",
+      "High local memory bandwidth"
+    ],
+    "disadvantages": [
+      "Requires adaptation to the Poplar SDK",
+      "Limited memory for extremely large models",
+      "Niche adoption compared to GPUs"
+    ],
+    "on_prem_price": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "on_prem_vendors": [],
+    "cloud_pricing": {
+      "lower_bound": 2.0,
+      "upper_bound": 3.0
+    },
+    "supported_clouds": [
+      {
+        "cloud_name": "Graphcloud",
+        "regions": [],
+        "instance_name": []
+      }
+    ]
+  },
+    "Cerebras_WSE2": {
+    "Flops": 50000,
+    "Memory_size": 40,
+    "Memory_BW": 20000000,
+    "ICN": 27500000,
+    "Power": 23000,
+    "real_values": false,
+    "name": "Cerebras CS-2 (WSE-2)",
+    "manufacturer": "Cerebras",
+    "type": "accelerator",
+    "url": "https://www.cerebras.net/products/cs-2",
+    "description": "Second-generation wafer-scale engine featuring 850k compute cores and 40GB on-chip SRAM, designed for ultra-large neural network training.",
+    "advantages": [
+      "Replaces large GPU clusters with a single wafer",
+      "Ultra-high on-chip bandwidth",
+      "Ideal for memory-intensive models"
+    ],
+    "disadvantages": [
+      "Very high cost (multi-million-dollar system)",
+      "Requires specialized software stack",
+      "Complexity in scaling beyond one wafer"
+    ],
+    "on_prem_price": {
+      "lower_bound": 2000000,
+      "upper_bound": 3000000
+    },
+    "on_prem_vendors": [],
+    "cloud_pricing": {
+      "lower_bound": 1000,
+      "upper_bound": 2000
+    },
+    "supported_clouds": [
+      {
+        "cloud_name": "HPE GreenLake (as-a-service)",
+        "regions": [],
+        "instance_name": []
+      }
+    ]
+  },
+   "Cerebras_WSE3": {
+    "Flops": 62500,
+    "Memory_size": 44,
+    "Memory_BW": 26750000,
+    "ICN": 26750000,
+    "Power": 30000,
+    "real_values": false,
+    "name": "Cerebras CS-3 (WSE-3)",
+    "manufacturer": "Cerebras",
+    "type": "accelerator",
+    "url": "https://www.cerebras.net",
+    "description": "Third-generation wafer-scale chip with ~4 trillion transistors and up to 125 PFLOPS (with sparsity), aimed at cluster-scale performance on a single device.",
+    "advantages": [
+      "Larger wafer for bigger models",
+      "Massive internal bandwidth for parallelism",
+      "Potential for cluster-scale performance on one device"
+    ],
+    "disadvantages": [
+      "Extremely high cost",
+      "Narrowly specialized software stack",
+      "Rare in mainstream deployments"
+    ],
+    "on_prem_price": {
+      "lower_bound": 3000000,
+      "upper_bound": 5000000
+    },
+    "on_prem_vendors": [],
+    "cloud_pricing": {
+      "lower_bound": 2000,
+      "upper_bound": 3000
+    },
+    "supported_clouds": []
+  },
+    "MI300X_GPU": {
+    "Flops": 1600,
+    "Memory_size": 192,
+    "Memory_BW": 5300,
+    "ICN": 200,
+    "Power": 600,
+    "real_values": false,
+    "name": "AMD Instinct MI300X",
+    "manufacturer": "AMD",
+    "type": "gpu",
+    "url": "https://www.amd.com/en/products/instinct-mi300",
+    "description": "Latest CDNA3 GPU with 192GB HBM3, targeting large-scale AI and HPC with high FP8/FP64 performance.",
+    "advantages": [
+      "Massive memory capacity",
+      "Superior performance for large models",
+      "Optimized for mixed-precision and FP64 workloads"
+    ],
+    "disadvantages": [
+      "Enterprise-focused pricing",
+      "Limited current cloud availability"
+    ],
+    "on_prem_price": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "on_prem_vendors": [],
+    "cloud_pricing": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "supported_clouds": [
+      {
+        "cloud_name": "Oracle Cloud",
+        "regions": [
+          "multiple"
+        ],
+        "instance_name": [
+          "MI300X"
+        ]
+      }
+    ]
+  },
+    "Gaudi3": {
+    "Flops": 1835,
+    "Memory_size": 128,
+    "Memory_BW": 3700,
+    "ICN": 600,
+    "Power": 400,
+    "real_values": false,
+    "name": "Intel Habana Gaudi3",
+    "manufacturer": "Intel",
+    "type": "accelerator",
+    "url": "https://www.intel.com/content/www/us/en/products/details/accelerators/habana.html",
+    "description": "Third-generation Gaudi accelerator offering 1.835 PFLOPS FP8/BF16, with 128GB HBM onboard and Ethernet-based scaling for large-scale AI training.",
+    "advantages": [
+      "High-performance matrix operations",
+      "Large on-board memory",
+      "Open Ethernet interconnect for scalable deployments"
+    ],
+    "disadvantages": [
+      "Maturing software ecosystem",
+      "Limited widespread adoption",
+      "Uncertain availability outside OEM channels"
+    ],
+    "on_prem_price": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "on_prem_vendors": [],
+    "cloud_pricing": {
+      "lower_bound": null,
+      "upper_bound": null
+    },
+    "supported_clouds": []
+  }}

@@ -101,7 +101,8 @@ def prefill_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     #     thrpt = 1000 * batch_size / total_latency
     # else:
     # print(f"Prefill Latency: {prefill_latency}, Batch Size: {batch_size}")
-    thrpt = 1000 * batch_size / prefill_latency
+    thrpt = 1000 * batch_size / prefill_latency  # Requests per second
+    tokens_per_sec = thrpt * input_tokens  # Tokens per second
 
     attn_time = summary_table[f'Attn Latency ({unit.unit_time})'].values[0]
     linear_time = summary_table[f'Linear Latency ({unit.unit_time})'].values[0]
@@ -115,6 +116,7 @@ def prefill_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     return ModdelingOutput(
                         Latency=prefill_latency,
                         Throughput=thrpt,
+                        Throughput_tokens_per_sec=tokens_per_sec,
                         Runtime_breakdown=runtime_breakdown,
                         is_offload=is_offloaded,
                         model_df = model_df,

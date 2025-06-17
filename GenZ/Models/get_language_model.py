@@ -14,6 +14,14 @@ from GenZ.Models.mamba import mamba_prefill, mamba_decode
 from GenZ.Models.embedding import input_embedding, output_embedding
 from difflib import get_close_matches
 from uuid import uuid4
+try:
+    from BudSimulator.LoRA.injection import inject_lora_ops
+except ImportError:
+    # Fallback import
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    from LoRA.injection import inject_lora_ops
 
 def get_configs(name) -> ModelConfig:
     if isinstance(name, ModelConfig):
@@ -137,12 +145,20 @@ def create_full_prefill_model(
         layers += repeat_layers(num_layers)
         if model_config.unique_layers == 1:
             if model_config.layer_type[0][0] == "MHA-global":
-                layers += mha_flash_attention_prefill(model_config, parallelism_config, input_sequence_length)
+                attn_ops = mha_flash_attention_prefill(model_config, parallelism_config, input_sequence_length)
+                # Inject LoRA ops for attention if configured
+                attn_ops = inject_lora_ops(attn_ops, model_config, parallelism_config, input_sequence_length)
+                layers += attn_ops
             elif model_config.layer_type[0][0] == "Mamba":
                 layers += mamba_prefill(model_config, parallelism_config, input_sequence_length)
         else:
             raise ValueError("More then 1 unique layers not supported. Work in progress")
-        layers += ffn_prefill(model_config, parallelism_config, input_sequence_length)
+        
+        # Get FFN operations and inject LoRA if configured
+        ffn_ops = ffn_prefill(model_config, parallelism_config, input_sequence_length)
+        ffn_ops = inject_lora_ops(ffn_ops, model_config, parallelism_config, input_sequence_length)
+        layers += ffn_ops
+        
         layers += end_repeat_layers(num_layers)
         return layers
 
@@ -219,12 +235,20 @@ def create_full_decode_model(
         layers += repeat_layers(num_layers)
         if model_config.unique_layers == 1:
             if model_config.layer_type[0][0] == "MHA-global":
-                layers += mha_flash_attention_decode(model_config, parallelism_config, input_sequence_length, output_gen_tokens)
+                attn_ops = mha_flash_attention_decode(model_config, parallelism_config, input_sequence_length, output_gen_tokens)
+                # Inject LoRA ops for attention if configured
+                attn_ops = inject_lora_ops(attn_ops, model_config, parallelism_config, 1)  # decode processes 1 token at a time
+                layers += attn_ops
             elif model_config.layer_type[0][0] == "Mamba":
                 layers += mamba_decode(model_config, parallelism_config, input_sequence_length)
         else:
             raise ValueError("More then 1 unique layers not supported. Work in progress")
-        layers += ffn_decode(model_config, parallelism_config)
+        
+        # Get FFN operations and inject LoRA if configured
+        ffn_ops = ffn_decode(model_config, parallelism_config)
+        ffn_ops = inject_lora_ops(ffn_ops, model_config, parallelism_config, 1)  # decode processes 1 token at a time
+        layers += ffn_ops
+        
         layers += end_repeat_layers(num_layers)
         return layers
 
@@ -276,12 +300,21 @@ def create_full_chunked_model(name:str ='GPT-2',
 
     def add_layers(layers, num_layers):
         layers += repeat_layers(num_layers)
-        layers += mha_flash_attention_chunked(  model_config=model_config,
+        
+        # Get attention operations and inject LoRA if configured
+        attn_ops = mha_flash_attention_chunked(  model_config=model_config,
                                                 parallelism_config=parallelism_config,
                                                 chunk_size=chunk_size,
                                                 prefill_kv_sizes=prefill_kv_sizes,
                                                 decode_kv_sizes=decode_kv_sizes)
-        layers += get_ffn_implementation(model_config)(model_config, parallelism_config, chunk_size)
+        attn_ops = inject_lora_ops(attn_ops, model_config, parallelism_config, chunk_size)
+        layers += attn_ops
+        
+        # Get FFN operations and inject LoRA if configured
+        ffn_ops = get_ffn_implementation(model_config)(model_config, parallelism_config, chunk_size)
+        ffn_ops = inject_lora_ops(ffn_ops, model_config, parallelism_config, chunk_size)
+        layers += ffn_ops
+        
         layers += end_repeat_layers(num_layers)
         return layers
 

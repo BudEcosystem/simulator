@@ -183,8 +183,13 @@ def get_runtime_breakdown(df:pd.DataFrame) -> RuntimeBreakdown:
 def analysis_model(model_dims, system=None, unit=Unit(), densities = None,intermediate_on_chip=False,
                     beam_size=1, beam_merge=False, model_characterstics=False):
     roofline_list = []
+    all_columns = set()  # Track all columns seen
+    
     if densities is None:
         densities = np.ones((len(model_dims), 3), dtype=float)
+    
+    # First pass: collect all data and track all columns
+    roofline_data = []
     for i, (dim, density) in enumerate(zip(model_dims, densities)):
 
         op_type = op_type_dicts[dim[-1]]
@@ -225,9 +230,18 @@ def analysis_model(model_dims, system=None, unit=Unit(), densities = None,interm
         else:
             roofline = operator_instance.get_roofline(system=system, unit=unit)
 
-        if i==0:
-            column = roofline.keys()
-        roofline_list.append([roofline[c] for c in column])
+        roofline_data.append(roofline)
+        all_columns.update(roofline.keys())
+    
+    # Convert to sorted list for consistent ordering
+    column = sorted(list(all_columns))
+    
+    # Second pass: build rows with all columns
+    for roofline in roofline_data:
+        row = []
+        for c in column:
+            row.append(roofline.get(c, None))
+        roofline_list.append(row)
 
     df = pd.DataFrame(np.array(roofline_list,dtype=object), columns=column, dtype=object)
 

@@ -1,9 +1,12 @@
 import numpy as np
 from math import ceil, lcm
 import sys
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import inspect
 from .model_quality import QualityMetricsCollection
+
+if TYPE_CHECKING:
+    from BudSimulator.LoRA.config import LoraConfig
 
 class ModelConfig():
     r"""
@@ -71,6 +74,8 @@ class ModelConfig():
         expert_layer_period = 1,
         # Quality of Model
         model_quality: Optional[QualityMetricsCollection] = None,
+        # LoRA configuration
+        lora_config: Optional['LoraConfig'] = None,
         **kwargs,
     ):
         self.model = model
@@ -157,6 +162,25 @@ class ModelConfig():
 
         # Quality of Model
         self.model_quality = model_quality
+        
+        # LoRA configuration
+        if lora_config is None:
+            # Import at runtime to avoid circular imports
+            try:
+                from ...LoRA.config import LoraConfig as LC
+            except ImportError:
+                try:
+                    # Fallback for different import contexts
+                    from BudSimulator.LoRA.config import LoraConfig as LC
+                except ImportError:
+                    # Another fallback
+                    import sys
+                    import os
+                    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+                    from LoRA.config import LoraConfig as LC
+            self.lora_config = LC(enabled=False)
+        else:
+            self.lora_config = lora_config
 
         super().__init__()
 
