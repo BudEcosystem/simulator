@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse
 import logging
 import json
+from datetime import datetime
 
 # Add parent directories to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -37,7 +38,16 @@ try:
         analyze_hf_model
     )
     from src.db import ModelManager, HuggingFaceModelImporter
+    from src.db.model_loader import patch_genz_model_dict
     from GenZ.Models import MODEL_DICT
+    
+    # Patch MODEL_DICT to use dynamic version
+    patch_success = patch_genz_model_dict()
+    if patch_success:
+        logging.info("Successfully patched MODEL_DICT with dynamic version")
+    else:
+        logging.warning("Failed to patch MODEL_DICT, using static version")
+        
 except ImportError as e:
     logging.error(f"Failed to import BudSimulator modules: {e}")
     raise
@@ -95,13 +105,18 @@ async def validate_model(request: ValidateModelRequest):
     Validate if a model URL/ID is valid and accessible.
     
     This endpoint checks if the provided model URL or ID corresponds to a valid
-    model on HuggingFace Hub or in the local database.
+    model on HuggingFace Hub, in the local database, or in user configs.
     """
     try:
-        # Check if it's already in the database
+        # Check if it's already in the main database
         db_model = model_manager.get_model(request.model_url)
         if db_model:
-            return ValidateModelResponse(valid=True, error=None)
+            return ValidateModelResponse(valid=True, error=None, model_id=request.model_url)
+        
+        # Check if user already provided config for this gated model
+        user_config = model_manager.get_user_model_config(request.model_url)
+        if user_config:
+            return ValidateModelResponse(valid=True, error=None, model_id=request.model_url)
         
         # Try to fetch from HuggingFace
         try:
@@ -113,7 +128,7 @@ async def validate_model(request: ValidateModelRequest):
             )
         except Exception as e:
             error_msg = str(e)
-            if "gated" in error_msg.lower() or "403" in error_msg:
+            if "MODEL_GATED:" in error_msg or "gated" in error_msg.lower() or "403" in error_msg:
                 return ValidateModelResponse(
                     valid=False,
                     error="This model is gated and requires authentication. Please provide the config.json manually.",
@@ -152,42 +167,53 @@ async def get_model_config(model_id: str, request: Request):
     and metadata from HuggingFace Hub.
     """
     try:
-        # Try to get from database first
-        db_model = model_manager.get_model(model_id)
+        # First try to get config from any source (user configs, database, or HuggingFace)
+        config = model_manager.get_model_config(model_id)
+        model_analysis = None
+        logo = None
         
-        if db_model:
-            config = model_manager.get_model_config(model_id)
-            model_type = db_model['model_type'] or 'unknown'
-            attention_type = db_model['attention_type']
-            parameter_count = db_model['parameter_count']
+        if config:
+            # Check if this is from a regular database model
+            db_model = model_manager.get_model(model_id)
             
-            # Get logo from database
-            logo = db_model.get('logo')
-            if logo and logo.startswith('logos/'):
-                # Convert relative path to full URL
-                logo = str(request.url_for('logos', path=logo.split('/')[-1]))
-            
-            # Get model analysis from database
-            model_analysis = None
-            if db_model.get('model_analysis'):
-                try:
-                    analysis_data = json.loads(db_model['model_analysis'])
-                    # Simply check if it's a valid dict with at least description
-                    if analysis_data and isinstance(analysis_data, dict) and 'description' in analysis_data:
-                        model_analysis = analysis_data
-                except:
-                    model_analysis = None
+            if db_model:
+                # Use database model metadata
+                model_type = db_model['model_type'] or memory_calculator.detect_model_type(config)
+                attention_type = db_model['attention_type'] or memory_calculator.detect_attention_type(config)
+                parameter_count = db_model['parameter_count'] or config.get('num_parameters')
+                
+                # Get logo from database
+                logo = db_model.get('logo')
+                if logo and logo.startswith('logos/'):
+                    # Convert relative path to full URL
+                    logo = str(request.url_for('logos', path=logo.split('/')[-1]))
+                
+                # Get model analysis from database
+                if db_model.get('model_analysis'):
+                    try:
+                        analysis_data = json.loads(db_model['model_analysis'])
+                        # Simply check if it's a valid dict with at least description
+                        if analysis_data and isinstance(analysis_data, dict) and 'description' in analysis_data:
+                            model_analysis = analysis_data
+                    except:
+                        model_analysis = None
+            else:
+                # This is either a user-provided config or fetched from HuggingFace
+                model_type = memory_calculator.detect_model_type(config)
+                attention_type = memory_calculator.detect_attention_type(config)
+                parameter_count = config.get('num_parameters')
+                logo = None  # No logo for user configs or HF-only models
         else:
-            # Fetch from HuggingFace
+            # Fallback: try to fetch from HuggingFace directly
             try:
                 config = hf_loader.get_model_config(model_id)
                 model_type = memory_calculator.detect_model_type(config)
                 attention_type = memory_calculator.detect_attention_type(config)
                 parameter_count = config.get('num_parameters')
-                logo = None  # No logo for models not in database
+                logo = None
             except Exception as e:
                 error_msg = str(e)
-                if "gated" in error_msg.lower() or "403" in error_msg:
+                if "MODEL_GATED:" in error_msg or "gated" in error_msg.lower() or "403" in error_msg:
                     raise HTTPException(
                         status_code=403, 
                         detail={
@@ -220,14 +246,6 @@ async def get_model_config(model_id: str, request: Request):
         # Extract architecture
         architectures = config.get('architectures', [])
         architecture = architectures[0] if architectures else None
-        
-        # Get model analysis from database
-        model_analysis = None
-        if db_model and db_model.get('model_analysis'):
-            try:
-                model_analysis = json.loads(db_model['model_analysis'])
-            except:
-                model_analysis = None
         
         return ModelConfigResponse(
             model_id=model_id,
@@ -280,7 +298,7 @@ async def calculate_memory(request: CalculateMemoryRequest):
                 config = hf_loader.get_model_config(request.model_id)
         except Exception as e:
             error_msg = str(e)
-            if "gated" in error_msg.lower() or "403" in error_msg:
+            if "MODEL_GATED:" in error_msg or "gated" in error_msg.lower() or "403" in error_msg:
                 raise HTTPException(
                     status_code=403,
                     detail={
@@ -409,7 +427,7 @@ async def analyze_model(request: AnalyzeModelRequest):
                 config = hf_loader.get_model_config(request.model_id)
         except Exception as e:
             error_msg = str(e)
-            if "gated" in error_msg.lower() or "403" in error_msg:
+            if "MODEL_GATED:" in error_msg or "gated" in error_msg.lower() or "403" in error_msg:
                 raise HTTPException(
                     status_code=403,
                     detail={
@@ -508,14 +526,19 @@ async def analyze_model(request: AnalyzeModelRequest):
 @router.post("/config/submit", response_model=ConfigSubmitResponse)
 async def submit_model_config(request: ConfigSubmitRequest):
     """
-    Submit a configuration for a gated model.
+    Submit a configuration for a gated model with full analysis pipeline.
     
-    This endpoint allows users to manually provide configurations for gated models
-    that require authentication to access on HuggingFace Hub.
+    This endpoint:
+    1. Validates and saves the config
+    2. Performs end-to-end config analysis (attention, model size, params)
+    3. Fetches logo from model URI
+    4. Scrapes model description from HuggingFace
+    5. Analyzes description using BudLLM
+    6. Saves all information in the gated model DB
     """
     try:
         # Validate required fields in config
-        required_fields = ['model_type', 'hidden_size', 'num_hidden_layers', 'num_attention_heads']
+        required_fields = ['hidden_size', 'num_hidden_layers', 'num_attention_heads']
         missing_fields = []
         
         for field in required_fields:
@@ -531,11 +554,115 @@ async def submit_model_config(request: ConfigSubmitRequest):
                 missing_fields=missing_fields
             )
         
-        # Save the configuration
+        # Step 1: Perform full config analysis
         try:
-            model_manager.save_user_model_config(request.model_uri, request.config)
+            # Detect model type and attention type
+            model_type = memory_calculator.detect_model_type(request.config)
+            attention_type = memory_calculator.detect_attention_type(request.config)
+            
+            # Calculate parameter count if missing
+            parameter_count = request.config.get('num_parameters')
+            if not parameter_count:
+                parameter_count = memory_calculator._calculate_transformer_params(request.config)
+                if parameter_count > 0:
+                    request.config['num_parameters'] = parameter_count
+            
+            logging.info(f"Config analysis for {request.model_uri}: {model_type}, {attention_type}, {parameter_count:,} params")
+            
         except Exception as e:
-            logging.error(f"Failed to save config for {request.model_uri}: {e}")
+            logging.error(f"Config analysis failed for {request.model_uri}: {e}")
+            model_type = 'unknown'
+            attention_type = 'unknown'
+            parameter_count = None
+        
+        # Step 2: Try to fetch logo and metadata from HuggingFace (best effort)
+        logo_url = None
+        hf_metadata = {}
+        try:
+            model_info = hf_loader.get_model_info(request.model_uri)
+            if model_info:
+                hf_metadata = {
+                    'downloads': getattr(model_info, 'downloads', 0),
+                    'likes': getattr(model_info, 'likes', 0),
+                    'tags': getattr(model_info, 'tags', [])
+                }
+                logging.info(f"Fetched HF metadata for {request.model_uri}")
+        except Exception as e:
+            logging.warning(f"Could not fetch HF metadata for {request.model_uri}: {e}")
+        
+        # Step 3: Scrape model description and analyze with BudLLM (best effort)
+        model_analysis = None
+        try:
+            from src.utils.text_extraction import extract_text_from_huggingface
+            from src.utils.llm_integration import parse_model_analysis, validate_analysis
+            from src.prompts import MODEL_ANALYSIS_PROMPT
+            from src.bud_ai import call_bud_LLM
+            
+            # Extract text from HuggingFace model page
+            hf_url = f"https://huggingface.co/{request.model_uri}"
+            logging.info(f"Extracting model description from {hf_url}")
+            
+            model_description = extract_text_from_huggingface(hf_url)
+            
+            if model_description and "Error" not in model_description:
+                # Prepare prompt for LLM analysis
+                full_prompt = MODEL_ANALYSIS_PROMPT + model_description
+                
+                # Call BudLLM for analysis
+                logging.info(f"Calling BudLLM for analysis of {request.model_uri}")
+                llm_response = call_bud_LLM(full_prompt)
+                
+                if llm_response:
+                    # Parse and validate the analysis
+                    analysis = parse_model_analysis(llm_response)
+                    model_analysis = validate_analysis(analysis)
+                    logging.info(f"Successfully analyzed {request.model_uri} with BudLLM")
+                else:
+                    logging.warning(f"BudLLM returned empty response for {request.model_uri}")
+            else:
+                logging.warning(f"Could not extract model description for {request.model_uri}")
+                
+        except Exception as e:
+            logging.warning(f"LLM analysis failed for {request.model_uri}: {e}")
+        
+        # Step 4: Save the enhanced configuration
+        try:
+            # Add metadata to config
+            enhanced_config = request.config.copy()
+            enhanced_config.update({
+                '_metadata': {
+                    'source': 'user_gated_config',
+                    'submission_timestamp': datetime.now().isoformat(),
+                    'model_type': model_type,
+                    'attention_type': attention_type,
+                    'parameter_count': parameter_count,
+                    'hf_metadata': hf_metadata,
+                    'analysis_completed': model_analysis is not None
+                }
+            })
+            
+            # Save enhanced config
+            model_manager.save_user_model_config(request.model_uri, enhanced_config)
+            
+            # Also try to add to main models table for better integration
+            try:
+                existing_model = model_manager.get_model(request.model_uri)
+                if not existing_model:
+                    model_manager.add_model(
+                        model_id=request.model_uri,
+                        config=enhanced_config,
+                        source='user_gated',
+                        model_type=model_type,
+                        attention_type=attention_type,
+                        parameter_count=parameter_count,
+                        model_analysis=model_analysis
+                    )
+                    logging.info(f"Added {request.model_uri} to main models table")
+            except Exception as e:
+                logging.warning(f"Could not add {request.model_uri} to main models table: {e}")
+            
+        except Exception as e:
+            logging.error(f"Failed to save enhanced config for {request.model_uri}: {e}")
             return ConfigSubmitResponse(
                 success=False,
                 message=f"Failed to save configuration: {str(e)}",
@@ -543,29 +670,25 @@ async def submit_model_config(request: ConfigSubmitRequest):
                 error_code="SAVE_ERROR"
             )
         
-        # Try to detect model type and attention type
-        try:
-            model_type = memory_calculator.detect_model_type(request.config)
-            attention_type = memory_calculator.detect_attention_type(request.config)
-            parameter_count = request.config.get('num_parameters')
-            
-            validation = {
-                'valid': True,
-                'model_type': model_type,
-                'attention_type': attention_type,
-                'parameter_count': parameter_count
-            }
-        except:
-            validation = {
-                'valid': True,
-                'model_type': 'unknown',
-                'attention_type': 'unknown',
-                'parameter_count': None
-            }
+        # Step 5: Prepare validation response
+        validation = {
+            'valid': True,
+            'model_type': model_type,
+            'attention_type': attention_type,
+            'parameter_count': parameter_count,
+            'analysis_completed': model_analysis is not None,
+            'metadata_fetched': bool(hf_metadata)
+        }
+        
+        success_message = "Configuration saved and analyzed successfully"
+        if model_analysis:
+            success_message += " with full LLM analysis"
+        if hf_metadata:
+            success_message += " and HuggingFace metadata"
         
         return ConfigSubmitResponse(
             success=True,
-            message="Configuration saved successfully",
+            message=success_message,
             model_id=request.model_uri,
             validation=validation
         )
@@ -696,13 +819,35 @@ async def list_all_models(request: Request):
                         if logo and logo.startswith('logos/'):
                             # Convert relative path to full URL
                             logo = str(request.url_for('logos', path=logo.split('/')[-1]))
+                        # Get model metadata using dynamic collection if available
+                        model_type = 'unknown'
+                        attention_type = None
+                        parameter_count = getattr(model_config, 'num_parameters', None)
+                        
+                        if hasattr(MODEL_DICT, 'get_model_metadata'):
+                            # Use the metadata method for accurate detection
+                            try:
+                                metadata = MODEL_DICT.get_model_metadata(model_id)
+                                if metadata:
+                                    model_type = metadata.get('model_type', 'unknown')
+                                    attention_type = metadata.get('attention_type')
+                                    parameter_count = metadata.get('parameter_count') or parameter_count
+                            except Exception as e:
+                                logging.debug(f"Failed to get metadata for {model_id}: {e}")
+                        
+                        # Fallback to direct attributes
+                        if model_type == 'unknown':
+                            model_type = getattr(model_config, 'model_type', 'unknown')
+                        if attention_type is None:
+                            attention_type = getattr(model_config, 'attention_type', None)
+                        
                         models_map[model_id] = ModelSummary(
                             model_id=model_id,
                             name=extract_model_name(model_id),
                             author=author,
-                            model_type=getattr(model_config, 'model_type', 'unknown'),
-                            attention_type=getattr(model_config, 'attention_type', None),
-                            parameter_count=getattr(model_config, 'num_parameters', None),
+                            model_type=model_type,
+                            attention_type=attention_type,
+                            parameter_count=parameter_count,
                             logo=logo,
                             model_analysis=None,
                             source="model_dict",
@@ -724,13 +869,36 @@ async def list_all_models(request: Request):
                             if logo and logo.startswith('logos/'):
                                 # Convert relative path to full URL
                                 logo = str(request.url_for('logos', path=logo.split('/')[-1]))
+                            
+                            # Get model metadata using dynamic collection if available
+                            model_type = 'unknown'
+                            attention_type = None
+                            parameter_count = getattr(model, 'num_parameters', None)
+                            
+                            if hasattr(MODEL_DICT, 'get_model_metadata'):
+                                # Use the metadata method for accurate detection
+                                try:
+                                    metadata = MODEL_DICT.get_model_metadata(model_id)
+                                    if metadata:
+                                        model_type = metadata.get('model_type', 'unknown')
+                                        attention_type = metadata.get('attention_type')
+                                        parameter_count = metadata.get('parameter_count') or parameter_count
+                                except Exception as e:
+                                    logging.debug(f"Failed to get metadata for {model_id}: {e}")
+                            
+                            # Fallback to direct attributes
+                            if model_type == 'unknown':
+                                model_type = getattr(model, 'model_type', 'unknown')
+                            if attention_type is None:
+                                attention_type = getattr(model, 'attention_type', None)
+                            
                             models_map[model_id] = ModelSummary(
                                 model_id=model_id,
                                 name=extract_model_name(model_id),
                                 author=author,
-                                model_type=getattr(model, 'model_type', 'unknown'),
-                                attention_type=getattr(model, 'attention_type', None),
-                                parameter_count=getattr(model, 'num_parameters', None),
+                                model_type=model_type,
+                                attention_type=attention_type,
+                                parameter_count=parameter_count,
                                 logo=logo,
                                 model_analysis=None,
                                 source="model_dict",
@@ -784,8 +952,15 @@ async def list_all_models(request: Request):
                 # Model exists in both - update the entry
                 models_map[model_id].source = "both"
                 models_map[model_id].in_database = True
-                models_map[model_id].logo = summary.logo
+                models_map[model_id].logo = summary.logo or models_map[model_id].logo
                 models_map[model_id].model_analysis = summary.model_analysis
+                # Use database values for metadata if they're not unknown/null
+                if summary.model_type and summary.model_type != 'unknown':
+                    models_map[model_id].model_type = summary.model_type
+                if summary.attention_type:
+                    models_map[model_id].attention_type = summary.attention_type
+                if summary.parameter_count:
+                    models_map[model_id].parameter_count = summary.parameter_count
             else:
                 # Model only in database
                 models_map[model_id] = summary
@@ -1078,7 +1253,31 @@ async def get_model_details(model_id: str, request: Request):
     Get full details for a specific model, including config and analysis.
     """
     try:
-        # First try to get from database
+        # First check for user-provided config (gated models) using enhanced method
+        user_config_check = model_manager.get_user_model_config(model_id)
+        if user_config_check:
+            # Model found in user configs (gated model) - use enhanced config with calculated parameters
+            config = model_manager.get_model_config(model_id)  # This calculates missing parameters
+            model_type = memory_calculator.detect_model_type(config)
+            attention_type = memory_calculator.detect_attention_type(config)
+            parameter_count = config.get('num_parameters')
+            
+            return ModelDetailResponse(
+                model_id=model_id,
+                name=extract_model_name(model_id),
+                author=model_id.split('/')[0] if '/' in model_id else None,
+                model_type=model_type,
+                attention_type=attention_type,
+                parameter_count=parameter_count,
+                logo=None,  # No logo for user-provided configs
+                source="user_config",
+                in_database=False,
+                in_model_dict=False,
+                config=config,
+                analysis=None  # No analysis for user configs
+            )
+        
+        # Then try to get from database
         model_data = model_manager.get_model(model_id)
         
         if model_data:
@@ -1110,18 +1309,28 @@ async def get_model_details(model_id: str, request: Request):
         try:
             model_config = MODEL_DICT.get_model(model_id)
             if model_config:
-                # Get config from HuggingFace if available
+                # Get config from HuggingFace if available, otherwise try user config
+                config = {}
                 try:
                     hf_config = hf_loader.get_model_config(model_id)
                     config = hf_config
                 except:
-                    config = {}
+                    # If HuggingFace fails, try user config
+                    user_config = model_manager.get_user_model_config(model_id)
+                    if user_config:
+                        config = user_config
                 
                 # Extract basic info
                 author = model_id.split('/')[0] if '/' in model_id else None
                 model_type = getattr(model_config, 'model_type', 'unknown')
                 attention_type = getattr(model_config, 'attention_type', None)
                 parameter_count = getattr(model_config, 'num_parameters', None)
+                
+                # If we got config, use its calculated values
+                if config:
+                    model_type = memory_calculator.detect_model_type(config) or model_type
+                    attention_type = memory_calculator.detect_attention_type(config) or attention_type
+                    parameter_count = config.get('num_parameters') or parameter_count
                 
                 logo = getattr(model_config, 'logo', None)
                 if logo and logo.startswith('logos/'):
@@ -1145,7 +1354,7 @@ async def get_model_details(model_id: str, request: Request):
         except Exception as e:
             logging.debug(f"Error getting model from MODEL_DICT: {e}")
         
-        # Model not found in either source
+        # Model not found in any source
         raise HTTPException(status_code=404, detail="Model not found")
         
     except HTTPException:

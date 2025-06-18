@@ -1645,39 +1645,111 @@ const AIMemoryCalculator = () => {
             <h2 className="text-xl font-semibold mb-6 flex items-center space-x-2">
               <Cpu className="w-5 h-5 text-purple-500" />
               <span>Recommended Hardware</span>
+              <span className="text-sm text-gray-400 ml-2">
+                ({hardwareRecommendations.length} options)
+              </span>
             </h2>
 
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {hardwareRecommendations.slice(0, 6).map((hw, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleHardwareNavigation(hw.hardware_name)}
-                  className="bg-gray-800/50 p-4 rounded-xl border border-gray-700 hover:border-purple-500/50 transition-all duration-200 text-left group"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <h3 className="font-semibold text-white group-hover:text-purple-300 transition-colors line-clamp-2">
-                      {hw.hardware_name}
-                    </h3>
-                    <span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded-full whitespace-nowrap ml-2 border border-purple-500/30">
-                      {hw.type?.toUpperCase()}
-                    </span>
-                  </div>
-                  
-                  <div className="space-y-2 text-sm text-gray-300">
-                    <div className="flex justify-between">
-                      <span>Nodes Required:</span>
-                      <span className="font-medium">{hw.nodes_required}</span>
+            <div className="space-y-3">
+              {hardwareRecommendations.slice(0, 8).map((hw, index) => {
+                // Get optimality styling
+                const getOptimalityStyles = (optimality: string) => {
+                  switch (optimality) {
+                    case 'optimal':
+                      return {
+                        border: 'border-green-500/30',
+                        bg: 'bg-green-500/5',
+                        indicator: 'bg-green-500',
+                        text: 'text-green-400'
+                      };
+                    case 'good':
+                      return {
+                        border: 'border-yellow-500/30',
+                        bg: 'bg-yellow-500/5',
+                        indicator: 'bg-yellow-500',
+                        text: 'text-yellow-400'
+                      };
+                    default:
+                      return {
+                        border: 'border-orange-500/30',
+                        bg: 'bg-orange-500/5',
+                        indicator: 'bg-orange-500',
+                        text: 'text-orange-400'
+                      };
+                  }
+                };
+
+                const styles = getOptimalityStyles(hw.optimality);
+
+                return (
+                  <button
+                    key={index}
+                    onClick={() => handleHardwareNavigation(hw.hardware_name)}
+                    className={`w-full p-4 rounded-xl border ${styles.border} ${styles.bg} hover:border-purple-500/50 transition-all duration-200 text-left group relative`}
+                  >
+                    {/* Optimality Indicator */}
+                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${styles.indicator} rounded-l-xl`}></div>
+                    
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0 pr-4">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <h3 className="font-semibold text-white group-hover:text-purple-300 transition-colors line-clamp-2">
+                            {hw.hardware_name}
+                          </h3>
+                          <span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded-full whitespace-nowrap border border-purple-500/30">
+                            {hw.type?.toUpperCase()}
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-300">
+                          <div>
+                            <span className="text-gray-500">Nodes:</span>
+                            <span className="font-medium ml-1">{hw.nodes_required}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Memory:</span>
+                            <span className="font-medium ml-1">{hw.memory_per_chip} GB</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Utilization:</span>
+                            <span className={`font-medium ml-1 ${styles.text}`}>{hw.utilization}%</span>
+                          </div>
+                          {hw.manufacturer && (
+                            <div>
+                              <span className="text-gray-500">Mfr:</span>
+                              <span className="font-medium ml-1">{hw.manufacturer}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Optimality Badge */}
+                      <div className={`flex items-center space-x-1 ${styles.text}`}>
+                        <div className={`w-2 h-2 rounded-full ${styles.indicator}`}></div>
+                        <span className="text-xs font-medium capitalize">{hw.optimality}</span>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Memory per Chip:</span>
-                      <span className="font-medium">{hw.memory_per_chip} GB</span>
-                    </div>
-                    {hw.manufacturer && (
-                      <div className="text-xs text-gray-500 mt-2">{hw.manufacturer}</div>
-                    )}
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Legend */}
+            <div className="mt-4 pt-4 border-t border-gray-700">
+              <div className="flex items-center justify-center space-x-6 text-xs text-gray-400">
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                  <span>Most Optimal</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                  <span>Good Choice</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+                  <span>Acceptable</span>
+                </div>
+              </div>
             </div>
 
             <div className="text-center mt-4">

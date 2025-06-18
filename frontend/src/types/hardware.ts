@@ -45,6 +45,8 @@ export interface HardwareRecommendation {
   memory_per_chip: number;
   manufacturer: string | null;
   type: string;
+  optimality: 'optimal' | 'good' | 'ok';
+  utilization: number;
 }
 
 export interface HardwareFilters {

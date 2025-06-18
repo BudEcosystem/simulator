@@ -216,6 +216,38 @@ class DynamicModelCollection(ModelCollection):
         
         return int(total_params)
 
+    def _detect_model_type(self, config: ModelConfig) -> str:
+        """Detect model type from GenZ config."""
+        if config.num_experts > 1:
+            return "moe"
+        elif config.num_encoder_layers > 0 and config.num_decoder_layers > 0:
+            return "encoder-decoder"
+        elif config.num_encoder_layers > 0:
+            return "encoder-only"
+        else:
+            return "decoder-only"
+
+    def get_model_metadata(self, model_id: str) -> Dict[str, Any]:
+        """Get model metadata for API responses."""
+        model_config = self.get_model(model_id)
+        if not model_config:
+            return {}
+        
+        attention_type = self._detect_attention_type(model_config)
+        model_type = self._detect_model_type(model_config)
+        parameter_count = self._estimate_parameters(model_config)
+        
+        metadata = {
+            'model_id': model_config.model,
+            'model_name': model_config.model.split('/')[-1] if '/' in model_config.model else model_config.model,
+            'parameter_count': parameter_count,
+            'attention_type': attention_type,
+            'model_type': model_type,
+            'source': 'genz',
+        }
+        
+        return metadata
+
 
 def create_dynamic_model_dict(base_model_dict: Optional[ModelCollection] = None,
                              auto_import: bool = True) -> DynamicModelCollection:

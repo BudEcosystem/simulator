@@ -12,6 +12,21 @@ from .connection import DatabaseConnection
 
 logger = logging.getLogger(__name__)
 
+# Import ModelMemoryCalculator for parameter calculation
+try:
+    from ..bud_models import ModelMemoryCalculator
+    _calculator = None
+    
+    def get_calculator():
+        global _calculator
+        if _calculator is None:
+            _calculator = ModelMemoryCalculator()
+        return _calculator
+except ImportError:
+    logger.warning("Could not import ModelMemoryCalculator")
+    def get_calculator():
+        return None
+
 
 class ModelManager:
     """Manager class for model CRUD operations."""
@@ -97,21 +112,41 @@ class ModelManager:
         Returns:
             Model configuration dictionary or None if not found
         """
+        config = None
+        
         # First check user-provided configs for gated models
         user_config = self.get_user_model_config(model_id)
         if user_config:
-            return user_config
+            config = user_config.copy()
+        else:
+            # Then check regular models table
+            model = self.get_model(model_id)
+            if model and model.get('config_json'):
+                config = json.loads(model['config_json'])
+                if model.get('model_analysis'):
+                    config['model_analysis'] = json.loads(model['model_analysis'])
+                if model.get('logo'):
+                    config['logo'] = model['logo']
+        
+        if config is None:
+            return None
             
-        # Then check regular models table
-        model = self.get_model(model_id)
-        if model and model.get('config_json'):
-            config = json.loads(model['config_json'])
-            if model.get('model_analysis'):
-                config['model_analysis'] = json.loads(model['model_analysis'])
-            if model.get('logo'):
-                config['logo'] = model['logo']
-            return config
-        return None
+        # Calculate missing parameter count if needed
+        if config.get('num_parameters') is None:
+            calculator = get_calculator()
+            if calculator:
+                try:
+                    # Check if we have enough architectural data to calculate parameters
+                    required_fields = ['hidden_size', 'num_hidden_layers', 'num_attention_heads']
+                    if all(field in config for field in required_fields):
+                        param_count = calculator._calculate_transformer_params(config)
+                        if param_count > 0:
+                            config['num_parameters'] = param_count
+                            logger.debug(f"Calculated parameter count for {model_id}: {param_count:,}")
+                except Exception as e:
+                    logger.warning(f"Failed to calculate parameter count for {model_id}: {e}")
+        
+        return config
     
     def update_model(self, model_id: str, config: Dict[str, Any],
                     model_type: Optional[str] = None,

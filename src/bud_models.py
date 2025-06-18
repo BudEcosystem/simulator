@@ -756,9 +756,9 @@ class HuggingFaceConfigLoader:
                 return config
                 
             except GatedRepoError:
-                # Re-raise gated repo errors immediately
+                # Re-raise gated repo errors with a specific indicator
                 raise Exception(
-                    f"Model '{model_id}' is gated. You need to:\n"
+                    f"MODEL_GATED: Model '{model_id}' is gated. You need to:\n"
                     f"1. Request access at https://huggingface.co/{model_id}\n"
                     f"2. Use a token with access: HuggingFaceConfigLoader(token='your_token')"
                 )

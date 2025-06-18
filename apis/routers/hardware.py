@@ -125,6 +125,8 @@ class RecommendationResponse(BaseModel):
     memory_per_chip: float
     manufacturer: Optional[str] = None
     type: str
+    optimality: str = Field(..., description="Optimality indicator: 'optimal', 'good', 'ok'")
+    utilization: float = Field(..., description="Memory utilization percentage")
 
 
 @router.post("", response_model=HardwareResponse)
