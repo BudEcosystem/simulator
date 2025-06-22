@@ -14,7 +14,15 @@ logger = logging.getLogger(__name__)
 
 # Import ModelMemoryCalculator for parameter calculation
 try:
-    from ..bud_models import ModelMemoryCalculator
+    import sys
+    import os
+    # Add parent directory to path for import
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(current_dir)
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+    
+    from bud_models import ModelMemoryCalculator
     _calculator = None
     
     def get_calculator():
@@ -22,8 +30,8 @@ try:
         if _calculator is None:
             _calculator = ModelMemoryCalculator()
         return _calculator
-except ImportError:
-    logger.warning("Could not import ModelMemoryCalculator")
+except ImportError as e:
+    logger.warning(f"Could not import ModelMemoryCalculator: {e}")
     def get_calculator():
         return None
 
@@ -122,15 +130,48 @@ class ModelManager:
             # Then check regular models table
             model = self.get_model(model_id)
             if model and model.get('config_json'):
-                config = json.loads(model['config_json'])
-                if model.get('model_analysis'):
-                    config['model_analysis'] = json.loads(model['model_analysis'])
-                if model.get('logo'):
+                config_raw = model['config_json']
+                
+                # Handle both string and dict cases
+                if isinstance(config_raw, str):
+                    try:
+                        config = json.loads(config_raw)
+                    except (json.JSONDecodeError, TypeError):
+                        logger.warning(f"Failed to parse config JSON for {model_id}")
+                        config = {}
+                elif isinstance(config_raw, dict):
+                    config = config_raw
+                else:
+                    config = {}
+                
+                # Add analysis and logo if available
+                if model.get('model_analysis') and isinstance(config, dict):
+                    try:
+                        config['model_analysis'] = json.loads(model['model_analysis'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                        
+                if model.get('logo') and isinstance(config, dict):
                     config['logo'] = model['logo']
         
         if config is None:
             return None
             
+        # Ensure config is a dictionary - but try to recover data first
+        if not isinstance(config, dict):
+            if isinstance(config, str):
+                try:
+                    # Try to parse if it's a JSON string
+                    config = json.loads(config)
+                    logger.debug(f"Successfully parsed string config for {model_id}")
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(f"Config for {model_id} is an unparseable string, using empty dict for calculations")
+                    # Only use empty dict for calculations, preserve original for display
+                    config = {}
+            else:
+                logger.warning(f"Config for {model_id} is not a dictionary or string, using empty dict for calculations")
+                config = {}
+        
         # Calculate missing parameter count if needed
         if config.get('num_parameters') is None:
             calculator = get_calculator()

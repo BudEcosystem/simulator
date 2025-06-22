@@ -189,30 +189,78 @@ class DynamicModelCollection(ModelCollection):
             return "mha"
     
     def _estimate_parameters(self, config: ModelConfig) -> int:
-        """Estimate parameter count from GenZ config."""
-        # This is a simplified estimation
+        """Accurate parameter count from GenZ config using unified calculation."""
+        try:
+            # Convert GenZ config to HF format for unified calculation
+            hf_config = self.converter.genz_to_hf(config)
+            
+            # Use the same accurate calculation as ModelMemoryCalculator
+            from src.bud_models import ModelMemoryCalculator
+            calculator = ModelMemoryCalculator()
+            
+            # Check if we have direct parameter count
+            if hasattr(config, 'num_parameters') and config.num_parameters:
+                return int(config.num_parameters)
+            
+            # Use the sophisticated calculation method
+            param_count = calculator._calculate_transformer_params(hf_config)
+            return int(param_count)
+            
+        except Exception as e:
+            logger.warning(f"Failed to use unified calculation for {config.model}, falling back to simplified: {e}")
+            # Fallback to improved simplified calculation
+            return self._fallback_parameter_estimation(config)
+    
+    def _fallback_parameter_estimation(self, config: ModelConfig) -> int:
+        """Improved fallback parameter estimation for GenZ config."""
+        # Embeddings (with tie_word_embeddings consideration)
         vocab_params = config.vocab_size * config.hidden_size
+        if not getattr(config, 'tie_word_embeddings', True):
+            vocab_params *= 2  # Input and output embeddings
         
-        # Attention parameters per layer
-        attention_params = 4 * config.hidden_size * config.hidden_size
+        # Calculate KV dimensions based on attention type
+        attention_type = self._detect_attention_type(config)
+        if attention_type == "mqa":
+            # Multi-Query: single KV head
+            head_dim = config.hidden_size // max(1, config.num_attention_heads)
+            kv_dim = head_dim
+        elif attention_type == "gqa":
+            # Grouped-Query: fewer KV heads
+            head_dim = config.hidden_size // max(1, config.num_attention_heads) 
+            kv_dim = head_dim * config.num_key_value_heads
+        else:
+            # Multi-Head: full dimension
+            kv_dim = config.hidden_size
         
-        # FFN parameters per layer
-        ffn_params = 2 * config.hidden_size * config.intermediate_size
-        if config.num_ffi > 2:
-            ffn_params = int(ffn_params * 1.5)  # Account for gated activations
+        # Attention parameters with proper KV dimensions
+        # Q: hidden_size -> hidden_size
+        # K, V: hidden_size -> kv_dim  
+        # O: hidden_size -> hidden_size
+        attention_params = (
+            config.hidden_size * config.hidden_size +  # Q projection
+            config.hidden_size * kv_dim +              # K projection
+            config.hidden_size * kv_dim +              # V projection  
+            config.hidden_size * config.hidden_size   # O projection
+        )
         
-        # Layer norm parameters
+        # FFN parameters with activation function multiplier
+        ffn_mult = 3 if config.num_ffi == 2 else 2  # SwiGLU vs GELU
+        ffn_params = ffn_mult * config.hidden_size * config.intermediate_size
+        
+        # Layer norm parameters (2 per layer typically)
         ln_params = 4 * config.hidden_size
         
-        # Total
+        # Per-layer parameters
         layer_params = attention_params + ffn_params + ln_params
         total_layers = config.num_encoder_layers + config.num_decoder_layers
         
-        # MoE scaling
+        # MoE scaling (multiply FFN by number of experts)
         if config.num_experts > 1:
-            ffn_params *= config.num_experts
+            expert_ffn_params = ffn_params * config.num_experts
+            layer_params = attention_params + expert_ffn_params + ln_params
         
-        total_params = vocab_params + (total_layers * layer_params)
+        # Total parameters
+        total_params = vocab_params + (total_layers * layer_params) + config.hidden_size  # Final layer norm
         
         return int(total_params)
 

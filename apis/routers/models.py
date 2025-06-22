@@ -959,8 +959,10 @@ async def list_all_models(request: Request):
                     models_map[model_id].model_type = summary.model_type
                 if summary.attention_type:
                     models_map[model_id].attention_type = summary.attention_type
-                if summary.parameter_count:
-                    models_map[model_id].parameter_count = summary.parameter_count
+                # Always prioritize database parameter count over MODEL_DICT calculation
+                # This ensures we use our corrected UniversalParameterCounter values
+                # Use database parameter count even if it's 0 (some models might legitimately have 0 params)
+                models_map[model_id].parameter_count = summary.parameter_count
             else:
                 # Model only in database
                 models_map[model_id] = summary
@@ -1281,14 +1283,35 @@ async def get_model_details(model_id: str, request: Request):
         model_data = model_manager.get_model(model_id)
         
         if model_data:
-            # Model found in database
-            config = json.loads(model_data.get('config_json', '{}'))
-            analysis = json.loads(model_data.get('model_analysis', '{}')) if model_data.get('model_analysis') else None
+            # Model found in database - use processed config which works correctly
+            config = model_manager.get_model_config(model_id)
+            if not config:
+                config = {}
+            
+            logging.info(f"Using processed config for {model_id}, type: {type(config)}, keys: {len(config) if isinstance(config, dict) else 'N/A'}")
+            
+            # Handle analysis
+            analysis_raw = model_data.get('model_analysis')
+            analysis = None
+            if analysis_raw:
+                if isinstance(analysis_raw, str):
+                    try:
+                        analysis = json.loads(analysis_raw)
+                    except (json.JSONDecodeError, TypeError):
+                        analysis = None
+                elif isinstance(analysis_raw, dict):
+                    analysis = analysis_raw
             
             logo = model_data.get('logo')
             if logo and logo.startswith('logos/'):
                 # Convert relative path to full URL
                 logo = str(request.url_for('logos', path=logo.split('/')[-1]))
+
+            # Use database parameter count if available, otherwise use config calculation
+            # This ensures we use our corrected UniversalParameterCounter values from the database
+            parameter_count = model_data.get('parameter_count')
+            if not parameter_count and config:
+                parameter_count = config.get('num_parameters')
 
             return ModelDetailResponse(
                 model_id=model_data['model_id'],
@@ -1296,7 +1319,7 @@ async def get_model_details(model_id: str, request: Request):
                 author=model_data['model_id'].split('/')[0] if '/' in model_data['model_id'] else None,
                 model_type=model_data.get('model_type') or 'unknown',
                 attention_type=model_data.get('attention_type'),
-                parameter_count=model_data.get('parameter_count'),
+                parameter_count=parameter_count,
                 logo=logo,
                 source=model_data.get('source', 'database'),
                 in_database=True,
