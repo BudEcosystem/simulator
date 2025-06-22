@@ -1307,10 +1307,11 @@ async def get_model_details(model_id: str, request: Request):
                 # Convert relative path to full URL
                 logo = str(request.url_for('logos', path=logo.split('/')[-1]))
 
-            # Use database parameter count if available, otherwise use config calculation
+            # Always prioritize database parameter count over any calculated values
             # This ensures we use our corrected UniversalParameterCounter values from the database
+            # Only fall back to config calculation if database has no value at all
             parameter_count = model_data.get('parameter_count')
-            if not parameter_count and config:
+            if parameter_count is None and config:
                 parameter_count = config.get('num_parameters')
 
             return ModelDetailResponse(

@@ -68,7 +68,7 @@ async def health_check():
         }
         
         # Database check
-        db_path = Path.home() / ".genz_simulator" / "db" / "models.db"
+        db_path = Path(__file__).parent.parent / "data" / "prepopulated.db"
         if db_path.exists():
             try:
                 conn = sqlite3.connect(db_path)
@@ -173,7 +173,7 @@ async def system_diagnostics():
 async def readiness_check():
     """Simple readiness check."""
     # Check if database exists
-    db_path = Path.home() / ".genz_simulator" / "db" / "models.db"
+    db_path = Path(__file__).parent.parent / "data" / "prepopulated.db"
     
     if not db_path.exists():
         return {"ready": False, "reason": "Database not initialized"}

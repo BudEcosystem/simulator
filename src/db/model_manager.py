@@ -173,19 +173,27 @@ class ModelManager:
                 config = {}
         
         # Calculate missing parameter count if needed
+        # Always prioritize database parameter count over dynamic calculation
         if config.get('num_parameters') is None:
-            calculator = get_calculator()
-            if calculator:
-                try:
-                    # Check if we have enough architectural data to calculate parameters
-                    required_fields = ['hidden_size', 'num_hidden_layers', 'num_attention_heads']
-                    if all(field in config for field in required_fields):
-                        param_count = calculator._calculate_transformer_params(config)
-                        if param_count > 0:
-                            config['num_parameters'] = param_count
-                            logger.debug(f"Calculated parameter count for {model_id}: {param_count:,}")
-                except Exception as e:
-                    logger.warning(f"Failed to calculate parameter count for {model_id}: {e}")
+            # First check if we have a database parameter count
+            db_model = self.get_model(model_id)
+            if db_model and db_model.get('parameter_count'):
+                config['num_parameters'] = db_model['parameter_count']
+                logger.debug(f"Used database parameter count for {model_id}: {db_model['parameter_count']:,}")
+            else:
+                # Only calculate if no database value exists
+                calculator = get_calculator()
+                if calculator:
+                    try:
+                        # Check if we have enough architectural data to calculate parameters
+                        required_fields = ['hidden_size', 'num_hidden_layers', 'num_attention_heads']
+                        if all(field in config for field in required_fields):
+                            param_count = calculator._calculate_transformer_params(config)
+                            if param_count > 0:
+                                config['num_parameters'] = param_count
+                                logger.debug(f"Calculated parameter count for {model_id}: {param_count:,}")
+                    except Exception as e:
+                        logger.warning(f"Failed to calculate parameter count for {model_id}: {e}")
         
         return config
     

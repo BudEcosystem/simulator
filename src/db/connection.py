@@ -36,10 +36,10 @@ class DatabaseConnection:
             return
             
         if db_path is None:
-            # Default database location
-            db_dir = Path.home() / '.genz_simulator' / 'db'
+            # Default database location - use local prepopulated.db
+            db_dir = Path(__file__).parent.parent.parent / 'data'
             db_dir.mkdir(parents=True, exist_ok=True)
-            db_path = str(db_dir / 'models.db')
+            db_path = str(db_dir / 'prepopulated.db')
             
         self.db_path = db_path
         self._conn = None

@@ -13,8 +13,8 @@ def migrate_add_logo_and_analysis():
     """Add logo and model_analysis columns to the models table."""
     
     # Get the database path (matching the path in connection.py)
-    db_dir = Path.home() / '.genz_simulator' / 'db'
-    db_path = db_dir / 'models.db'
+    db_dir = Path(__file__).parent.parent.parent / 'data'
+    db_path = db_dir / 'prepopulated.db'
     
     if not db_path.exists():
         logger.error(f"Database not found at {db_path}")

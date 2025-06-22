@@ -59,7 +59,7 @@ def check_database() -> Tuple[bool, dict]:
     """Check database setup."""
     print_test("Database")
     
-    db_path = Path.home() / ".genz_simulator" / "db" / "models.db"
+    db_path = Path(__file__).parent / "data" / "prepopulated.db"
     
     if not db_path.exists():
         print_fail(f"Database not found at {db_path}")

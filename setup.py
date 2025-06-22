@@ -166,18 +166,16 @@ class BudSimulatorSetup:
         """Set up database with pre-populated data."""
         self.print_step("Setting up database...")
         
-        # Create database directory
-        db_dir = Path.home() / ".genz_simulator" / "db"
+        # Create local data directory
+        db_dir = self.root_dir / "data"
         db_dir.mkdir(parents=True, exist_ok=True)
         
         # Check if we have a pre-populated database
         prepop_db = self.root_dir / "data" / "prepopulated.db"
-        target_db = db_dir / "models.db"
         
         if prepop_db.exists():
-            # Copy pre-populated database
-            shutil.copy2(prepop_db, target_db)
-            self.print_success("Pre-populated database copied")
+            # Database already exists
+            self.print_success("Pre-populated database found")
         else:
             # Run database setup script
             setup_script = self.root_dir / "scripts" / "setup_database.py"
