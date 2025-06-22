@@ -1882,6 +1882,9 @@ const AIMemoryCalculator = () => {
                   <span>Acceptable (&lt;50%)</span>
                 </div>
               </div>
+              <div className="text-center mt-2">
+                <span className="text-xs text-gray-500">Sorted by: Lowest nodes required first, then highest utilization</span>
+              </div>
             </div>
 
             <div className="text-center mt-4">

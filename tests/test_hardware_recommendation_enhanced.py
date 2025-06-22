@@ -66,26 +66,40 @@ class TestEnhancedHardwareRecommendation:
         ]
     
     def test_utilization_based_sorting(self, recommender, mock_hardware_data):
-        """Test that hardware is sorted by utilization in descending order."""
+        """Test that hardware is sorted by nodes required first, then utilization."""
         with patch.object(recommender.hardware, 'get_all_hardwares', return_value=mock_hardware_data):
             result = recommender.recommend_hardware(
                 total_memory_gb=150.0,
                 model_params_b=70.0
             )
             
-            # Check GPU recommendations are sorted by utilization
+            # Check GPU recommendations are sorted by nodes required first, then utilization
             gpu_recs = result['gpu_recommendations']
             assert len(gpu_recs) > 0
             
-            # Verify descending utilization order
-            utilizations = [rec['utilization'] for rec in gpu_recs]
-            assert utilizations == sorted(utilizations, reverse=True)
+            # Verify sorting: nodes_required ascending, then utilization descending
+            for i in range(len(gpu_recs) - 1):
+                current = gpu_recs[i]
+                next_rec = gpu_recs[i + 1]
+                
+                # If nodes are different, current should have fewer or equal nodes
+                if current['nodes_required'] != next_rec['nodes_required']:
+                    assert current['nodes_required'] <= next_rec['nodes_required']
+                # If nodes are the same, current should have higher or equal utilization
+                else:
+                    assert current['utilization'] >= next_rec['utilization']
             
-            # Check CPU recommendations are sorted by utilization
+            # Check CPU recommendations follow same sorting
             cpu_recs = result['cpu_recommendations']
-            if len(cpu_recs) > 0:
-                cpu_utilizations = [rec['utilization'] for rec in cpu_recs]
-                assert cpu_utilizations == sorted(cpu_utilizations, reverse=True)
+            if len(cpu_recs) > 1:
+                for i in range(len(cpu_recs) - 1):
+                    current = cpu_recs[i]
+                    next_rec = cpu_recs[i + 1]
+                    
+                    if current['nodes_required'] != next_rec['nodes_required']:
+                        assert current['nodes_required'] <= next_rec['nodes_required']
+                    else:
+                        assert current['utilization'] >= next_rec['utilization']
     
     def test_cpu_gpu_separation(self, recommender, mock_hardware_data):
         """Test that CPUs and GPUs are properly separated."""

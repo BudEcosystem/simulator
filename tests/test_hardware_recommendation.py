@@ -143,23 +143,40 @@ class TestHardwareRecommendation(unittest.TestCase):
     
     @patch.object(HardwareRecommendation, '__init__', lambda x: None)
     def test_sorting_by_utilization(self):
-        """Test recommendations are sorted by utilization in descending order."""
+        """Test recommendations are sorted by nodes required first, then utilization."""
         self.recommender = HardwareRecommendation()
         self.recommender.hardware = Mock()
         self.recommender.hardware.get_all_hardwares.return_value = self.mock_hardware
         
         result = self.recommender.recommend_hardware(500.0)
         
-        # Check GPU recommendations are sorted by utilization (descending)
-        gpu_utilizations = [r['utilization'] for r in result['gpu_recommendations']]
-        self.assertEqual(gpu_utilizations, sorted(gpu_utilizations, reverse=True))
+        # Check GPU recommendations are sorted by nodes required first, then utilization
+        gpu_recs = result['gpu_recommendations']
+        if len(gpu_recs) > 1:
+            for i in range(len(gpu_recs) - 1):
+                current = gpu_recs[i]
+                next_rec = gpu_recs[i + 1]
+                
+                # If nodes are different, current should have fewer or equal nodes
+                if current['nodes_required'] != next_rec['nodes_required']:
+                    self.assertLessEqual(current['nodes_required'], next_rec['nodes_required'])
+                # If nodes are the same, current should have higher or equal utilization
+                else:
+                    self.assertGreaterEqual(current['utilization'], next_rec['utilization'])
         
-        # Check CPU recommendations are sorted by utilization (descending)
-        if len(result['cpu_recommendations']) > 1:
-            cpu_utilizations = [r['utilization'] for r in result['cpu_recommendations']]
-            self.assertEqual(cpu_utilizations, sorted(cpu_utilizations, reverse=True))
+        # Check CPU recommendations follow same sorting
+        cpu_recs = result['cpu_recommendations']
+        if len(cpu_recs) > 1:
+            for i in range(len(cpu_recs) - 1):
+                current = cpu_recs[i]
+                next_rec = cpu_recs[i + 1]
+                
+                if current['nodes_required'] != next_rec['nodes_required']:
+                    self.assertLessEqual(current['nodes_required'], next_rec['nodes_required'])
+                else:
+                    self.assertGreaterEqual(current['utilization'], next_rec['utilization'])
         
-        # Verify specific calculations
+        # Verify specific calculations remain correct
         # CPU: 500/300 = 2 nodes
         # MI300X: 500/192 = 3 nodes
         # H100: 500/80 = 7 nodes

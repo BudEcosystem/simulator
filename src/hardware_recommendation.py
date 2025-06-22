@@ -18,7 +18,8 @@ class HardwareRecommendation:
         Recommend hardware based on memory requirements with intelligent sorting.
         
         Enhanced Logic:
-        - Sort hardware by utilization in descending order
+        - Sort hardware by nodes required (ascending), then utilization (descending)
+        - This prioritizes hardware requiring fewer nodes for simpler deployment
         - Separate CPU and GPU recommendations
         - Add batch recommendations for small models on CPUs
         - Model size detection (<14B considered "small")
@@ -115,9 +116,10 @@ class HardwareRecommendation:
             else:
                 gpu_recommendations.append(hardware_rec)
         
-        # Sort by utilization in descending order (highest utilization first)
-        cpu_recommendations.sort(key=lambda x: x['utilization'], reverse=True)
-        gpu_recommendations.sort(key=lambda x: x['utilization'], reverse=True)
+        # Sort by nodes required (ascending) first, then by utilization (descending)
+        # This prioritizes hardware that needs fewer nodes while maintaining high utilization
+        cpu_recommendations.sort(key=lambda x: (x['nodes_required'], -x['utilization']))
+        gpu_recommendations.sort(key=lambda x: (x['nodes_required'], -x['utilization']))
         
         # Add optimality indicators based on utilization
         def add_optimality(recommendations):
