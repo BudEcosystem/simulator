@@ -47,6 +47,27 @@ export interface HardwareRecommendation {
   type: string;
   optimality: 'optimal' | 'good' | 'ok';
   utilization: number;
+  total_memory_available?: number;
+  batch_recommendations?: BatchRecommendation[];
+}
+
+export interface BatchRecommendation {
+  nodes: number;
+  total_memory: number;
+  recommended_batch_size: number;
+  utilization_at_batch: number;
+}
+
+export interface HardwareRecommendationResponse {
+  cpu_recommendations: HardwareRecommendation[];
+  gpu_recommendations: HardwareRecommendation[];
+  model_info: {
+    is_small_model: boolean;
+    cpu_compatible: boolean;
+    total_memory_gb: number;
+    model_params_b: number;
+  };
+  total_recommendations?: number;
 }
 
 export interface HardwareFilters {

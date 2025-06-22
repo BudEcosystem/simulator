@@ -1,5 +1,5 @@
 // Hardware API service functions
-import { Hardware, HardwareDetail, HardwareRecommendation } from '../types/hardware';
+import { Hardware, HardwareDetail, HardwareRecommendation, HardwareRecommendationResponse } from '../types/hardware';
 
 const API_BASE = '/api';
 
@@ -23,7 +23,7 @@ export const hardwareAPI = {
   },
 
   // Get hardware recommendations based on memory requirements
-  recommend: async (totalMemoryGB: number, modelParamsB: number): Promise<HardwareRecommendation[]> => {
+  recommend: async (totalMemoryGB: number, modelParamsB: number): Promise<HardwareRecommendationResponse> => {
     const response = await fetch(`${API_BASE}/hardware/recommend`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

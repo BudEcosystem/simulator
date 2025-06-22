@@ -107,11 +107,8 @@ def create_hardware_routes(app):
             recommender = HardwareRecommendation()
             recommendations = recommender.recommend_hardware(total_memory_gb, model_params_b)
             
-            return jsonify({
-                'success': True,
-                'recommendations': recommendations,
-                'count': len(recommendations)
-            }), 200
+            # Return the enhanced structure directly
+            return jsonify(recommendations), 200
             
         except ValueError as e:
             return jsonify({

@@ -4,7 +4,7 @@ import ModelDetails from './components/ModelDetails';
 import { FeaturedHardware } from './components/Hardware/FeaturedHardware';
 import { HardwareList } from './components/Hardware/HardwareList';
 import { HardwareDetail } from './components/Hardware/HardwareDetail';
-import { HardwareRecommendation } from './types/hardware';
+import { HardwareRecommendation, HardwareRecommendationResponse } from './types/hardware';
 import { hardwareAPI } from './services/hardwareAPI';
 
 // =============================================================================
@@ -234,7 +234,7 @@ const AIMemoryCalculator = () => {
   
   // Hardware-related states
   const [selectedHardwareName, setSelectedHardwareName] = useState<string | null>(null);
-  const [hardwareRecommendations, setHardwareRecommendations] = useState<HardwareRecommendation[]>([]);
+  const [hardwareRecommendations, setHardwareRecommendations] = useState<HardwareRecommendationResponse | null>(null);
   
   // States for different screens
   const [modelUrl, setModelUrl] = useState('');
@@ -1640,114 +1640,246 @@ const AIMemoryCalculator = () => {
         )}
 
         {/* Hardware Recommendations */}
-        {hardwareRecommendations.length > 0 && (
+        {hardwareRecommendations && (
           <div className="mt-8 bg-gray-900/50 rounded-2xl p-6 border border-gray-800">
             <h2 className="text-xl font-semibold mb-6 flex items-center space-x-2">
               <Cpu className="w-5 h-5 text-purple-500" />
               <span>Recommended Hardware</span>
               <span className="text-sm text-gray-400 ml-2">
-                ({hardwareRecommendations.length} options)
+                ({(hardwareRecommendations.cpu_recommendations?.length || 0) + (hardwareRecommendations.gpu_recommendations?.length || 0)} options)
               </span>
             </h2>
 
-            <div className="space-y-3">
-              {hardwareRecommendations.slice(0, 8).map((hw, index) => {
-                // Get optimality styling
-                const getOptimalityStyles = (optimality: string) => {
-                  switch (optimality) {
-                    case 'optimal':
-                      return {
-                        border: 'border-green-500/30',
-                        bg: 'bg-green-500/5',
-                        indicator: 'bg-green-500',
-                        text: 'text-green-400'
-                      };
-                    case 'good':
-                      return {
-                        border: 'border-yellow-500/30',
-                        bg: 'bg-yellow-500/5',
-                        indicator: 'bg-yellow-500',
-                        text: 'text-yellow-400'
-                      };
-                    default:
-                      return {
-                        border: 'border-orange-500/30',
-                        bg: 'bg-orange-500/5',
-                        indicator: 'bg-orange-500',
-                        text: 'text-orange-400'
-                      };
-                  }
-                };
+            {/* Model Info */}
+            {hardwareRecommendations.model_info && (
+              <div className="mb-6 bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-400">Model Size:</span>
+                    <span className="font-medium ml-1 text-white">{hardwareRecommendations.model_info.model_params_b?.toFixed(1)}B</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">Memory Required:</span>
+                    <span className="font-medium ml-1 text-white">{hardwareRecommendations.model_info.total_memory_gb?.toFixed(1)} GB</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">Model Class:</span>
+                    <span className="font-medium ml-1 text-white">{hardwareRecommendations.model_info.is_small_model ? 'Small' : 'Large'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">CPU Compatible:</span>
+                    <span className="font-medium ml-1 text-white">{hardwareRecommendations.model_info.cpu_compatible ? 'Yes' : 'No'}</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
-                const styles = getOptimalityStyles(hw.optimality);
+            {/* Two Column Layout for CPU and GPU */}
+            <div className="grid lg:grid-cols-2 gap-6">
+              {/* CPU Recommendations */}
+              <div>
+                <h3 className="text-lg font-semibold mb-4 flex items-center space-x-2">
+                  <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                    <Cpu className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <span>CPU Options</span>
+                  <span className="text-sm text-gray-400">({hardwareRecommendations.cpu_recommendations?.length || 0})</span>
+                </h3>
+                
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                  {hardwareRecommendations.cpu_recommendations?.slice(0, 5).map((hw, index) => {
+                    const getOptimalityStyles = (optimality: string) => {
+                      switch (optimality) {
+                        case 'optimal':
+                          return {
+                            border: 'border-green-500/30',
+                            bg: 'bg-green-500/5',
+                            indicator: 'bg-green-500',
+                            text: 'text-green-400'
+                          };
+                        case 'good':
+                          return {
+                            border: 'border-yellow-500/30',
+                            bg: 'bg-yellow-500/5',
+                            indicator: 'bg-yellow-500',
+                            text: 'text-yellow-400'
+                          };
+                        default:
+                          return {
+                            border: 'border-orange-500/30',
+                            bg: 'bg-orange-500/5',
+                            indicator: 'bg-orange-500',
+                            text: 'text-orange-400'
+                          };
+                      }
+                    };
 
-                return (
-                  <button
-                    key={index}
-                    onClick={() => handleHardwareNavigation(hw.hardware_name)}
-                    className={`w-full p-4 rounded-xl border ${styles.border} ${styles.bg} hover:border-purple-500/50 transition-all duration-200 text-left group relative`}
-                  >
-                    {/* Optimality Indicator */}
-                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${styles.indicator} rounded-l-xl`}></div>
-                    
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0 pr-4">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <h3 className="font-semibold text-white group-hover:text-purple-300 transition-colors line-clamp-2">
-                            {hw.hardware_name}
-                          </h3>
-                          <span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded-full whitespace-nowrap border border-purple-500/30">
-                            {hw.type?.toUpperCase()}
-                          </span>
-                        </div>
+                    const styles = getOptimalityStyles(hw.optimality);
+
+                    return (
+                      <button
+                        key={`cpu-${index}`}
+                        onClick={() => handleHardwareNavigation(hw.hardware_name)}
+                        className={`w-full p-4 rounded-xl border ${styles.border} ${styles.bg} hover:border-blue-500/50 transition-all duration-200 text-left group relative`}
+                      >
+                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${styles.indicator} rounded-l-xl`}></div>
                         
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-300">
+                        <div className="space-y-3">
                           <div>
-                            <span className="text-gray-500">Nodes:</span>
-                            <span className="font-medium ml-1">{hw.nodes_required}</span>
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="font-semibold text-white group-hover:text-blue-300 transition-colors line-clamp-1">
+                                {hw.hardware_name}
+                              </h4>
+                              <span className={`text-xs font-medium ${styles.text}`}>{hw.utilization}%</span>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-2 text-sm text-gray-300">
+                              <div>
+                                <span className="text-gray-500">Nodes:</span>
+                                <span className="font-medium ml-1">{hw.nodes_required}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Memory:</span>
+                                <span className="font-medium ml-1">{hw.memory_per_chip} GB</span>
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <span className="text-gray-500">Memory:</span>
-                            <span className="font-medium ml-1">{hw.memory_per_chip} GB</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Utilization:</span>
-                            <span className={`font-medium ml-1 ${styles.text}`}>{hw.utilization}%</span>
-                          </div>
-                          {hw.manufacturer && (
-                            <div>
-                              <span className="text-gray-500">Mfr:</span>
-                              <span className="font-medium ml-1">{hw.manufacturer}</span>
+
+                          {/* Batch Recommendations for CPUs */}
+                          {hw.batch_recommendations && hw.batch_recommendations.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-gray-700/50">
+                              <p className="text-xs text-gray-400 mb-2">Multi-node batch recommendations:</p>
+                              <div className="space-y-1">
+                                {hw.batch_recommendations.slice(0, 3).map((batch, bIdx) => (
+                                  <div key={bIdx} className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-400">
+                                      {batch.nodes} nodes ({batch.total_memory} GB)
+                                    </span>
+                                    <span className="text-green-400">
+                                      Batch {batch.recommended_batch_size} @ {batch.utilization_at_batch}%
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           )}
                         </div>
-                      </div>
-                      
-                      {/* Optimality Badge */}
-                      <div className={`flex items-center space-x-1 ${styles.text}`}>
-                        <div className={`w-2 h-2 rounded-full ${styles.indicator}`}></div>
-                        <span className="text-xs font-medium capitalize">{hw.optimality}</span>
-                      </div>
+                      </button>
+                    );
+                  })}
+                  
+                  {(!hardwareRecommendations.cpu_recommendations || hardwareRecommendations.cpu_recommendations.length === 0) && (
+                    <div className="text-center py-8 text-gray-400">
+                      <Cpu className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No suitable CPU options for this model</p>
                     </div>
-                  </button>
-                );
-              })}
+                  )}
+                </div>
+              </div>
+
+              {/* GPU Recommendations */}
+              <div>
+                <h3 className="text-lg font-semibold mb-4 flex items-center space-x-2">
+                  <div className="w-8 h-8 bg-purple-500/20 rounded-lg flex items-center justify-center">
+                    <Zap className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <span>GPU Options</span>
+                  <span className="text-sm text-gray-400">({hardwareRecommendations.gpu_recommendations?.length || 0})</span>
+                </h3>
+                
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                  {hardwareRecommendations.gpu_recommendations?.slice(0, 5).map((hw, index) => {
+                    const getOptimalityStyles = (optimality: string) => {
+                      switch (optimality) {
+                        case 'optimal':
+                          return {
+                            border: 'border-green-500/30',
+                            bg: 'bg-green-500/5',
+                            indicator: 'bg-green-500',
+                            text: 'text-green-400'
+                          };
+                        case 'good':
+                          return {
+                            border: 'border-yellow-500/30',
+                            bg: 'bg-yellow-500/5',
+                            indicator: 'bg-yellow-500',
+                            text: 'text-yellow-400'
+                          };
+                        default:
+                          return {
+                            border: 'border-orange-500/30',
+                            bg: 'bg-orange-500/5',
+                            indicator: 'bg-orange-500',
+                            text: 'text-orange-400'
+                          };
+                      }
+                    };
+
+                    const styles = getOptimalityStyles(hw.optimality);
+
+                    return (
+                      <button
+                        key={`gpu-${index}`}
+                        onClick={() => handleHardwareNavigation(hw.hardware_name)}
+                        className={`w-full p-4 rounded-xl border ${styles.border} ${styles.bg} hover:border-purple-500/50 transition-all duration-200 text-left group relative`}
+                      >
+                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${styles.indicator} rounded-l-xl`}></div>
+                        
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="font-semibold text-white group-hover:text-purple-300 transition-colors line-clamp-1">
+                                {hw.hardware_name}
+                              </h4>
+                              <span className={`text-xs font-medium ${styles.text}`}>{hw.utilization}%</span>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-2 text-sm text-gray-300">
+                              <div>
+                                <span className="text-gray-500">Nodes:</span>
+                                <span className="font-medium ml-1">{hw.nodes_required}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Memory:</span>
+                                <span className="font-medium ml-1">{hw.memory_per_chip} GB</span>
+                              </div>
+                              {hw.manufacturer && (
+                                <div className="col-span-2">
+                                  <span className="text-gray-500">Mfr:</span>
+                                  <span className="font-medium ml-1">{hw.manufacturer}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  
+                  {(!hardwareRecommendations.gpu_recommendations || hardwareRecommendations.gpu_recommendations.length === 0) && (
+                    <div className="text-center py-8 text-gray-400">
+                      <Zap className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No suitable GPU options for this model</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Legend */}
-            <div className="mt-4 pt-4 border-t border-gray-700">
+            <div className="mt-6 pt-4 border-t border-gray-700">
               <div className="flex items-center justify-center space-x-6 text-xs text-gray-400">
                 <div className="flex items-center space-x-1">
                   <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                  <span>Most Optimal</span>
+                  <span>Most Optimal (&gt;80% utilization)</span>
                 </div>
                 <div className="flex items-center space-x-1">
                   <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                  <span>Good Choice</span>
+                  <span>Good Choice (50-80%)</span>
                 </div>
                 <div className="flex items-center space-x-1">
                   <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-                  <span>Acceptable</span>
+                  <span>Acceptable (&lt;50%)</span>
                 </div>
               </div>
             </div>
@@ -1757,7 +1889,7 @@ const AIMemoryCalculator = () => {
                 onClick={() => handleHardwareNavigation('')}
                 className="text-purple-400 hover:text-purple-300 transition-colors text-sm"
               >
-                View All Hardware →
+                View All Hardware Options →
               </button>
             </div>
           </div>

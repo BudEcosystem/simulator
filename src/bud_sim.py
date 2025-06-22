@@ -27,7 +27,11 @@ class BudSimulator:
 
 
     '''------ Simulation Types ------'''
-    
+
+    def get_supported_features(self):
+        ''' This must return different supported features like chunked prefill, LoRA, Flash Attention, etc.  and their subfeatures
+        that is basically available with the system to accelarate inference on different systems'''
+
 
 
 

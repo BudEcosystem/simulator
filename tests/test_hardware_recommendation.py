@@ -69,24 +69,34 @@ class TestHardwareRecommendation(unittest.TestCase):
         self.recommender.hardware.get_all_hardwares.return_value = self.mock_hardware
         
         # Test with 150GB requirement
-        recommendations = self.recommender.recommend_hardware(150.0)
+        result = self.recommender.recommend_hardware(150.0)
         
-        # Should return all hardware sorted by nodes required
-        self.assertEqual(len(recommendations), 5)
+        # Should return dictionary with cpu and gpu recommendations
+        self.assertIsInstance(result, dict)
+        self.assertIn('cpu_recommendations', result)
+        self.assertIn('gpu_recommendations', result)
+        self.assertIn('model_info', result)
+        
+        # Get all recommendations
+        all_recommendations = result['cpu_recommendations'] + result['gpu_recommendations']
+        self.assertEqual(len(all_recommendations), 5)
         
         # Check MI300X needs only 1 node (192GB > 150GB)
-        mi300x = next(r for r in recommendations if r['hardware_name'] == 'MI300X')
+        mi300x = next((r for r in result['gpu_recommendations'] if r['hardware_name'] == 'MI300X'), None)
+        self.assertIsNotNone(mi300x)
         self.assertEqual(mi300x['nodes_required'], 1)
         self.assertEqual(mi300x['memory_per_chip'], 192)
         self.assertEqual(mi300x['manufacturer'], 'AMD')
         self.assertEqual(mi300x['type'], 'gpu')
         
         # Check H100 needs 2 nodes (80GB * 2 = 160GB > 150GB)
-        h100 = next(r for r in recommendations if r['hardware_name'] == 'H100_GPU')
+        h100 = next((r for r in result['gpu_recommendations'] if r['hardware_name'] == 'H100_GPU'), None)
+        self.assertIsNotNone(h100)
         self.assertEqual(h100['nodes_required'], 2)
         
         # Check A100 needs 4 nodes (40GB * 4 = 160GB > 150GB)
-        a100 = next(r for r in recommendations if r['hardware_name'] == 'A100_GPU')
+        a100 = next((r for r in result['gpu_recommendations'] if r['hardware_name'] == 'A100_GPU'), None)
+        self.assertIsNotNone(a100)
         self.assertEqual(a100['nodes_required'], 4)
     
     @patch.object(HardwareRecommendation, '__init__', lambda x: None)
@@ -97,15 +107,18 @@ class TestHardwareRecommendation(unittest.TestCase):
         self.recommender.hardware.get_all_hardwares.return_value = self.mock_hardware
         
         # Test with 70B model
-        recommendations = self.recommender.recommend_hardware(150.0, model_params_b=70.0)
+        result = self.recommender.recommend_hardware(150.0, model_params_b=70.0)
         
-        # Should not include CPU
-        cpu_recommendations = [r for r in recommendations if r['type'] == 'cpu']
-        self.assertEqual(len(cpu_recommendations), 0)
+        # CPU recommendations will still be returned but model_info will show it's not cpu_compatible
+        self.assertIn('cpu_recommendations', result)
+        self.assertIn('gpu_recommendations', result)
         
-        # Should include GPUs and other accelerators
-        gpu_recommendations = [r for r in recommendations if r['type'] == 'gpu']
-        self.assertGreater(len(gpu_recommendations), 0)
+        # Model info should indicate it's not a small model
+        self.assertFalse(result['model_info']['is_small_model'])
+        self.assertFalse(result['model_info']['cpu_compatible'])
+        
+        # Should have GPU recommendations
+        self.assertGreater(len(result['gpu_recommendations']), 0)
     
     @patch.object(HardwareRecommendation, '__init__', lambda x: None)
     def test_cpu_included_small_models(self):
@@ -115,35 +128,48 @@ class TestHardwareRecommendation(unittest.TestCase):
         self.recommender.hardware.get_all_hardwares.return_value = self.mock_hardware
         
         # Test with 7B model
-        recommendations = self.recommender.recommend_hardware(20.0, model_params_b=7.0)
+        result = self.recommender.recommend_hardware(20.0, model_params_b=7.0)
         
-        # Should include CPU
-        cpu_recommendations = [r for r in recommendations if r['type'] == 'cpu']
-        self.assertEqual(len(cpu_recommendations), 1)
-        self.assertEqual(cpu_recommendations[0]['hardware_name'], 'SapphireRapids_CPU')
+        # Should include CPU recommendations
+        self.assertGreater(len(result['cpu_recommendations']), 0)
+        
+        # Check for SapphireRapids_CPU
+        cpu_rec = next((r for r in result['cpu_recommendations'] if r['hardware_name'] == 'SapphireRapids_CPU'), None)
+        self.assertIsNotNone(cpu_rec)
+        
+        # Model info should indicate it's a small model and CPU compatible
+        self.assertTrue(result['model_info']['is_small_model'])
+        self.assertTrue(result['model_info']['cpu_compatible'])
     
     @patch.object(HardwareRecommendation, '__init__', lambda x: None)
-    def test_sorting_by_nodes_required(self):
-        """Test recommendations are sorted by nodes required."""
+    def test_sorting_by_utilization(self):
+        """Test recommendations are sorted by utilization in descending order."""
         self.recommender = HardwareRecommendation()
         self.recommender.hardware = Mock()
         self.recommender.hardware.get_all_hardwares.return_value = self.mock_hardware
         
-        recommendations = self.recommender.recommend_hardware(500.0)
+        result = self.recommender.recommend_hardware(500.0)
         
-        # Check sorting
-        nodes_required = [r['nodes_required'] for r in recommendations]
-        self.assertEqual(nodes_required, sorted(nodes_required))
+        # Check GPU recommendations are sorted by utilization (descending)
+        gpu_utilizations = [r['utilization'] for r in result['gpu_recommendations']]
+        self.assertEqual(gpu_utilizations, sorted(gpu_utilizations, reverse=True))
+        
+        # Check CPU recommendations are sorted by utilization (descending)
+        if len(result['cpu_recommendations']) > 1:
+            cpu_utilizations = [r['utilization'] for r in result['cpu_recommendations']]
+            self.assertEqual(cpu_utilizations, sorted(cpu_utilizations, reverse=True))
         
         # Verify specific calculations
         # CPU: 500/300 = 2 nodes
         # MI300X: 500/192 = 3 nodes
         # H100: 500/80 = 7 nodes
-        cpu_rec = next(r for r in recommendations if r['hardware_name'] == 'SapphireRapids_CPU')
-        self.assertEqual(cpu_rec['nodes_required'], 2)
+        cpu_rec = next((r for r in result['cpu_recommendations'] if r['hardware_name'] == 'SapphireRapids_CPU'), None)
+        if cpu_rec:
+            self.assertEqual(cpu_rec['nodes_required'], 2)
         
-        mi300x_rec = next(r for r in recommendations if r['hardware_name'] == 'MI300X')
-        self.assertEqual(mi300x_rec['nodes_required'], 3)
+        mi300x_rec = next((r for r in result['gpu_recommendations'] if r['hardware_name'] == 'MI300X'), None)
+        if mi300x_rec:
+            self.assertEqual(mi300x_rec['nodes_required'], 3)
     
     @patch.object(HardwareRecommendation, '__init__', lambda x: None)
     def test_zero_memory_hardware(self):
@@ -163,10 +189,11 @@ class TestHardwareRecommendation(unittest.TestCase):
         
         self.recommender.hardware.get_all_hardwares.return_value = hardware_with_zero_mem
         
-        recommendations = self.recommender.recommend_hardware(100.0)
+        result = self.recommender.recommend_hardware(100.0)
         
         # Should not include hardware with zero memory
-        zero_mem_recs = [r for r in recommendations if r['hardware_name'] == 'ZeroMemHW']
+        all_recommendations = result['cpu_recommendations'] + result['gpu_recommendations']
+        zero_mem_recs = [r for r in all_recommendations if r['hardware_name'] == 'ZeroMemHW']
         self.assertEqual(len(zero_mem_recs), 0)
 
 

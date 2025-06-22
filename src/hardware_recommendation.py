@@ -13,37 +13,46 @@ class HardwareRecommendation:
     
     def recommend_hardware(self, 
                          total_memory_gb: float, 
-                         model_params_b: Optional[float] = None) -> List[Dict[str, Any]]:
+                         model_params_b: Optional[float] = None) -> Dict[str, Any]:
         """
         Recommend hardware based on memory requirements with intelligent sorting.
         
-        New Logic:
-        - CPUs first if compatible (model < 14B params OR total memory < 35GB)
-        - Sort by memory size descending (24GB, 40GB, 80GB)
-        - Add optimality indicators for visual coding
+        Enhanced Logic:
+        - Sort hardware by utilization in descending order
+        - Separate CPU and GPU recommendations
+        - Add batch recommendations for small models on CPUs
+        - Model size detection (<14B considered "small")
         
         Args:
             total_memory_gb: Total memory needed in GB (from frontend)
             model_params_b: Model parameters in billions (for CPU filtering)
             
         Returns:
-            List of dicts with:
-            - hardware_name: Name of the hardware
-            - nodes_required: Number of nodes needed
-            - memory_per_chip: Memory per chip in GB
-            - manufacturer: Intel, NVIDIA, AMD, etc.
-            - type: cpu, gpu, accelerator, asic
-            - optimality: 'optimal', 'good', 'ok' for visual indicators
-            - utilization: Memory utilization percentage
+            Dict with:
+            - cpu_recommendations: List of CPU hardware recommendations
+            - gpu_recommendations: List of GPU/accelerator recommendations
+            - model_info: Information about the model and compatibility
+            - total_recommendations: Total count of recommendations
         """
-        recommendations = []
         all_hardware = self.hardware.get_all_hardwares()
         
-        # Determine CPU compatibility: CPUs suitable for smaller models AND memory requirements
-        cpu_compatible = (
-            (model_params_b is None or model_params_b < 14) and  # Model size check
-            total_memory_gb < 35  # Memory requirement check
-        )
+        # Handle edge case of zero memory
+        if total_memory_gb <= 0:
+            return {
+                'cpu_recommendations': [],
+                'gpu_recommendations': [],
+                'model_info': {
+                    'is_small_model': model_params_b is not None and model_params_b < 14,
+                    'cpu_compatible': False,
+                    'total_memory_gb': total_memory_gb,
+                    'model_params_b': model_params_b
+                },
+                'total_recommendations': 0
+            }
+        
+        # Determine if this is a small model
+        is_small_model = model_params_b is not None and model_params_b < 14
+        cpu_compatible = is_small_model and total_memory_gb < 40
         
         cpu_recommendations = []
         gpu_recommendations = []
@@ -69,38 +78,71 @@ class HardwareRecommendation:
                 'memory_per_chip': memory_per_chip,
                 'manufacturer': hw.get('manufacturer', 'Unknown'),
                 'type': hw.get('type', 'Unknown'),
-                'utilization': round(utilization, 1)
+                'utilization': round(utilization, 1),
+                'total_memory_available': total_available_memory
             }
+            
+            # Add batch recommendations for CPUs if it's a small model
+            if hw['type'] == 'cpu' and is_small_model and total_memory_gb < 40:
+                batch_recommendations = []
+                # Recommend 2, 4, and 8 node configurations
+                for num_nodes in [2, 4, 8]:
+                    multi_node_memory = memory_per_chip * num_nodes
+                    # Calculate how many models can fit with optimal batch sizing
+                    models_per_node = int(memory_per_chip / total_memory_gb)
+                    total_models = models_per_node * num_nodes
+                    
+                    # For small models, recommend batch size of 32 or number of models
+                    recommended_batch = min(32, max(1, total_models))
+                    
+                    # Calculate utilization at this batch size
+                    batch_utilization = min(100, (total_memory_gb * recommended_batch / multi_node_memory) * 100)
+                    
+                    batch_recommendations.append({
+                        'nodes': num_nodes,
+                        'total_memory': multi_node_memory,
+                        'recommended_batch_size': recommended_batch,
+                        'utilization_at_batch': round(batch_utilization, 1)
+                    })
+                
+                hardware_rec['batch_recommendations'] = batch_recommendations
+            else:
+                hardware_rec['batch_recommendations'] = None
             
             # Separate CPUs and GPUs/accelerators
             if hw['type'] == 'cpu':
-                if cpu_compatible:  # Only include CPUs if compatible
-                    cpu_recommendations.append(hardware_rec)
+                cpu_recommendations.append(hardware_rec)
             else:
                 gpu_recommendations.append(hardware_rec)
         
-        # Sort CPUs by memory size descending
-        cpu_recommendations.sort(key=lambda x: x['memory_per_chip'], reverse=True)
+        # Sort by utilization in descending order (highest utilization first)
+        cpu_recommendations.sort(key=lambda x: x['utilization'], reverse=True)
+        gpu_recommendations.sort(key=lambda x: x['utilization'], reverse=True)
         
-        # Sort GPUs/accelerators by memory size descending  
-        gpu_recommendations.sort(key=lambda x: x['memory_per_chip'], reverse=True)
+        # Add optimality indicators based on utilization
+        def add_optimality(recommendations):
+            for rec in recommendations:
+                if rec['utilization'] >= 80:
+                    rec['optimality'] = 'optimal'
+                elif rec['utilization'] >= 50:
+                    rec['optimality'] = 'good'
+                else:
+                    rec['optimality'] = 'ok'
         
-        # Combine: CPUs first (if compatible), then GPUs/accelerators
-        if cpu_compatible and cpu_recommendations:
-            recommendations = cpu_recommendations + gpu_recommendations
-        else:
-            recommendations = gpu_recommendations
+        add_optimality(cpu_recommendations)
+        add_optimality(gpu_recommendations)
         
-        # Add optimality indicators
-        for i, rec in enumerate(recommendations):
-            if i < 2:
-                rec['optimality'] = 'optimal'    # First 2: Green
-            elif i < 5:
-                rec['optimality'] = 'good'       # Next 3: Yellow  
-            else:
-                rec['optimality'] = 'ok'         # Rest: Orange
-        
-        return recommendations
+        return {
+            'cpu_recommendations': cpu_recommendations,
+            'gpu_recommendations': gpu_recommendations,
+            'model_info': {
+                'is_small_model': is_small_model,
+                'cpu_compatible': cpu_compatible,
+                'total_memory_gb': total_memory_gb,
+                'model_params_b': model_params_b
+            },
+            'total_recommendations': len(cpu_recommendations) + len(gpu_recommendations)
+        }
     
     def filter_hardware(self,
                        type: Optional[str] = None,

@@ -127,6 +127,16 @@ class RecommendationResponse(BaseModel):
     type: str
     optimality: str = Field(..., description="Optimality indicator: 'optimal', 'good', 'ok'")
     utilization: float = Field(..., description="Memory utilization percentage")
+    total_memory_available: Optional[float] = None
+    batch_recommendations: Optional[List[Dict[str, Any]]] = None
+
+
+class HardwareRecommendationResponse(BaseModel):
+    """Enhanced response model for hardware recommendations."""
+    cpu_recommendations: List[RecommendationResponse]
+    gpu_recommendations: List[RecommendationResponse]
+    model_info: Dict[str, Any]
+    total_recommendations: int
 
 
 @router.post("", response_model=HardwareResponse)
@@ -327,7 +337,7 @@ async def delete_hardware(hardware_name: str, hard_delete: bool = False):
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 
-@router.post("/recommend", response_model=List[RecommendationResponse])
+@router.post("/recommend", response_model=HardwareRecommendationResponse)
 async def recommend_hardware(request: RecommendationRequest):
     """Get hardware recommendations based on memory requirements."""
     try:
@@ -336,7 +346,12 @@ async def recommend_hardware(request: RecommendationRequest):
             model_params_b=request.model_params_b
         )
         
-        return [RecommendationResponse(**rec) for rec in recommendations]
+        return HardwareRecommendationResponse(
+            cpu_recommendations=[RecommendationResponse(**rec) for rec in recommendations['cpu_recommendations']],
+            gpu_recommendations=[RecommendationResponse(**rec) for rec in recommendations['gpu_recommendations']],
+            model_info=recommendations['model_info'],
+            total_recommendations=recommendations['total_recommendations']
+        )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
