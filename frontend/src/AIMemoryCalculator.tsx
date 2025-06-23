@@ -902,7 +902,6 @@ const AIMemoryCalculator = () => {
                 className="w-full h-auto object-cover mask-[radial-gradient(ellipse_at_center,white_60%,transparent_100%)]"
               />
             </div> */}
-
             <div className="w-[46vw] h-auto flex items-center justify-center rounded-xl overflow-hidden bg-black relative">
               <img
                 src="/image.png"
