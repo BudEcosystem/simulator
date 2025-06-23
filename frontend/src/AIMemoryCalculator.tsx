@@ -7,6 +7,7 @@ import { HardwareDetail } from './components/Hardware/HardwareDetail';
 import { HardwareRecommendation, HardwareRecommendationResponse } from './types/hardware';
 import { hardwareAPI } from './services/hardwareAPI';
 import budIcon from './budlogo.svg';
+import budLogo from './budicon.png';
 
 // =============================================================================
 // TYPE DEFINITIONS
@@ -173,8 +174,8 @@ const ModelLogo: React.FC<{ logo?: string; modelId: string; size?: 'sm' | 'md' |
 
   if (logo) {
     return (
-      <img 
-        src={logo} 
+      <img
+        src={logo}
         alt={modelId}
         className={`${sizeClasses[size]} rounded-xl object-cover`}
         onError={(e) => {
@@ -211,8 +212,8 @@ export const ModelLogoWithFallback: React.FC<{ logo?: string; modelId: string; s
   return (
     <div className="relative">
       {logo && (
-        <img 
-          src={logo} 
+        <img
+          src={logo}
           alt={modelId}
           className={`${sizeClasses[size]} rounded-xl object-cover`}
           onError={(e) => {
@@ -232,11 +233,11 @@ const AIMemoryCalculator = () => {
   const [currentScreen, setCurrentScreen] = useState('home');
   const [currentStep, setCurrentStep] = useState(1); // For calculator flow
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
-  
+
   // Hardware-related states
   const [selectedHardwareName, setSelectedHardwareName] = useState<string | null>(null);
   const [hardwareRecommendations, setHardwareRecommendations] = useState<HardwareRecommendationResponse | null>(null);
-  
+
   // States for different screens
   const [modelUrl, setModelUrl] = useState('');
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
@@ -252,24 +253,24 @@ const AIMemoryCalculator = () => {
   const [comparisonResults, setComparisonResults] = useState<ComparisonItem[]>([]);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResults | null>(null);
   const [popularModels, setPopularModels] = useState<PopularModel[]>([]);
-  
+
   // Loading states
   const [isValidating, setIsValidating] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLoadingPopular, setIsLoadingPopular] = useState(false);
-  
+
   // Error states
   const [validationError, setValidationError] = useState('');
   const [calculationError, setCalculationError] = useState('');
-  
+
   // Gated model support states
   const [showConfigInput, setShowConfigInput] = useState(false);
   const [gatedModelId, setGatedModelId] = useState<string | null>(null);
   const [configJson, setConfigJson] = useState('');
   const [configSubmissionError, setConfigSubmissionError] = useState('');
   const [isSubmittingConfig, setIsSubmittingConfig] = useState(false);
-  
+
   // Pending action for continuing flow after config submission
   interface PendingAction {
     type: 'calculate' | 'analyze' | 'compare' | 'validate';
@@ -283,7 +284,7 @@ const AIMemoryCalculator = () => {
   // =============================================================================
   // API ENDPOINTS DEFINITION
   // =============================================================================
-  
+
   /*
   Required REST API Endpoints:
 
@@ -460,7 +461,7 @@ const AIMemoryCalculator = () => {
   const validateModelUrl = async (url: string, continueWithAction: boolean = false): Promise<ValidateResponse> => {
     setIsValidating(true);
     setValidationError('');
-    
+
     try {
       const response = await fetch(`${API_BASE}/models/validate`, {
         method: 'POST',
@@ -469,19 +470,19 @@ const AIMemoryCalculator = () => {
         },
         body: JSON.stringify({ model_url: url }),
       });
-      
+
       const data: ValidateResponse = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || 'Validation failed');
       }
-      
+
       if (!data.valid) {
         // Check if it's a gated model
         if (data.error_code === 'MODEL_GATED') {
           setGatedModelId(data.model_id || url);
           setShowConfigInput(true);
-          
+
           // Store the pending action if needed
           if (continueWithAction && pendingAction) {
             // Keep the existing pending action
@@ -490,11 +491,11 @@ const AIMemoryCalculator = () => {
             setPendingAction({ type: 'validate', params: { url } });
           }
         }
-        
+
         setValidationError(data.error || 'Invalid model URL');
         return data;
       }
-      
+
       return data;
     } catch (error) {
       const errorResponse: ValidateResponse = {
@@ -511,9 +512,9 @@ const AIMemoryCalculator = () => {
   const fetchModelConfig = async (modelId: string) => {
     try {
       const response = await fetch(`${API_BASE}/models/${encodeURIComponent(modelId)}/config`);
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         // Check if it's a gated model error (can be in data or data.detail)
         const errorData = data.detail || data;
@@ -525,7 +526,7 @@ const AIMemoryCalculator = () => {
         }
         throw new Error(errorData.error || data.error || 'Failed to fetch model configuration');
       }
-      
+
       setModelConfig(data);
       return data;
     } catch (error) {
@@ -534,13 +535,13 @@ const AIMemoryCalculator = () => {
       return null;
     }
   };
-  
+
   const submitConfig = async () => {
     if (!gatedModelId) return;
-    
+
     setIsSubmittingConfig(true);
     setConfigSubmissionError('');
-    
+
     try {
       // Parse the config JSON
       let config;
@@ -549,7 +550,7 @@ const AIMemoryCalculator = () => {
       } catch (e) {
         throw new Error('Invalid JSON format. Please paste a valid config.json');
       }
-      
+
       const response = await fetch(`${API_BASE}/models/config/submit`, {
         method: 'POST',
         headers: {
@@ -560,21 +561,21 @@ const AIMemoryCalculator = () => {
           config: config
         }),
       });
-      
+
       const data: ConfigSubmitResponse = await response.json();
-      
+
       if (!response.ok || !data.success) {
         if (data.error_code === 'INVALID_CONFIG' && data.missing_fields) {
           throw new Error(`Missing required fields: ${data.missing_fields.join(', ')}`);
         }
         throw new Error(data.message || 'Failed to submit configuration');
       }
-      
+
       // Config saved successfully, hide the input
       setShowConfigInput(false);
       setConfigJson('');
       setGatedModelId(null);
-      
+
       // Continue with the pending action
       if (pendingAction) {
         switch (pendingAction.type) {
@@ -583,19 +584,19 @@ const AIMemoryCalculator = () => {
             await fetchModelConfig(data.model_id);
             setCurrentStep(2);
             break;
-            
+
           case 'calculate':
             // Fetch config first, then calculate
             await fetchModelConfig(data.model_id);
             await calculateMemory();
             break;
-            
+
           case 'analyze':
             // Fetch config first, then analyze
             await fetchModelConfig(data.model_id);
             await analyzeModel();
             break;
-            
+
           case 'compare':
             // Handle comparison case
             if (pendingAction.params) {
@@ -603,10 +604,10 @@ const AIMemoryCalculator = () => {
             }
             break;
         }
-        
+
         setPendingAction(null);
       }
-      
+
     } catch (error) {
       setConfigSubmissionError(error instanceof Error ? error.message : 'Failed to submit configuration');
     } finally {
@@ -622,7 +623,7 @@ const AIMemoryCalculator = () => {
 
     setIsCalculating(true);
     setCalculationError('');
-    
+
     try {
       const response = await fetch(`${API_BASE}/models/calculate`, {
         method: 'POST',
@@ -639,25 +640,25 @@ const AIMemoryCalculator = () => {
           decode_length: userConfig.decodeLength
         }),
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         // Check if it's a gated model error (can be in data or data.detail)
         const errorData = data.detail || data;
         if (errorData.error_code === 'MODEL_GATED' || response.status === 403) {
           setGatedModelId(modelConfig.model_id);
           setShowConfigInput(true);
-          setPendingAction({ 
+          setPendingAction({
             type: 'calculate',
-            params: userConfig 
+            params: userConfig
           });
           setIsCalculating(false);
           return;
         }
         throw new Error(errorData.error || data.error || 'Calculation failed');
       }
-      
+
       setResults(data);
       setCurrentScreen('results');
     } catch (error) {
@@ -680,11 +681,11 @@ const AIMemoryCalculator = () => {
         },
         body: JSON.stringify({ models }),
       });
-      
+
       if (!response.ok) {
         throw new Error('Comparison failed');
       }
-      
+
       const data = await response.json();
       setComparisonResults(data.comparisons);
     } catch (error) {
@@ -696,7 +697,7 @@ const AIMemoryCalculator = () => {
     if (!modelConfig) return;
 
     setIsAnalyzing(true);
-    
+
     try {
       const response = await fetch(`${API_BASE}/models/analyze`, {
         method: 'POST',
@@ -710,16 +711,16 @@ const AIMemoryCalculator = () => {
           sequence_lengths: [1024, 4096, 16384, 32768]
         }),
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         // Check if it's a gated model error (can be in data or data.detail)
         const errorData = data.detail || data;
         if (errorData.error_code === 'MODEL_GATED' || response.status === 403) {
           setGatedModelId(modelConfig.model_id);
           setShowConfigInput(true);
-          setPendingAction({ 
+          setPendingAction({
             type: 'analyze',
             params: { precision: userConfig.precision, batch_size: userConfig.batchSize }
           });
@@ -728,7 +729,7 @@ const AIMemoryCalculator = () => {
         }
         throw new Error(errorData.error || data.error || 'Analysis failed');
       }
-      
+
       setAnalysisResults(data);
       setCurrentScreen('analysis');
     } catch (error) {
@@ -740,14 +741,14 @@ const AIMemoryCalculator = () => {
 
   const fetchPopularModels = async () => {
     setIsLoadingPopular(true);
-    
+
     try {
       const response = await fetch(`${API_BASE}/models/popular`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch popular models');
       }
-      
+
       const data = await response.json();
       setPopularModels(data.models);
     } catch (error) {
@@ -805,7 +806,7 @@ const AIMemoryCalculator = () => {
   // Fetch hardware recommendations when results are available
   const fetchHardwareRecommendations = async () => {
     if (!results) return;
-    
+
     try {
       const recommendations = await hardwareAPI.recommend(
         results.total_memory_gb,
@@ -832,6 +833,13 @@ const AIMemoryCalculator = () => {
               {/* <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
                 <Cpu className="w-4 h-4 text-white" />
               </div> */}
+              <div className='w-8 h-8 flex items-center justify-center rounded-lg'>
+                <img
+                  src={budLogo}
+                  alt="AI Memory Calculator Logo"
+                  className="w-8 h-8"
+                />
+              </div>
               <div className='w-auto h-8 flex items-center justify-center'>
                 <img
                   src={budIcon}
@@ -842,7 +850,7 @@ const AIMemoryCalculator = () => {
               {/* <span className="text-xl font-bold text-white">Bud</span> */}
             </div>
           </div>
-          
+
           <nav className="hidden md:flex space-x-1">
             {[
               { id: 'home', label: 'Home', icon: Home },
@@ -862,11 +870,10 @@ const AIMemoryCalculator = () => {
                     setModelUrl('');
                   }
                 }}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
-                  currentScreen === id
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
-                    : 'text-gray-300 hover:text-white hover:bg-purple-600/20'
-                }`}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${currentScreen === id
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                  : 'text-gray-300 hover:text-white hover:bg-purple-600/20'
+                  }`}
               >
                 <Icon className="w-4 h-4" />
                 <span className="text-sm font-medium">{label}</span>
@@ -883,42 +890,64 @@ const AIMemoryCalculator = () => {
     <div className="min-h-screen bg-black text-white pt-16">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Hero Section */}
-        <div className="text-center mb-16">
-          <div className="mb-8">
-            <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+        <div className="text-center mb-20 relative">
+          <div className="mb-0 w-[100%] flex flex-col items-center justify-center">
+            {/* <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
               <Sparkles className="w-10 h-10 text-white" />
+            </div> */}
+            {/* <div className='w-[50vW] h-[auto] flex items-center justify-center rounded-xl overflow-hidden'>
+              <img
+                src="/image.png"
+                alt="AI Memory Calculator Hero"
+                className="w-full h-auto object-cover mask-[radial-gradient(ellipse_at_center,white_60%,transparent_100%)]"
+              />
+            </div> */}
+
+            <div className="w-[46vw] h-auto flex items-center justify-center rounded-xl overflow-hidden bg-black relative">
+              <img
+                src="/image.png"
+                alt="Blended"
+                className="w-full h-full object-cover"
+              />
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  backgroundImage:
+                    'radial-gradient(ellipse at center, transparent -100% 0, black 100%)',
+                }}
+              />
             </div>
-            {/* <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              AI Memory Calculator
-            </h1> */}
-            <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-              Calculate precise memory requirements for AI models from HuggingFace. 
-              Optimize your GPU usage and deployment costs with accurate predictions.
+            <div className="flex flex-col sm:flex-row gap-4 justify-center right-0 left-0 bottom-0 top-[-80px] relative">
+              <button
+                onClick={() => setCurrentScreen('calculator')}
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg shadow-purple-500/25"
+              >
+                <div className="flex items-center space-x-2">
+                  <Calculator className="w-5 h-5" />
+                  <span>Start Calculating</span>
+                  <ArrowRight className="w-5 h-5" />
+                </div>
+              </button>
+
+              <button
+                onClick={() => setCurrentScreen('comparison')}
+                className="bg-gray-800 hover:bg-gray-700 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-200 border border-gray-600"
+              >
+                <div className="flex items-center space-x-2">
+                  <GitCompare className="w-5 h-5" />
+                  <span>Compare Models</span>
+                </div>
+              </button>
+            </div>
+            <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+              Find the Perfect Hardware for Your AI Models
+            </h1>
+            <p className="text-xl text-gray-300 max-w-[80%] mx-auto mt-[1rem]">
+              Bud Simulator finds the right hardware for any GenAI model—fast. Just plug in model size, activations or KV-cache, and get an optimized setup with ~15 % accuracy today. SLO forecasts, deeper feature analysis and high-fidelity predictions are on the way.
             </p>
           </div>
-          
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button
-              onClick={() => setCurrentScreen('calculator')}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg shadow-purple-500/25"
-            >
-              <div className="flex items-center space-x-2">
-                <Calculator className="w-5 h-5" />
-                <span>Start Calculating</span>
-                <ArrowRight className="w-5 h-5" />
-              </div>
-            </button>
-            
-            <button
-              onClick={() => setCurrentScreen('comparison')}
-              className="bg-gray-800 hover:bg-gray-700 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-200 border border-gray-600"
-            >
-              <div className="flex items-center space-x-2">
-                <GitCompare className="w-5 h-5" />
-                <span>Compare Models</span>
-              </div>
-            </button>
-          </div>
+
+
         </div>
 
         {/* Features Grid */}
@@ -968,7 +997,7 @@ const AIMemoryCalculator = () => {
               <RefreshCw className={`w-5 h-5 ${isLoadingPopular ? 'animate-spin' : ''}`} />
             </button>
           </div>
-          
+
           {isLoadingPopular ? (
             <div className="text-center py-8">
               <Loader2 className="w-8 h-8 animate-spin text-purple-500 mx-auto mb-4" />
@@ -1088,7 +1117,7 @@ const AIMemoryCalculator = () => {
                     </div>
                   </div>
                 )}
-                
+
                 {/* Gated Model Config Input */}
                 {showConfigInput && (
                   <div className="bg-amber-900/20 border border-amber-500/20 rounded-lg p-6 space-y-4">
@@ -1099,7 +1128,7 @@ const AIMemoryCalculator = () => {
                         <p className="text-gray-300 text-sm mb-4">
                           This model is gated and requires authentication to access. Please provide the model's config.json manually:
                         </p>
-                        
+
                         <div className="space-y-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -1118,7 +1147,7 @@ const AIMemoryCalculator = () => {
                               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none font-mono text-sm min-h-[200px]"
                             />
                           </div>
-                          
+
                           {configSubmissionError && (
                             <div className="bg-red-900/20 border border-red-500/20 rounded-lg p-3">
                               <div className="flex items-center space-x-2">
@@ -1127,7 +1156,7 @@ const AIMemoryCalculator = () => {
                               </div>
                             </div>
                           )}
-                          
+
                           <div className="flex space-x-3">
                             <button
                               onClick={submitConfig}
@@ -1148,7 +1177,7 @@ const AIMemoryCalculator = () => {
                                 )}
                               </div>
                             </button>
-                            
+
                             <button
                               onClick={() => {
                                 setShowConfigInput(false);
@@ -1162,7 +1191,7 @@ const AIMemoryCalculator = () => {
                               Cancel
                             </button>
                           </div>
-                          
+
                           <div className="text-xs text-gray-400 space-y-1">
                             <p>You can find config.json on the model's HuggingFace page under "Files and versions".</p>
                             <p>Make sure you have access to the model before downloading the config.</p>
@@ -1221,7 +1250,7 @@ const AIMemoryCalculator = () => {
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
-              
+
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div className="flex justify-between items-center py-2 border-b border-gray-700/50">
@@ -1241,7 +1270,7 @@ const AIMemoryCalculator = () => {
                     <span className="text-white font-medium">{modelConfig.attention_type?.toUpperCase()}</span>
                   </div>
                 </div>
-                
+
                 <div className="space-y-4">
                   <div className="flex justify-between items-center py-2 border-b border-gray-700/50">
                     <span className="text-gray-400">Parameters</span>
@@ -1266,7 +1295,7 @@ const AIMemoryCalculator = () => {
             {/* User Configuration */}
             <div className="bg-gray-900/50 rounded-2xl p-6 border border-gray-800">
               <h2 className="text-xl font-semibold mb-6">Inference Configuration</h2>
-              
+
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div>
@@ -1377,7 +1406,7 @@ const AIMemoryCalculator = () => {
                       <p className="text-gray-300 text-sm mb-4">
                         This model is gated and requires authentication to access. Please provide the model's config.json manually:
                       </p>
-                      
+
                       <div className="space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -1396,7 +1425,7 @@ const AIMemoryCalculator = () => {
                             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none font-mono text-sm min-h-[200px]"
                           />
                         </div>
-                        
+
                         {configSubmissionError && (
                           <div className="bg-red-900/20 border border-red-500/20 rounded-lg p-3">
                             <div className="flex items-center space-x-2">
@@ -1405,7 +1434,7 @@ const AIMemoryCalculator = () => {
                             </div>
                           </div>
                         )}
-                        
+
                         <div className="flex space-x-3">
                           <button
                             onClick={submitConfig}
@@ -1426,7 +1455,7 @@ const AIMemoryCalculator = () => {
                               )}
                             </div>
                           </button>
-                          
+
                           <button
                             onClick={() => {
                               setShowConfigInput(false);
@@ -1440,7 +1469,7 @@ const AIMemoryCalculator = () => {
                             Cancel
                           </button>
                         </div>
-                        
+
                         <div className="text-xs text-gray-400 space-y-1">
                           <p>After submitting, we'll automatically continue with your calculation.</p>
                         </div>
@@ -1470,7 +1499,7 @@ const AIMemoryCalculator = () => {
                     )}
                   </div>
                 </button>
-                
+
                 <button
                   onClick={analyzeModel}
                   disabled={isAnalyzing}
@@ -1507,7 +1536,7 @@ const AIMemoryCalculator = () => {
             </button>
             <h1 className="text-3xl font-bold">Memory Analysis Results</h1>
           </div>
-          
+
           <div className="flex space-x-3">
             <button
               onClick={addToComparison}
@@ -1692,7 +1721,7 @@ const AIMemoryCalculator = () => {
                   <span>CPU Options</span>
                   <span className="text-sm text-gray-400">({hardwareRecommendations.cpu_recommendations?.length || 0})</span>
                 </h3>
-                
+
                 <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
                   {hardwareRecommendations.cpu_recommendations?.slice(0, 5).map((hw, index) => {
                     const getOptimalityStyles = (optimality: string) => {
@@ -1730,7 +1759,7 @@ const AIMemoryCalculator = () => {
                         className={`w-full p-4 rounded-xl border ${styles.border} ${styles.bg} hover:border-blue-500/50 transition-all duration-200 text-left group relative`}
                       >
                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${styles.indicator} rounded-l-xl`}></div>
-                        
+
                         <div className="space-y-3">
                           <div>
                             <div className="flex items-center justify-between mb-2">
@@ -1739,7 +1768,7 @@ const AIMemoryCalculator = () => {
                               </h4>
                               <span className={`text-xs font-medium ${styles.text}`}>{hw.utilization}%</span>
                             </div>
-                            
+
                             <div className="grid grid-cols-2 gap-2 text-sm text-gray-300">
                               <div>
                                 <span className="text-gray-500">Nodes:</span>
@@ -1774,7 +1803,7 @@ const AIMemoryCalculator = () => {
                       </button>
                     );
                   })}
-                  
+
                   {(!hardwareRecommendations.cpu_recommendations || hardwareRecommendations.cpu_recommendations.length === 0) && (
                     <div className="text-center py-8 text-gray-400">
                       <Cpu className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -1793,7 +1822,7 @@ const AIMemoryCalculator = () => {
                   <span>GPU Options</span>
                   <span className="text-sm text-gray-400">({hardwareRecommendations.gpu_recommendations?.length || 0})</span>
                 </h3>
-                
+
                 <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
                   {hardwareRecommendations.gpu_recommendations?.slice(0, 5).map((hw, index) => {
                     const getOptimalityStyles = (optimality: string) => {
@@ -1831,7 +1860,7 @@ const AIMemoryCalculator = () => {
                         className={`w-full p-4 rounded-xl border ${styles.border} ${styles.bg} hover:border-purple-500/50 transition-all duration-200 text-left group relative`}
                       >
                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${styles.indicator} rounded-l-xl`}></div>
-                        
+
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <div className="flex items-center justify-between mb-2">
@@ -1840,7 +1869,7 @@ const AIMemoryCalculator = () => {
                               </h4>
                               <span className={`text-xs font-medium ${styles.text}`}>{hw.utilization}%</span>
                             </div>
-                            
+
                             <div className="grid grid-cols-2 gap-2 text-sm text-gray-300">
                               <div>
                                 <span className="text-gray-500">Nodes:</span>
@@ -1862,7 +1891,7 @@ const AIMemoryCalculator = () => {
                       </button>
                     );
                   })}
-                  
+
                   {(!hardwareRecommendations.gpu_recommendations || hardwareRecommendations.gpu_recommendations.length === 0) && (
                     <div className="text-center py-8 text-gray-400">
                       <Zap className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -1909,7 +1938,7 @@ const AIMemoryCalculator = () => {
         {results && (
           <div className="mt-8 bg-gray-900/50 rounded-2xl p-6 border border-gray-800">
             <h2 className="text-xl font-semibold mb-6">Detailed Memory Breakdown</h2>
-            
+
             <div className="grid md:grid-cols-2 gap-8">
               <div className="space-y-4">
                 {[
@@ -1937,7 +1966,7 @@ const AIMemoryCalculator = () => {
                   </div>
                 ))}
               </div>
-              
+
               <div className="bg-gray-800/50 rounded-xl p-4">
                 <h3 className="font-medium text-white mb-4">Memory Distribution</h3>
                 <div className="space-y-2 text-sm">
@@ -1976,7 +2005,7 @@ const AIMemoryCalculator = () => {
             </button>
             <h1 className="text-3xl font-bold">Model Comparison</h1>
           </div>
-          
+
           <button
             onClick={() => setCurrentScreen('calculator')}
             className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
@@ -2130,7 +2159,7 @@ const AIMemoryCalculator = () => {
                     ))}
                   </div>
                 </div>
-                
+
                 <div>
                   <h3 className="font-medium text-white mb-4">Efficiency Insights</h3>
                   <div className="space-y-4">
@@ -2141,15 +2170,15 @@ const AIMemoryCalculator = () => {
                         Efficiency Rating: {analysisResults.insights?.efficiency_rating || 'Unknown'}
                       </p>
                     </div>
-                    
+
                     <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
                       <h4 className="font-medium text-white mb-2">Recommendations</h4>
                       <ul className="text-sm text-gray-300 space-y-1">
                         {analysisResults.insights?.recommendations?.map((rec, index) => (
                           <li key={index}>• {rec}</li>
                         )) || [
-                          <li key="default">• No specific recommendations available</li>
-                        ]}
+                            <li key="default">• No specific recommendations available</li>
+                          ]}
                       </ul>
                     </div>
                   </div>
@@ -2252,10 +2281,10 @@ const AIMemoryCalculator = () => {
                         {model.parameter_count ? `${(model.parameter_count / 1e9).toFixed(1)}B params` : ''}
                       </span>
                     </div>
-                    
+
                     <h3 className="text-xl font-semibold mb-2">{model.name}</h3>
                     <p className="text-gray-400 text-sm mb-4">{model.model_id}</p>
-                    
+
                     <div className="space-y-2 mb-6">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-400">Type</span>
@@ -2267,7 +2296,7 @@ const AIMemoryCalculator = () => {
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center justify-between mt-auto">
                     <button
                       onClick={() => {
@@ -2298,7 +2327,7 @@ const AIMemoryCalculator = () => {
   return (
     <div className="min-h-screen bg-black">
       <Navigation />
-      
+
       {currentScreen === 'home' && <HomeScreen />}
       {currentScreen === 'models' && <ModelsScreen />}
       {currentScreen === 'calculator' && <CalculatorScreen />}
