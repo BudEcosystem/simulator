@@ -4,6 +4,7 @@ import { Hardware, HardwareFilters as HardwareFiltersType, PaginationState } fro
 import { HardwareCard } from './HardwareCard';
 import { HardwareFilters } from './HardwareFilters';
 import { Pagination } from '../Common/Pagination';
+import { PriceDisclaimer } from '../Common/PriceDisclaimer';
 import { hardwareAPI, buildHardwareParams } from '../../services/hardwareAPI';
 
 interface HardwareListProps {
@@ -197,6 +198,11 @@ export const HardwareList: React.FC<HardwareListProps> = ({ onHardwareSelect }) 
           <>
             {hardware.length > 0 ? (
               <>
+                {/* Show price disclaimer if any hardware has pricing */}
+                {hardware.some(hw => hw.price_approx !== undefined && hw.price_approx !== null) && (
+                  <PriceDisclaimer />
+                )}
+                
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {hardware.map((hw) => (
                     <HardwareCard

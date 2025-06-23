@@ -83,6 +83,19 @@ class HardwareRecommendation:
                 'total_memory_available': total_available_memory
             }
             
+            # Calculate price indicator if hardware specs are available
+            flops = hw.get('Flops', hw.get('flops', 0))
+            memory_bw = hw.get('Memory_BW', hw.get('memory_bw', 0))
+            
+            if flops > 0 and memory_per_chip > 0 and memory_bw > 0:
+                hardware_rec['price_approx'] = BudHardware.calculate_price_indicator(
+                    flops=flops,
+                    memory_gb=memory_per_chip,
+                    bandwidth_gbs=memory_bw
+                )
+            else:
+                hardware_rec['price_approx'] = None
+            
             # Add batch recommendations for CPUs if it's a small model
             if hw['type'] == 'cpu' and is_small_model and total_memory_gb < 40:
                 batch_recommendations = []

@@ -18,6 +18,7 @@ export interface Hardware {
   min_on_prem_price: number | null;
   max_on_prem_price: number | null;
   source: string;
+  price_approx?: number;
 }
 
 export interface HardwareDetail extends Omit<Hardware, 'vendors' | 'clouds'> {
@@ -49,6 +50,7 @@ export interface HardwareRecommendation {
   utilization: number;
   total_memory_available?: number;
   batch_recommendations?: BatchRecommendation[];
+  price_approx?: number;
 }
 
 export interface BatchRecommendation {

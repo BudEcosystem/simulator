@@ -91,6 +91,10 @@ class HardwareResponse(BaseModel):
     min_on_prem_price: Optional[float] = None
     max_on_prem_price: Optional[float] = None
     source: str = "manual"
+    price_approx: Optional[float] = Field(
+        None,
+        description="Approximate price indicator for comparison only"
+    )
 
 
 class HardwareDetailResponse(BaseModel):
@@ -129,6 +133,10 @@ class RecommendationResponse(BaseModel):
     utilization: float = Field(..., description="Memory utilization percentage")
     total_memory_available: Optional[float] = None
     batch_recommendations: Optional[List[Dict[str, Any]]] = None
+    price_approx: Optional[float] = Field(
+        None, 
+        description="Approximate price indicator for comparison only. NOT actual pricing."
+    )
 
 
 class HardwareRecommendationResponse(BaseModel):
@@ -192,7 +200,26 @@ async def list_hardware(
             offset=offset
         )
         
-        return [HardwareResponse(**hw) for hw in results]
+        # Add price indicators to each hardware item
+        enhanced_results = []
+        for hw in results:
+            # Calculate price indicator if specs are available
+            flops = hw.get('flops', 0)
+            memory_size = hw.get('memory_size', 0)
+            memory_bw = hw.get('memory_bw', 0)
+            
+            if flops > 0 and memory_size > 0 and memory_bw > 0:
+                hw['price_approx'] = BudHardware.calculate_price_indicator(
+                    flops=flops,
+                    memory_gb=memory_size,
+                    bandwidth_gbs=memory_bw
+                )
+            else:
+                hw['price_approx'] = None
+                
+            enhanced_results.append(hw)
+        
+        return [HardwareResponse(**hw) for hw in enhanced_results]
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
@@ -246,7 +273,26 @@ async def filter_hardware(
             offset=offset
         )
         
-        return [HardwareResponse(**hw) for hw in results]
+        # Add price indicators to each hardware item
+        enhanced_results = []
+        for hw in results:
+            # Calculate price indicator if specs are available
+            flops = hw.get('flops', 0)
+            memory_size = hw.get('memory_size', 0)
+            memory_bw = hw.get('memory_bw', 0)
+            
+            if flops > 0 and memory_size > 0 and memory_bw > 0:
+                hw['price_approx'] = BudHardware.calculate_price_indicator(
+                    flops=flops,
+                    memory_gb=memory_size,
+                    bandwidth_gbs=memory_bw
+                )
+            else:
+                hw['price_approx'] = None
+                
+            enhanced_results.append(hw)
+        
+        return [HardwareResponse(**hw) for hw in enhanced_results]
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")

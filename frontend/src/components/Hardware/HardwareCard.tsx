@@ -80,8 +80,8 @@ export const HardwareCard: React.FC<HardwareCardProps> = ({ hardware, onSelect }
       </div>
 
       {/* Pricing Information */}
-      {(hardware.min_on_prem_price || hardware.clouds.length > 0) && (
-        <div className="border-t pt-3 mb-4">
+      {(hardware.min_on_prem_price || hardware.clouds.length > 0 || hardware.price_approx !== undefined) && (
+        <div className="border-t border-gray-700 pt-3 mb-4">
           {hardware.min_on_prem_price && (
             <div className="flex items-center text-sm">
               <DollarSign className="w-4 h-4 mr-2 text-green-500" />
@@ -89,6 +89,20 @@ export const HardwareCard: React.FC<HardwareCardProps> = ({ hardware, onSelect }
               <span className="ml-auto font-medium text-green-400">
                 ${hardware.min_on_prem_price.toLocaleString()}
               </span>
+            </div>
+          )}
+          
+          {/* Add price indicator if available */}
+          {hardware.price_approx !== undefined && hardware.price_approx !== null && (
+            <div className="flex items-center text-sm mt-2">
+              <DollarSign className="w-4 h-4 mr-2 text-blue-500" />
+              <span className="text-gray-400">Relative Price:</span>
+              <div className="flex items-center ml-auto">
+                <span className="font-semibold text-blue-400">
+                  ${hardware.price_approx.toFixed(2)}
+                </span>
+                <span className="text-xs text-gray-500 ml-1">*</span>
+              </div>
             </div>
           )}
           
