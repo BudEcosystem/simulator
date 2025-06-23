@@ -892,16 +892,6 @@ const AIMemoryCalculator = () => {
         {/* Hero Section */}
         <div className="text-center mb-20 relative">
           <div className="mb-0 w-[100%] flex flex-col items-center justify-center">
-            {/* <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Sparkles className="w-10 h-10 text-white" />
-            </div> */}
-            {/* <div className='w-[50vW] h-[auto] flex items-center justify-center rounded-xl overflow-hidden'>
-              <img
-                src="/image.png"
-                alt="AI Memory Calculator Hero"
-                className="w-full h-auto object-cover mask-[radial-gradient(ellipse_at_center,white_60%,transparent_100%)]"
-              />
-            </div> */}
             <div className="w-[46vw] h-auto flex items-center justify-center rounded-xl overflow-hidden bg-black relative">
               <img
                 src="/image.png"
