@@ -6,6 +6,7 @@ import { HardwareList } from './components/Hardware/HardwareList';
 import { HardwareDetail } from './components/Hardware/HardwareDetail';
 import { HardwareRecommendation, HardwareRecommendationResponse } from './types/hardware';
 import { hardwareAPI } from './services/hardwareAPI';
+import budIcon from './budlogo.svg';
 
 // =============================================================================
 // TYPE DEFINITIONS
@@ -821,7 +822,6 @@ const AIMemoryCalculator = () => {
       fetchHardwareRecommendations();
     }
   }, [results]);
-
   // Navigation component
   const Navigation = () => (
     <div className="fixed top-0 left-0 right-0 z-50 bg-black/90 backdrop-blur-sm border-b border-purple-500/20">
@@ -829,10 +829,17 @@ const AIMemoryCalculator = () => {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+              {/* <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
                 <Cpu className="w-4 h-4 text-white" />
+              </div> */}
+              <div className='w-auto h-8 flex items-center justify-center'>
+                <img
+                  src={budIcon}
+                  alt="AI Memory Calculator Logo"
+                  className="w-auto h-8"
+                />
               </div>
-              <span className="text-xl font-bold text-white">AI Memory Calculator</span>
+              {/* <span className="text-xl font-bold text-white">Bud</span> */}
             </div>
           </div>
           
@@ -881,9 +888,9 @@ const AIMemoryCalculator = () => {
             <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
               <Sparkles className="w-10 h-10 text-white" />
             </div>
-            <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+            {/* <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
               AI Memory Calculator
-            </h1>
+            </h1> */}
             <p className="text-xl text-gray-300 max-w-3xl mx-auto">
               Calculate precise memory requirements for AI models from HuggingFace. 
               Optimize your GPU usage and deployment costs with accurate predictions.
