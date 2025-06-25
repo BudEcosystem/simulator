@@ -938,4 +938,51 @@ class BudHardware:
             
         except Exception as e:
             logger.error(f"Failed to export hardware: {e}")
-            return False 
+            return False
+
+    @staticmethod
+    def calculate_price_indicator(flops: float, memory_gb: float, bandwidth_gbs: float) -> float:
+        """
+        Calculate approximate price indicator for hardware comparison.
+        Note: This is NOT actual pricing, only for relative comparison.
+        
+        Based on a simplified model correlating hardware specifications
+        to relative cost indicators. The formula uses logarithmic scaling
+        to account for the non-linear relationship between performance
+        and cost in the hardware market.
+        
+        Args:
+            flops: Floating point operations per second (FLOPS)
+            memory_gb: Memory size in GB
+            bandwidth_gbs: Memory bandwidth in GB/s
+            
+        Returns:
+            Approximate price indicator (relative scale, not actual dollars)
+            Returns 0.0 for invalid inputs.
+            
+        Example:
+            >>> BudHardware.calculate_price_indicator(1000, 80, 2000)
+            45.67  # Relative price indicator
+        """
+        import math
+        
+        if flops <= 0 or memory_gb <= 0 or bandwidth_gbs <= 0:
+            return 0.0
+            
+        try:
+            # Logarithmic pricing model based on hardware specification scaling
+            # Formula: log10(price) = -3.46 - 0.05*log10(flops) + 0.49*log10(memory) + 1.03*log10(bandwidth)
+            # This creates a relative scale where higher-spec hardware gets higher indicators
+            log_price = (-3.46
+                         - 0.05 * math.log10(flops)
+                         + 0.49 * math.log10(memory_gb)
+                         + 1.03 * math.log10(bandwidth_gbs))
+            
+            price_indicator = 10 ** log_price
+            
+            # Round to 2 decimal places for clean display
+            return round(price_indicator, 2)
+            
+        except (ValueError, OverflowError, ZeroDivisionError):
+            # Handle edge cases (negative values, overflow, etc.)
+            return 0.0 
