@@ -893,7 +893,7 @@ const AIMemoryCalculator = () => {
         {/* Hero Section */}
         <div className="text-center mb-20 relative">
           <div className="mb-0 w-[100%] flex flex-col items-center justify-center">
-            <div className="w-[46vw] h-auto flex items-center justify-center rounded-xl overflow-hidden bg-black relative">
+            <div className="w-[45vw] h-auto flex flex-col items-center justify-center rounded-xl overflow-hidden bg-black relative">
               <img
                 src="/image.png"
                 alt="Blended"
@@ -906,29 +906,30 @@ const AIMemoryCalculator = () => {
                     'radial-gradient(ellipse at center, transparent -100% 0, black 100%)',
                 }}
               />
-            </div>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center right-0 left-0 bottom-0 top-[-80px] relative">
-              <button
-                onClick={() => setCurrentScreen('calculator')}
-                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg shadow-purple-500/25"
-              >
-                <div className="flex items-center space-x-2">
-                  <Calculator className="w-5 h-5" />
-                  <span>Start Calculating</span>
-                  <ArrowRight className="w-5 h-5" />
-                </div>
-              </button>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center right-0 left-0 bottom-0  absolute mb-[10%]">
+                <button
+                  onClick={() => setCurrentScreen('calculator')}
+                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg shadow-purple-500/25"
+                >
+                  <div className="flex items-center space-x-2">
+                    <Calculator className="w-5 h-5" />
+                    <span>Start Calculating</span>
+                    <ArrowRight className="w-5 h-5" />
+                  </div>
+                </button>
 
-              <button
-                onClick={() => setCurrentScreen('comparison')}
-                className="bg-gray-800 hover:bg-gray-700 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-200 border border-gray-600"
-              >
-                <div className="flex items-center space-x-2">
-                  <GitCompare className="w-5 h-5" />
-                  <span>Compare Models</span>
-                </div>
-              </button>
+                <button
+                  onClick={() => setCurrentScreen('comparison')}
+                  className="bg-gray-800 hover:bg-gray-700 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-200 border border-gray-600"
+                >
+                  <div className="flex items-center space-x-2">
+                    <GitCompare className="w-5 h-5" />
+                    <span>Compare Models</span>
+                  </div>
+                </button>
+              </div>
             </div>
+
             <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
               Find the Perfect Hardware for Your AI Models
             </h1>
@@ -1671,9 +1672,9 @@ const AIMemoryCalculator = () => {
             {/* Price Disclaimer */}
             {(hardwareRecommendations.cpu_recommendations?.some(hw => hw.price_approx !== undefined && hw.price_approx !== null) ||
               hardwareRecommendations.gpu_recommendations?.some(hw => hw.price_approx !== undefined && hw.price_approx !== null)) && (
-              <PriceDisclaimer />
-            )}
-            
+                <PriceDisclaimer />
+              )}
+
             <div className="bg-gray-900/50 rounded-2xl p-6 border border-gray-800">
               <h2 className="text-xl font-semibold mb-6 flex items-center space-x-2">
                 <Cpu className="w-5 h-5 text-purple-500" />
@@ -1718,7 +1719,7 @@ const AIMemoryCalculator = () => {
                     <span>CPU Options</span>
                     <span className="text-sm text-gray-400">({hardwareRecommendations.cpu_recommendations?.length || 0})</span>
                   </h3>
-                  
+
                   <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
                     {hardwareRecommendations.cpu_recommendations?.slice(0, 5).map((hw, index) => {
                       const getOptimalityStyles = (optimality: string) => {
@@ -1756,7 +1757,7 @@ const AIMemoryCalculator = () => {
                           className={`w-full p-4 rounded-xl border ${styles.border} ${styles.bg} hover:border-blue-500/50 transition-all duration-200 text-left group relative`}
                         >
                           <div className={`absolute left-0 top-0 bottom-0 w-1 ${styles.indicator} rounded-l-xl`}></div>
-                          
+
                           <div className="space-y-3">
                             <div>
                               <div className="flex items-center justify-between mb-2">
@@ -1765,7 +1766,7 @@ const AIMemoryCalculator = () => {
                                 </h4>
                                 <span className={`text-xs font-medium ${styles.text}`}>{hw.utilization}% utilization</span>
                               </div>
-                              
+
                               <div className="grid grid-cols-2 gap-2 text-sm text-gray-300">
                                 <div>
                                   <span className="text-gray-500">Nodes:</span>
@@ -1776,7 +1777,7 @@ const AIMemoryCalculator = () => {
                                   <span className="font-medium ml-1">{hw.memory_per_chip} GB</span>
                                 </div>
                               </div>
-                              
+
                               {/* Price Indicator */}
                               {hw.price_approx !== undefined && hw.price_approx !== null && (
                                 <div className="mt-2 pt-2 border-t border-gray-700/50">
@@ -1810,7 +1811,7 @@ const AIMemoryCalculator = () => {
                         </button>
                       );
                     })}
-                    
+
                     {(!hardwareRecommendations.cpu_recommendations || hardwareRecommendations.cpu_recommendations.length === 0) && (
                       <div className="text-center py-8 text-gray-400">
                         <Cpu className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -1829,7 +1830,7 @@ const AIMemoryCalculator = () => {
                     <span>GPU Options</span>
                     <span className="text-sm text-gray-400">({hardwareRecommendations.gpu_recommendations?.length || 0})</span>
                   </h3>
-                  
+
                   <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
                     {hardwareRecommendations.gpu_recommendations?.slice(0, 5).map((hw, index) => {
                       const getOptimalityStyles = (optimality: string) => {
@@ -1867,7 +1868,7 @@ const AIMemoryCalculator = () => {
                           className={`w-full p-4 rounded-xl border ${styles.border} ${styles.bg} hover:border-purple-500/50 transition-all duration-200 text-left group relative`}
                         >
                           <div className={`absolute left-0 top-0 bottom-0 w-1 ${styles.indicator} rounded-l-xl`}></div>
-                          
+
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center justify-between mb-2">
@@ -1876,7 +1877,7 @@ const AIMemoryCalculator = () => {
                                 </h4>
                                 <span className={`text-xs font-medium ${styles.text}`}>{hw.utilization}% utilization</span>
                               </div>
-                              
+
                               <div className="grid grid-cols-2 gap-2 text-sm text-gray-300">
                                 <div>
                                   <span className="text-gray-500">Nodes:</span>
@@ -1893,7 +1894,7 @@ const AIMemoryCalculator = () => {
                                   </div>
                                 )}
                               </div>
-                              
+
                               {/* Price Indicator */}
                               {hw.price_approx !== undefined && hw.price_approx !== null && (
                                 <div className="mt-2 pt-2 border-t border-gray-700/50">
@@ -1908,7 +1909,7 @@ const AIMemoryCalculator = () => {
                         </button>
                       );
                     })}
-                    
+
                     {(!hardwareRecommendations.gpu_recommendations || hardwareRecommendations.gpu_recommendations.length === 0) && (
                       <div className="text-center py-8 text-gray-400">
                         <Zap className="w-8 h-8 mx-auto mb-2 opacity-50" />
