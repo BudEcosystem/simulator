@@ -4,13 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GenZ-LLM Analyzer (genz_llm) is a Python package that models Large Language Model (LLM) performance on various hardware platforms. It provides analytical performance estimates through a three-component approach: Model Profiler, NPU Characterizer, and Platform Characterizer.
+BudSimulator is a comprehensive AI model simulation and benchmarking platform built on top of the GenZ-LLM Analyzer framework. It provides analytical performance estimates for Large Language Model (LLM) inference on various hardware platforms through a full-stack application with React frontend and FastAPI backend.
+
+Key components:
+- **GenZ-LLM Analyzer (genz_llm)**: Core Python package for LLM performance modeling
+- **FastAPI Backend**: REST API with hardware recommendations and model analysis
+- **React Frontend**: Interactive UI for hardware selection and use case management
+- **Streamlit Interface**: Alternative web dashboard for model comparison
 
 ## Development Commands
 
 ### Installation
 ```bash
-# Install in development mode from BudSimulator directory
+# Automated setup (recommended)
+python setup.py
+
+# Manual installation in development mode
 pip install -e .
 
 # Or install from PyPI
@@ -19,17 +28,40 @@ pip install genz-llm
 
 ### Running the Application
 ```bash
-# Start the Streamlit web interface
+# Backend API (stable mode)
+python run_api.py
+
+# Backend API (with hot-reload for development)
+RELOAD=true python run_api.py  # Unix/Linux/macOS
+set RELOAD=true && python run_api.py  # Windows
+
+# Frontend (in frontend directory)
+cd frontend
+npm start
+
+# Alternative Streamlit interface
 streamlit run BudSimulator/Website/Home.py
 ```
 
 ### Testing
 ```bash
-# Run tests (using pytest convention)
-pytest BudSimulator/tests/
+# Run all tests
+pytest BudSimulator/tests/ -v
 
 # Run a specific test file
 pytest BudSimulator/tests/test_prefill_time.py
+
+# Run tests with coverage
+pytest BudSimulator/tests/ --cov=BudSimulator
+```
+
+### Frontend Development
+```bash
+cd frontend
+npm install       # Install dependencies
+npm run build     # Production build
+npm test          # Run tests
+npm run lint      # Run linter
 ```
 
 ## High-Level Architecture
@@ -62,6 +94,23 @@ pytest BudSimulator/tests/test_prefill_time.py
    - Creates model definitions with specified parallelism configurations
    - Supports MHA (Multi-Head Attention) and Mamba architectures
 
+### API Layer (`apis/`)
+- FastAPI application with automatic OpenAPI documentation (/docs)
+- Routers for models, hardware, and usecases
+- CORS-enabled for frontend integration
+- Static file serving for logos
+
+### Database (`src/db/`)
+- SQLAlchemy models for hardware and model data
+- Pre-populated SQLite database
+- Alembic for migrations
+
+### Frontend (`frontend/`)
+- React 18.2 with TypeScript
+- Tailwind CSS for styling
+- Components for hardware browsing, usecase management, and AI memory calculation
+- Proxy configuration to backend API
+
 ### Analysis Flow
 
 1. Model Definition → CSV representation of operator sequences
@@ -75,6 +124,70 @@ pytest BudSimulator/tests/test_prefill_time.py
 - `prefill_moddeling()` / `decode_moddeling()`: End-to-end performance estimation
 - `System()`: Hardware platform definition
 - `ParallelismConfig()`: Distributed execution configuration
+
+## Common Development Tasks
+
+### Adding a New Model
+1. Create model definition in `GenZ/Models/Model_sets/`
+2. Register in model registry
+3. Update database if needed via migration
+4. Add frontend display logic if required
+
+### Adding a New Hardware Platform
+1. Define system specs in `GenZ/system.py` format
+2. Add to database via migration or seed script
+3. Update hardware recommendation logic in `src/services/`
+4. Test with existing models
+
+### Modifying API Endpoints
+1. Update router in `apis/routers/`
+2. Modify corresponding service in `src/`
+3. Update frontend API service and TypeScript types
+4. Run tests to ensure compatibility
+
+### Working with the Database
+1. Create new Alembic migration: `alembic revision -m "description"`
+2. Apply migrations: `alembic upgrade head`
+3. Database is at `data/prepopulated.db`
+
+## Important Files and Directories
+
+- `run_api.py` - Main API entry point
+- `setup.py` - Automated setup script
+- `apis/` - FastAPI application and routers
+- `src/` - Core business logic and services
+- `GenZ/` - Performance modeling framework
+- `frontend/` - React application
+- `Website/` - Streamlit alternative UI
+- `tests/` - Test suite with golden files
+- `data/prepopulated.db` - SQLite database
+- `.env.example` - Environment configuration template
+
+## Testing Approach
+
+- **Backend**: pytest with fixtures and golden file testing
+- **Frontend**: React Testing Library and Jest
+- **Integration**: API endpoint testing with FastAPI TestClient
+- **Performance**: Golden file comparison for model predictions
+
+When working with tests:
+- Run existing tests before making changes
+- Add tests for new functionality
+- Use golden test files in `tests/golden/` for expected outputs
+- Test both unit and integration levels
+
+## Code Style Guidelines
+
+- **Python**: Follow PEP 8, use type hints where appropriate
+- **TypeScript**: Use strict mode, define interfaces for all API responses
+- **React**: Functional components with hooks
+- **API**: RESTful conventions, consistent error handling
+- Document complex algorithms with inline comments
+- Keep functions focused and single-purpose
+
+## Recent Changes Context
+
+The current branch `feature/usecase-details-fix` includes fixes for the usecase details page to use `unique_id` instead of numeric `id`. When working with usecases, ensure you're using the string-based unique identifiers.
 
 ## Documentation Location
 
