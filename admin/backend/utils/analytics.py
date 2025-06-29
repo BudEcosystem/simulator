@@ -176,23 +176,34 @@ def get_analytics_summary(db: Session, days: int = 30) -> Dict:
     }
     
     # Update or create cache entry
-    existing_cache = db.query(AnalyticsCache).filter(
-        AnalyticsCache.cache_key == cache_key
-    ).first()
-    
-    if existing_cache:
-        existing_cache.cache_value = result
-        existing_cache.expires_at = datetime.utcnow() + timedelta(hours=1)
-        existing_cache.created_at = datetime.utcnow()
-    else:
-        cache_entry = AnalyticsCache(
-            cache_key=cache_key,
-            cache_value=result,
-            expires_at=datetime.utcnow() + timedelta(hours=1)
-        )
-        db.add(cache_entry)
-    
-    db.commit()
+    try:
+        # Try to update existing cache
+        existing_cache = db.query(AnalyticsCache).filter(
+            AnalyticsCache.cache_key == cache_key
+        ).first()
+        
+        if existing_cache:
+            # Update the existing entry
+            db.query(AnalyticsCache).filter(
+                AnalyticsCache.cache_key == cache_key
+            ).update({
+                "cache_value": result,
+                "expires_at": datetime.utcnow() + timedelta(hours=1)
+            })
+        else:
+            # Create new entry
+            cache_entry = AnalyticsCache(
+                cache_key=cache_key,
+                cache_value=result,
+                expires_at=datetime.utcnow() + timedelta(hours=1)
+            )
+            db.add(cache_entry)
+        
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        # If there's still an error, just return the result without caching
+        print(f"Warning: Failed to cache analytics: {e}")
     
     return result
 
