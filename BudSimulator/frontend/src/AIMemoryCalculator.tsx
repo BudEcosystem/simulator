@@ -11,6 +11,7 @@ import { UsecaseList } from './components/Usecases/UsecaseList';
 import { UsecaseDetail } from './components/Usecases/UsecaseDetail';
 import budIcon from './budlogo.svg';
 import budLogo from './budicon.png';
+import { API_BASE } from './config/api';
 
 // =============================================================================
 // TYPE DEFINITIONS
@@ -284,8 +285,7 @@ const AIMemoryCalculator = () => {
   }
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
-  // API Base URL - replace with your actual backend URL
-  const API_BASE = 'http://localhost:8000/api';
+  // API configuration is now imported from config/api.ts
 
   // =============================================================================
   // API ENDPOINTS DEFINITION

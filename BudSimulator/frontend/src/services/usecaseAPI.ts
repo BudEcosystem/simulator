@@ -1,6 +1,5 @@
 import { Usecase, UsecaseListResponse, UsecaseFilters, UsecaseStats } from '../types/usecase';
-
-const API_BASE = '/api';
+import { API_BASE } from '../config/api';
 
 export const usecaseAPI = {
   // Get list of usecases with filters

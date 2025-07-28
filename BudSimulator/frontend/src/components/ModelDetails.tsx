@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Database, CheckCircle, AlertCircle, ExternalLink, Info, Cpu, HardDrive, Settings, BarChart3, FileText, Zap } from 'lucide-react';
 import { ModelLogoWithFallback } from '../AIMemoryCalculator';
+import { API_BASE } from '../config/api';
 
 interface ModelAnalysisEval {
   name: string;
@@ -61,7 +62,7 @@ const ModelDetails: React.FC<ModelDetailsProps> = ({ modelId, onBack }) => {
       setIsLoading(true);
       setError('');
       try {
-        const response = await fetch(`http://localhost:8000/api/models/${encodeURIComponent(modelId)}`);
+        const response = await fetch(`${API_BASE}/models/${encodeURIComponent(modelId)}`);
         if (!response.ok) {
           throw new Error('Failed to fetch model details');
         }

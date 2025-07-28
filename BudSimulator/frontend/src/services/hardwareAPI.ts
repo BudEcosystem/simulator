@@ -1,7 +1,6 @@
 // Hardware API service functions
 import { Hardware, HardwareDetail, HardwareRecommendation, HardwareRecommendationResponse } from '../types/hardware';
-
-const API_BASE = '/api';
+import { API_BASE } from '../config/api';
 
 export const hardwareAPI = {
   // List hardware with filters and pagination
