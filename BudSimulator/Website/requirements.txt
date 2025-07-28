@@ -1,0 +1,15 @@
+streamlit
+matplotlib
+plotly
+seaborn
+plotnine
+tqdm
+paretoset
+kaleido
+nbformat
+numpy>=1.26.3
+pandas>=2.2.1
+pillow
+ipywidgets
+Jinja2
+genz-llm

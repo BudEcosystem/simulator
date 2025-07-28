@@ -1,0 +1,75 @@
+# Cursor Rules for BudSimulator
+
+## Project Context
+
+You are working on BudSimulator, an advanced AI model simulation and benchmarking platform. The project has multiple components:
+- GenZ framework for LLM performance modeling
+- FastAPI backend with REST APIs
+- React frontend for UI
+- Streamlit dashboard for analysis
+
+## Key Principles
+
+1. **Preserve Existing Functionality**: Never break existing features when making changes
+2. **Test-Driven**: Write or update tests for any new functionality
+3. **Type Safety**: Use type hints in Python code
+4. **Clear Documentation**: Document complex logic inline
+
+## Code Guidelines
+
+### Python (Backend)
+- Follow PEP 8 style guide
+- Use descriptive variable names
+- Prefer explicit over implicit
+- Handle exceptions gracefully
+- Add docstrings to functions and classes
+
+### JavaScript/TypeScript (Frontend)
+- Use functional components with hooks
+- Implement proper error boundaries
+- Follow React best practices
+- Keep components small and focused
+
+### API Design
+- Use RESTful conventions
+- Include proper status codes
+- Validate input data
+- Return consistent response formats
+
+## Common Patterns
+
+### Database Operations
+```python
+# Always use unique_id for usecases, not numeric id
+usecase = db.query(Usecase).filter(Usecase.unique_id == unique_id).first()
+```
+
+### Model Definition
+```python
+# Models should inherit from appropriate base classes
+# Include proper parallelism configurations
+```
+
+### Frontend API Calls
+```typescript
+// Always handle loading and error states
+// Use proper TypeScript types for API responses
+```
+
+## File Structure
+
+- Keep related functionality together
+- Follow existing naming conventions
+- Place tests near the code they test
+- Use appropriate directories for different concerns
+
+## Current Focus
+
+The current branch addresses usecase ID handling. Ensure all references use `unique_id` (string) not `id` (numeric).
+
+## Remember
+
+- The codebase is actively used - maintain backward compatibility
+- Performance matters - consider computational efficiency
+- User experience is important - provide clear feedback
+- Documentation helps future development - keep it updated

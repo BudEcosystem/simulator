@@ -1,0 +1,2917 @@
+[
+    {
+        "uri": "/black-forest-labs/FLUX.1-Kontext-dev",
+        "full_url": "https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev",
+        "modality": "computer_vision",
+        "task": "image-to-image",
+        "downloads": ".1",
+        "details": {
+            "modalities": [
+                "Image-to-Image"
+            ],
+            "languages": [
+                "en"
+            ],
+            "inference_engines": [
+                "diffusers",
+                "diffusers",
+                "diffusers"
+            ],
+            "model_details": {
+                "name": "FLUX.1-Kontext-dev",
+                "downloads": 12901
+            },
+            "adapters_finetunes_quantizations": {
+                "adapters": "4 models",
+                "finetunes": "2 models",
+                "quantizations": "4 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/black-forest-labs/FLUX.1-Kontext-dev.png",
+                "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png"
+            ],
+            "github_repos": [
+                "https://github.com/black-forest-labs/flux/blob/main/model_licenses/LICENSE-FLUX1-dev",
+                "https://github.com/black-forest-labs/flux",
+                "https://github.com/comfyanonymous/ComfyUI",
+                "https://github.com/huggingface/diffusers"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2506.15742"
+            ],
+            "model_website": "https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev",
+            "license": "other"
+        }
+    },
+    {
+        "uri": "/google/magenta-realtime",
+        "full_url": "https://huggingface.co/google/magenta-realtime",
+        "modality": "other",
+        "task": "unknown",
+        "downloads": "4",
+        "details": {
+            "inference_engines": [
+                "tf-keras",
+                "tf-keras",
+                "tf-keras"
+            ],
+            "model_details": {
+                "name": "magenta-realtime",
+                "downloads": 0
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/google/magenta-realtime.png"
+            ],
+            "github_repos": [
+                "https://github.com/magenta/magenta-realtime",
+                "https://github.com/magenta/magenta-realtime/blob/main/LICENSE",
+                "https://github.com/jax-ml/jax",
+                "https://github.com/google-research/t5x",
+                "https://github.com/google/seqio"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2107.03312",
+                "https://arxiv.org/abs/2205.01917",
+                "https://arxiv.org/abs/2208.12415",
+                "https://arxiv.org/abs/2301.11325"
+            ],
+            "model_website": "https://huggingface.co/google/magenta-realtime",
+            "license": "cc-by-4.0"
+        }
+    },
+    {
+        "uri": "/nanonets/Nanonets-OCR-s",
+        "full_url": "https://huggingface.co/nanonets/Nanonets-OCR-s",
+        "parameters": "4B",
+        "modality": "multimodal",
+        "task": "image-text-to-text",
+        "downloads": "4",
+        "details": {
+            "modalities": [
+                "Image-Text-to-Text"
+            ],
+            "languages": [
+                "en"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "Nanonets-OCR-s",
+                "architecture": [
+                    "Qwen2_5_VLForConditionalGeneration"
+                ],
+                "model_type": "qwen2_5_vl",
+                "downloads": 201530,
+                "base_model": "Qwen/Qwen2.5-VL-3B-Instruct"
+            },
+            "model_size": {
+                "total_params": 3754622976,
+                "parameters": {
+                    "BF16": 3754622976
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "8 models",
+                "quantizations": "16 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/nanonets/Nanonets-OCR-s.png"
+            ],
+            "github_repos": [
+                "https://github.com/NanoNets/docext/tree/dev/markdown"
+            ],
+            "model_website": "https://huggingface.co/nanonets/Nanonets-OCR-s"
+        }
+    },
+    {
+        "uri": "/tencent/Hunyuan-A13B-Instruct",
+        "full_url": "https://huggingface.co/tencent/Hunyuan-A13B-Instruct",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "13",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "Hunyuan-A13B-Instruct",
+                "architecture": [
+                    "HunYuanMoEV1ForCausalLM"
+                ],
+                "model_type": "hunyuan",
+                "downloads": 0
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "1 model",
+                "quantizations": "1 model"
+            },
+            "images": [
+                "https://dscache.tencent-cloud.cn/upload/uploader/hunyuan-64b418fd052c033b228e04bc77bbc4b54fd7f5bc.png",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/tencent/Hunyuan-A13B-Instruct.png"
+            ],
+            "github_repos": [
+                "https://github.com/Tencent-Hunyuan/Hunyuan-A13B/blob/main/report/Hunyuan_A13B_Technical_Report.pdf",
+                "https://github.com/Tencent-Hunyuan/Hunyuan-A13B",
+                "https://github.com/Tencent-Hunyuan/Hunyuan-A13B/blob/main/LICENSE"
+            ],
+            "model_website": "https://huggingface.co/tencent/Hunyuan-A13B-Instruct",
+            "license": "other"
+        }
+    },
+    {
+        "uri": "/mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+        "full_url": "https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+        "parameters": "24B",
+        "modality": "multimodal",
+        "task": "image-text-to-text",
+        "downloads": "3.2",
+        "details": {
+            "modalities": [
+                "Image-Text-to-Text"
+            ],
+            "languages": [
+                "en",
+                "fr",
+                "de",
+                "es",
+                "pt",
+                "it",
+                "ja",
+                "ko",
+                "ru",
+                "zh",
+                "ar",
+                "fa",
+                "id",
+                "ms",
+                "ne",
+                "pl",
+                "ro",
+                "sr",
+                "sv",
+                "tr",
+                "uk",
+                "vi",
+                "hi",
+                "bn"
+            ],
+            "inference_engines": [
+                "vllm",
+                "vllm",
+                "vllm",
+                "vllm"
+            ],
+            "model_details": {
+                "name": "Mistral-Small-3.2-24B-Instruct-2506",
+                "language_count": 24,
+                "architecture": [
+                    "Mistral3ForConditionalGeneration"
+                ],
+                "model_type": "mistral3",
+                "downloads": 19193,
+                "base_model": "mistralai/Mistral-Small-3.1-24B-Base-2503"
+            },
+            "model_size": {
+                "total_params": 24011361280,
+                "parameters": {
+                    "BF16": 24011361280
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "22 models",
+                "adapters": "2 models",
+                "quantizations": "16 models"
+            },
+            "images": [
+                "https://static.wikia.nocookie.net/essentialsdocs/images/7/70/Battle.png",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/mistralai/Mistral-Small-3.2-24B-Instruct-2506.png",
+                "https://huggingface.co/datasets/patrickvonplaten/random_img/resolve/main/europe.png",
+                "https://math-coaching.com/img/fiche/46/expressions-mathematiques.jpg"
+            ],
+            "github_repos": [
+                "https://github.com/mistralai/mistral-common/blob/535b4d0a0fc94674ea17db6cf8dc2079b81cbcfa/src/mistral_common/tokens/tokenizers/instruct.py",
+                "https://github.com/vllm-project/vllm",
+                "https://github.com/huggingface/transformers",
+                "https://github.com/vllm-project/vllm/releases/tag/v0.9.1",
+                "https://github.com/mistralai/mistral-common/releases/tag/v1.6.2",
+                "https://github.com/vllm-project/vllm/blob/main/Dockerfile",
+                "https://github.com/mistralai/mistral-common"
+            ],
+            "model_website": "https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/OmniGen2/OmniGen2",
+        "full_url": "https://huggingface.co/OmniGen2/OmniGen2",
+        "modality": "multimodal",
+        "task": "any-to-any",
+        "downloads": "2",
+        "details": {
+            "modalities": [
+                "Any-to-Any"
+            ],
+            "inference_engines": [
+                "diffusers",
+                "diffusers",
+                "diffusers"
+            ],
+            "model_details": {
+                "name": "OmniGen2",
+                "downloads": 20066
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "1 model",
+                "quantizations": "3 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/OmniGen2/OmniGen2.png"
+            ],
+            "github_repos": [
+                "https://github.com/Ve%3Cp%20align=",
+                "https://github.com/VectorSpaceLab/OmniGen2",
+                "https://github.com/VectorSpaceLab/OmniGen2/blob/main/example.ipynb"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2506.18871",
+                "https://arxiv.org/abs/2404.07724"
+            ],
+            "model_website": "https://huggingface.co/OmniGen2/OmniGen2",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/google/gemma-3n-E4B-it",
+        "full_url": "https://huggingface.co/google/gemma-3n-E4B-it",
+        "parameters": "8B",
+        "modality": "multimodal",
+        "task": "image-text-to-text",
+        "downloads": "3",
+        "details": {
+            "modalities": [
+                "Image-Text-to-Text"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "gemma-3n-E4B-it",
+                "architecture": [
+                    "Gemma3nForConditionalGeneration"
+                ],
+                "model_type": "gemma3n",
+                "downloads": 5552
+            },
+            "model_size": {
+                "total_params": 8387373328,
+                "parameters": {
+                    "BF16": 7849978128
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "3 models",
+                "quantizations": "4 models"
+            },
+            "images": [
+                "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/google/gemma-3n-E4B-it.png"
+            ],
+            "github_repos": [
+                "https://github.com/jax-ml/jax",
+                "https://github.com/google-research-datasets/natural-questions"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/1905.07830",
+                "https://arxiv.org/abs/1905.10044",
+                "https://arxiv.org/abs/1911.11641",
+                "https://arxiv.org/abs/1904.09728",
+                "https://arxiv.org/abs/1705.03551",
+                "https://arxiv.org/abs/1911.01547",
+                "https://arxiv.org/abs/1907.10641",
+                "https://arxiv.org/abs/1903.00161",
+                "https://arxiv.org/abs/2210.03057",
+                "https://arxiv.org/abs/2502.12404v1",
+                "https://arxiv.org/abs/2411.19799",
+                "https://arxiv.org/abs/2009.03300",
+                "https://arxiv.org/abs/2502.21228",
+                "https://arxiv.org/abs/2311.12022",
+                "https://arxiv.org/abs/2403.07974",
+                "https://arxiv.org/abs/2108.07732",
+                "https://arxiv.org/abs/2107.03374"
+            ],
+            "model_website": "https://huggingface.co/google/gemma-3n-E4B-it",
+            "license": "gemma"
+        }
+    },
+    {
+        "uri": "/MiniMaxAI/MiniMax-M1-80k",
+        "full_url": "https://huggingface.co/MiniMaxAI/MiniMax-M1-80k",
+        "parameters": "456B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "1",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers",
+                "vllm"
+            ],
+            "model_details": {
+                "name": "MiniMax-M1-80k",
+                "architecture": [
+                    "MiniMaxM1ForCausalLM"
+                ],
+                "model_type": "minimax_m1",
+                "downloads": 16211
+            },
+            "model_size": {
+                "total_params": 456089655296,
+                "parameters": {
+                    "BF16": 456073926656,
+                    "F32": 15728640
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "2 models"
+            },
+            "images": [
+                "https://github.com/MiniMax-AI/MiniMax-01/blob/main/figures/wechat-qrcode.jpeg",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/MiniMaxAI/MiniMax-M1-80k.png"
+            ],
+            "github_repos": [
+                "https://github.com/MiniMax-AI/MiniMax-MCP",
+                "https://github.com/MiniMax-AI/MiniMax-M1",
+                "https://github.com/MiniMax-AI/MiniMax-M1/blob/main/LICENSE",
+                "https://github.com/MiniMax-AI/MiniMax-01/blob/main/figures/wechat-qrcode.jpeg"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2506.13585"
+            ],
+            "model_website": "https://huggingface.co/MiniMaxAI/MiniMax-M1-80k",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/moonshotai/Kimi-VL-A3B-Thinking-2506",
+        "full_url": "https://huggingface.co/moonshotai/Kimi-VL-A3B-Thinking-2506",
+        "parameters": "16B",
+        "modality": "multimodal",
+        "task": "image-text-to-text",
+        "downloads": "3",
+        "details": {
+            "modalities": [
+                "Image-Text-to-Text"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "Kimi-VL-A3B-Thinking-2506",
+                "architecture": [
+                    "KimiVLForConditionalGeneration"
+                ],
+                "model_type": "kimi_vl",
+                "downloads": 20770,
+                "base_model": "moonshotai/Moonlight-16B-A3B"
+            },
+            "model_size": {
+                "total_params": 16407657776,
+                "parameters": {
+                    "F32": 1664,
+                    "BF16": 16407656112
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "3",
+                "quantizations": "1 model"
+            },
+            "images": [
+                "https://huggingface.co/spaces/moonshotai/Kimi-VL-A3B-Thinking/resolve/main/images/demo6.jpeg",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/moonshotai/Kimi-VL-A3B-Thinking-2506.png"
+            ],
+            "github_repos": [
+                "https://github.com/MoonshotAI/Kimi-VL",
+                "https://github.com/vllm-project/vllm/tree/main/vllm"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2504.07491"
+            ],
+            "model_website": "https://huggingface.co/moonshotai/Kimi-VL-A3B-Thinking-2506",
+            "license": "mit"
+        }
+    },
+    {
+        "uri": "/Menlo/Jan-nano-128k",
+        "full_url": "https://huggingface.co/Menlo/Jan-nano-128k",
+        "parameters": "4B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "128",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "languages": [
+                "en"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "Jan-nano-128k",
+                "architecture": [
+                    "Qwen3ForCausalLM"
+                ],
+                "model_type": "qwen3",
+                "downloads": 1267,
+                "base_model": "Qwen/Qwen3-4B-Base"
+            },
+            "model_size": {
+                "total_params": 4022468096,
+                "parameters": {
+                    "BF16": 4022468096
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "1 model",
+                "quantizations": "8 models"
+            },
+            "images": [
+                "https://cdn-uploads.huggingface.co/production/uploads/65713d70f56f9538679e5a56/Bc0ehij86l_NX52OfxeOj.png",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/Menlo/Jan-nano-128k.png",
+                "https://cdn-uploads.huggingface.co/production/uploads/65713d70f56f9538679e5a56/NP7CvcjOtLX8mST0t7eAM.png",
+                "https://cdn-uploads.huggingface.co/production/uploads/62d7b2339b629105a5d6888a/aLL8fyMLE3ujV75qD4WKI.gif"
+            ],
+            "github_repos": [
+                "https://github.com/menloresearch/deep-research",
+                "https://github.com/menloresearch/jan/issues"
+            ],
+            "model_website": "https://huggingface.co/Menlo/Jan-nano-128k",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/Menlo/Jan-nano",
+        "full_url": "https://huggingface.co/Menlo/Jan-nano",
+        "parameters": "4B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "4",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "Jan-nano",
+                "architecture": [
+                    "Qwen3ForCausalLM"
+                ],
+                "model_type": "qwen3",
+                "downloads": 32416,
+                "base_model": "Qwen/Qwen3-4B-Base"
+            },
+            "model_size": {
+                "total_params": 4022468096,
+                "parameters": {
+                    "BF16": 4022468096
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "5 models",
+                "quantizations": "18 models"
+            },
+            "images": [
+                "https://cdn-uploads.huggingface.co/production/uploads/65713d70f56f9538679e5a56/wC7Xtolp7HOFIdKTOJhVt.png",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/Menlo/Jan-nano.png",
+                "https://cdn-uploads.huggingface.co/production/uploads/65713d70f56f9538679e5a56/sdRfF9FX5ApPow9gZ31No.png"
+            ],
+            "github_repos": [
+                "https://github.com/menloresearch/deep-research"
+            ],
+            "model_website": "https://huggingface.co/Menlo/Jan-nano",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/maya-research/Veena",
+        "full_url": "https://huggingface.co/maya-research/Veena",
+        "parameters": "4B",
+        "modality": "audio",
+        "task": "text-to-speech",
+        "downloads": "4",
+        "details": {
+            "modalities": [
+                "Text-to-Speech"
+            ],
+            "languages": [
+                "en",
+                "hi"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "Veena",
+                "architecture": [
+                    "LlamaForCausalLM"
+                ],
+                "model_type": "llama",
+                "downloads": 3706
+            },
+            "model_size": {
+                "total_params": 3783054336,
+                "parameters": {
+                    "BF16": 3783054336
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "quantizations": "4 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/maya-research/Veena.png"
+            ],
+            "model_website": "https://huggingface.co/maya-research/Veena",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/black-forest-labs/FLUX.1-dev",
+        "full_url": "https://huggingface.co/black-forest-labs/FLUX.1-dev",
+        "modality": "multimodal",
+        "task": "text-to-image",
+        "downloads": ".1",
+        "details": {
+            "modalities": [
+                "Text-to-Image"
+            ],
+            "languages": [
+                "en"
+            ],
+            "inference_engines": [
+                "diffusers",
+                "diffusers",
+                "diffusers"
+            ],
+            "model_details": {
+                "name": "FLUX.1-dev",
+                "downloads": 1647584
+            },
+            "adapters_finetunes_quantizations": {
+                "adapters": "31825 models",
+                "finetunes": "438 models",
+                "quantizations": "44 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/black-forest-labs/FLUX.1-dev.png"
+            ],
+            "github_repos": [
+                "https://github.com/black-forest-labs/flux",
+                "https://github.com/comfyanonymous/ComfyUI"
+            ],
+            "model_website": "https://huggingface.co/black-forest-labs/FLUX.1-dev",
+            "license": "other"
+        }
+    },
+    {
+        "uri": "/jinaai/jina-embeddings-v4",
+        "full_url": "https://huggingface.co/jinaai/jina-embeddings-v4",
+        "parameters": "4B",
+        "modality": "natural_language_processing",
+        "task": "feature-extraction",
+        "downloads": "4",
+        "details": {
+            "modalities": [
+                "Visual Document Retrieval"
+            ],
+            "languages": [
+                "multilingual"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "jina-embeddings-v4",
+                "architecture": [
+                    "JinaEmbeddingsV4Model"
+                ],
+                "downloads": 3188
+            },
+            "model_size": {
+                "total_params": 3754885248,
+                "parameters": {
+                    "BF16": 3754885248
+                }
+            },
+            "images": [
+                "https://i.ibb.co/r5w8hG8/beach2.jpg",
+                "https://i.ibb.co/nQNGqL0/beach1.jpg",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/jinaai/jina-embeddings-v4.png"
+            ],
+            "github_repos": [
+                "https://github.com/Dao-AILab/flash-attention",
+                "https://github.com/jina-ai/jina-vdr"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2506.18902"
+            ],
+            "model_website": "https://huggingface.co/jinaai/jina-embeddings-v4",
+            "license": "cc-by-nc-4.0"
+        }
+    },
+    {
+        "uri": "/POLARIS-Project/Polaris-4B-Preview",
+        "full_url": "https://huggingface.co/POLARIS-Project/Polaris-4B-Preview",
+        "parameters": "4B",
+        "modality": "other",
+        "task": "unknown",
+        "downloads": "4",
+        "details": {
+            "languages": [
+                "en"
+            ],
+            "model_details": {
+                "name": "Polaris-4B-Preview",
+                "architecture": [
+                    "Qwen3ForCausalLM"
+                ],
+                "model_type": "qwen3",
+                "downloads": 1537,
+                "base_model": "Qwen/Qwen3-4B-Base"
+            },
+            "model_size": {
+                "total_params": 4022468096,
+                "parameters": {
+                    "BF16": 4022468096
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "1 model",
+                "quantizations": "9 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/POLARIS-Project/Polaris-4B-Preview.png"
+            ],
+            "github_repos": [
+                "https://github.com/ChenxinAn-fdu/POLARIS",
+                "https://github.com/volcengine/verl",
+                "https://github.com/agentica-project/rllm"
+            ],
+            "model_website": "https://huggingface.co/POLARIS-Project/Polaris-4B-Preview",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/vrgamedevgirl84/Wan14BT2VFusioniX",
+        "full_url": "https://huggingface.co/vrgamedevgirl84/Wan14BT2VFusioniX",
+        "modality": "multimodal",
+        "task": "text-to-video",
+        "downloads": "84",
+        "details": {
+            "model_website": "https://huggingface.co/vrgamedevgirl84/Wan14BT2VFusioniX",
+            "error": "Message: timeout: Timed out receiving message from renderer: 29.678\n  (Session info: chrome=137.0.7151.120)\nStacktrace:\n0   chromedriver                        0x00000001011f1d14 cxxbridge1$str$ptr + 2735276\n1   chromedriver                        0x00000001011e9f88 cxxbridge1$str$ptr + 2703136\n2   chromedriver                        0x0000000100d3a6f0 cxxbridge1$string$len + 90424\n3   chromedriver                        0x0000000100d255e4 cxxbridge1$string$len + 4140\n4   chromedriver                        0x0000000100d2535c cxxbridge1$string$len + 3492\n5   chromedriver                        0x0000000100d23114 chromedriver + 192788\n6   chromedriver                        0x0000000100d23ca4 chromedriver + 195748\n7   chromedriver                        0x0000000100d30f9c cxxbridge1$string$len + 51684\n8   chromedriver                        0x0000000100d46d14 cxxbridge1$string$len + 141148\n9   chromedriver                        0x0000000100d24300 chromedriver + 197376\n10  chromedriver                        0x0000000100d46aec cxxbridge1$string$len + 140596\n11  chromedriver                        0x0000000100dc3380 cxxbridge1$string$len + 650696\n12  chromedriver                        0x0000000100d75be8 cxxbridge1$string$len + 333360\n13  chromedriver                        0x00000001011b5598 cxxbridge1$str$ptr + 2487600\n14  chromedriver                        0x00000001011b8830 cxxbridge1$str$ptr + 2500552\n15  chromedriver                        0x0000000101195c14 cxxbridge1$str$ptr + 2358188\n16  chromedriver                        0x00000001011b90b8 cxxbridge1$str$ptr + 2502736\n17  chromedriver                        0x0000000101186dec cxxbridge1$str$ptr + 2297220\n18  chromedriver                        0x00000001011d9420 cxxbridge1$str$ptr + 2634680\n19  chromedriver                        0x00000001011d95ac cxxbridge1$str$ptr + 2635076\n20  chromedriver                        0x00000001011e9bd4 cxxbridge1$str$ptr + 2702188\n21  libsystem_pthread.dylib             0x000000018c4aec0c _pthread_start + 136\n22  libsystem_pthread.dylib             0x000000018c4a9b80 thread_start + 8\n"
+        }
+    },
+    {
+        "uri": "/google/gemma-3n-E4B-it-litert-preview",
+        "full_url": "https://huggingface.co/google/gemma-3n-E4B-it-litert-preview",
+        "modality": "multimodal",
+        "task": "image-text-to-text",
+        "downloads": "3",
+        "details": {
+            "modalities": [
+                "Image-Text-to-Text"
+            ],
+            "model_details": {
+                "name": "gemma-3n-E4B-it-litert-preview",
+                "downloads": 0
+            },
+            "adapters_finetunes_quantizations": {
+                "adapters": "2 models",
+                "finetunes": "8 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/google/gemma-3n-E4B-it-litert-preview.png"
+            ],
+            "github_repos": [
+                "https://github.com/google-ai-edge/gallery/releases",
+                "https://github.com/jax-ml/jax",
+                "https://github.com/google-research-datasets/natural-questions",
+                "https://github.com/google/XNNPACK"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/1905.07830",
+                "https://arxiv.org/abs/1905.10044",
+                "https://arxiv.org/abs/1911.11641",
+                "https://arxiv.org/abs/1904.09728",
+                "https://arxiv.org/abs/1705.03551",
+                "https://arxiv.org/abs/1911.01547",
+                "https://arxiv.org/abs/1907.10641",
+                "https://arxiv.org/abs/1903.00161",
+                "https://arxiv.org/abs/2210.03057",
+                "https://arxiv.org/abs/2502.12404v1",
+                "https://arxiv.org/abs/2411.19799",
+                "https://arxiv.org/abs/2009.03300",
+                "https://arxiv.org/abs/2502.21228",
+                "https://arxiv.org/abs/2311.12022",
+                "https://arxiv.org/abs/2403.07974",
+                "https://arxiv.org/abs/2108.07732",
+                "https://arxiv.org/abs/2107.03374"
+            ],
+            "model_website": "https://huggingface.co/google/gemma-3n-E4B-it-litert-preview",
+            "license": "gemma"
+        }
+    },
+    {
+        "uri": "/deepseek-ai/DeepSeek-R1-0528",
+        "full_url": "https://huggingface.co/deepseek-ai/DeepSeek-R1-0528",
+        "parameters": "685B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "1",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "DeepSeek-R1-0528",
+                "architecture": [
+                    "DeepseekV3ForCausalLM"
+                ],
+                "model_type": "deepseek_v3",
+                "downloads": 173091
+            },
+            "model_size": {
+                "total_params": 684531386000,
+                "parameters": {
+                    "BF16": 3918786560,
+                    "F8_E4M3": 680571043840,
+                    "F32": 41555600
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "adapters": "14 models",
+                "finetunes": "46 models",
+                "quantizations": "28 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/deepseek-ai/DeepSeek-R1-0528.png",
+                "https://github.com/deepseek-ai/DeepSeek-V2/blob/main/figures/qr.jpeg"
+            ],
+            "github_repos": [
+                "https://github.com/deepseek-ai/DeepSeek-V2/blob/main/figures/qr.jpeg",
+                "https://github.com/deepseek-ai/DeepSeek-R1"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/pdf/2501.12948"
+            ],
+            "model_website": "https://huggingface.co/deepseek-ai/DeepSeek-R1-0528",
+            "license": "mit"
+        }
+    },
+    {
+        "uri": "/bullerwins/FLUX.1-Kontext-dev-GGUF",
+        "full_url": "https://huggingface.co/bullerwins/FLUX.1-Kontext-dev-GGUF",
+        "parameters": "12B",
+        "modality": "computer_vision",
+        "task": "image-to-image",
+        "downloads": ".1",
+        "details": {
+            "modalities": [
+                "Image-to-Image"
+            ],
+            "languages": [
+                "en"
+            ],
+            "inference_engines": [
+                "diffusion-single-file",
+                "diffusion-single-file",
+                "diffusion-single-file",
+                "diffusion-single-file"
+            ],
+            "model_details": {
+                "name": "FLUX.1-Kontext-dev-GGUF",
+                "downloads": 10003,
+                "base_model": "black-forest-labs/FLUX.1-Kontext-dev"
+            },
+            "adapters_finetunes_quantizations": {
+                "quantizations": "4"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/bullerwins/FLUX.1-Kontext-dev-GGUF.png"
+            ],
+            "github_repos": [
+                "https://github.com/city96/ComfyUI-GGUF",
+                "https://github.com/black-forest-labs/flux/blob/main/model_licenses/LICENSE-FLUX1-dev",
+                "https://github.com/black-forest-labs/flux",
+                "https://github.com/comfyanonymous/ComfyUI",
+                "https://github.com/huggingface/diffusers"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2506.15742"
+            ],
+            "model_website": "https://huggingface.co/bullerwins/FLUX.1-Kontext-dev-GGUF",
+            "license": "other"
+        }
+    },
+    {
+        "uri": "/lodestones/Chroma",
+        "full_url": "https://huggingface.co/lodestones/Chroma",
+        "modality": "multimodal",
+        "task": "text-to-image",
+        "downloads": "14",
+        "details": {
+            "modalities": [
+                "Text-to-Image"
+            ],
+            "languages": [
+                "en"
+            ],
+            "inference_engines": [
+                "pytorch",
+                "pytorch",
+                "pytorch"
+            ],
+            "model_details": {
+                "name": "Chroma",
+                "downloads": 0
+            },
+            "model_size": {
+                "size_string": "3.3B"
+            },
+            "adapters_finetunes_quantizations": {
+                "adapters": "8 models",
+                "finetunes": "6 models",
+                "quantizations": "3 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/lodestones/Chroma.png"
+            ],
+            "github_repos": [
+                "https://github.com/lodestone-rock/flow"
+            ],
+            "model_website": "https://huggingface.co/lodestones/Chroma",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/tencent/Hunyuan3D-2.1",
+        "full_url": "https://huggingface.co/tencent/Hunyuan3D-2.1",
+        "modality": "multimodal",
+        "task": "image-to-3d",
+        "downloads": "3",
+        "details": {
+            "modalities": [
+                "Image-to-3D"
+            ],
+            "languages": [
+                "en",
+                "zh"
+            ],
+            "inference_engines": [
+                "hunyuan3d-2",
+                "hunyuan3d-2",
+                "hunyuan3d-2"
+            ],
+            "model_details": {
+                "name": "Hunyuan3D-2.1",
+                "downloads": 33786
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "1 model"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/tencent/Hunyuan3D-2.1.png",
+                "https://raw.githubusercontent.com/Tencent-Hunyuan/Hunyuan3D-2.1/refs/heads/main/assets/images/teaser.jpg"
+            ],
+            "github_repos": [
+                "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1",
+                "https://github.com/VAST-AI-Research/TripoSG",
+                "https://github.com/facebookresearch/dinov2",
+                "https://github.com/Stability-AI/stablediffusion",
+                "https://github.com/black-forest-labs/flux",
+                "https://github.com/huggingface/diffusers"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2506.15442"
+            ],
+            "model_website": "https://huggingface.co/tencent/Hunyuan3D-2.1",
+            "license": "other"
+        }
+    },
+    {
+        "uri": "/Comfy-Org/flux1-kontext-dev_ComfyUI",
+        "full_url": "https://huggingface.co/Comfy-Org/flux1-kontext-dev_ComfyUI",
+        "modality": "other",
+        "task": "unknown",
+        "downloads": "1",
+        "details": {
+            "model_details": {
+                "name": "flux1-kontext-dev_ComfyUI",
+                "downloads": 0
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/Comfy-Org/flux1-kontext-dev_ComfyUI.png"
+            ],
+            "model_website": "https://huggingface.co/Comfy-Org/flux1-kontext-dev_ComfyUI"
+        }
+    },
+    {
+        "uri": "/moonshotai/Kimi-Dev-72B",
+        "full_url": "https://huggingface.co/moonshotai/Kimi-Dev-72B",
+        "parameters": "72B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "72",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "Kimi-Dev-72B",
+                "architecture": [
+                    "Qwen2ForCausalLM"
+                ],
+                "model_type": "qwen2",
+                "downloads": 13526,
+                "base_model": "Qwen/Qwen2.5-72B"
+            },
+            "model_size": {
+                "total_params": 72706203648,
+                "parameters": {
+                    "BF16": 72706203648
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "1 model",
+                "quantizations": "13 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/moonshotai/Kimi-Dev-72B.png"
+            ],
+            "github_repos": [
+                "https://github.com/MoonshotAI/Kimi-Dev"
+            ],
+            "model_website": "https://huggingface.co/moonshotai/Kimi-Dev-72B",
+            "license": "mit"
+        }
+    },
+    {
+        "uri": "/tencent/SongGeneration",
+        "full_url": "https://huggingface.co/tencent/SongGeneration",
+        "modality": "audio",
+        "task": "text-to-audio",
+        "downloads": "1.05",
+        "details": {
+            "modalities": [
+                "Text-to-Audio"
+            ],
+            "languages": [
+                "en",
+                "zh"
+            ],
+            "inference_engines": [
+                "tencent-song-generation",
+                "tencent-song-generation",
+                "tencent-song-generation"
+            ],
+            "model_details": {
+                "name": "SongGeneration",
+                "downloads": 1050
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/tencent/SongGeneration.png",
+                "https://github.com/tencent-ailab/songgeneration/blob/main/img/over.jpg"
+            ],
+            "github_repos": [
+                "https://github.com/tencent-ailab/songgeneration"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2506.07520"
+            ],
+            "model_website": "https://huggingface.co/tencent/SongGeneration"
+        }
+    },
+    {
+        "uri": "/google/gemma-3n-E2B-it",
+        "full_url": "https://huggingface.co/google/gemma-3n-E2B-it",
+        "parameters": "6B",
+        "modality": "multimodal",
+        "task": "image-text-to-text",
+        "downloads": "3",
+        "details": {
+            "modalities": [
+                "Image-Text-to-Text"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "gemma-3n-E2B-it",
+                "architecture": [
+                    "Gemma3nForConditionalGeneration"
+                ],
+                "model_type": "gemma3n",
+                "downloads": 3483
+            },
+            "model_size": {
+                "total_params": 5976833408,
+                "parameters": {
+                    "BF16": 5439438208
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "3 models",
+                "quantizations": "4 models"
+            },
+            "images": [
+                "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/google/gemma-3n-E2B-it.png"
+            ],
+            "github_repos": [
+                "https://github.com/jax-ml/jax",
+                "https://github.com/google-research-datasets/natural-questions"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/1905.07830",
+                "https://arxiv.org/abs/1905.10044",
+                "https://arxiv.org/abs/1911.11641",
+                "https://arxiv.org/abs/1904.09728",
+                "https://arxiv.org/abs/1705.03551",
+                "https://arxiv.org/abs/1911.01547",
+                "https://arxiv.org/abs/1907.10641",
+                "https://arxiv.org/abs/1903.00161",
+                "https://arxiv.org/abs/2210.03057",
+                "https://arxiv.org/abs/2502.12404v1",
+                "https://arxiv.org/abs/2411.19799",
+                "https://arxiv.org/abs/2009.03300",
+                "https://arxiv.org/abs/2502.21228",
+                "https://arxiv.org/abs/2311.12022",
+                "https://arxiv.org/abs/2403.07974",
+                "https://arxiv.org/abs/2108.07732",
+                "https://arxiv.org/abs/2107.03374"
+            ],
+            "model_website": "https://huggingface.co/google/gemma-3n-E2B-it",
+            "license": "gemma"
+        }
+    },
+    {
+        "uri": "/ResembleAI/chatterbox",
+        "full_url": "https://huggingface.co/ResembleAI/chatterbox",
+        "modality": "audio",
+        "task": "text-to-speech",
+        "downloads": "563",
+        "details": {
+            "modalities": [
+                "Text-to-Speech"
+            ],
+            "languages": [
+                "en"
+            ],
+            "inference_engines": [
+                "chatterbox",
+                "chatterbox",
+                "chatterbox"
+            ],
+            "model_details": {
+                "name": "chatterbox",
+                "downloads": 563462
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "4 models",
+                "quantizations": "1 model"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/ResembleAI/chatterbox.png"
+            ],
+            "github_repos": [
+                "https://github.com/FunAudioLLM/CosyVoice",
+                "https://github.com/yl4579/HiFTNet",
+                "https://github.com/meta-llama/llama3",
+                "https://github.com/resemble-ai/perth"
+            ],
+            "model_website": "https://huggingface.co/ResembleAI/chatterbox",
+            "license": "mit"
+        }
+    },
+    {
+        "uri": "/google/videoprism",
+        "full_url": "https://huggingface.co/google/videoprism",
+        "modality": "computer_vision",
+        "task": "video-classification",
+        "details": {
+            "modalities": [
+                "Video Classification"
+            ],
+            "model_details": {
+                "name": "videoprism",
+                "downloads": 0
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/google/videoprism.png"
+            ],
+            "github_repos": [
+                "https://github.com/google-deepmind/videoprism"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/pdf/2402.13217",
+                "https://arxiv.org/abs/2205.01917",
+                "https://arxiv.org/abs/2103.15691",
+                "https://arxiv.org/pdf/2007.14937",
+                "https://arxiv.org/pdf/2106.02636",
+                "https://arxiv.org/pdf/2204.00679",
+                "https://arxiv.org/pdf/2307.06942"
+            ],
+            "model_website": "https://huggingface.co/google/videoprism",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/Kijai/WanVideo_comfy",
+        "full_url": "https://huggingface.co/Kijai/WanVideo_comfy",
+        "modality": "other",
+        "task": "unknown",
+        "downloads": "7",
+        "details": {
+            "model_details": {
+                "name": "WanVideo_comfy",
+                "downloads": 0
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/Kijai/WanVideo_comfy.png"
+            ],
+            "github_repos": [
+                "https://github.com/kijai/ComfyUI-WanVideoWrapper",
+                "https://github.com/madebyollin/taehv"
+            ],
+            "model_website": "https://huggingface.co/Kijai/WanVideo_comfy"
+        }
+    },
+    {
+        "uri": "/unsloth/Mistral-Small-3.2-24B-Instruct-2506-GGUF",
+        "full_url": "https://huggingface.co/unsloth/Mistral-Small-3.2-24B-Instruct-2506-GGUF",
+        "parameters": "24B",
+        "modality": "multimodal",
+        "task": "image-text-to-text",
+        "downloads": "3.2",
+        "details": {
+            "modalities": [
+                "Image-Text-to-Text"
+            ],
+            "languages": [
+                "en",
+                "fr",
+                "de",
+                "es",
+                "pt",
+                "it",
+                "ja",
+                "ko",
+                "ru",
+                "zh",
+                "ar",
+                "fa",
+                "id",
+                "ms",
+                "ne",
+                "pl",
+                "ro",
+                "sr",
+                "sv",
+                "tr",
+                "uk",
+                "vi",
+                "hi",
+                "bn"
+            ],
+            "inference_engines": [
+                "vllm",
+                "vllm",
+                "vllm",
+                "vllm"
+            ],
+            "model_details": {
+                "name": "Mistral-Small-3.2-24B-Instruct-2506-GGUF",
+                "language_count": 24,
+                "downloads": 64101,
+                "base_model": "mistralai/Mistral-Small-3.1-24B-Base-2503"
+            },
+            "adapters_finetunes_quantizations": {
+                "quantizations": "16"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/unsloth/Mistral-Small-3.2-24B-Instruct-2506-GGUF.png",
+                "https://github.com/unslothai/unsloth/raw/main/images/Discord%20button.png",
+                "https://math-coaching.com/img/fiche/46/expressions-mathematiques.jpg",
+                "https://static.wikia.nocookie.net/essentialsdocs/images/7/70/Battle.png",
+                "https://huggingface.co/datasets/patrickvonplaten/random_img/resolve/main/europe.png",
+                "https://raw.githubusercontent.com/unslothai/unsloth/refs/heads/main/images/documentation%20green%20button.png"
+            ],
+            "github_repos": [
+                "https://github.com/unslothai/unsloth/",
+                "https://github.com/mistralai/mistral-common/blob/535b4d0a0fc94674ea17db6cf8dc2079b81cbcfa/src/mistral_common/tokens/tokenizers/instruct.py",
+                "https://github.com/vllm-project/vllm",
+                "https://github.com/huggingface/transformers",
+                "https://github.com/vllm-project/vllm/releases/tag/v0.9.1",
+                "https://github.com/mistralai/mistral-common/releases/tag/v1.6.2",
+                "https://github.com/vllm-project/vllm/blob/main/Dockerfile",
+                "https://github.com/mistralai/mistral-common"
+            ],
+            "model_website": "https://huggingface.co/unsloth/Mistral-Small-3.2-24B-Instruct-2506-GGUF",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/unsloth/gemma-3n-E4B-it-GGUF",
+        "full_url": "https://huggingface.co/unsloth/gemma-3n-E4B-it-GGUF",
+        "parameters": "7B",
+        "modality": "multimodal",
+        "task": "image-text-to-text",
+        "downloads": "3",
+        "details": {
+            "modalities": [
+                "Image-Text-to-Text"
+            ],
+            "languages": [
+                "en"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "gemma-3n-E4B-it-GGUF",
+                "downloads": 7232,
+                "base_model": "google/gemma-3n-E4B-it"
+            },
+            "adapters_finetunes_quantizations": {
+                "quantizations": "4"
+            },
+            "images": [
+                "https://raw.githubusercontent.com/unslothai/unsloth/refs/heads/main/images/documentation%20green%20button.png",
+                "https://github.com/unslothai/unsloth/raw/main/images/Discord%20button.png",
+                "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/unsloth/gemma-3n-E4B-it-GGUF.png"
+            ],
+            "github_repos": [
+                "https://github.com/unslothai/unsloth/",
+                "https://github.com/jax-ml/jax",
+                "https://github.com/google-research-datasets/natural-questions"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/1905.07830",
+                "https://arxiv.org/abs/1905.10044",
+                "https://arxiv.org/abs/1911.11641",
+                "https://arxiv.org/abs/1904.09728",
+                "https://arxiv.org/abs/1705.03551",
+                "https://arxiv.org/abs/1911.01547",
+                "https://arxiv.org/abs/1907.10641",
+                "https://arxiv.org/abs/1903.00161",
+                "https://arxiv.org/abs/2210.03057",
+                "https://arxiv.org/abs/2502.12404v1",
+                "https://arxiv.org/abs/2411.19799",
+                "https://arxiv.org/abs/2009.03300",
+                "https://arxiv.org/abs/2502.21228",
+                "https://arxiv.org/abs/2311.12022",
+                "https://arxiv.org/abs/2403.07974",
+                "https://arxiv.org/abs/2108.07732",
+                "https://arxiv.org/abs/2107.03374"
+            ],
+            "model_website": "https://huggingface.co/unsloth/gemma-3n-E4B-it-GGUF",
+            "license": "gemma"
+        }
+    },
+    {
+        "uri": "/chandar-lab/NeoBERT",
+        "full_url": "https://huggingface.co/chandar-lab/NeoBERT",
+        "parameters": "0.2B",
+        "modality": "natural_language_processing",
+        "task": "feature-extraction",
+        "downloads": "0.2",
+        "details": {
+            "modalities": [
+                "Feature Extraction"
+            ],
+            "languages": [
+                "en"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "NeoBERT",
+                "architecture": [
+                    "NeoBERTLMHead"
+                ],
+                "model_type": "neobert",
+                "downloads": 2396
+            },
+            "model_size": {
+                "total_params": 245136954,
+                "parameters": {
+                    "F32": 245136954
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "7 models",
+                "quantizations": "1 model"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/chandar-lab/NeoBERT.png"
+            ],
+            "github_repos": [
+                "https://github.com/chandar-lab/NeoBERT"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2502.19587"
+            ],
+            "model_website": "https://huggingface.co/chandar-lab/NeoBERT",
+            "license": "mit"
+        }
+    },
+    {
+        "uri": "/ByteDance/Dolphin",
+        "full_url": "https://huggingface.co/ByteDance/Dolphin",
+        "parameters": "0.4B",
+        "modality": "multimodal",
+        "task": "image-text-to-text",
+        "downloads": "0.4",
+        "details": {
+            "modalities": [
+                "Image-Text-to-Text"
+            ],
+            "languages": [
+                "zh",
+                "en"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "Dolphin",
+                "architecture": [
+                    "VisionEncoderDecoderModel"
+                ],
+                "model_type": "vision-encoder-decoder",
+                "downloads": 40426
+            },
+            "model_size": {
+                "total_params": 397777592,
+                "parameters": {
+                    "I64": 81920,
+                    "F16": 397695672
+                }
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/ByteDance/Dolphin.png"
+            ],
+            "github_repos": [
+                "https://github.com/bytedance/Dolphin",
+                "https://github.com/bytedance/Dolphin/demo_page_hf.py",
+                "https://github.com/bytedance/Dolphin/demo_element_hf.py",
+                "https://github.com/huggingface/transformers",
+                "https://github.com/clovaai/donut/",
+                "https://github.com/facebookresearch/nougat",
+                "https://github.com/microsoft/Swin-Transformer"
+            ],
+            "model_website": "https://huggingface.co/ByteDance/Dolphin",
+            "license": "mit"
+        }
+    },
+    {
+        "uri": "/meta-llama/Llama-3.1-8B-Instruct",
+        "full_url": "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct",
+        "parameters": "8B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "3.1",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "languages": [
+                "en",
+                "de",
+                "fr",
+                "it",
+                "pt",
+                "hi",
+                "es",
+                "th"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "Llama-3.1-8B-Instruct",
+                "language_count": 8,
+                "architecture": [
+                    "LlamaForCausalLM"
+                ],
+                "model_type": "llama",
+                "downloads": 5263008,
+                "base_model": "meta-llama/Llama-3.1-8B"
+            },
+            "model_size": {
+                "total_params": 8030261248,
+                "parameters": {
+                    "BF16": 8030261248
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "1513 models",
+                "adapters": "925 models",
+                "quantizations": "451 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/meta-llama/Llama-3.1-8B-Instruct.png"
+            ],
+            "github_repos": [
+                "https://github.com/meta-llama/llama-models/issues",
+                "https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE",
+                "https://github.com/meta-llama/llama3",
+                "https://github.com/meta-llama/llama-recipes",
+                "https://github.com/huggingface/huggingface-llama-recipes",
+                "https://github.com/meta-llama/llama",
+                "https://github.com/meta-llama/llama-agentic-system",
+                "https://github.com/meta-llama/PurpleLlama"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/pdf/2204.05149"
+            ],
+            "model_website": "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct",
+            "license": "llama3.1"
+        }
+    },
+    {
+        "uri": "/MeiGen-AI/MeiGen-MultiTalk",
+        "full_url": "https://huggingface.co/MeiGen-AI/MeiGen-MultiTalk",
+        "modality": "other",
+        "task": "unknown",
+        "downloads": "6.54",
+        "details": {
+            "modalities": [
+                "Image-to-Video"
+            ],
+            "languages": [
+                "en",
+                "zh"
+            ],
+            "inference_engines": [
+                "diffusers",
+                "diffusers",
+                "diffusers"
+            ],
+            "model_details": {
+                "name": "MeiGen-MultiTalk",
+                "downloads": 6540
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/MeiGen-AI/MeiGen-MultiTalk.png"
+            ],
+            "github_repos": [
+                "https://github.com/MeiGen-AI/MultiTalk"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2505.22647"
+            ],
+            "model_website": "https://huggingface.co/MeiGen-AI/MeiGen-MultiTalk",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/neta-art/Neta-Lumina",
+        "full_url": "https://huggingface.co/neta-art/Neta-Lumina",
+        "modality": "other",
+        "task": "unknown",
+        "downloads": "13",
+        "details": {
+            "model_details": {
+                "name": "Neta-Lumina",
+                "downloads": 0,
+                "base_model": "Alpha-VLLM/Lumina-Image-2.0"
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "6"
+            },
+            "images": [
+                "https://cdn-uploads.huggingface.co/production/uploads/655319e00166ff6bd2351948/XPWf7M1OE5DogKwNlnQIk.png",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/neta-art/Neta-Lumina.png",
+                "https://cdn-uploads.huggingface.co/production/uploads/655319e00166ff6bd2351948/yp3wklEAT2JJ000dqqr1r.png"
+            ],
+            "github_repos": [
+                "https://github.com/narugo1992",
+                "https://github.com/Mikubill/naifu",
+                "https://github.com/Mikubill",
+                "https://github.com/spawner1145/CUI-Lumina2-TeaCache"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/pdf/2411.15098"
+            ],
+            "model_website": "https://huggingface.co/neta-art/Neta-Lumina",
+            "license": "other"
+        }
+    },
+    {
+        "uri": "/black-forest-labs/FLUX.1-schnell",
+        "full_url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+        "modality": "multimodal",
+        "task": "text-to-image",
+        "downloads": ".1",
+        "details": {
+            "modalities": [
+                "Text-to-Image"
+            ],
+            "languages": [
+                "en"
+            ],
+            "inference_engines": [
+                "diffusers",
+                "diffusers",
+                "diffusers"
+            ],
+            "model_details": {
+                "name": "FLUX.1-schnell",
+                "downloads": 760739
+            },
+            "adapters_finetunes_quantizations": {
+                "adapters": "238 models",
+                "finetunes": "45 models",
+                "quantizations": "20 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/black-forest-labs/FLUX.1-schnell.png"
+            ],
+            "github_repos": [
+                "https://github.com/black-forest-labs/flux",
+                "https://github.com/comfyanonymous/ComfyUI"
+            ],
+            "model_website": "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/Skywork/Skywork-SWE-32B",
+        "full_url": "https://huggingface.co/Skywork/Skywork-SWE-32B",
+        "parameters": "32B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "32",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "Skywork-SWE-32B",
+                "architecture": [
+                    "Qwen2ForCausalLM"
+                ],
+                "model_type": "qwen2",
+                "downloads": 820,
+                "base_model": "Qwen/Qwen2.5-32B"
+            },
+            "model_size": {
+                "total_params": 32763876352,
+                "parameters": {
+                    "BF16": 32763876352
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "1 model",
+                "quantizations": "10 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/Skywork/Skywork-SWE-32B.png",
+                "https://cdn-uploads.huggingface.co/production/uploads/6665dd2b3a64c70529f7542c/8o-IE7N3GwSFCIH3ntc8E.png",
+                "https://huggingface.co/Skywork/Skywork-SWE-32B/resolve/main/assets/accuracy_compressed.png",
+                "https://huggingface.co/Skywork/Skywork-SWE-32B/resolve/main/assets/data_scaling_compressed.png"
+            ],
+            "github_repos": [
+                "https://github.com/All-Hands-AI/OpenHands",
+                "https://github.com/All-Hands-AI/OpenHands/tree/main/evaluation/benchmarks/swe_bench",
+                "https://github.com/All-Hands-AI/OpenHands/tree/feature/llm-critic"
+            ],
+            "arxiv_links": [
+                "https://www.arxiv.org/pdf/2506.19290"
+            ],
+            "model_website": "https://huggingface.co/Skywork/Skywork-SWE-32B",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+        "full_url": "https://huggingface.co/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+        "parameters": "8B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "1",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "DeepSeek-R1-0528-Qwen3-8B",
+                "architecture": [
+                    "Qwen3ForCausalLM"
+                ],
+                "model_type": "qwen3",
+                "downloads": 551654
+            },
+            "model_size": {
+                "total_params": 8190735360,
+                "parameters": {
+                    "BF16": 8190735360
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "adapters": "5 models",
+                "finetunes": "22 models",
+                "quantizations": "74 models"
+            },
+            "images": [
+                "https://github.com/deepseek-ai/DeepSeek-V2/blob/main/figures/qr.jpeg",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B.png"
+            ],
+            "github_repos": [
+                "https://github.com/deepseek-ai/DeepSeek-V2/blob/main/figures/qr.jpeg",
+                "https://github.com/deepseek-ai/DeepSeek-R1"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/pdf/2501.12948"
+            ],
+            "model_website": "https://huggingface.co/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+            "license": "mit"
+        }
+    },
+    {
+        "uri": "/katanemo/Arch-Agent-7B",
+        "full_url": "https://huggingface.co/katanemo/Arch-Agent-7B",
+        "parameters": "7B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "7",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "languages": [
+                "en"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "Arch-Agent-7B",
+                "architecture": [
+                    "Qwen2ForCausalLM"
+                ],
+                "model_type": "qwen2",
+                "downloads": 382,
+                "base_model": "Qwen/Qwen2.5-7B"
+            },
+            "model_size": {
+                "total_params": 7615616512,
+                "parameters": {
+                    "BF16": 7615616512
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "157",
+                "quantizations": "5 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/katanemo/Arch-Agent-7B.png"
+            ],
+            "github_repos": [
+                "https://github.com/katanemo/Arch-Function"
+            ],
+            "model_website": "https://huggingface.co/katanemo/Arch-Agent-7B",
+            "license": "other"
+        }
+    },
+    {
+        "uri": "/nari-labs/Dia-1.6B",
+        "full_url": "https://huggingface.co/nari-labs/Dia-1.6B",
+        "parameters": "1.6B",
+        "modality": "audio",
+        "task": "text-to-speech",
+        "downloads": "1.6",
+        "details": {
+            "modalities": [
+                "Text-to-Speech"
+            ],
+            "languages": [
+                "en"
+            ],
+            "model_details": {
+                "name": "Dia-1.6B",
+                "downloads": 231629
+            },
+            "model_size": {
+                "total_params": 1611160576,
+                "parameters": {
+                    "F32": 1611160576
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "adapters": "14 models",
+                "finetunes": "19 models",
+                "quantizations": "5 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/nari-labs/Dia-1.6B.png",
+                "https://github.com/nari-labs/dia/raw/main/dia/static/images/banner.png"
+            ],
+            "github_repos": [
+                "https://github.com/nari-labs/dia",
+                "https://github.com/SesameAILabs/csm",
+                "https://github.com/descriptinc/descript-audio-codec"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2305.09636"
+            ],
+            "model_website": "https://huggingface.co/nari-labs/Dia-1.6B",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/echo840/MonkeyOCR",
+        "full_url": "https://huggingface.co/echo840/MonkeyOCR",
+        "modality": "multimodal",
+        "task": "image-text-to-text",
+        "downloads": "840",
+        "details": {
+            "modalities": [
+                "Image-Text-to-Text"
+            ],
+            "languages": [
+                "zh",
+                "en"
+            ],
+            "inference_engines": [
+                "monkeyocr",
+                "monkeyocr",
+                "monkeyocr"
+            ],
+            "model_details": {
+                "name": "MonkeyOCR",
+                "downloads": 5147
+            },
+            "images": [
+                "https://v1.ax1x.com/2025/06/10/7jVLgB.jpg",
+                "https://v1.ax1x.com/2025/06/11/7jc10I.png",
+                "https://v1.ax1x.com/2025/06/05/7jQlj4.png",
+                "https://v1.ax1x.com/2025/06/11/7jcP5V.png",
+                "https://v1.ax1x.com/2025/06/11/7jcRCL.png",
+                "https://v1.ax1x.com/2025/06/11/7jcOaa.png",
+                "https://v1.ax1x.com/2025/06/05/7jQ3cm.png",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/echo840/MonkeyOCR.png"
+            ],
+            "github_repos": [
+                "https://github.com/Yuliang-Liu/MonkeyOCR/issues",
+                "https://github.com/Yuliang-Liu/MonkeyOCR",
+                "https://github.com/pineking",
+                "https://github.com/opendatalab/MinerU",
+                "https://github.com/opendatalab/DocLayout-YOLO",
+                "https://github.com/pymupdf/PyMuPDF",
+                "https://github.com/ppaanngggg/layoutreader",
+                "https://github.com/QwenLM/Qwen2.5-VL",
+                "https://github.com/InternLM/lmdeploy",
+                "https://github.com/OpenGVLab/InternVL",
+                "https://github.com/HCIILAB/M6Doc",
+                "https://github.com/DS4SD/DocLayNet",
+                "https://github.com/buptlihang/CDLA",
+                "https://github.com/AlibabaResearch/AdvancedLiterateMachinery",
+                "https://github.com/Alpha-Innovator/DocGenome",
+                "https://github.com/ibm-aur-nlp/PubTabNet",
+                "https://github.com/opendatalab/UniMERNet"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2506.05218"
+            ],
+            "model_website": "https://huggingface.co/echo840/MonkeyOCR",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/MiniMaxAI/MiniMax-M1-40k",
+        "full_url": "https://huggingface.co/MiniMaxAI/MiniMax-M1-40k",
+        "parameters": "456B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "1",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers",
+                "vllm"
+            ],
+            "model_details": {
+                "name": "MiniMax-M1-40k",
+                "architecture": [
+                    "MiniMaxM1ForCausalLM"
+                ],
+                "model_type": "minimax_m1",
+                "downloads": 9960
+            },
+            "model_size": {
+                "total_params": 456089655296,
+                "parameters": {
+                    "BF16": 456073926656,
+                    "F32": 15728640
+                }
+            },
+            "images": [
+                "https://github.com/MiniMax-AI/MiniMax-01/blob/main/figures/wechat-qrcode.jpeg",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/MiniMaxAI/MiniMax-M1-40k.png"
+            ],
+            "github_repos": [
+                "https://github.com/MiniMax-AI/MiniMax-MCP",
+                "https://github.com/MiniMax-AI/MiniMax-M1",
+                "https://github.com/MiniMax-AI/MiniMax-M1/blob/main/LICENSE",
+                "https://github.com/MiniMax-AI/MiniMax-01/blob/main/figures/wechat-qrcode.jpeg"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2506.13585"
+            ],
+            "model_website": "https://huggingface.co/MiniMaxAI/MiniMax-M1-40k",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/hexgrad/Kokoro-82M",
+        "full_url": "https://huggingface.co/hexgrad/Kokoro-82M",
+        "modality": "audio",
+        "task": "text-to-speech",
+        "downloads": "82",
+        "details": {
+            "modalities": [
+                "Text-to-Speech"
+            ],
+            "languages": [
+                "en"
+            ],
+            "model_details": {
+                "name": "Kokoro-82M",
+                "downloads": 1534869,
+                "base_model": "yl4579/StyleTTS2-LJSpeech"
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "15 models",
+                "adapters": "9 models",
+                "quantizations": "11 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/hexgrad/Kokoro-82M.png",
+                "https://static0.gamerantimages.com/wordpress/wp-content/uploads/2024/08/terminator-zero-41-1.jpg"
+            ],
+            "github_repos": [
+                "https://github.com/hexgrad/kokoro",
+                "https://github.com/hexgrad/misaki",
+                "https://github.com/yl4579/StyleTTS2",
+                "https://github.com/koniwa/koniwa"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2306.07691",
+                "https://arxiv.org/abs/2203.02395"
+            ],
+            "model_website": "https://huggingface.co/hexgrad/Kokoro-82M",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/mistralai/Magistral-Small-2506",
+        "full_url": "https://huggingface.co/mistralai/Magistral-Small-2506",
+        "parameters": "24B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "2506",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "languages": [
+                "en",
+                "fr",
+                "de",
+                "es",
+                "pt",
+                "it",
+                "ja",
+                "ko",
+                "ru",
+                "zh",
+                "ar",
+                "fa",
+                "id",
+                "ms",
+                "ne",
+                "pl",
+                "ro",
+                "sr",
+                "sv",
+                "tr",
+                "uk",
+                "vi",
+                "hi",
+                "bn"
+            ],
+            "inference_engines": [
+                "vllm",
+                "vllm",
+                "vllm",
+                "vllm"
+            ],
+            "model_details": {
+                "name": "Magistral-Small-2506",
+                "language_count": 24,
+                "architecture": [
+                    "MistralForCausalLM"
+                ],
+                "model_type": "mistral",
+                "downloads": 52341,
+                "base_model": "mistralai/Mistral-Small-3.1-24B-Base-2503"
+            },
+            "model_size": {
+                "total_params": 23572403200,
+                "parameters": {
+                    "BF16": 23572403200
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "10 models",
+                "adapters": "1 model",
+                "quantizations": "27 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/mistralai/Magistral-Small-2506.png"
+            ],
+            "github_repos": [
+                "https://github.com/mistralai/mistral-common",
+                "https://github.com/vllm-project/vllm",
+                "https://github.com/ggml-org/llama.cpp",
+                "https://github.com/axolotl-ai-cloud/axolotl",
+                "https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/magistral",
+                "https://github.com/unslothai/unsloth",
+                "https://github.com/vllm-project/vllm/",
+                "https://github.com/mistralai/mistral-common/releases/tag/v1.6.0",
+                "https://github.com/vllm-project/vllm/blob/main/Dockerfile"
+            ],
+            "model_website": "https://huggingface.co/mistralai/Magistral-Small-2506",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/THU-KEG/LongWriter-Zero-32B",
+        "full_url": "https://huggingface.co/THU-KEG/LongWriter-Zero-32B",
+        "parameters": "32B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "32",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "languages": [
+                "en",
+                "zh"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "LongWriter-Zero-32B",
+                "architecture": [
+                    "Qwen2ForCausalLM"
+                ],
+                "model_type": "qwen2",
+                "downloads": 198,
+                "base_model": "Qwen/Qwen2.5-32B"
+            },
+            "model_size": {
+                "total_params": 32763876352,
+                "parameters": {
+                    "BF16": 32763876352
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "74",
+                "quantizations": "4 models"
+            },
+            "images": [
+                "https://cdn-uploads.huggingface.co/production/uploads/63369da91ba5d5ece24118a4/TLTwlGYvPZ1-99MgiveAA.png",
+                "https://cdn-uploads.huggingface.co/production/uploads/63369da91ba5d5ece24118a4/_uWmcqnMFWGLN_iQb1bdx.png",
+                "https://cdn-uploads.huggingface.co/production/uploads/63369da91ba5d5ece24118a4/XF1LI5Kjuytmfrfg6ot2p.png",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/THU-KEG/LongWriter-Zero-32B.png"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2506.18841"
+            ],
+            "model_website": "https://huggingface.co/THU-KEG/LongWriter-Zero-32B",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/Menlo/Jan-nano-128k-gguf",
+        "full_url": "https://huggingface.co/Menlo/Jan-nano-128k-gguf",
+        "parameters": "4B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "128",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "languages": [
+                "en"
+            ],
+            "model_details": {
+                "name": "Jan-nano-128k-gguf",
+                "downloads": 7361,
+                "base_model": "Qwen/Qwen3-4B-Base"
+            },
+            "adapters_finetunes_quantizations": {
+                "quantizations": "8"
+            },
+            "images": [
+                "https://cdn-uploads.huggingface.co/production/uploads/65713d70f56f9538679e5a56/Bc0ehij86l_NX52OfxeOj.png",
+                "https://cdn-uploads.huggingface.co/production/uploads/65713d70f56f9538679e5a56/NP7CvcjOtLX8mST0t7eAM.png",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/Menlo/Jan-nano-128k-gguf.png"
+            ],
+            "github_repos": [
+                "https://github.com/menloresearch/deep-research",
+                "https://github.com/menloresearch/deep-research/issues"
+            ],
+            "model_website": "https://huggingface.co/Menlo/Jan-nano-128k-gguf",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/openai/whisper-large-v3",
+        "full_url": "https://huggingface.co/openai/whisper-large-v3",
+        "parameters": "2B",
+        "modality": "audio",
+        "task": "automatic-speech-recognition",
+        "downloads": "3",
+        "details": {
+            "modalities": [
+                "Automatic Speech Recognition"
+            ],
+            "languages": [
+                "en",
+                "zh",
+                "de",
+                "es",
+                "ru",
+                "ko",
+                "fr",
+                "ja",
+                "pt",
+                "tr",
+                "pl",
+                "ca",
+                "nl",
+                "ar",
+                "sv",
+                "it",
+                "id",
+                "hi",
+                "fi",
+                "vi",
+                "he",
+                "uk",
+                "el",
+                "ms",
+                "cs",
+                "ro",
+                "da",
+                "hu",
+                "ta",
+                "no",
+                "th",
+                "ur",
+                "hr",
+                "bg",
+                "lt",
+                "la",
+                "mi",
+                "ml",
+                "cy",
+                "sk",
+                "te",
+                "fa",
+                "lv",
+                "bn",
+                "sr",
+                "az",
+                "sl",
+                "kn",
+                "et",
+                "mk",
+                "br",
+                "eu",
+                "is",
+                "hy",
+                "ne",
+                "mn",
+                "bs",
+                "kk",
+                "sq",
+                "sw",
+                "gl",
+                "mr",
+                "pa",
+                "si",
+                "km",
+                "sn",
+                "yo",
+                "so",
+                "af",
+                "oc",
+                "ka",
+                "be",
+                "tg",
+                "sd",
+                "gu",
+                "am",
+                "yi",
+                "lo",
+                "uz",
+                "fo",
+                "ht",
+                "ps",
+                "tk",
+                "nn",
+                "mt",
+                "sa",
+                "lb",
+                "my",
+                "bo",
+                "tl",
+                "mg",
+                "as",
+                "tt",
+                "haw",
+                "ln",
+                "ha",
+                "ba",
+                "jw",
+                "su"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "whisper-large-v3",
+                "language_count": 99,
+                "architecture": [
+                    "WhisperForConditionalGeneration"
+                ],
+                "model_type": "whisper",
+                "downloads": 3272156
+            },
+            "model_size": {
+                "total_params": 1543490560,
+                "parameters": {
+                    "F16": 1543490560
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "adapters": "115 models",
+                "finetunes": "560 models",
+                "quantizations": "13 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/openai/whisper-large-v3.png"
+            ],
+            "github_repos": [
+                "https://github.com/Dao-AILab/flash-attention"
+            ],
+            "model_website": "https://huggingface.co/openai/whisper-large-v3",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/Qwen/Qwen3-Embedding-0.6B",
+        "full_url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
+        "parameters": "0.6B",
+        "modality": "natural_language_processing",
+        "task": "feature-extraction",
+        "downloads": "3",
+        "details": {
+            "modalities": [
+                "Feature Extraction"
+            ],
+            "inference_engines": [
+                "sentence-transformers",
+                "sentence-transformers",
+                "sentence-transformers",
+                "sentence-transformers"
+            ],
+            "model_details": {
+                "name": "Qwen3-Embedding-0.6B",
+                "architecture": [
+                    "Qwen3ForCausalLM"
+                ],
+                "model_type": "qwen3",
+                "downloads": 1232896,
+                "base_model": "Qwen/Qwen3-0.6B-Base"
+            },
+            "model_size": {
+                "total_params": 595776512,
+                "parameters": {
+                    "BF16": 595776512
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "11 models",
+                "quantizations": "6 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/Qwen/Qwen3-Embedding-0.6B.png"
+            ],
+            "github_repos": [
+                "https://github.com/QwenLM/Qwen3-Embedding"
+            ],
+            "model_website": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/google/gemma-3n-E4B",
+        "full_url": "https://huggingface.co/google/gemma-3n-E4B",
+        "parameters": "8B",
+        "modality": "multimodal",
+        "task": "image-text-to-text",
+        "downloads": "3",
+        "details": {
+            "modalities": [
+                "Image-Text-to-Text"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "gemma-3n-E4B",
+                "architecture": [
+                    "Gemma3nForConditionalGeneration"
+                ],
+                "model_type": "gemma3n",
+                "downloads": 433
+            },
+            "model_size": {
+                "total_params": 8387373328,
+                "parameters": {
+                    "BF16": 7849978128
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "1 model"
+            },
+            "images": [
+                "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/google/gemma-3n-E4B.png"
+            ],
+            "github_repos": [
+                "https://github.com/jax-ml/jax",
+                "https://github.com/google-research-datasets/natural-questions"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/1905.07830",
+                "https://arxiv.org/abs/1905.10044",
+                "https://arxiv.org/abs/1911.11641",
+                "https://arxiv.org/abs/1904.09728",
+                "https://arxiv.org/abs/1705.03551",
+                "https://arxiv.org/abs/1911.01547",
+                "https://arxiv.org/abs/1907.10641",
+                "https://arxiv.org/abs/1903.00161",
+                "https://arxiv.org/abs/2210.03057",
+                "https://arxiv.org/abs/2502.12404v1",
+                "https://arxiv.org/abs/2411.19799",
+                "https://arxiv.org/abs/2009.03300",
+                "https://arxiv.org/abs/2502.21228",
+                "https://arxiv.org/abs/2311.12022",
+                "https://arxiv.org/abs/2403.07974",
+                "https://arxiv.org/abs/2108.07732",
+                "https://arxiv.org/abs/2107.03374"
+            ],
+            "model_website": "https://huggingface.co/google/gemma-3n-E4B",
+            "license": "gemma"
+        }
+    },
+    {
+        "uri": "/Intelligent-Internet/II-Medical-8B-1706",
+        "full_url": "https://huggingface.co/Intelligent-Internet/II-Medical-8B-1706",
+        "parameters": "8B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "8",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "II-Medical-8B-1706",
+                "architecture": [
+                    "Qwen3ForCausalLM"
+                ],
+                "model_type": "qwen3",
+                "downloads": 2744
+            },
+            "model_size": {
+                "total_params": 8190735360,
+                "parameters": {
+                    "BF16": 8190735360
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "quantizations": "6 models"
+            },
+            "images": [
+                "https://cdn-uploads.huggingface.co/production/uploads/63466107f7bd6326925fc770/kAyJOqZDuWRYkN3f1YWcS.png",
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/Intelligent-Internet/II-Medical-8B-1706.png",
+                "https://cdn-uploads.huggingface.co/production/uploads/63466107f7bd6326925fc770/Sbgmwsefab7uDx5obvy18.png",
+                "https://cdn-uploads.huggingface.co/production/uploads/6389496ff7d3b0df092095ed/73Y-oDmehp0eJ2HWrfn3V.jpeg"
+            ],
+            "github_repos": [
+                "https://github.com/huggingface/open-r1",
+                "https://github.com/vllm-project/vllm",
+                "https://github.com/sgl-project/sglang"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2503.19633v1",
+                "https://arxiv.org/abs/2501.19393"
+            ],
+            "model_website": "https://huggingface.co/Intelligent-Internet/II-Medical-8B-1706"
+        }
+    },
+    {
+        "uri": "/Qwen/Qwen3-0.6B",
+        "full_url": "https://huggingface.co/Qwen/Qwen3-0.6B",
+        "parameters": "0.6B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "3",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "Qwen3-0.6B",
+                "architecture": [
+                    "Qwen3ForCausalLM"
+                ],
+                "model_type": "qwen3",
+                "downloads": 1189366,
+                "base_model": "Qwen/Qwen3-0.6B-Base"
+            },
+            "model_size": {
+                "total_params": 751632384,
+                "parameters": {
+                    "BF16": 751632384
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "138 models",
+                "adapters": "20 models",
+                "quantizations": "98 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/Qwen/Qwen3-0.6B.png"
+            ],
+            "github_repos": [
+                "https://github.com/QwenLM/Qwen3",
+                "https://github.com/QwenLM/Qwen-Agent"
+            ],
+            "model_website": "https://huggingface.co/Qwen/Qwen3-0.6B",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/arcee-ai/GLM-4-32B-Base-32K",
+        "full_url": "https://huggingface.co/arcee-ai/GLM-4-32B-Base-32K",
+        "parameters": "32B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "4",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "languages": [
+                "zh",
+                "en"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "GLM-4-32B-Base-32K",
+                "architecture": [
+                    "Glm4ForCausalLM"
+                ],
+                "model_type": "glm4",
+                "downloads": 132,
+                "base_model": "THUDM/GLM-4-32B-Base-0414"
+            },
+            "model_size": {
+                "total_params": 32563513344,
+                "parameters": {
+                    "BF16": 32563513344
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "3",
+                "quantizations": "3 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/arcee-ai/GLM-4-32B-Base-32K.png"
+            ],
+            "model_website": "https://huggingface.co/arcee-ai/GLM-4-32B-Base-32K",
+            "license": "mit"
+        }
+    },
+    {
+        "uri": "/QuantStack/FLUX.1-Kontext-dev-GGUF",
+        "full_url": "https://huggingface.co/QuantStack/FLUX.1-Kontext-dev-GGUF",
+        "parameters": "12B",
+        "modality": "computer_vision",
+        "task": "image-to-image",
+        "downloads": ".1",
+        "details": {
+            "modalities": [
+                "Image-to-Image"
+            ],
+            "inference_engines": [
+                "gguf",
+                "gguf",
+                "gguf",
+                "gguf"
+            ],
+            "model_details": {
+                "name": "FLUX.1-Kontext-dev-GGUF",
+                "downloads": 1695,
+                "base_model": "black-forest-labs/FLUX.1-Kontext-dev"
+            },
+            "adapters_finetunes_quantizations": {
+                "quantizations": "4"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/QuantStack/FLUX.1-Kontext-dev-GGUF.png"
+            ],
+            "github_repos": [
+                "https://github.com/city96/ComfyUI-GGUF"
+            ],
+            "model_website": "https://huggingface.co/QuantStack/FLUX.1-Kontext-dev-GGUF",
+            "license": "other"
+        }
+    },
+    {
+        "uri": "/deepseek-ai/DeepSeek-R1",
+        "full_url": "https://huggingface.co/deepseek-ai/DeepSeek-R1",
+        "parameters": "685B",
+        "modality": "natural_language_processing",
+        "task": "text-generation",
+        "downloads": "1",
+        "details": {
+            "modalities": [
+                "Text Generation"
+            ],
+            "inference_engines": [
+                "transformers",
+                "transformers",
+                "transformers",
+                "transformers"
+            ],
+            "model_details": {
+                "name": "DeepSeek-R1",
+                "architecture": [
+                    "DeepseekV3ForCausalLM"
+                ],
+                "model_type": "deepseek_v3",
+                "downloads": 602197
+            },
+            "model_size": {
+                "total_params": 684531386000,
+                "parameters": {
+                    "BF16": 3918786560,
+                    "F8_E4M3": 680571043840,
+                    "F32": 41555600
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "adapters": "121 models",
+                "finetunes": "312 models",
+                "quantizations": "56 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/deepseek-ai/DeepSeek-R1.png",
+                "https://github.com/deepseek-ai/DeepSeek-V2/blob/main/figures/qr.jpeg"
+            ],
+            "github_repos": [
+                "https://github.com/deepseek-ai/DeepSeek-V2/blob/main/figures/qr.jpeg",
+                "https://github.com/deepseek-ai/DeepSeek-R1/blob/main/LICENSE",
+                "https://github.com/deepseek-ai/DeepSeek-R1/blob/main/DeepSeek_R1.pdf",
+                "https://github.com/deepseek-ai/DeepSeek-V3",
+                "https://github.com/vllm-project/vllm",
+                "https://github.com/sgl-project/sglang",
+                "https://github.com/QwenLM/Qwen2.5"
+            ],
+            "model_website": "https://huggingface.co/deepseek-ai/DeepSeek-R1",
+            "license": "mit"
+        }
+    },
+    {
+        "uri": "/sentence-transformers/all-MiniLM-L6-v2",
+        "full_url": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
+        "parameters": "0.0B",
+        "modality": "natural_language_processing",
+        "task": "feature-extraction",
+        "downloads": "6",
+        "details": {
+            "modalities": [
+                "Sentence Similarity"
+            ],
+            "languages": "en",
+            "inference_engines": [
+                "sentence-transformers",
+                "sentence-transformers",
+                "sentence-transformers",
+                "sentence-transformers"
+            ],
+            "model_details": {
+                "name": "all-MiniLM-L6-v2",
+                "architecture": [
+                    "BertModel"
+                ],
+                "model_type": "bert",
+                "downloads": 94997719
+            },
+            "model_size": {
+                "total_params": 22713728,
+                "parameters": {
+                    "I64": 512,
+                    "F32": 22713216
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "adapters": "14 models",
+                "finetunes": "446 models",
+                "quantizations": "33 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/sentence-transformers/all-MiniLM-L6-v2.png"
+            ],
+            "github_repos": [
+                "https://github.com/PolyAI-LDN/conversational-datasets/tree/master/reddit",
+                "https://github.com/allenai/s2orc",
+                "https://github.com/afader/oqa",
+                "https://github.com/facebookresearch/PAQ",
+                "https://github.com/allenai/gooaq",
+                "https://github.com/allenai/specter",
+                "https://github.com/google-research-datasets/sentence-compression",
+                "https://github.com/pvl/wikihow_pairs_dataset",
+                "https://github.com/chridey/altlex/"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/1904.06472",
+                "https://arxiv.org/abs/2102.07033",
+                "https://arxiv.org/pdf/2104.08727.pdf",
+                "https://arxiv.org/abs/1704.05179",
+                "https://arxiv.org/abs/1810.09305"
+            ],
+            "model_website": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/Gryphe/Codex-24B-Small-3.2",
+        "full_url": "https://huggingface.co/Gryphe/Codex-24B-Small-3.2",
+        "parameters": "24B",
+        "modality": "other",
+        "task": "unknown",
+        "downloads": "24",
+        "details": {
+            "languages": [
+                "en"
+            ],
+            "model_details": {
+                "name": "Codex-24B-Small-3.2",
+                "architecture": [
+                    "MistralForCausalLM"
+                ],
+                "model_type": "mistral",
+                "downloads": 235,
+                "base_model": "mistralai/Mistral-Small-3.1-24B-Base-2503"
+            },
+            "model_size": {
+                "total_params": 23572403200,
+                "parameters": {
+                    "BF16": 23572403200
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "22",
+                "adapters": "1 model",
+                "quantizations": "6 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/Gryphe/Codex-24B-Small-3.2.png"
+            ],
+            "model_website": "https://huggingface.co/Gryphe/Codex-24B-Small-3.2",
+            "license": "apache-2.0"
+        }
+    },
+    {
+        "uri": "/black-forest-labs/FLUX.1-Kontext-dev-onnx",
+        "full_url": "https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev-onnx",
+        "modality": "other",
+        "task": "unknown",
+        "downloads": ".1",
+        "details": {
+            "languages": [
+                "en"
+            ],
+            "inference_engines": [
+                "diffusion-single-file",
+                "diffusion-single-file",
+                "diffusion-single-file"
+            ],
+            "model_details": {
+                "name": "FLUX.1-Kontext-dev-onnx",
+                "downloads": 0
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/black-forest-labs/FLUX.1-Kontext-dev-onnx.png"
+            ],
+            "github_repos": [
+                "https://github.com/black-forest-labs/flux/blob/main/model_licenses/LICENSE-FLUX1-dev"
+            ],
+            "arxiv_links": [
+                "https://arxiv.org/abs/2506.15742"
+            ],
+            "model_website": "https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev-onnx",
+            "license": "other"
+        }
+    },
+    {
+        "uri": "/coqui/XTTS-v2",
+        "full_url": "https://huggingface.co/coqui/XTTS-v2",
+        "modality": "audio",
+        "task": "text-to-speech",
+        "downloads": "2.02",
+        "details": {
+            "modalities": [
+                "Text-to-Speech"
+            ],
+            "inference_engines": [
+                "coqui",
+                "coqui",
+                "coqui"
+            ],
+            "model_details": {
+                "name": "XTTS-v2",
+                "downloads": 2017550
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "43 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/coqui/XTTS-v2.png"
+            ],
+            "github_repos": [
+                "https://github.com/coqui-ai/TTS",
+                "https://github.com/coqui-ai/TTS/discussions"
+            ],
+            "model_website": "https://huggingface.co/coqui/XTTS-v2",
+            "license": "other"
+        }
+    },
+    {
+        "uri": "/fishaudio/openaudio-s1-mini",
+        "full_url": "https://huggingface.co/fishaudio/openaudio-s1-mini",
+        "modality": "audio",
+        "task": "text-to-speech",
+        "downloads": "1",
+        "details": {
+            "modalities": [
+                "Text-to-Speech"
+            ],
+            "languages": [
+                "zh",
+                "en",
+                "de",
+                "ja",
+                "fr",
+                "es",
+                "ko",
+                "ar",
+                "nl",
+                "ru",
+                "it",
+                "pl",
+                "pt"
+            ],
+            "model_details": {
+                "name": "openaudio-s1-mini",
+                "language_count": 13,
+                "model_type": "dual_ar",
+                "downloads": 5111
+            },
+            "adapters_finetunes_quantizations": {
+                "quantizations": "1 model"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/fishaudio/openaudio-s1-mini.png"
+            ],
+            "github_repos": [
+                "https://github.com/fishaudio/fish-speech"
+            ],
+            "model_website": "https://huggingface.co/fishaudio/openaudio-s1-mini",
+            "license": "cc-by-nc-sa-4.0"
+        }
+    },
+    {
+        "uri": "/POLARIS-Project/Polaris-7B-Preview",
+        "full_url": "https://huggingface.co/POLARIS-Project/Polaris-7B-Preview",
+        "parameters": "7B",
+        "modality": "other",
+        "task": "unknown",
+        "downloads": "7",
+        "details": {
+            "model_details": {
+                "name": "Polaris-7B-Preview",
+                "architecture": [
+                    "Qwen2ForCausalLM"
+                ],
+                "model_type": "qwen2",
+                "downloads": 340,
+                "base_model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+            },
+            "model_size": {
+                "total_params": 7615616512,
+                "parameters": {
+                    "BF16": 7615616512
+                }
+            },
+            "adapters_finetunes_quantizations": {
+                "finetunes": "1 model",
+                "quantizations": "8 models"
+            },
+            "images": [
+                "https://cdn-thumbnails.huggingface.co/social-thumbnails/models/POLARIS-Project/Polaris-7B-Preview.png"
+            ],
+            "github_repos": [
+                "https://github.com/ChenxinAn-fdu/POLARIS",
+                "https://github.com/volcengine/verl",
+                "https://github.com/agentica-project/rllm"
+            ],
+            "model_website": "https://huggingface.co/POLARIS-Project/Polaris-7B-Preview",
+            "license": "apache-2.0"
+        }
+    }
+]
