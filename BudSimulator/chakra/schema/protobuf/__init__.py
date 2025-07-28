@@ -1,0 +1,1 @@
+"""Stub chakra.schema.protobuf package.""" 
