@@ -17,10 +17,10 @@ Key components:
 ### Installation
 ```bash
 # Automated setup (recommended)
-python setup.py
+python BudSimulator/setup.py
 
-# Manual installation in development mode
-pip install -e .
+# Manual installation in development mode  
+pip install -e BudSimulator/
 
 # Or install from PyPI
 pip install genz-llm
@@ -29,14 +29,17 @@ pip install genz-llm
 ### Running the Application
 ```bash
 # Backend API (stable mode)
+cd BudSimulator
 python run_api.py
 
 # Backend API (with hot-reload for development)
+cd BudSimulator
 RELOAD=true python run_api.py  # Unix/Linux/macOS
 set RELOAD=true && python run_api.py  # Windows
 
 # Frontend (in frontend directory)
-cd frontend
+cd BudSimulator/frontend
+npm install  # First time only
 npm start
 
 # Alternative Streamlit interface
@@ -48,68 +51,76 @@ streamlit run BudSimulator/Website/Home.py
 # Run all tests
 pytest BudSimulator/tests/ -v
 
-# Run a specific test file
-pytest BudSimulator/tests/test_prefill_time.py
+# Run specific test file
+pytest BudSimulator/comprehensive_api_test.py
 
-# Run tests with coverage
-pytest BudSimulator/tests/ --cov=BudSimulator
+# Test CPU functionality
+python BudSimulator/cpu_test.py
+python BudSimulator/cpu_test_detailed.py
+
+# Test model parameters
+python BudSimulator/model_param_test.py
 ```
 
-### Frontend Development
+### Linting and Type Checking
 ```bash
-cd frontend
-npm install       # Install dependencies
-npm run build     # Production build
-npm test          # Run tests
-npm run lint      # Run linter
+# Python linting (if ruff is installed)
+ruff check BudSimulator/
+
+# Frontend linting
+cd BudSimulator/frontend
+npm run lint  # Note: Currently no explicit lint script, uses eslint via react-scripts
+
+# Python type checking (if mypy is installed)
+mypy BudSimulator/
 ```
 
 ## High-Level Architecture
 
 ### Core Components
 
-1. **System Abstraction** (`GenZ/system.py`)
+1. **System Abstraction** (`BudSimulator/GenZ/system.py`)
    - Represents hardware accelerators with compute/memory capabilities
    - Handles different precision formats (fp32, bf16, int8) with compute/memory multipliers
    - Integrates with compute engines (GenZ, Scale-sim) and collective strategies (GenZ, ASTRA-SIM)
 
-2. **Operator Framework** (`GenZ/operator_base.py`, `GenZ/operators.py`)
+2. **Operator Framework** (`BudSimulator/GenZ/operator_base.py`, `BudSimulator/GenZ/operators.py`)
    - Base class for all computational operations with roofline analysis
    - Concrete operators: FC, GEMM, Logit, Attend, CONV2D, Einsum
    - Special operators for synchronization and layer repetition
 
-3. **Parallelism Management** (`GenZ/parallelism.py`)
+3. **Parallelism Management** (`BudSimulator/GenZ/parallelism.py`)
    - ParallelismConfig handles: tensor_parallel, pipeline_parallel, data_parallel, expert_parallel
    - Supports hierarchical parallelism (e.g., "TP{4}_EP{2}_PP{1}")
    - Collective operations: AllReduce, All2All, AllGather for inter-accelerator communication
 
-4. **Performance Modeling** (`GenZ/llm_prefill.py`, `GenZ/llm_decode.py`)
-   - Models prefill and decode phases separately
+4. **Performance Modeling** (`BudSimulator/GenZ/LLM_inference/`)
+   - Models prefill and decode phases separately (`llm_prefill.py`, `llm_decode.py`)
    - Calculates memory requirements (weights + KV cache)
    - Handles memory offloading when capacity exceeded
    - Returns latency, throughput, and runtime breakdown
 
-5. **Model Management** (`GenZ/Models/`)
+5. **Model Management** (`BudSimulator/GenZ/Models/`)
    - Registry of pre-configured models (Meta, Google, Microsoft, etc.)
    - Creates model definitions with specified parallelism configurations
    - Supports MHA (Multi-Head Attention) and Mamba architectures
 
-### API Layer (`apis/`)
+### API Layer (`BudSimulator/apis/`)
 - FastAPI application with automatic OpenAPI documentation (/docs)
 - Routers for models, hardware, and usecases
 - CORS-enabled for frontend integration
 - Static file serving for logos
 
-### Database (`src/db/`)
+### Database (`BudSimulator/src/db/`)
 - SQLAlchemy models for hardware and model data
-- Pre-populated SQLite database
+- Pre-populated SQLite database at `BudSimulator/data/prepopulated.db`
 - Alembic for migrations
 
-### Frontend (`frontend/`)
+### Frontend (`BudSimulator/frontend/`)
 - React 18.2 with TypeScript
 - Tailwind CSS for styling
 - Components for hardware browsing, usecase management, and AI memory calculation
-- Proxy configuration to backend API
+- Proxy configuration to backend API (port 8000)
 
 ### Analysis Flow
 
@@ -128,53 +139,40 @@ npm run lint      # Run linter
 ## Common Development Tasks
 
 ### Adding a New Model
-1. Create model definition in `GenZ/Models/Model_sets/`
+1. Create model definition in `BudSimulator/GenZ/Models/Model_sets/`
 2. Register in model registry
 3. Update database if needed via migration
 4. Add frontend display logic if required
 
 ### Adding a New Hardware Platform
-1. Define system specs in `GenZ/system.py` format
+1. Define system specs in `BudSimulator/GenZ/system.py` format
 2. Add to database via migration or seed script
-3. Update hardware recommendation logic in `src/services/`
+3. Update hardware recommendation logic in `BudSimulator/src/services/`
 4. Test with existing models
 
 ### Modifying API Endpoints
-1. Update router in `apis/routers/`
-2. Modify corresponding service in `src/`
+1. Update router in `BudSimulator/apis/routers/`
+2. Modify corresponding service in `BudSimulator/src/`
 3. Update frontend API service and TypeScript types
 4. Run tests to ensure compatibility
 
 ### Working with the Database
 1. Create new Alembic migration: `alembic revision -m "description"`
 2. Apply migrations: `alembic upgrade head`
-3. Database is at `data/prepopulated.db`
+3. Database is at `BudSimulator/data/prepopulated.db`
 
 ## Important Files and Directories
 
-- `run_api.py` - Main API entry point
-- `setup.py` - Automated setup script
-- `apis/` - FastAPI application and routers
-- `src/` - Core business logic and services
-- `GenZ/` - Performance modeling framework
-- `frontend/` - React application
-- `Website/` - Streamlit alternative UI
-- `tests/` - Test suite with golden files
-- `data/prepopulated.db` - SQLite database
-- `.env.example` - Environment configuration template
-
-## Testing Approach
-
-- **Backend**: pytest with fixtures and golden file testing
-- **Frontend**: React Testing Library and Jest
-- **Integration**: API endpoint testing with FastAPI TestClient
-- **Performance**: Golden file comparison for model predictions
-
-When working with tests:
-- Run existing tests before making changes
-- Add tests for new functionality
-- Use golden test files in `tests/golden/` for expected outputs
-- Test both unit and integration levels
+- `BudSimulator/run_api.py` - Main API entry point
+- `BudSimulator/setup.py` - Automated setup script
+- `BudSimulator/apis/` - FastAPI application and routers
+- `BudSimulator/src/` - Core business logic and services
+- `BudSimulator/GenZ/` - Performance modeling framework
+- `BudSimulator/frontend/` - React application
+- `BudSimulator/Website/` - Streamlit alternative UI
+- `BudSimulator/tests/` - Test suite
+- `BudSimulator/data/prepopulated.db` - SQLite database
+- `BudSimulator/config/env.template` - Environment configuration template
 
 ## Code Style Guidelines
 
@@ -185,10 +183,40 @@ When working with tests:
 - Document complex algorithms with inline comments
 - Keep functions focused and single-purpose
 
-## Recent Changes Context
+## Important Implementation Details
 
-The current branch `feature/usecase-details-fix` includes fixes for the usecase details page to use `unique_id` instead of numeric `id`. When working with usecases, ensure you're using the string-based unique identifiers.
+### Usecase ID Handling
+The codebase uses `unique_id` (string) for usecases, not numeric `id`. This is critical for proper functionality:
+```python
+# Correct
+usecase = db.query(Usecase).filter(Usecase.unique_id == unique_id).first()
 
-## Documentation Location
+# Incorrect (will fail)
+usecase = db.query(Usecase).filter(Usecase.id == id).first()
+```
 
-Documentation should be placed in the @docs directory (per .cursor/rules/documentation.mdc).
+### Environment Configuration
+Create a `.env` file based on `BudSimulator/config/env.template`:
+- LLM_PROVIDER: openai, anthropic, ollama, or custom
+- LLM_API_KEY: Your provider API key
+- LLM_MODEL: Model name (e.g., gpt-4, claude-3-opus-20240229)
+- LLM_API_URL: Provider endpoint URL
+
+### Package Management
+The project uses:
+- Python dependencies in `BudSimulator/requirements.txt`
+- Frontend dependencies in `BudSimulator/frontend/package.json`
+- Core package configuration in `BudSimulator/pyproject.toml` (genz_llm v0.0.16)
+
+### Testing Approach
+- **Backend**: pytest with test files in various locations
+- **Frontend**: React Testing Library and Jest via react-scripts
+- **Integration**: API testing with `comprehensive_api_test.py`
+- **CPU Testing**: Specialized tests in `cpu_test.py` and `cpu_test_detailed.py`
+
+## Current Development Context
+
+- Repository is at `/home/budadmin/simulator`
+- Main project directory is `BudSimulator/`
+- Currently on branch `main`
+- Uses virtual environment at `BudSimulator/env/`
