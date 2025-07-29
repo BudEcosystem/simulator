@@ -23,6 +23,33 @@ from .utils import (
     analyze_attention_efficiency,
 )
 
+# Import parallelism functions if available
+try:
+    from .parallelism_optimizer import (
+        get_various_parallelization,
+        get_best_parallelization_strategy,
+        get_pareto_optimal_performance,
+        get_minimum_system_size,
+        get_hardware_config,
+        HARDWARE_CONFIGS,
+    )
+    _PARALLELISM_AVAILABLE = True
+except ImportError:
+    _PARALLELISM_AVAILABLE = False
+
+# Import performance estimation functions if available
+try:
+    from .performance_estimator import (
+        estimate_prefill_performance,
+        estimate_decode_performance,
+        estimate_end_to_end_performance,
+        estimate_chunked_performance,
+        compare_performance_configurations,
+    )
+    _PERFORMANCE_AVAILABLE = True
+except ImportError:
+    _PERFORMANCE_AVAILABLE = False
+
 # Define public API
 __all__ = [
     # Classes
@@ -39,3 +66,24 @@ __all__ = [
     "estimate_max_batch_size",
     "analyze_attention_efficiency",
 ]
+
+# Add parallelism functions if available
+if _PARALLELISM_AVAILABLE:
+    __all__.extend([
+        "get_various_parallelization",
+        "get_best_parallelization_strategy",
+        "get_pareto_optimal_performance",
+        "get_minimum_system_size",
+        "get_hardware_config",
+        "HARDWARE_CONFIGS",
+    ])
+
+# Add performance estimation functions if available
+if _PERFORMANCE_AVAILABLE:
+    __all__.extend([
+        "estimate_prefill_performance",
+        "estimate_decode_performance", 
+        "estimate_end_to_end_performance",
+        "estimate_chunked_performance",
+        "compare_performance_configurations",
+    ])
