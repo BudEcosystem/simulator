@@ -6,6 +6,7 @@ from datetime import datetime
 from llm_memory_calculator.genz.parallelism import ParallelismConfig
 
 from llm_memory_calculator.genz.Models.default_models import ModelConfig, MODEL_DICT
+from llm_memory_calculator.huggingface_loader import HuggingFaceConfigLoader
 
 from llm_memory_calculator.genz.Models.utils import OpType, ResidencyInfo, CollectiveType, parse_einsum_expression
 from llm_memory_calculator.genz.Models.attention import mha_flash_attention_prefill, mha_flash_attention_decode, mha_flash_attention_chunked
@@ -23,23 +24,80 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     from lora.injection import inject_lora_ops
 
+def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> ModelConfig:
+    """Convert HuggingFace config to ModelConfig format."""
+    # Extract architecture type
+    architectures = hf_config.get('architectures', [])
+    is_mamba = any('mamba' in arch.lower() for arch in architectures)
+    
+    # Extract key parameters with proper defaults
+    vocab_size = hf_config.get('vocab_size', 32000)
+    hidden_size = hf_config.get('hidden_size', 4096)
+    num_layers = hf_config.get('num_hidden_layers', 32)
+    num_heads = hf_config.get('num_attention_heads', 32)
+    
+    # Handle different naming conventions for intermediate size
+    intermediate_size = hf_config.get('intermediate_size', 
+                                     hf_config.get('ffn_dim', 
+                                     hf_config.get('mlp_dim', 11008)))
+    
+    # Handle KV heads
+    num_kv_heads = hf_config.get('num_key_value_heads', num_heads)
+    
+    # Handle head dim
+    head_dim = hf_config.get('head_dim', hidden_size // num_heads)
+    
+    # Get max position embeddings
+    max_seq_len = hf_config.get('max_position_embeddings', 
+                               hf_config.get('max_sequence_length', 128000))
+    
+    # Determine layer type
+    layer_type = [("Mamba", num_layers)] if is_mamba else [("MHA-global", num_layers)]
+    
+    # Create ModelConfig
+    return ModelConfig(
+        model=model_name,
+        vocab_size=vocab_size,
+        max_model_len=max_seq_len,
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        num_decoder_layers=num_layers,
+        num_attention_heads=num_heads,
+        head_dim=head_dim,
+        num_key_value_heads=num_kv_heads,
+        layer_type=layer_type,
+        unique_layers=1,
+        hidden_act=hf_config.get('hidden_act', 'silu'),
+        attention_bias=hf_config.get('attention_bias', False),
+        tie_word_embeddings=hf_config.get('tie_word_embeddings', False),
+        rope_theta=hf_config.get('rope_theta', 10000.0),
+        sliding_window=hf_config.get('sliding_window', None)
+    )
+
 def get_configs(name) -> ModelConfig:
     if isinstance(name, ModelConfig):
         return name
     elif isinstance(name, str):
-        name = name.lower()
-
-        if model := MODEL_DICT.get_model(name):
+        # First try the static MODEL_DICT with lowercase
+        name_lower = name.lower()
+        if model := MODEL_DICT.get_model(name_lower):
             model_config = model
             return model_config
-        else:
+        
+        # If not found in MODEL_DICT, try loading from HuggingFace
+        try:
+            loader = HuggingFaceConfigLoader()
+            hf_config = loader.fetch_model_config(name)
+            return huggingface_config_to_model_config(hf_config, name)
+        except Exception as e:
+            # If HuggingFace loading fails, show suggestions from MODEL_DICT
             model_list = MODEL_DICT.list_models()
-            close_matches = get_close_matches(name, model_list, cutoff=0.4)
+            close_matches = get_close_matches(name_lower, model_list, cutoff=0.4)
             if close_matches:
                 print("Did you mean one of these models?")
                 for match in close_matches:
                     print(f" - {match}")
-            raise ValueError("ERROR, model name parsed incorrect, please check!!! Model Name:",name)
+            raise ValueError(f"ERROR, model '{name}' not found in MODEL_DICT and failed to load from HuggingFace: {str(e)}")
 
     else:
         raise ValueError("ERROR, model name parsed incorrect, please check!!! Model Name:",name)

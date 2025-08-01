@@ -151,7 +151,7 @@ class ModelMemoryCalculator:
         bytes_per_element = self.PRECISION_BYTES.get(precision.lower(), 2)
         
         # Handle sliding window attention
-        if 'sliding_window' in text_config:
+        if 'sliding_window' in text_config and text_config['sliding_window'] is not None:
             seq_length = min(seq_length, text_config['sliding_window'])
         
         # Calculate based on attention type
