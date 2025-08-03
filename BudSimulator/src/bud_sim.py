@@ -1,6 +1,11 @@
 from enum import Enum
 from pydantic import BaseModel, Field
-from GenZ.simulation import SimulationEngine, SimulationConfig
+try:
+    from llm_memory_calculator.genz.simulation import SimulationEngine, SimulationConfig as GenZSimulationConfig
+except ImportError:
+    # Simulation module may not be available in all installations
+    SimulationEngine = None
+    GenZSimulationConfig = None
 
 class SimType(Enum):
     USECASE_SIM = "usecase_sim"

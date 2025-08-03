@@ -28,7 +28,7 @@ from src.utils.text_extraction import extract_text_from_huggingface
 from src.utils.llm_integration import parse_model_analysis, validate_analysis
 from src.prompts import MODEL_ANALYSIS_PROMPT
 from src.bud_ai import call_bud_LLM
-from GenZ.Models import MODEL_DICT
+from llm_memory_calculator.genz.Models import MODEL_DICT
 
 
 class GatedModelIdentifier:

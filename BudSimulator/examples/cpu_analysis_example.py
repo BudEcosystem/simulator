@@ -2,12 +2,12 @@
 Example script demonstrating CPU support in GenZ/BudSimulator
 """
 import pandas as pd
-from GenZ.operators import GEMM, Logit, FC
-from GenZ.unit import Unit
-from GenZ.cpu import create_cpu_system
-from GenZ.cpu.operator_enhancement import enhance_operators_for_cpu
-from GenZ.analyse_model import analysis_model
-from GenZ.Models import OpType, ResidencyInfo
+from llm_memory_calculator.genz.operators import GEMM, Logit, FC
+from llm_memory_calculator.genz.unit import Unit
+from llm_memory_calculator.genz.cpu import create_cpu_system
+from llm_memory_calculator.genz.cpu.operator_enhancement import enhance_operators_for_cpu
+from llm_memory_calculator.genz.analyse_model import analysis_model
+from llm_memory_calculator.genz.Models import OpType, ResidencyInfo
 
 
 def main():

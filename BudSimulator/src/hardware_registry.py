@@ -1,7 +1,7 @@
 """Hardware registry for runtime integration of database hardware into system_configs."""
 from typing import List, Dict, Any, Optional
 from .hardware import BudHardware
-from Systems.system_configs import system_configs
+from llm_memory_calculator.systems.system_configs import system_configs
 
 
 class HardwareRegistry:

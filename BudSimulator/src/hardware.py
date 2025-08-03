@@ -15,7 +15,7 @@ from .db.hardware_schema import (
     get_migration_statements,
     HARDWARE_SCHEMA_VERSION
 )
-from Systems.system_configs import system_configs
+from llm_memory_calculator.systems.system_configs import system_configs
 
 
 logger = logging.getLogger(__name__)

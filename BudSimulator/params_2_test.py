@@ -5,17 +5,18 @@ from typing import Dict, Union, Tuple, Optional
 import pandas as pd
 from pathlib import Path
 
-from GenZ import (
-    get_configs, 
+from llm_memory_calculator.genz.Models.get_language_model import get_configs
+from llm_memory_calculator.genz.LLM_inference import (
     prefill_moddeling,
-    decode_moddeling,
-    get_model_df,
-    get_summary_table,
-    Unit,
-    System,
-    ModelConfig
+    decode_moddeling
 )
-from GenZ.Models.default_models import MODEL_DICT
+from llm_memory_calculator.genz.analyse_model import (
+    get_model_df,
+    get_summary_table
+)
+from llm_memory_calculator.genz.unit import Unit
+from llm_memory_calculator.genz.system import System
+from llm_memory_calculator.genz.Models.default_models import ModelConfig, MODEL_DICT
 
 def calculate_model_parameters_from_huggingface(
     model_input: Union[str, Dict, Path],

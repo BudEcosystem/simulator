@@ -1,4 +1,4 @@
-from GenZ.cpu import cpu_aware_prefill_moddeling, cpu_aware_decode_moddeling
+from llm_memory_calculator.genz.cpu import cpu_aware_prefill_moddeling, cpu_aware_decode_moddeling
 import pandas as pd
 
 # Set pandas display options for better output

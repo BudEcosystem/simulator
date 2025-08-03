@@ -11,8 +11,8 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from GenZ.simulation import SimulationEngine, SimulationConfig, SimulationResult
-from GenZ.LLM_inference import prefill_moddeling, decode_moddeling, chunked_moddeling
+from llm_memory_calculator.genz.simulation import SimulationEngine, SimulationConfig, SimulationResult
+from llm_memory_calculator.genz.LLM_inference import prefill_moddeling, decode_moddeling, chunked_moddeling
 import numpy as np
 import json
 from typing import Dict, Any, Tuple

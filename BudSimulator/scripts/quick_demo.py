@@ -9,8 +9,8 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from GenZ.simulation import SimulationEngine, SimulationConfig
-from GenZ.features.registry import FeatureRegistry
+from llm_memory_calculator.genz.simulation import SimulationEngine, SimulationConfig
+from llm_memory_calculator.genz.features.registry import FeatureRegistry
 
 
 def main():

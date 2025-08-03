@@ -7,11 +7,8 @@ import os
 from typing import Dict, Any, Optional, List
 import logging
 
-# Add GenZ to path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'GenZ'))
-
-from Models.default_models import ModelConfig
-from Models.model_quality import QualityMetricsCollection, MMLU, MATH, GSM8K, Hellaswag, TriviaQA
+from llm_memory_calculator.genz.Models.default_models import ModelConfig
+from llm_memory_calculator.genz.Models.model_quality import QualityMetricsCollection, MMLU, MATH, GSM8K, Hellaswag, TriviaQA
 
 
 logger = logging.getLogger(__name__)

@@ -3,14 +3,14 @@ Example: Using CPU Systems with GenZ Prefill and Decode Methods
 This example demonstrates three ways to use CPU systems with existing GenZ methods.
 """
 import pandas as pd
-from GenZ.cpu import (
+from llm_memory_calculator.genz.cpu import (
     create_cpu_system, 
     cpu_aware_prefill_moddeling, 
     cpu_aware_decode_moddeling,
     enable_cpu_aware_inference,
     disable_cpu_aware_inference
 )
-from GenZ.LLM_inference import prefill_moddeling, decode_moddeling
+from llm_memory_calculator.genz.LLM_inference import prefill_moddeling, decode_moddeling
 
 
 def method1_direct_cpu_aware_functions():

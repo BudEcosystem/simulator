@@ -4,7 +4,7 @@ Demo: Intel Xeon 6747P CPU Simulation with Llama 3.1 8B Model
 Simple performance analysis for LLM inference.
 """
 
-from GenZ.cpu import (
+from llm_memory_calculator.genz.cpu import (
     cpu_aware_prefill_moddeling, 
     cpu_aware_decode_moddeling,
     create_cpu_system

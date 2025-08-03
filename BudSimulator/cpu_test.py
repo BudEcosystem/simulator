@@ -1,4 +1,4 @@
-from GenZ.cpu import cpu_aware_prefill_moddeling, cpu_aware_decode_moddeling
+from llm_memory_calculator.genz.cpu import cpu_aware_prefill_moddeling, cpu_aware_decode_moddeling
 
 # Analyze prefill on CPU
 

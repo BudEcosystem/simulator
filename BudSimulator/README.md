@@ -1,14 +1,31 @@
 # BudSimulator
 
-BudSimulator is an advanced AI model simulation and benchmarking platform built on top of the GenZ framework. It provides comprehensive tools for evaluating, comparing, and optimizing AI models with hardware recommendations.
+BudSimulator is a comprehensive AI model simulation and benchmarking platform that provides analytical performance estimates for Large Language Model (LLM) inference on various hardware platforms. Built on top of the [llm-memory-calculator](https://github.com/yourusername/llm-memory-calculator) engine, it offers a full-stack application with React frontend and FastAPI backend for interactive exploration of LLM deployment scenarios.
 
 ## Features
 
-- 🚀 **Model Benchmarking**: Comprehensive performance analysis across different hardware configurations
-- 💻 **Hardware Recommendations**: Intelligent suggestions for optimal hardware based on your requirements
-- 📊 **Interactive Dashboard**: Beautiful web interface for visualizing model performance
-- 🔍 **Model Analysis**: Detailed insights into model architecture and capabilities
-- 🛠️ **Easy Setup**: One-click automated installation and configuration
+### 🚀 Core Capabilities
+- **Memory Estimation**: Calculate precise memory requirements for LLMs across different architectures
+- **Performance Modeling**: Estimate inference latency and throughput for prefill and decode phases
+- **Hardware Recommendations**: Get optimal hardware suggestions based on model requirements
+- **Multi-Model Comparison**: Compare multiple models side-by-side for memory and performance
+- **Use Case Management**: Create and manage different deployment scenarios
+- **Interactive Dashboard**: Beautiful web interface for visualizing model performance
+
+### 🎯 Key Components
+- **Web Dashboard**: Interactive React frontend for visual exploration
+- **REST API**: FastAPI backend with comprehensive endpoints
+- **Streamlit Interface**: Alternative dashboard for model comparisons
+- **Database Management**: SQLite database for hardware and model configurations
+- **HuggingFace Integration**: Direct loading of model configurations from HuggingFace Hub
+
+### 🔧 Technical Features
+- Support for various model architectures (Transformers, Mamba, Hybrid, Diffusion)
+- Multiple precision formats (fp32, fp16, bf16, int8, int4, etc.)
+- Parallelism strategies (Tensor, Pipeline, Data, Expert parallelism)
+- CPU and GPU performance modeling
+- LoRA adapter support
+- Batch processing capabilities
 
 ## Prerequisites
 
@@ -64,137 +81,277 @@ If you prefer manual setup:
    cd ..
    ```
 
-5. **Set up database**
+5. **Initialize database**
    ```bash
    python scripts/setup_database.py
    ```
 
-6. **Configure environment**
-   Create a `.env` file with your LLM configuration:
+6. **Configure environment** (optional)
+   Create a `.env` file based on `config/env.template`:
    ```env
    LLM_PROVIDER=openai
-   LLM_API_KEY=your-api-key
+   LLM_API_KEY=your-api-key-here
    LLM_MODEL=gpt-4
-   LLM_API_URL=https://api.openai.com/v1/chat/completions
-   ```
-
-7. **Start the servers**
-   
-   Backend (stable mode - recommended):
-   ```bash
-   python run_api.py
-   ```
-   
-   Backend (with hot-reload for development):
-   ```bash
-   # Unix/Linux/macOS
-   RELOAD=true python run_api.py
-   
-   # Windows
-   set RELOAD=true && python run_api.py
-   ```
-   
-   Frontend (new terminal):
-   ```bash
-   cd frontend
-   npm start
    ```
 
 ## Usage
 
-Once the setup is complete:
+### Running the Application
 
-1. **Access the application**: http://localhost:3000
-2. **API Documentation**: http://localhost:8000/docs
-3. **Model Dashboard**: Browse and analyze AI models
-4. **Hardware Recommendations**: Get optimal hardware suggestions
-5. **Benchmarking**: Run performance tests on different configurations
+#### Start the Backend API:
+```bash
+python run_api.py
+```
 
-## Project Structure
+The API will be available at `http://localhost:8000`. Access the interactive API documentation at `http://localhost:8000/docs`.
+
+#### Start the Frontend (in a new terminal):
+```bash
+cd frontend
+npm start
+```
+
+The React app will open at `http://localhost:3000`.
+
+#### Alternative: Streamlit Interface
+```bash
+streamlit run Website/Home.py
+```
+
+### API Examples
+
+#### Calculate Memory for a Model
+```python
+import requests
+
+response = requests.post("http://localhost:8000/api/models/calculate-memory", json={
+    "model_config": {
+        "hidden_size": 4096,
+        "num_hidden_layers": 32,
+        "num_attention_heads": 32,
+        "intermediate_size": 11008,
+        "vocab_size": 32000,
+        "model_type": "llama"
+    },
+    "batch_size": 1,
+    "sequence_length": 2048,
+    "precision": "fp16"
+})
+
+print(response.json())
+```
+
+#### Get Hardware Recommendations
+```python
+response = requests.post("http://localhost:8000/api/hardware/recommend", json={
+    "model_size_gb": 13.5,
+    "required_memory_gb": 27.0,
+    "use_case": "inference"
+})
+
+print(response.json())
+```
+
+### Command Line Interface
+
+For development and testing:
+
+```bash
+# Test memory calculation
+python -c "
+from src.bud_models import estimate_memory
+config = {'hidden_size': 4096, 'num_hidden_layers': 32, 'vocab_size': 32000}
+report = estimate_memory(config, seq_length=2048)
+print(f'Total memory: {report.total_memory_gb:.2f} GB')
+"
+
+# Test CPU inference
+python cpu_test.py
+
+# Run comprehensive API tests
+python comprehensive_api_test.py
+```
+
+## Architecture
+
+### High-Level Overview
 
 ```
 BudSimulator/
-├── apis/               # Backend API endpoints
-├── frontend/           # React frontend application
-├── scripts/            # Utility scripts
-├── tests/              # Test suite
-├── data/               # Pre-populated database
-├── models/             # Model definitions
-├── services/           # Business logic services
-├── utils/              # Utility functions
-├── setup.py            # Automated setup script
-└── requirements.txt    # Python dependencies
+├── frontend/               # React TypeScript frontend
+│   ├── src/
+│   │   ├── components/    # UI components
+│   │   ├── services/      # API services
+│   │   └── types/         # TypeScript types
+│   └── public/            # Static assets
+├── apis/                  # FastAPI backend
+│   ├── routers/          # API endpoints
+│   └── schemas.py        # Pydantic schemas
+├── src/                   # Core business logic
+│   ├── db/               # Database models and management
+│   ├── utils/            # Utility functions
+│   └── bud_models.py     # Model interfaces
+├── Website/              # Streamlit interface
+│   └── pages/            # Streamlit pages
+├── data/                 # SQLite database
+├── scripts/              # Utility scripts
+└── tests/                # Test files
 ```
+
+### Core Dependencies
+
+- **llm-memory-calculator**: Core LLM performance modeling engine
+- **FastAPI**: Modern web API framework
+- **React**: Frontend framework with TypeScript
+- **SQLAlchemy**: Database ORM
+- **Streamlit**: Alternative web interface
+- **HuggingFace Hub**: Model configuration loading
+
+## Development
+
+### Adding a New Model
+
+1. Import from HuggingFace:
+```python
+from src.db import HuggingFaceModelImporter
+importer = HuggingFaceModelImporter()
+importer.import_model("meta-llama/Llama-3-8B")
+```
+
+2. Or add manually to the database via the API or scripts.
+
+### Adding Hardware Configurations
+
+1. Create a hardware configuration:
+```python
+hardware = {
+    "name": "NVIDIA H200",
+    "memory_gb": 141,
+    "memory_bandwidth_gb_s": 4800,
+    "fp16_tflops": 1979,
+    "int8_tops": 3958
+}
+```
+
+2. Add via API or database scripts.
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run specific test modules
+python cpu_test.py
+python comprehensive_api_test.py
+python model_param_test.py
+```
+
+## API Documentation
+
+The API provides comprehensive endpoints for model analysis and hardware recommendations:
+
+### Key Endpoints
+
+- `POST /api/models/calculate-memory` - Calculate memory requirements
+- `POST /api/models/analyze` - Analyze model from HuggingFace
+- `GET /api/models/list` - List available models
+- `POST /api/hardware/recommend` - Get hardware recommendations
+- `GET /api/hardware` - List available hardware
+- `POST /api/usecases` - Create deployment scenarios
+- `GET /api/usecases/{id}/recommendations` - Get recommendations for a use case
+
+Full API documentation is available at `http://localhost:8000/docs` when running the backend.
 
 ## Configuration
 
-### LLM Providers
-
-BudSimulator supports multiple LLM providers:
-
-- **OpenAI**: GPT-3.5, GPT-4
-- **Anthropic**: Claude models
-- **Ollama**: Local models
-- **Custom**: Any OpenAI-compatible API
-
 ### Environment Variables
 
-- `LLM_PROVIDER`: Your LLM provider (openai, anthropic, ollama, custom)
-- `LLM_API_KEY`: API key for your provider
-- `LLM_MODEL`: Model name to use
-- `LLM_API_URL`: API endpoint URL
+Create a `.env` file based on `config/env.template`:
 
-## Testing
+```env
+# LLM Provider settings (optional, for AI-powered features)
+LLM_PROVIDER=openai
+LLM_API_KEY=your-api-key-here
+LLM_MODEL=gpt-4
 
-Run the test suite:
+# Database settings
+DATABASE_PATH=data/prepopulated.db
 
-```bash
-pytest tests/ -v
+# API settings
+API_HOST=0.0.0.0
+API_PORT=8000
+
+# Frontend settings
+REACT_APP_API_URL=http://localhost:8000
 ```
+
+### Database Configuration
+
+The SQLite database contains:
+- Pre-populated hardware configurations
+- Model metadata and configurations
+- Use case scenarios
+- Performance benchmarks
 
 ## Troubleshooting
 
-### Port Already in Use
+### Common Issues
 
-If ports 3000 or 8000 are already in use, the setup script will automatically find available ports.
+1. **Import errors**: Ensure virtual environment is activated
+2. **Database errors**: Run `python scripts/setup_database.py` to reinitialize
+3. **Frontend not connecting**: Check API is running on port 8000
+4. **Memory calculation errors**: Verify model configuration format
 
-### Database Issues
+### Debug Mode
 
-If you encounter database issues:
+Run the API with debug logging:
 ```bash
-rm -rf ~/.genz_simulator/db
-python scripts/setup_database.py
-```
-
-### Frontend Build Issues
-
-Clear npm cache and reinstall:
-```bash
-cd frontend
-rm -rf node_modules package-lock.json
-npm cache clean --force
-npm install
+RELOAD=true python run_api.py
 ```
 
 ## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+### Code Style
+- Python: Follow PEP 8, use type hints
+- TypeScript: Use strict mode, define interfaces
+- React: Functional components with hooks
+- API: RESTful conventions, consistent error handling
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Support
-
-For issues and questions:
-- Open an issue on GitHub
-- Check the documentation at http://localhost:8000/docs
-- Review the logs in the console output
-
 ## Acknowledgments
 
-Built on top of the GenZ framework for advanced AI model management. 
+- Built on top of [llm-memory-calculator](https://github.com/yourusername/llm-memory-calculator)
+- Inspired by the GenZ-LLM Analyzer framework
+- Thanks to the HuggingFace team for model hosting
+- Community contributors and testers
+
+## Support
+
+- **Documentation**: See the `/docs` directory for detailed guides
+- **Issues**: Report bugs at [GitHub Issues](https://github.com/yourusername/BudSimulator/issues)
+- **Questions**: Ask in [Discussions](https://github.com/yourusername/BudSimulator/discussions)
+
+## Roadmap
+
+- [ ] Support for more model architectures
+- [ ] Enhanced visualization capabilities  
+- [ ] Multi-GPU simulation support
+- [ ] Cost optimization features
+- [ ] Cloud deployment templates
+- [ ] Real-time monitoring integration
+- [ ] Model fine-tuning recommendations
+- [ ] Energy efficiency metrics
+
+---
+
+**Note**: This project is under active development. Features and APIs may change.

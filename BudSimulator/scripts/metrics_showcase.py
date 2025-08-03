@@ -17,8 +17,8 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from GenZ.simulation.engine import SimulationEngine
-from GenZ.simulation.config import SimulationConfig
+from llm_memory_calculator.genz.simulation.engine import SimulationEngine
+from llm_memory_calculator.genz.simulation.config import SimulationConfig
 from typing import Dict, Any
 import json
 
