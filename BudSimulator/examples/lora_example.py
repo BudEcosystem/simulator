@@ -12,9 +12,9 @@ import pandas as pd
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from LoRA.config import LoraConfig
-from GenZ.Models import create_full_prefill_model, create_full_decode_model, get_configs
-from GenZ.Models.utils import OpType
+from llm_memory_calculator.lora.config import LoraConfig
+from llm_memory_calculator.genz.Models import create_full_prefill_model, create_full_decode_model, get_configs
+from llm_memory_calculator.genz.Models.utils import OpType
 
 
 def demonstrate_lora_merge_strategy():

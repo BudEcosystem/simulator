@@ -1,7 +1,7 @@
 import streamlit as st
 import time
 from PIL import Image
-from GenZ.Models import MODEL_DICT
+from llm_memory_calculator.genz.Models import MODEL_DICT
 def local_css(file_name):
     with open(file_name) as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)

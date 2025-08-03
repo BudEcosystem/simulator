@@ -10,8 +10,8 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from GenZ.simulation import SimulationEngine, SimulationConfig, SimulationResult
-from GenZ.features.registry import FeatureRegistry
+from llm_memory_calculator.genz.simulation import SimulationEngine, SimulationConfig, SimulationResult
+from llm_memory_calculator.genz.features.registry import FeatureRegistry
 import json
 import time
 from typing import Any, Dict
@@ -396,7 +396,7 @@ def example_6_feature_discovery():
         print(f"  {feature:<20} - {metadata.description} {'(builtin)' if is_builtin else ''}")
     
     # Get features by category
-    from GenZ.features.base import FeatureCategory
+    from llm_memory_calculator.genz.features.base import FeatureCategory
     
     for category in FeatureCategory:
         category_features = registry.get_features_by_category(category)

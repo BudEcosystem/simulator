@@ -5,14 +5,15 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import warnings
-from GenZ import decode_moddeling, prefill_moddeling, get_configs
+from llm_memory_calculator.genz.LLM_inference import decode_moddeling, prefill_moddeling
+from llm_memory_calculator.genz.Models.get_language_model import get_configs
 import pandas as pd
 from tqdm import tqdm
 import time
 import copy
 
 
-from Systems.system_configs import system_configs
+from llm_memory_calculator.systems.system_configs import system_configs
 
 system_datasheet = {
     'A100_40GB_GPU':'https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-nvidia-us-2188504-web.pdf',

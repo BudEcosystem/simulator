@@ -4,12 +4,13 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import warnings
-from GenZ import decode_moddeling, prefill_moddeling, get_configs
+from llm_memory_calculator.genz.LLM_inference import decode_moddeling, prefill_moddeling
+from llm_memory_calculator.genz.Models.get_language_model import get_configs
 import pandas as pd
 from tqdm import tqdm
 import time
 
-from Systems.system_configs import system_configs
+from llm_memory_calculator.systems.system_configs import system_configs
 
 st.set_page_config(
     page_title="Model Comparisons",

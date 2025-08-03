@@ -1,9 +1,0 @@
-bandwidth:
-- 25
-dimensions-count: 1
-latency:
-- 500
-npus_count:
-- 4
-topology:
-- Switch

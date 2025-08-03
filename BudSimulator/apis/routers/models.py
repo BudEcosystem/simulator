@@ -39,7 +39,7 @@ try:
     )
     from src.db import ModelManager, HuggingFaceModelImporter
     from src.db.model_loader import patch_genz_model_dict
-    from GenZ.Models import MODEL_DICT
+    from llm_memory_calculator.genz.Models import MODEL_DICT
     
     # Patch MODEL_DICT to use dynamic version
     patch_success = patch_genz_model_dict()

@@ -7,10 +7,7 @@ import os
 from typing import Dict, Any, Optional, Union, List
 import logging
 
-# Add GenZ to path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'GenZ'))
-
-from Models.default_models import ModelConfig, ModelCollection
+from llm_memory_calculator.genz.Models.default_models import ModelConfig, ModelCollection
 from .model_manager import ModelManager
 from .model_converter import ModelConverter
 from .hf_integration import HuggingFaceModelImporter
@@ -316,7 +313,7 @@ def create_dynamic_model_dict(base_model_dict: Optional[ModelCollection] = None,
 def patch_genz_model_dict():
     """Replace the static MODEL_DICT in GenZ with dynamic version."""
     try:
-        from Models import default_models
+        from llm_memory_calculator.genz.Models import default_models
         
         # Get the current MODEL_DICT
         current_dict = getattr(default_models, 'MODEL_DICT', None)
