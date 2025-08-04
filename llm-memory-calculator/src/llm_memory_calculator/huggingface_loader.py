@@ -1,9 +1,10 @@
-"""HuggingFace model configuration loader."""
+"""HuggingFace model configuration loader with local path support."""
 
 import json
 import warnings
 from typing import Dict, Any, Optional, List
 from pathlib import Path
+import os
 
 try:
     from huggingface_hub import HfApi, hf_hub_download, ModelCard
@@ -30,22 +31,100 @@ class HuggingFaceConfigLoader:
         """
         self.api = HfApi(token=token)
         self.token = token
-        
-    def fetch_model_config(self, model_id: str) -> Dict[str, Any]:
+    
+    def _is_local_path(self, model_id_or_path: str) -> bool:
         """
-        Fetch model configuration from HuggingFace Hub.
+        Check if the input is a local path or a HuggingFace model ID.
         
         Args:
-            model_id: HuggingFace model identifier (e.g., "meta-llama/Llama-2-7b-hf")
+            model_id_or_path: Either a HuggingFace model ID or a local path
             
         Returns:
-            Raw config dictionary from HuggingFace
+            True if it's a local path, False if it's a HuggingFace model ID
+        """
+        # Check if it's an existing local path
+        path = Path(model_id_or_path)
+        if path.exists():
+            return True
+        
+        # Check if it looks like a file path (contains / or \ but not in HF format)
+        # HuggingFace IDs typically have format "organization/model-name"
+        if ('/' in model_id_or_path or '\\' in model_id_or_path):
+            # If it has more than one slash or contains backslashes, it's likely a path
+            if model_id_or_path.count('/') > 1 or '\\' in model_id_or_path:
+                return True
+            # If it starts with ./ or ../ or / it's a path
+            if model_id_or_path.startswith('./') or model_id_or_path.startswith('../') or model_id_or_path.startswith('/'):
+                return True
+        
+        # Otherwise assume it's a HuggingFace model ID
+        return False
+    
+    def _load_local_config(self, path: str) -> Dict[str, Any]:
+        """
+        Load configuration from a local path.
+        
+        Args:
+            path: Local path to the model directory or config file
+            
+        Returns:
+            Config dictionary loaded from local file
             
         Raises:
-            RepositoryNotFoundError: If model doesn't exist
-            GatedRepoError: If model requires access request
+            FileNotFoundError: If no config file is found
+            json.JSONDecodeError: If config file is not valid JSON
+        """
+        path_obj = Path(path)
+        
+        # If path is a directory, look for config files
+        if path_obj.is_dir():
+            config_filenames = [
+                "config.json",
+                "model_config.json",
+                "configuration.json",
+            ]
+            
+            for filename in config_filenames:
+                config_path = path_obj / filename
+                if config_path.exists():
+                    with open(config_path, 'r') as f:
+                        return json.load(f)
+            
+            raise FileNotFoundError(f"No config file found in directory: {path}")
+        
+        # If path is a file, load it directly
+        elif path_obj.is_file():
+            if path_obj.suffix == '.json':
+                with open(path_obj, 'r') as f:
+                    return json.load(f)
+            else:
+                raise ValueError(f"Config file must be a JSON file, got: {path_obj.suffix}")
+        
+        else:
+            raise FileNotFoundError(f"Path does not exist: {path}")
+        
+    def fetch_model_config(self, model_id_or_path: str) -> Dict[str, Any]:
+        """
+        Fetch model configuration from HuggingFace Hub or local path.
+        
+        Args:
+            model_id_or_path: HuggingFace model identifier (e.g., "meta-llama/Llama-2-7b-hf")
+                             or local path to model directory/config file
+            
+        Returns:
+            Raw config dictionary
+            
+        Raises:
+            RepositoryNotFoundError: If HuggingFace model doesn't exist
+            GatedRepoError: If HuggingFace model requires access request
+            FileNotFoundError: If local config file doesn't exist
             Exception: For other errors
         """
+        # Check if it's a local path
+        if self._is_local_path(model_id_or_path):
+            return self._load_local_config(model_id_or_path)
+        
+        # Otherwise, treat as HuggingFace model ID
         # List of possible config file names in order of preference
         config_filenames = [
             "config.json",           # Standard transformers config
@@ -59,7 +138,7 @@ class HuggingFaceConfigLoader:
             try:
                 # Download config file
                 config_path = hf_hub_download(
-                    repo_id=model_id,
+                    repo_id=model_id_or_path,
                     filename=filename,
                     token=self.token
                 )
@@ -76,7 +155,7 @@ class HuggingFaceConfigLoader:
             except GatedRepoError as e:
                 # For gated repos, we want to provide a clear error
                 raise GatedRepoError(
-                    f"Model {model_id} is gated. Please request access on HuggingFace "
+                    f"Model {model_id_or_path} is gated. Please request access on HuggingFace "
                     f"and provide your token. Error: {str(e)}"
                 )
                 
@@ -87,30 +166,30 @@ class HuggingFaceConfigLoader:
         
         # If we get here, no config file was found
         if last_error:
-            raise Exception(f"Could not find config file for {model_id}. Last error: {last_error}")
+            raise Exception(f"Could not find config file for {model_id_or_path}. Last error: {last_error}")
         else:
-            raise Exception(f"No config file found for {model_id}")
+            raise Exception(f"No config file found for {model_id_or_path}")
     
-    def get_model_config(self, model_id: str, add_param_count: bool = True) -> Dict[str, Any]:
+    def get_model_config(self, model_id_or_path: str, add_param_count: bool = True) -> Dict[str, Any]:
         """
         Get model configuration with enhanced parameter counting.
         
         This method fetches the config and optionally adds parameter count from model metadata.
         
         Args:
-            model_id: HuggingFace model identifier
+            model_id_or_path: HuggingFace model identifier or local path
             add_param_count: Whether to try to add parameter count from model info
             
         Returns:
             Enhanced config dictionary with num_parameters
         """
-        config = self.fetch_model_config(model_id)
+        config = self.fetch_model_config(model_id_or_path)
         
-        # Try to add parameter count from model info if requested
-        if add_param_count and 'num_parameters' not in config:
+        # Try to add parameter count from model info if requested (only for HuggingFace models)
+        if add_param_count and 'num_parameters' not in config and not self._is_local_path(model_id_or_path):
             try:
                 from huggingface_hub import model_info
-                info = model_info(model_id, token=self.token)
+                info = model_info(model_id_or_path, token=self.token)
                 
                 # Check safetensors metadata for total parameter count
                 if hasattr(info, 'safetensors') and info.safetensors:
@@ -128,25 +207,29 @@ class HuggingFaceConfigLoader:
             
         return config
     
-    def get_model_info(self, model_id: str) -> Any:
+    def get_model_info(self, model_id_or_path: str) -> Any:
         """
         Get model information from HuggingFace Hub.
         
         Args:
-            model_id: HuggingFace model identifier
+            model_id_or_path: HuggingFace model identifier or local path
             
         Returns:
-            ModelInfo object from HuggingFace Hub API
+            ModelInfo object from HuggingFace Hub API, or None for local paths
         """
+        # Local paths don't have HuggingFace model info
+        if self._is_local_path(model_id_or_path):
+            return None
+            
         try:
-            return self.api.model_info(model_id, token=self.token)
+            return self.api.model_info(model_id_or_path, token=self.token)
         except Exception as e:
-            warnings.warn(f"Could not fetch model info for {model_id}: {e}")
+            warnings.warn(f"Could not fetch model info for {model_id_or_path}: {e}")
             return None
     
     def analyze_model(
         self,
-        model_id: str,
+        model_id_or_path: str,
         seq_length: int = 2048,
         batch_size: int = 1,
         precision: str = 'fp16',
@@ -156,7 +239,7 @@ class HuggingFaceConfigLoader:
         Analyze a model from HuggingFace Hub.
         
         Args:
-            model_id: HuggingFace model identifier
+            model_id_or_path: HuggingFace model identifier or local path
             seq_length: Sequence length for memory calculation
             batch_size: Batch size for memory calculation
             precision: Model precision
@@ -166,7 +249,7 @@ class HuggingFaceConfigLoader:
             Dictionary with model info and memory analysis
         """
         # Get config
-        config = self.get_model_config(model_id)
+        config = self.get_model_config(model_id_or_path)
         
         # Create calculator and run analysis
         calculator = ModelMemoryCalculator()
@@ -179,11 +262,11 @@ class HuggingFaceConfigLoader:
         )
         
         # Get model info
-        model_info = self.get_model_info(model_id)
+        model_info = self.get_model_info(model_id_or_path)
         
         # Build analysis dictionary
         analysis = {
-            'model_id': model_id,
+            'model_id': model_id_or_path,
             'model_type': result.model_type,
             'attention_type': result.attention_type,
             'parameter_count': result.parameter_count,
@@ -205,7 +288,7 @@ class HuggingFaceConfigLoader:
     
     def compare_models(
         self,
-        model_ids: List[str],
+        model_ids_or_paths: List[str],
         seq_length: int = 2048,
         precision: str = 'fp16',
         **kwargs
@@ -214,7 +297,7 @@ class HuggingFaceConfigLoader:
         Compare memory requirements for multiple models.
         
         Args:
-            model_ids: List of HuggingFace model identifiers
+            model_ids_or_paths: List of HuggingFace model identifiers or local paths
             seq_length: Sequence length for comparison
             precision: Model precision for comparison
             **kwargs: Additional arguments for memory calculation
@@ -224,19 +307,19 @@ class HuggingFaceConfigLoader:
         """
         results = []
         
-        for model_id in model_ids:
+        for model_id_or_path in model_ids_or_paths:
             try:
                 analysis = self.analyze_model(
-                    model_id, 
+                    model_id_or_path, 
                     seq_length=seq_length,
                     precision=precision,
                     **kwargs
                 )
                 results.append(analysis)
             except Exception as e:
-                warnings.warn(f"Failed to analyze {model_id}: {e}")
+                warnings.warn(f"Failed to analyze {model_id_or_path}: {e}")
                 results.append({
-                    'model_id': model_id,
+                    'model_id': model_id_or_path,
                     'error': str(e)
                 })
         
