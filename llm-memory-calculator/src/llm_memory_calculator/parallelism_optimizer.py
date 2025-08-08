@@ -231,7 +231,7 @@ def get_minimum_system_size(
     
     return _get_minimum_system_size_genz(
         model=model,
-        batch_size=batch_size,
+        max_batch_size=batch_size,  # Internal function uses max_batch_size
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         system_name=system_name,

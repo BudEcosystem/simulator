@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Frontend Debug Test</title>
+</head>
+<body>
+    <h1>Testing Frontend API Calls</h1>
+    <div id="results"></div>
+    
+    <script>
+        const resultsDiv = document.getElementById('results');
+        
+        // Test popular models
+        fetch('http://localhost:3000/api/models/popular')
+            .then(res => res.json())
+            .then(data => {
+                resultsDiv.innerHTML += '<h2>Popular Models:</h2>';
+                resultsDiv.innerHTML += '<pre>' + JSON.stringify(data.models.slice(0, 3), null, 2) + '</pre>';
+                resultsDiv.innerHTML += '<p>Total models: ' + data.models.length + '</p>';
+            })
+            .catch(err => {
+                resultsDiv.innerHTML += '<p style="color: red;">Error fetching models: ' + err + '</p>';
+            });
+            
+        // Test hardware
+        fetch('http://localhost:3000/api/hardware')
+            .then(res => res.json())
+            .then(data => {
+                resultsDiv.innerHTML += '<h2>Hardware:</h2>';
+                resultsDiv.innerHTML += '<pre>' + JSON.stringify(data.slice(0, 3), null, 2) + '</pre>';
+                resultsDiv.innerHTML += '<p>Total hardware: ' + data.length + '</p>';
+            })
+            .catch(err => {
+                resultsDiv.innerHTML += '<p style="color: red;">Error fetching hardware: ' + err + '</p>';
+            });
+            
+        // Test usecases
+        fetch('http://localhost:3000/api/usecases')
+            .then(res => res.json())
+            .then(data => {
+                resultsDiv.innerHTML += '<h2>Usecases:</h2>';
+                resultsDiv.innerHTML += '<pre>' + JSON.stringify(data.slice(0, 3), null, 2) + '</pre>';
+                resultsDiv.innerHTML += '<p>Total usecases: ' + data.length + '</p>';
+            })
+            .catch(err => {
+                resultsDiv.innerHTML += '<p style="color: red;">Error fetching usecases: ' + err + '</p>';
+            });
+    </script>
+</body>
+</html>

@@ -25,13 +25,20 @@ def get_minimum_system_size(
     else:
         Num_nodes = int(np.power(2,np.ceil(np.log2(Num_nodes))))
     ##### RE verifying the memory sizes
-    while 1:
+    max_attempts = 10  # Safety limit to prevent infinite loops
+    attempts = 0
+    while attempts < max_attempts:
         try:    ## Check if model fits
             _ = get_best_parallization_strategy(stage=stage, model=model, total_nodes=Num_nodes, batch_size = max_batch_size, beam_size = beam_size,
                         input_tokens = input_tokens, output_tokens = output_tokens,
                         system_name = system_name, bits=bits, debug=debug).sort_values(by='Tokens/s', ascending=False)
             break
-        except: ## If model doesn't fit, have 2x number of cores.
+        except Exception as e: ## If model doesn't fit, have 2x number of cores.
+            if debug:
+                print(f"Platform size check failed with {Num_nodes} nodes: {e}")
             Num_nodes *= 2
+            attempts += 1
+            if attempts >= max_attempts:
+                raise RuntimeError(f"Could not find suitable platform size after {max_attempts} attempts. Last error: {e}")
 
     return Num_nodes
