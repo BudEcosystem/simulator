@@ -140,7 +140,7 @@ export const OptimizedHardwareRecommendations: React.FC<Props> = ({ usecaseId, u
       <div className="bg-gray-800/50 rounded-xl p-8 border border-gray-700">
         <div className="flex items-center justify-center space-x-3">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-400"></div>
-          <span className="text-gray-300">Optimizing hardware configurations with GenZ...</span>
+          <span className="text-gray-300">Bud is finding the most optimal hardware configuration for you...</span>
         </div>
       </div>
     );
@@ -174,7 +174,7 @@ export const OptimizedHardwareRecommendations: React.FC<Props> = ({ usecaseId, u
               Optimized Hardware Configurations
             </h3>
             <p className="text-gray-400 text-sm mt-1">
-              AI-powered recommendations using GenZ performance modeling
+              AI-powered recommendations using Bud Simulator performance modeling
             </p>
           </div>
 
@@ -459,7 +459,7 @@ export const OptimizedHardwareRecommendations: React.FC<Props> = ({ usecaseId, u
         <div className="flex items-start gap-3">
           <Info className="w-5 h-5 text-blue-400 mt-0.5" />
           <div className="text-sm">
-            <p className="text-blue-300 font-medium mb-1">About GenZ Optimization</p>
+            <p className="text-blue-300 font-medium mb-1">About Bud Optimization</p>
             <p className="text-gray-300">
               These recommendations use advanced performance modeling to predict actual latencies and throughput
               based on hardware capabilities, memory bandwidth, and parallelization strategies.
