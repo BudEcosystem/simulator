@@ -75,7 +75,6 @@ coverage.xml
 *.log
 
 # Database
-*.db
 *.sqlite3
 
 # Temporary directories

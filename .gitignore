@@ -235,7 +235,6 @@ $RECYCLE.BIN/
 # Project specific
 /tmp/
 /temp/
-/data/
 *.csv
 *.h5
 *.hdf5
