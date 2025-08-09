@@ -66,6 +66,19 @@ report = estimate_memory(config, seq_length=2048)
 print(f"Total memory: {report.total_memory_gb:.2f} GB")
 ```
 
+### Option 3: Docker Deployment (Recommended for Production)
+```bash
+# Build and run with Docker
+docker build -t budsimulator .
+docker run -p 8000:8000 -p 3000:3000 budsimulator
+
+# Or use docker-compose
+docker-compose up --build
+
+# For domain deployment (e.g., simulator.bud.studio)
+./deploy-domain.sh
+```
+
 ## 🎯 Use Cases
 
 ### For ML Engineers
@@ -148,6 +161,7 @@ print(f"Total memory: {report.total_memory_gb:.2f} GB")
 - [Frontend Guide](./BudSimulator/frontend/README.md)
 - [Adding Custom Hardware](./llm-memory-calculator/docs/ADD_NEW_CPU_GUIDE.md)
 - [Performance API Guide](./llm-memory-calculator/docs/PERFORMANCE_API_GUIDE.md)
+- [Deployment Guide](./DEPLOYMENT.md)
 
 ## 🧪 Examples
 

@@ -35,7 +35,7 @@ BudSimulator is a comprehensive AI model simulation and benchmarking platform th
 
 ## Quick Start
 
-### Automated Setup (Recommended)
+### Automated Setup (Recommended for Development)
 
 Simply run the automated setup script:
 
@@ -53,7 +53,7 @@ This will:
 7. Start both backend and frontend servers
 8. Open the application in your browser
 
-### Manual Setup
+### Manual Setup (Development)
 
 If you prefer manual setup:
 
@@ -93,6 +93,20 @@ If you prefer manual setup:
    LLM_API_KEY=your-api-key-here
    LLM_MODEL=gpt-4
    ```
+
+### Docker Deployment (Recommended for Production)
+
+For production deployment, use Docker:
+
+```bash
+# Build and run with Docker
+cd ..
+docker build -t budsimulator .
+docker run -p 8000:8000 -p 3000:3000 budsimulator
+
+# Or use docker-compose
+docker-compose up --build
+```
 
 ## Usage
 
