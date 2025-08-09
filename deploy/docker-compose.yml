@@ -5,8 +5,10 @@ services:
     environment:
       - BACKEND_PORT=8000
       - DATABASE_URL=sqlite:///data/app.db
-    volumes:
-      - backend-data:/app/BudSimulator/data
+    # Volume removed to ensure database is always from the image
+    # If you need persistent data, uncomment below:
+    # volumes:
+    #   - backend-data:/app/BudSimulator/data
     networks:
       - app-network
     restart: unless-stopped
