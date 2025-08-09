@@ -1,6 +1,6 @@
 """Utility functions for memory calculation."""
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 
 from .calculator import ModelMemoryCalculator
 from .types import MemoryReport
@@ -8,7 +8,7 @@ from .huggingface_loader import HuggingFaceConfigLoader
 
 
 def calculate_memory(
-    model_id_or_config: str | Dict[str, Any],
+    model_id_or_config: Union[str, Dict[str, Any]],
     batch_size: int = 1,
     seq_length: int = 2048,
     precision: str = 'fp16',
@@ -146,7 +146,7 @@ def compare_models(
 
 
 def estimate_max_batch_size(
-    model_id_or_config: str | Dict[str, Any],
+    model_id_or_config: Union[str, Dict[str, Any]],
     gpu_memory_gb: float,
     seq_length: int = 2048,
     precision: str = 'fp16',
@@ -197,7 +197,7 @@ def estimate_max_batch_size(
 
 
 def analyze_attention_efficiency(
-    model_id_or_config: str | Dict[str, Any],
+    model_id_or_config: Union[str, Dict[str, Any]],
     seq_lengths: List[int] = [1024, 4096, 16384, 32768],
     batch_size: int = 1,
     precision: str = 'fp16',

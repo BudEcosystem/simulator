@@ -1,0 +1,51 @@
+services:
+  backend:
+    image: budsimulator
+    container_name: budsimulator-backend
+    environment:
+      - BACKEND_PORT=8000
+      - DATABASE_URL=sqlite:///data/app.db
+    volumes:
+      - backend-data:/app/BudSimulator/data
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    image: budsimulator-frontend-prod
+    container_name: budsimulator-frontend
+    environment:
+      - REACT_APP_API_URL=https://simulator.bud.studio/api
+    depends_on:
+      - backend
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: budsimulator-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - app-network
+    restart: unless-stopped
+
+volumes:
+  backend-data:
+
+networks:
+  app-network:
+    driver: bridge

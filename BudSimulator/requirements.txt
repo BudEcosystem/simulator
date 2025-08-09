@@ -12,7 +12,6 @@ pandas>=2.0.0
 pillow>=10.1.0
 ipywidgets
 Jinja2
-llm-memory-calculator
 tabulate
 fastapi>=0.104.1
 uvicorn>=0.24.0

@@ -3,6 +3,7 @@ import os
 from math import ceil
 import numpy as np
 from datetime import datetime
+from typing import Union
 from llm_memory_calculator.genz.parallelism import ParallelismConfig
 
 from llm_memory_calculator.genz.Models.default_models import ModelConfig, MODEL_DICT
@@ -160,7 +161,7 @@ def create_inference_moe_decode_layer(input_sequence_length, name='GPT-2', data_
     return save_layers(layers=layers, data_path=data_path, name=name+"_decode_")
 
 def create_full_prefill_model(
-    name: str|ModelConfig ='GPT-2', 
+    name: Union[str, ModelConfig] ='GPT-2', 
     input_sequence_length: int=1024,
     data_path:str=DATA_PATH,
     **args) -> str:
@@ -246,7 +247,7 @@ def create_full_prefill_model(
 
 
 def create_full_decode_model(
-    name: str|ModelConfig ='GPT-2',
+    name: Union[str, ModelConfig] ='GPT-2',
     input_sequence_length: int = 1024,
     output_gen_tokens: int = 0,
     data_path: str=DATA_PATH,
