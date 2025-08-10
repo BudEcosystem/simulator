@@ -186,7 +186,12 @@ async def get_model_config(model_id: str, request: Request):
                 logo = db_model.get('logo')
                 if logo and logo.startswith('logos/'):
                     # Convert relative path to full URL
-                    logo = str(request.url_for('logos', path=logo.split('/')[-1]))
+                    logo_url = str(request.url_for('logos', path=logo.split('/')[-1]))
+                    # Force HTTPS in production to avoid mixed content issues
+                    if logo_url.startswith('http://'):
+                        logo = logo_url.replace('http://', 'https://', 1)
+                    else:
+                        logo = logo_url
                 
                 # Get model analysis from database
                 if db_model.get('model_analysis'):
@@ -745,7 +750,12 @@ async def get_popular_models(request: Request, limit: int = 10):
                     logo = db_model.get('logo')
                     if logo and logo.startswith('logos/'):
                         # Convert relative path to full URL
-                        logo = str(request.url_for('logos', path=logo.split('/')[-1]))
+                        logo_url = str(request.url_for('logos', path=logo.split('/')[-1]))
+                        # Force HTTPS in production to avoid mixed content issues
+                        if logo_url.startswith('http://'):
+                            logo = logo_url.replace('http://', 'https://', 1)
+                        else:
+                            logo = logo_url
                 else:
                     # Use data from MODEL_DICT
                     model_type = model_summary.model_type
@@ -818,7 +828,12 @@ async def list_all_models(request: Request):
                         logo = getattr(model_config, 'logo', None)
                         if logo and logo.startswith('logos/'):
                             # Convert relative path to full URL
-                            logo = str(request.url_for('logos', path=logo.split('/')[-1]))
+                            logo_url = str(request.url_for('logos', path=logo.split('/')[-1]))
+                            # Force HTTPS in production to avoid mixed content issues
+                            if logo_url.startswith('http://'):
+                                logo = logo_url.replace('http://', 'https://', 1)
+                            else:
+                                logo = logo_url
                         # Get model metadata using dynamic collection if available
                         model_type = 'unknown'
                         attention_type = None
@@ -868,7 +883,12 @@ async def list_all_models(request: Request):
                             logo = getattr(model, 'logo', None)
                             if logo and logo.startswith('logos/'):
                                 # Convert relative path to full URL
-                                logo = str(request.url_for('logos', path=logo.split('/')[-1]))
+                                logo_url = str(request.url_for('logos', path=logo.split('/')[-1]))
+                                # Force HTTPS in production to avoid mixed content issues
+                                if logo_url.startswith('http://'):
+                                    logo = logo_url.replace('http://', 'https://', 1)
+                                else:
+                                    logo = logo_url
                             
                             # Get model metadata using dynamic collection if available
                             model_type = 'unknown'
@@ -921,7 +941,12 @@ async def list_all_models(request: Request):
             logo = db_model.get('logo')
             if logo and logo.startswith('logos/'):
                 # Convert relative path to full URL
-                logo = str(request.url_for('logos', path=logo.split('/')[-1]))
+                logo_url = str(request.url_for('logos', path=logo.split('/')[-1]))
+                # Force HTTPS in production to avoid mixed content issues
+                if logo_url.startswith('http://'):
+                    logo = logo_url.replace('http://', 'https://', 1)
+                else:
+                    logo = logo_url
             
             # Get model analysis from database
             model_analysis = None
@@ -1305,7 +1330,12 @@ async def get_model_details(model_id: str, request: Request):
             logo = model_data.get('logo')
             if logo and logo.startswith('logos/'):
                 # Convert relative path to full URL
-                logo = str(request.url_for('logos', path=logo.split('/')[-1]))
+                logo_url = str(request.url_for('logos', path=logo.split('/')[-1]))
+                # Force HTTPS in production to avoid mixed content issues
+                if logo_url.startswith('http://'):
+                    logo = logo_url.replace('http://', 'https://', 1)
+                else:
+                    logo = logo_url
 
             # Always prioritize database parameter count over any calculated values
             # This ensures we use our corrected UniversalParameterCounter values from the database
@@ -1359,7 +1389,12 @@ async def get_model_details(model_id: str, request: Request):
                 logo = getattr(model_config, 'logo', None)
                 if logo and logo.startswith('logos/'):
                     # Convert relative path to full URL
-                    logo = str(request.url_for('logos', path=logo.split('/')[-1]))
+                    logo_url = str(request.url_for('logos', path=logo.split('/')[-1]))
+                    # Force HTTPS in production to avoid mixed content issues
+                    if logo_url.startswith('http://'):
+                        logo = logo_url.replace('http://', 'https://', 1)
+                    else:
+                        logo = logo_url
 
                 return ModelDetailResponse(
                     model_id=model_id,
