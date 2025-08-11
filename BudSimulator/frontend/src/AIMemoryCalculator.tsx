@@ -945,7 +945,7 @@ const AIMemoryCalculator = () => {
               Find the Perfect Hardware for Your AI Models
             </h1>
             <p className="text-xl text-gray-300 max-w-[80%] mx-auto mt-[1rem]">
-              Bud Simulator finds the right hardware for any GenAI model—fast. Just plug in model size, activations or KV-cache, and get an optimized setup with ~15 % accuracy today. SLO forecasts, deeper feature analysis and high-fidelity predictions are on the way.
+              Bud Simulator finds the right hardware for any GenAI model—fast. Just plug in model size, activations or KV-cache, and get an optimized setup with ~85 % accuracy today. SLO forecasts, deeper feature analysis and high-fidelity predictions are on the way.
             </p>
           </div>
 
