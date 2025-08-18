@@ -15,19 +15,20 @@ from .db.hardware_schema import (
     get_migration_statements,
     HARDWARE_SCHEMA_VERSION
 )
-from llm_memory_calculator.systems.system_configs import system_configs
+from llm_memory_calculator.hardware import HardwareManager
 
 
 logger = logging.getLogger(__name__)
 
 
-class BudHardware:
+class BudHardware(HardwareManager):
     """
-    Unified hardware management system that:
-    - Loads hardware from system_configs.py (static)
-    - Loads hardware from database (dynamic)
-    - Provides CRUD operations for hardware
-    - Maintains compatibility with GenZ hardware structure
+    Extended hardware management system that inherits read functionality
+    from HardwareManager and adds:
+    - Write operations (add, update, delete)
+    - Database management
+    - JSON import/export
+    - Vendor and pricing management
     """
     
     def __init__(self, db_path: Optional[str] = None):
@@ -36,18 +37,14 @@ class BudHardware:
         Args:
             db_path: Optional path to database. If None, uses default location.
         """
-        # Initialize database connection
+        # Initialize parent HardwareManager (provides read functionality)
+        super().__init__(db_path)
+        
+        # Initialize database connection for write operations
         self.db = DatabaseConnection(db_path)
         
         # Initialize hardware schema
         self._initialize_hardware_schema()
-        
-        # Load system configs into memory (read-only)
-        self._system_configs = system_configs.copy()
-        
-        # Cache for merged hardware data
-        self._hardware_cache = {}
-        self._cache_valid = False
         
         # Load initial data
         self._ensure_system_configs_in_db()
@@ -92,11 +89,14 @@ class BudHardware:
                 conn.commit()
     
     def _ensure_system_configs_in_db(self):
-        """Ensure system_configs hardware exists in database for metadata storage."""
+        """Ensure static hardware configs exist in database for metadata storage."""
         with self.db.get_connection() as conn:
             cursor = conn.cursor()
             
-            for hw_name, hw_config in self._system_configs.items():
+            # Get all static hardware from parent class
+            static_hardware = self.get_all_hardware_dict()
+            
+            for hw_name, hw_config in static_hardware.items():
                 # Check if already exists
                 cursor.execute(
                     "SELECT id FROM hardware WHERE name = ? AND source = 'system_config'",
@@ -113,11 +113,11 @@ class BudHardware:
                     """, (
                         hw_name,
                         self._detect_hardware_type(hw_name),
-                        hw_config['Flops'],
-                        hw_config['Memory_size'],
-                        hw_config['Memory_BW'],
-                        hw_config['ICN'],
-                        hw_config.get('ICN_LL'),
+                        hw_config.get('Flops', hw_config.get('flops', 0)),
+                        hw_config.get('Memory_size', hw_config.get('memory_size', 0)),
+                        hw_config.get('Memory_BW', hw_config.get('memory_bw', 0)),
+                        hw_config.get('ICN', hw_config.get('icn', 0)),
+                        hw_config.get('ICN_LL', hw_config.get('icn_ll')),
                         hw_config.get('real_values', True)
                     ))
             
@@ -136,38 +136,24 @@ class BudHardware:
             return 'accelerator'
     
     def get_all_hardwares(self) -> List[Dict[str, Any]]:
-        """Get all hardware from both system_configs and database.
+        """Get all hardware from both static configs and database.
         
         Returns:
             List of hardware dictionaries with unified format.
         """
-        if not self._cache_valid:
-            self._refresh_cache()
-        
-        return list(self._hardware_cache.values())
+        # Use parent class method which already handles both static and DB
+        return self.get_all_hardware()
     
     def _refresh_cache(self):
-        """Refresh the hardware cache by merging system_configs and database."""
-        self._hardware_cache = {}
+        """Override parent's refresh to include vendor/pricing data from database."""
+        # Call parent's refresh first
+        super()._refresh_cache()
         
-        # First, add all system_configs hardware
-        for hw_name, hw_config in self._system_configs.items():
-            self._hardware_cache[hw_name] = {
-                'name': hw_name,
-                'Flops': hw_config['Flops'],
-                'Memory_size': hw_config['Memory_size'],
-                'Memory_BW': hw_config['Memory_BW'],
-                'ICN': hw_config['ICN'],
-                'ICN_LL': hw_config.get('ICN_LL'),
-                'real_values': hw_config.get('real_values', True),
-                'source': 'system_config'
-            }
-        
-        # Then, overlay database hardware (which may include metadata for system_configs)
+        # Then enhance with additional database fields (vendors, pricing, etc.)
         with self.db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT h.*, 
+                SELECT h.id, h.name,
                        GROUP_CONCAT(DISTINCT hopv.vendor_name) as on_prem_vendors,
                        GROUP_CONCAT(DISTINCT hc.cloud_name) as clouds,
                        MIN(hopv.price_lower) as min_on_prem_price,
@@ -183,41 +169,12 @@ class BudHardware:
                 hw_data = dict(row)
                 hw_name = hw_data['name']
                 
-                # Convert database format to GenZ format
-                formatted_hw = {
-                    'name': hw_name,
-                    'type': hw_data['type'],
-                    'manufacturer': hw_data['manufacturer'],
-                    'flops': hw_data['flops'],
-                    'memory_size': hw_data['memory_size'],
-                    'memory_bw': hw_data['memory_bw'],
-                    'icn': hw_data['icn'],
-                    'icn_ll': hw_data['icn_ll'],
-                    'power': hw_data['power'],
-                    'real_values': bool(hw_data['real_values']),
-                    'url': hw_data['url'],
-                    'description': hw_data['description'],
-                    'on_prem_vendors': hw_data['on_prem_vendors'].split(',') if hw_data['on_prem_vendors'] else [],
-                    'clouds': hw_data['clouds'].split(',') if hw_data['clouds'] else [],
-                    'min_on_prem_price': hw_data['min_on_prem_price'],
-                    'max_on_prem_price': hw_data['max_on_prem_price'],
-                    'source': hw_data['source']
-                }
-                
-                # For GenZ compatibility, also include uppercase keys
-                formatted_hw['Flops'] = formatted_hw['flops']
-                formatted_hw['Memory_size'] = formatted_hw['memory_size']
-                formatted_hw['Memory_BW'] = formatted_hw['memory_bw']
-                formatted_hw['ICN'] = formatted_hw['icn']
-                formatted_hw['ICN_LL'] = formatted_hw['icn_ll']
-                
-                # For system_config hardware, the database values take precedence
-                # This allows updates to system_config hardware to be reflected
-                # while the original system_configs dictionary remains unchanged
-                
-                self._hardware_cache[hw_name] = formatted_hw
-        
-        self._cache_valid = True
+                # Enhance existing hardware with vendor/pricing data
+                if hw_name in self._hardware_cache:
+                    self._hardware_cache[hw_name]['on_prem_vendors'] = hw_data['on_prem_vendors'].split(',') if hw_data['on_prem_vendors'] else []
+                    self._hardware_cache[hw_name]['clouds'] = hw_data['clouds'].split(',') if hw_data['clouds'] else []
+                    self._hardware_cache[hw_name]['min_on_prem_price'] = hw_data['min_on_prem_price']
+                    self._hardware_cache[hw_name]['max_on_prem_price'] = hw_data['max_on_prem_price']
     
     def get_hardware_by_name(self, name: str) -> Union[Dict[str, Any], bool]:
         """Get specific hardware by name.
@@ -228,52 +185,12 @@ class BudHardware:
         Returns:
             Hardware dictionary if found, False otherwise.
         """
-        if not self._cache_valid:
-            self._refresh_cache()
-        
-        return self._hardware_cache.get(name, False)
+        # Use parent class method
+        return self.get_hardware_config(name)
     
-    def get_config(self, system_name: str) -> Dict[str, Any]:
-        """Get hardware config in GenZ-compatible format.
-        
-        Args:
-            system_name: Hardware system name
-            
-        Returns:
-            Configuration dictionary with GenZ-required fields.
-        """
-        hw = self.get_hardware_by_name(system_name)
-        if not hw:
-            return None
-        
-        # Return GenZ-compatible format
-        return {
-            'Flops': hw['Flops'],
-            'Memory_size': hw['Memory_size'],
-            'Memory_BW': hw['Memory_BW'],
-            'ICN': hw['ICN'],
-            'ICN_LL': hw.get('ICN_LL'),
-            'real_values': hw.get('real_values', True)
-        }
+    # get_config is already provided by parent HardwareManager
     
-    def format_memory_size(self, mb: float) -> str:
-        """Format memory size with appropriate units.
-        
-        Args:
-            mb: Memory size in MB
-            
-        Returns:
-            Formatted string with appropriate unit.
-        """
-        units = ["MB", "GB", "TB", "PB", "EB", "ZB", "YB"]
-        size = mb
-        unit_index = 0
-        
-        while size >= 1000 and unit_index < len(units) - 1:
-            size /= 1000
-            unit_index += 1
-        
-        return f"{size:.2f} {units[unit_index]}" if size != int(size) else f"{int(size)} {units[unit_index]}"
+    # format_memory_size is already provided by parent HardwareManager
     
     def add_hardware(self, hardware_data: Dict[str, Any]) -> bool:
         """Add new hardware to the database.
@@ -288,7 +205,7 @@ class BudHardware:
         self._validate_hardware(hardware_data)
         
         # Check if already exists
-        if self.get_hardware_by_name(hardware_data['name']):
+        if self.get_hardware_config(hardware_data['name']):
             raise ValueError(f"Hardware {hardware_data['name']} already exists")
         
         # Insert into database
@@ -392,7 +309,7 @@ class BudHardware:
             True if successful, False if hardware not found.
         """
         # Check if hardware exists
-        hw = self.get_hardware_by_name(name)
+        hw = self.get_hardware_config(name)
         if not hw:
             return False
         
@@ -451,8 +368,9 @@ class BudHardware:
         Returns:
             True if successful, False if not found.
         """
-        # Don't allow deleting system_configs
-        if name in self._system_configs:
+        # Don't allow deleting static configs
+        static_configs = self.get_all_hardware_dict()
+        if name in static_configs and static_configs[name].get('source') == 'system_config':
             return False
         
         with self.db.get_connection() as conn:
@@ -505,7 +423,7 @@ class BudHardware:
             if field in hardware_data and hardware_data[field] is not None and hardware_data[field] < 0:
                 raise ValueError(f"{field} cannot be negative")
     
-    def search_hardware(self,
+    def search_hardware_extended(self,
                        query: Optional[str] = None,
                        type: Optional[Union[str, List[str]]] = None,
                        manufacturer: Optional[Union[str, List[str]]] = None,
@@ -527,129 +445,135 @@ class BudHardware:
                        sort_order: str = 'asc',
                        limit: Optional[int] = None,
                        offset: int = 0) -> List[Dict[str, Any]]:
-        """Advanced search with multiple filters and sorting options."""
+        """Extended search with database-specific filters like pricing and vendors.
         
-        # Build query
-        base_query = """
-            SELECT DISTINCT h.*,
-                   GROUP_CONCAT(DISTINCT hopv.vendor_name) as vendors,
-                   GROUP_CONCAT(DISTINCT hc.cloud_name) as clouds
-            FROM hardware h
-            LEFT JOIN hardware_on_prem_vendors hopv ON h.id = hopv.hardware_id
-            LEFT JOIN hardware_clouds hc ON h.id = hc.hardware_id
-            LEFT JOIN hardware_cloud_regions hcr ON hc.id = hcr.cloud_id
-            WHERE h.is_active = 1
+        This method extends the parent's search_hardware with additional
+        database-specific filters for vendors, pricing, and cloud support.
         """
         
-        conditions = []
-        params = []
+        # First use parent's search for basic filtering
+        results = super().search_hardware(
+            query=query,
+            hw_type=type,
+            manufacturer=manufacturer,
+            min_flops=min_flops,
+            max_flops=max_flops,
+            min_memory=min_memory,
+            max_memory=max_memory,
+            min_memory_bw=min_memory_bw,
+            max_memory_bw=max_memory_bw,
+            has_real_values=has_real_values
+        )
         
-        # Type filter
-        if type:
-            if isinstance(type, str):
-                conditions.append("h.type = ?")
-                params.append(type)
-            else:
-                placeholders = ','.join(['?' for _ in type])
-                conditions.append(f"h.type IN ({placeholders})")
-                params.extend(type)
-        
-        # Manufacturer filter
-        if manufacturer:
-            if isinstance(manufacturer, str):
-                conditions.append("h.manufacturer = ?")
-                params.append(manufacturer)
-            else:
-                placeholders = ','.join(['?' for _ in manufacturer])
-                conditions.append(f"h.manufacturer IN ({placeholders})")
-                params.extend(manufacturer)
-        
-        # Performance filters
-        if min_flops is not None:
-            conditions.append("h.flops >= ?")
-            params.append(min_flops)
-        if max_flops is not None:
-            conditions.append("h.flops <= ?")
-            params.append(max_flops)
-        
-        if min_memory is not None:
-            conditions.append("h.memory_size >= ?")
-            params.append(min_memory)
-        if max_memory is not None:
-            conditions.append("h.memory_size <= ?")
-            params.append(max_memory)
-        
-        if min_memory_bw is not None:
-            conditions.append("h.memory_bw >= ?")
-            params.append(min_memory_bw)
-        if max_memory_bw is not None:
-            conditions.append("h.memory_bw <= ?")
-            params.append(max_memory_bw)
-        
-        if min_power is not None:
-            conditions.append("h.power >= ?")
-            params.append(min_power)
-        if max_power is not None:
-            conditions.append("h.power <= ?")
-            params.append(max_power)
-        
-        # Price filters (now check vendor pricing)
-        if min_price is not None:
-            conditions.append("hopv.price_lower >= ?")
-            params.append(min_price)
-        if max_price is not None:
-            conditions.append("hopv.price_upper <= ?")
-            params.append(max_price)
-        
-        # Add conditions to query
-        if conditions:
-            base_query += " AND " + " AND ".join(conditions)
-        
-        # Group by
-        base_query += " GROUP BY h.id"
-        
-        # Sorting
-        sort_mapping = {
-            'name': 'h.name',
-            'flops': 'h.flops',
-            'memory_size': 'h.memory_size',
-            'memory_bw': 'h.memory_bw',
-            'power': 'h.power',
-            'price': 'MIN(hopv.price_lower)',
-            'perf_per_watt': 'CAST(h.flops AS REAL) / NULLIF(h.power, 0)',
-            'perf_per_dollar': 'CAST(h.flops AS REAL) / NULLIF(MIN(hopv.price_lower), 0)'
-        }
-        
-        sort_column = sort_mapping.get(sort_by, 'h.name')
-        sort_direction = 'DESC' if sort_order.lower() == 'desc' else 'ASC'
-        base_query += f" ORDER BY {sort_column} {sort_direction}"
-        
-        # Pagination
-        if limit:
-            base_query += f" LIMIT {limit} OFFSET {offset}"
-        
-        # Execute query
-        with self.db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(base_query, params)
+        # If we have database-specific filters, apply them
+        if min_price or max_price or vendor or cloud or region or min_power or max_power:
+            filtered_results = []
             
-            results = []
-            for row in cursor.fetchall():
-                hw_data = dict(row)
-                # Convert to standard format
-                formatted = {
-                    'name': hw_data['name'],
-                    'type': hw_data['type'],
-                    'manufacturer': hw_data['manufacturer'],
-                    'flops': hw_data['flops'],
-                    'memory_size': hw_data['memory_size'],
-                    'memory_bw': hw_data['memory_bw'],
-                    'icn': hw_data['icn'],
-                    'power': hw_data['power'],
-                    'vendors': hw_data['vendors'].split(',') if hw_data['vendors'] else [],
-                    'clouds': hw_data['clouds'].split(',') if hw_data['clouds'] else []
-                }
-                results.append(formatted)
+            for hw in results:
+                hw_name = hw['name']
+                
+                # Get vendor/pricing data from database
+                vendors_data = self.get_hardware_vendors(hw_name)
+                clouds_data = self.get_hardware_clouds(hw_name)
+                
+                # Apply price filters
+                if min_price or max_price:
+                    price_match = False
+                    for v in vendors_data:
+                        if min_price and v.get('price_lower'):
+                            if v['price_lower'] < min_price:
+                                continue
+                        if max_price and v.get('price_upper'):
+                            if v['price_upper'] > max_price:
+                                continue
+                        price_match = True
+                        break
+                    if not price_match and (min_price or max_price):
+                        continue
+                
+                # Apply vendor filter
+                if vendor:
+                    vendor_list = [vendor] if isinstance(vendor, str) else vendor
+                    vendor_names = [v['vendor_name'].lower() for v in vendors_data]
+                    if not any(v.lower() in vendor_names for v in vendor_list):
+                        continue
+                
+                # Apply cloud filter
+                if cloud:
+                    cloud_list = [cloud] if isinstance(cloud, str) else cloud
+                    cloud_names = [c['cloud_name'].lower() for c in clouds_data]
+                    if not any(c.lower() in cloud_names for c in cloud_list):
+                        continue
+                
+                # Apply region filter
+                if region:
+                    region_match = False
+                    for c in clouds_data:
+                        if region.lower() in [r.lower() for r in c.get('regions', [])]:
+                            region_match = True
+                            break
+                    if not region_match:
+                        continue
+                
+                # Apply power filters
+                hw_power = hw.get('Power', hw.get('power'))
+                if min_power is not None and hw_power and hw_power < min_power:
+                    continue
+                if max_power is not None and hw_power and hw_power > max_power:
+                    continue
+                
+                # Add vendor and cloud info to result
+                hw['vendors'] = [v['vendor_name'] for v in vendors_data]
+                hw['clouds'] = list(set(c['cloud_name'] for c in clouds_data))
+                
+                filtered_results.append(hw)
+            
+            results = filtered_results
+        
+        # Apply sorting
+        if sort_by in ['price', 'perf_per_watt', 'perf_per_dollar']:
+            # Custom sorting for database-specific fields
+            if sort_by == 'price':
+                # Sort by minimum vendor price
+                for hw in results:
+                    vendors = self.get_hardware_vendors(hw['name'])
+                    prices = [v['price_lower'] for v in vendors if v.get('price_lower')]
+                    hw['_sort_price'] = min(prices) if prices else float('inf')
+                results.sort(key=lambda x: x.get('_sort_price', float('inf')), 
+                           reverse=(sort_order.lower() == 'desc'))
+            elif sort_by == 'perf_per_watt':
+                results.sort(
+                    key=lambda x: x.get('Flops', x.get('flops', 0)) / x.get('Power', x.get('power', 1)) if x.get('Power', x.get('power')) else 0,
+                    reverse=(sort_order.lower() == 'desc')
+                )
+            elif sort_by == 'perf_per_dollar':
+                for hw in results:
+                    vendors = self.get_hardware_vendors(hw['name'])
+                    prices = [v['price_lower'] for v in vendors if v.get('price_lower')]
+                    min_price = min(prices) if prices else None
+                    if min_price:
+                        hw['_perf_per_dollar'] = hw.get('Flops', hw.get('flops', 0)) / min_price
+                    else:
+                        hw['_perf_per_dollar'] = 0
+                results.sort(key=lambda x: x.get('_perf_per_dollar', 0),
+                           reverse=(sort_order.lower() == 'desc'))
+        else:
+            # Use standard sorting
+            sort_key = {
+                'name': lambda x: x.get('name', ''),
+                'flops': lambda x: x.get('Flops', x.get('flops', 0)),
+                'memory_size': lambda x: x.get('Memory_size', x.get('memory_size', 0)),
+                'memory_bw': lambda x: x.get('Memory_BW', x.get('memory_bw', 0)),
+                'power': lambda x: x.get('Power', x.get('power', 0))
+            }.get(sort_by, lambda x: x.get('name', ''))
+            
+            results.sort(key=sort_key, reverse=(sort_order.lower() == 'desc'))
+        
+        # Apply pagination
+        if limit:
+            results = results[offset:offset + limit]
+        elif offset:
+            results = results[offset:]
         
         return results
     

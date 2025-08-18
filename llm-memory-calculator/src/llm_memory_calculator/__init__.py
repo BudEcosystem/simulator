@@ -23,6 +23,18 @@ from .utils import (
     analyze_attention_efficiency,
 )
 
+# Import hardware management functions
+from .hardware import (
+    HardwareManager,
+    get_hardware_config,
+    get_all_hardware,
+    get_hardware_by_type,
+    get_hardware_by_manufacturer,
+    search_hardware,
+    set_hardware_db_path,
+    HARDWARE_CONFIGS,
+)
+
 # Import parallelism functions if available
 try:
     from .parallelism_optimizer import (
@@ -30,8 +42,6 @@ try:
         get_best_parallelization_strategy,
         get_pareto_optimal_performance,
         get_minimum_system_size,
-        get_hardware_config,
-        HARDWARE_CONFIGS,
     )
     _PARALLELISM_AVAILABLE = True
 except ImportError:
@@ -57,6 +67,7 @@ __all__ = [
     "UniversalParameterCounter",
     "HuggingFaceConfigLoader",
     "MemoryReport",
+    "HardwareManager",
     
     # Functions
     "calculate_memory",
@@ -65,6 +76,15 @@ __all__ = [
     "compare_models",
     "estimate_max_batch_size",
     "analyze_attention_efficiency",
+    
+    # Hardware functions
+    "get_hardware_config",
+    "get_all_hardware",
+    "get_hardware_by_type",
+    "get_hardware_by_manufacturer",
+    "search_hardware",
+    "set_hardware_db_path",
+    "HARDWARE_CONFIGS",
 ]
 
 # Add parallelism functions if available
@@ -74,8 +94,6 @@ if _PARALLELISM_AVAILABLE:
         "get_best_parallelization_strategy",
         "get_pareto_optimal_performance",
         "get_minimum_system_size",
-        "get_hardware_config",
-        "HARDWARE_CONFIGS",
     ])
 
 # Add performance estimation functions if available
