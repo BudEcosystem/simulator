@@ -19,6 +19,13 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'real_values': True,
         'type': 'gpu',
         'manufacturer': 'NVIDIA',
+        'architecture': 'AMPERE',
+        'generation': 'Data Center GPU',
+        'compute_capability': '8.0',
+        'release_year': 2020,
+        'tensor_cores': 'gen3',
+        'rt_cores': None,
+        'memory_type': 'HBM2e',
         'pci_ids': ['20b0', '20f1'],  # PCIe and SXM4 variants
         'aliases': ['A100', 'TESLA A100', 'A100-SXM4-40GB', 'A100-PCIE-40GB', 'NVIDIA A100 40GB']
     },
@@ -30,6 +37,13 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'real_values': True,
         'type': 'gpu',
         'manufacturer': 'NVIDIA',
+        'architecture': 'AMPERE',
+        'generation': 'Data Center GPU',
+        'compute_capability': '8.0',
+        'release_year': 2020,
+        'tensor_cores': 'gen3',
+        'rt_cores': None,
+        'memory_type': 'HBM2e',
         'pci_ids': ['20b2', '20b5'],  # SXM4 and PCIe variants
         'aliases': ['A100 80GB', 'TESLA A100 80GB', 'A100-SXM4-80GB', 'A100-PCIE-80GB', 'NVIDIA A100 80GB']
     },
@@ -41,6 +55,13 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'real_values': True,
         'type': 'gpu',
         'manufacturer': 'NVIDIA',
+        'architecture': 'HOPPER',
+        'generation': 'Data Center GPU',
+        'compute_capability': '9.0',
+        'release_year': 2022,
+        'tensor_cores': 'gen4',
+        'rt_cores': None,
+        'memory_type': 'HBM3',
         'pci_ids': ['2330', '2331', '2339'],  # SXM5, PCIe, NVL variants
         'aliases': ['H100', 'HOPPER', 'H100-SXM5', 'H100-PCIE', 'H100-NVL', 'NVIDIA H100']
     },
@@ -52,6 +73,13 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'real_values': True,
         'type': 'gpu',
         'manufacturer': 'NVIDIA',
+        'architecture': 'HOPPER',
+        'generation': 'Grace Hopper Superchip',
+        'compute_capability': '9.0',
+        'release_year': 2023,
+        'tensor_cores': 'gen4',
+        'rt_cores': None,
+        'memory_type': 'HBM3',
         'pci_ids': ['233a'],  # GH200
         'aliases': ['GH200', 'GRACE HOPPER', 'GH200-144GB', 'NVIDIA GH200']
     },
@@ -63,7 +91,14 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'ICN_LL': 0.25,
         'real_values': True,
         'type': 'gpu',
-        'manufacturer': 'NVIDIA'
+        'manufacturer': 'NVIDIA',
+        'architecture': 'BLACKWELL',
+        'generation': 'Data Center GPU',
+        'compute_capability': '10.0',
+        'release_year': 2024,
+        'tensor_cores': 'gen5',
+        'rt_cores': None,
+        'memory_type': 'HBM3e'
     },
     'GB200': {
         'Flops': 4500,
@@ -73,7 +108,14 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'ICN_LL': 0.25,
         'real_values': True,
         'type': 'gpu',
-        'manufacturer': 'NVIDIA'
+        'manufacturer': 'NVIDIA',
+        'architecture': 'BLACKWELL',
+        'generation': 'Grace Blackwell Superchip',
+        'compute_capability': '10.0',
+        'release_year': 2024,
+        'tensor_cores': 'gen5',
+        'rt_cores': None,
+        'memory_type': 'HBM3e'
     },
     
     # Google TPUs
@@ -84,7 +126,12 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'ICN': 100,
         'real_values': True,
         'type': 'asic',
-        'manufacturer': 'Google'
+        'manufacturer': 'Google',
+        'architecture': 'TPU_V6',
+        'generation': 'Tensor Processing Unit v6',
+        'release_year': 2024,
+        'tensor_cores': 'custom_matrix_units',
+        'memory_type': 'HBM'
     },
     'TPUv5e': {
         'Flops': 197,
@@ -93,7 +140,12 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'ICN': 50,
         'real_values': True,
         'type': 'asic',
-        'manufacturer': 'Google'
+        'manufacturer': 'Google',
+        'architecture': 'TPU_V5E',
+        'generation': 'Tensor Processing Unit v5e',
+        'release_year': 2023,
+        'tensor_cores': 'custom_matrix_units',
+        'memory_type': 'HBM'
     },
     'TPUv5p': {
         'Flops': 459,
@@ -102,7 +154,12 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'ICN': 450,
         'real_values': True,
         'type': 'asic',
-        'manufacturer': 'Google'
+        'manufacturer': 'Google',
+        'architecture': 'TPU_V5P',
+        'generation': 'Tensor Processing Unit v5p',
+        'release_year': 2023,
+        'tensor_cores': 'custom_matrix_units',
+        'memory_type': 'HBM'
     },
     'TPUv4': {
         'Flops': 275,
@@ -111,7 +168,12 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'ICN': 24,
         'real_values': True,
         'type': 'asic',
-        'manufacturer': 'Google'
+        'manufacturer': 'Google',
+        'architecture': 'TPU_V4',
+        'generation': 'Tensor Processing Unit v4',
+        'release_year': 2021,
+        'tensor_cores': 'custom_matrix_units',
+        'memory_type': 'HBM'
     },
     
     # AMD GPUs
@@ -122,7 +184,13 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'ICN': 400,
         'real_values': True,
         'type': 'gpu',
-        'manufacturer': 'AMD'
+        'manufacturer': 'AMD',
+        'architecture': 'CDNA3',
+        'generation': 'Instinct MI300 Series',
+        'release_year': 2023,
+        'matrix_cores': 'gen3',
+        'rt_cores': None,
+        'memory_type': 'HBM3'
     },
     'MI325X': {
         'Flops': 1307,
@@ -131,7 +199,64 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'ICN': 400,
         'real_values': True,
         'type': 'gpu',
-        'manufacturer': 'AMD'
+        'manufacturer': 'AMD',
+        'architecture': 'CDNA3',
+        'generation': 'Instinct MI300 Series',
+        'release_year': 2024,
+        'matrix_cores': 'gen3',
+        'rt_cores': None,
+        'memory_type': 'HBM3'
+    },
+    
+    # Intel GPUs
+    'MAX1550': {
+        'Flops': 45.2,  # FP16 TFLOPS estimate
+        'Memory_size': 128,
+        'Memory_BW': 3276,
+        'ICN': 300,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'Intel',
+        'architecture': 'XE_HPC',
+        'generation': 'Ponte Vecchio',
+        'release_year': 2022,
+        'compute_units': 'Xe-cores',
+        'memory_type': 'HBM2e',
+        'pci_ids': ['0bd5'],
+        'aliases': ['MAX 1550', 'Ponte Vecchio', 'PVC', 'Data Center GPU Max 1550']
+    },
+    'MAX1100': {
+        'Flops': 32.7,  # FP16 TFLOPS estimate
+        'Memory_size': 48,
+        'Memory_BW': 1640,
+        'ICN': 200,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'Intel',
+        'architecture': 'XE_HPC',
+        'generation': 'Ponte Vecchio',
+        'release_year': 2022,
+        'compute_units': 'Xe-cores',
+        'memory_type': 'HBM2e',
+        'pci_ids': ['0bd9'],
+        'aliases': ['MAX 1100', 'Data Center GPU Max 1100']
+    },
+    'ARC770': {
+        'Flops': 17.2,  # FP16 TFLOPS estimate
+        'Memory_size': 16,
+        'Memory_BW': 560,
+        'ICN': 50,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'Intel',
+        'architecture': 'XE_HPG',
+        'generation': 'Arc Alchemist',
+        'release_year': 2022,
+        'compute_units': 'Xe-cores',
+        'rt_cores': 'gen1',
+        'memory_type': 'GDDR6',
+        'pci_ids': ['56c0'],
+        'aliases': ['Arc A770', 'Intel Arc A770']
     },
     
     # Intel Accelerators
@@ -142,7 +267,11 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'ICN': 300,
         'real_values': True,
         'type': 'accelerator',
-        'manufacturer': 'Intel'
+        'manufacturer': 'Intel',
+        'architecture': 'GAUDI3',
+        'generation': 'Habana Gaudi',
+        'release_year': 2024,
+        'matrix_cores': 'custom'
     },
     
     # Intel CPUs

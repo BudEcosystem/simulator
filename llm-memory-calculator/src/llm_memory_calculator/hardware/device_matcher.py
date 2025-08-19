@@ -11,6 +11,16 @@ import logging
 from typing import Dict, Optional, Any, List, Tuple
 from dataclasses import dataclass
 
+try:
+    from .gpu_specs import get_gpu_info_by_pci_id, PCI_ARCHITECTURE_MAP, get_architecture_info
+except ImportError:
+    # Fallback for when gpu_specs is not available
+    def get_gpu_info_by_pci_id(pci_vendor: str, pci_device: str) -> Optional[Dict[str, Any]]:
+        return None
+    PCI_ARCHITECTURE_MAP = {}
+    def get_architecture_info(arch_name: str) -> Optional[Any]:
+        return None
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +38,10 @@ class DeviceIdentity:
     cpu_model: Optional[str] = None   # CPU model number (e.g., "143" for Sapphire Rapids)
     cpu_stepping: Optional[str] = None  # CPU stepping
     device_type: Optional[str] = None  # 'cpu' or 'gpu'
+    # GPU-specific fields
+    gpu_architecture: Optional[str] = None  # e.g., "AMPERE", "RDNA3", "HOPPER"
+    compute_capability: Optional[str] = None  # NVIDIA compute capability
+    architecture_features: Optional[Dict[str, Any]] = None  # Architecture-specific features
 
 
 class DeviceParser:
@@ -148,9 +162,24 @@ class DeviceParser:
         identity.cpu_model = device_info.get('cpu_model', '')
         identity.cpu_stepping = device_info.get('cpu_stepping', '')
         
-        # Determine device type
+        # Determine device type and get GPU architecture info
         if identity.pci_vendor and identity.pci_device:
             identity.device_type = 'gpu'  # Has PCI IDs, likely a GPU
+            
+            # Get comprehensive GPU info from PCI ID
+            gpu_info = get_gpu_info_by_pci_id(identity.pci_vendor, identity.pci_device)
+            if gpu_info:
+                identity.gpu_architecture = gpu_info['architecture']
+                identity.model = gpu_info['model']  # Use precise model from PCI ID
+                identity.variant = gpu_info['variant']
+                identity.architecture_features = gpu_info.get('features', {})
+                
+                # Get compute capability for NVIDIA GPUs
+                if identity.vendor == 'nvidia' or identity.gpu_architecture in ['AMPERE', 'ADA_LOVELACE', 'HOPPER', 'BLACKWELL', 'VOLTA', 'TURING', 'PASCAL']:
+                    compute_caps = identity.architecture_features.get('compute_capabilities', [])
+                    if compute_caps:
+                        identity.compute_capability = compute_caps[0]
+                        
         elif identity.cpu_family and identity.cpu_model:
             identity.device_type = 'cpu'  # Has CPU IDs, definitely a CPU
         
@@ -162,35 +191,37 @@ class DeviceParser:
             except (ValueError, TypeError):
                 pass
         
-        # Parse device name if available
+        # Parse device name if available (but don't override PCI-derived info)
         if identity.raw_name:
             name_lower = identity.raw_name.lower()
             
-            # Extract vendor
-            for vendor, patterns in cls.VENDOR_PATTERNS.items():
-                if any(p in name_lower for p in patterns):
-                    identity.vendor = vendor
-                    break
-            
-            # Extract model
-            for pattern, vendor in cls.MODEL_PATTERNS:
-                match = re.search(pattern, name_lower)
-                if match:
-                    model_str = match.group(1).upper()
-                    # Special handling for TPUs to add 'V' prefix
-                    if vendor == 'google' and model_str.isdigit():
-                        identity.model = f'V{model_str}'
-                    # Special handling for AMD MI series  
-                    elif vendor == 'amd' and not model_str.startswith('MI'):
-                        identity.model = f'MI{model_str}'
-                    # Special handling for Intel CPUs - preserve H suffix
-                    elif vendor == 'intel' and model_str.endswith('H'):
-                        identity.model = model_str  # Keep as is (e.g., "8490H")
-                    else:
-                        identity.model = model_str
-                    if not identity.vendor:
+            # Extract vendor only if not already set
+            if not identity.vendor:
+                for vendor, patterns in cls.VENDOR_PATTERNS.items():
+                    if any(p in name_lower for p in patterns):
                         identity.vendor = vendor
-                    break
+                        break
+            
+            # Extract model only if not already set from PCI ID
+            if not identity.model:
+                for pattern, vendor in cls.MODEL_PATTERNS:
+                    match = re.search(pattern, name_lower)
+                    if match:
+                        model_str = match.group(1).upper()
+                        # Special handling for TPUs to add 'V' prefix
+                        if vendor == 'google' and model_str.isdigit():
+                            identity.model = f'V{model_str}'
+                        # Special handling for AMD MI series  
+                        elif vendor == 'amd' and not model_str.startswith('MI'):
+                            identity.model = f'MI{model_str}'
+                        # Special handling for Intel CPUs - preserve H suffix
+                        elif vendor == 'intel' and model_str.endswith('H'):
+                            identity.model = model_str  # Keep as is (e.g., "8490H")
+                        else:
+                            identity.model = model_str
+                        if not identity.vendor:
+                            identity.vendor = vendor
+                        break
             
             # Extract memory if not already set
             if not identity.memory_gb:
@@ -432,7 +463,7 @@ class DeviceMatcher:
     def match_by_pci_id(cls, pci_vendor: str, pci_device: str, 
                         memory_gb: Optional[float] = None) -> Optional[str]:
         """
-        Match device by PCI ID.
+        Match device by PCI ID with architecture awareness.
         
         Args:
             pci_vendor: PCI vendor ID (e.g., "10de" for NVIDIA)
@@ -449,6 +480,16 @@ class DeviceMatcher:
         pci_vendor = pci_vendor.lower().replace('0x', '')
         pci_device = pci_device.lower().replace('0x', '')
         
+        # First, try architecture-aware matching from gpu_specs
+        gpu_info = get_gpu_info_by_pci_id(pci_vendor, pci_device)
+        if gpu_info:
+            base_model = gpu_info['model']
+            # Add memory variant if available
+            if memory_gb:
+                return cls._add_memory_variant(base_model, memory_gb)
+            return base_model
+        
+        # Fallback to legacy PCI_ID_MAP
         pci_key = f"{pci_vendor}:{pci_device}"
         base_model = cls.PCI_ID_MAP.get(pci_key)
         
@@ -460,6 +501,29 @@ class DeviceMatcher:
             return cls._add_memory_variant(base_model, memory_gb)
         
         return base_model
+    
+    @classmethod
+    def match_by_architecture(cls, architecture: str, model: str, 
+                             memory_gb: Optional[float] = None) -> Optional[str]:
+        """
+        Match GPU by architecture and model name.
+        
+        Args:
+            architecture: GPU architecture (e.g., "AMPERE", "HOPPER")
+            model: GPU model within architecture
+            memory_gb: Optional memory size for variant selection
+            
+        Returns:
+            Matched hardware configuration name or None.
+        """
+        if not architecture or not model:
+            return None
+        
+        # Direct model match with architecture context
+        if memory_gb:
+            return cls._add_memory_variant(model, memory_gb)
+        
+        return model
     
     @classmethod
     def match_by_name(cls, model: str, memory_gb: Optional[float] = None,
@@ -590,6 +654,10 @@ class DeviceMatcher:
                 return f"{base_model}_{memory_variants[closest_memory]}_GPU"
             elif base_model.startswith('TPU'):
                 return base_model  # TPUs don't typically have memory variants in name
+            elif base_model.startswith('ARC') or base_model.startswith('MAX'):
+                return base_model  # Intel GPUs have fixed memory per model
+            elif base_model in ['MI300X', 'MI325X', 'MI250X', 'MI250', 'MI210', 'MI100']:
+                return base_model  # AMD Instinct GPUs have fixed memory per model
             else:
                 return f"{base_model}_{memory_variants[closest_memory]}"
         
@@ -671,7 +739,7 @@ def match_device(device_info: Dict[str, Any],
                 logger.info(f"Matched CPU by family/model ID: {config.get('name', matched_name)}")
                 return config
     
-    # Strategy 1b: Match GPU by PCI ID (most reliable for GPUs)
+    # Strategy 1b: Match GPU by PCI ID with architecture (most reliable for GPUs)
     if identity.pci_vendor and identity.pci_device:
         matched_name = DeviceMatcher.match_by_pci_id(
             identity.pci_vendor, 
@@ -681,7 +749,22 @@ def match_device(device_info: Dict[str, Any],
         if matched_name:
             config = find_config_by_pattern(matched_name, verify_memory=True)
             if config:
-                logger.info(f"Matched device by PCI ID: {config.get('name', matched_name)}")
+                logger.info(f"Matched GPU by PCI ID: {config.get('name', matched_name)} "
+                           f"(Architecture: {identity.gpu_architecture})")
+                return config
+    
+    # Strategy 1c: Match GPU by architecture and model (reliable when PCI ID mapping fails)
+    if identity.gpu_architecture and identity.model:
+        matched_name = DeviceMatcher.match_by_architecture(
+            identity.gpu_architecture,
+            identity.model,
+            identity.memory_gb
+        )
+        if matched_name:
+            config = find_config_by_pattern(matched_name, verify_memory=True)
+            if config:
+                logger.info(f"Matched GPU by architecture: {config.get('name', matched_name)} "
+                           f"({identity.gpu_architecture})")
                 return config
     
     # Strategy 2: Match by parsed model and memory
