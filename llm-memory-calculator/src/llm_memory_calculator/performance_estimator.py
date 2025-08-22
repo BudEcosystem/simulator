@@ -2,7 +2,7 @@
 Performance estimation for LLM inference using GenZ modeling.
 
 This module provides functions to estimate detailed performance metrics
-for LLM inference on various hardware configurations.
+for LLM inference on various hardware configurations including both GPUs and CPUs.
 """
 
 from typing import Dict, Optional, Union, List
@@ -23,6 +23,16 @@ except ImportError as e:
         ImportWarning
     )
 
+# Import CPU-aware functions for CPU device support
+try:
+    from .genz.cpu import (
+        cpu_aware_prefill_moddeling,
+        cpu_aware_decode_moddeling
+    )
+    HAS_CPU_SUPPORT = True
+except ImportError:
+    HAS_CPU_SUPPORT = False
+
 
 def estimate_prefill_performance(
     model: str = 'llama2_7b',
@@ -37,7 +47,7 @@ def estimate_prefill_performance(
     **kwargs
 ) -> Dict:
     """
-    Estimate prefill phase performance for LLM inference.
+    Estimate prefill phase performance for LLM inference on GPU or CPU.
     
     The prefill phase processes the input prompt and generates the first token.
     
@@ -50,6 +60,7 @@ def estimate_prefill_performance(
             - Memory_size: Memory in GB
             - Memory_BW: Memory bandwidth in GB/s
             - ICN: Interconnect bandwidth in GB/s
+            - type: 'cpu' or 'gpu' (optional, defaults to 'gpu')
             - real_values: Whether to use real hardware values
         bits: Precision ('fp32', 'bf16', 'int8', 'int4')
         tensor_parallel: Tensor parallelism degree
@@ -75,8 +86,8 @@ def estimate_prefill_performance(
             "Internal GenZ not available. This indicates a package installation issue."
         )
     
+    # Default to A100 80GB configuration if not specified
     if system_name is None:
-        # Default to A100 80GB configuration
         system_name = {
             'Flops': 312,
             'Memory_size': 80,
@@ -85,6 +96,36 @@ def estimate_prefill_performance(
             'real_values': True
         }
     
+    # Check if this is a CPU system based on 'type' field
+    if HAS_CPU_SUPPORT and system_name.get('type') == 'cpu':
+        try:
+            # Use CPU-aware prefill modeling
+            result = cpu_aware_prefill_moddeling(
+                model=model,
+                batch_size=batch_size,
+                input_tokens=input_tokens,
+                system_name=system_name,
+                bits=bits,
+                tensor_parallel=tensor_parallel,
+                pipeline_parallel=pipeline_parallel,
+                expert_parallel=expert_parallel,
+                debug=debug,
+                **kwargs
+            )
+            
+            # Add computed metrics
+            if 'Latency' in result and result['Latency'] > 0:
+                # Throughput calculation: tokens processed / time
+                total_tokens = batch_size * input_tokens
+                result['Input_throughput'] = total_tokens / (result['Latency'] / 1000)  # tokens/s
+                result['TTFT'] = result['Latency']  # Time to first token
+            
+            return result
+            
+        except Exception as e:
+            raise ValueError(f"Failed to estimate CPU prefill performance: {str(e)}")
+    
+    # GPU system (default behavior)
     try:
         result = prefill_moddeling(
             model=model,
@@ -125,7 +166,7 @@ def estimate_decode_performance(
     debug: bool = False
 ) -> Dict:
     """
-    Estimate decode phase performance for LLM inference.
+    Estimate decode phase performance for LLM inference on GPU or CPU.
     
     The decode phase generates output tokens one by one after the prefill phase.
     
@@ -135,7 +176,13 @@ def estimate_decode_performance(
         beam_size: Beam search width (1 for greedy decoding)
         input_tokens: Length of input sequence (context length)
         output_tokens: Number of tokens to generate
-        system_name: Hardware configuration dict
+        system_name: Hardware configuration dict with keys:
+            - Flops: TFLOPS
+            - Memory_size: Memory in GB
+            - Memory_BW: Memory bandwidth in GB/s
+            - ICN: Interconnect bandwidth in GB/s
+            - type: 'cpu' or 'gpu' (optional, defaults to 'gpu')
+            - real_values: Whether to use real hardware values
         bits: Precision
         tensor_parallel: Tensor parallelism degree
         pipeline_parallel: Pipeline parallelism degree
@@ -161,6 +208,7 @@ def estimate_decode_performance(
             "Internal GenZ not available. This indicates a package installation issue."
         )
     
+    # Default to A100 80GB configuration if not specified
     if system_name is None:
         system_name = {
             'Flops': 312,
@@ -170,6 +218,40 @@ def estimate_decode_performance(
             'real_values': True
         }
     
+    # Check if this is a CPU system based on 'type' field
+    if HAS_CPU_SUPPORT and system_name.get('type') == 'cpu':
+        try:
+            # Use CPU-aware decode modeling
+            result = cpu_aware_decode_moddeling(
+                model=model,
+                batch_size=batch_size,
+                Bb=beam_size,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                system_name=system_name,
+                bits=bits,
+                tensor_parallel=tensor_parallel,
+                pipeline_parallel=pipeline_parallel,
+                expert_parallel=expert_parallel,
+                debug=debug
+            )
+            
+            # Add computed metrics
+            if 'Latency' in result:
+                result['TPOT'] = result['Latency']  # Time per output token
+                result['Total_latency'] = result['Latency'] * output_tokens  # Total generation time
+                
+                # Effective throughput considering batch size and beam size
+                effective_batch = batch_size * beam_size
+                if result['Latency'] > 0:
+                    result['Effective_throughput'] = effective_batch * 1000 / result['Latency']  # tokens/s
+            
+            return result
+            
+        except Exception as e:
+            raise ValueError(f"Failed to estimate CPU decode performance: {str(e)}")
+    
+    # GPU system (default behavior)
     try:
         result = decode_moddeling(
             model=model,
@@ -215,7 +297,7 @@ def estimate_end_to_end_performance(
     debug: bool = False
 ) -> Dict:
     """
-    Estimate end-to-end performance combining prefill and decode phases.
+    Estimate end-to-end performance combining prefill and decode phases for GPU or CPU.
     
     Args:
         model: Model identifier
@@ -223,7 +305,14 @@ def estimate_end_to_end_performance(
         beam_size: Beam search width
         input_tokens: Length of input sequence
         output_tokens: Number of tokens to generate  
-        system_name: Hardware configuration dict
+        system_name: Hardware configuration dict with keys:
+            - Flops: TFLOPS
+            - Memory_size: Memory in GB
+            - Memory_BW: Memory bandwidth in GB/s
+            - ICN: Interconnect bandwidth in GB/s
+            - type: 'cpu' or 'gpu' (optional, defaults to 'gpu')
+            - real_values: Whether to use real hardware values
+            - None for default A100 80GB GPU configuration
         bits: Precision
         tensor_parallel: Tensor parallelism degree
         pipeline_parallel: Pipeline parallelism degree
