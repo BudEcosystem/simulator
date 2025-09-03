@@ -47,6 +47,44 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'pci_ids': ['20b2', '20b5'],  # SXM4 and PCIe variants
         'aliases': ['A100 80GB', 'TESLA A100 80GB', 'A100-SXM4-80GB', 'A100-PCIE-80GB', 'NVIDIA A100 80GB']
     },
+    'V100_16GB_GPU': {
+        'name': 'V100_16GB_GPU',
+        'Flops': 125,  # Tensor Core FP16 TFLOPS (15.7 FP32 TFLOPS)
+        'Memory_size': 16,
+        'Memory_BW': 900,
+        'ICN': 300,  # NVLink 2.0
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'VOLTA',
+        'generation': 'Data Center GPU',
+        'compute_capability': '7.0',
+        'release_year': 2017,
+        'tensor_cores': 'gen1',  # First generation tensor cores
+        'rt_cores': None,
+        'memory_type': 'HBM2',
+        'pci_ids': ['1db4', '1db6'],  # PCIe and SXM2 16GB variants
+        'aliases': ['V100 16GB', 'TESLA V100 16GB', 'V100-SXM2-16GB', 'V100-PCIE-16GB', 'NVIDIA V100 16GB']
+    },
+    'V100_32GB_GPU': {
+        'name': 'V100_32GB_GPU',
+        'Flops': 125,  # Tensor Core FP16 TFLOPS (15.7 FP32 TFLOPS)
+        'Memory_size': 32,
+        'Memory_BW': 900,
+        'ICN': 300,  # NVLink 2.0
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'VOLTA',
+        'generation': 'Data Center GPU',
+        'compute_capability': '7.0',
+        'release_year': 2017,
+        'tensor_cores': 'gen1',  # First generation tensor cores
+        'rt_cores': None,
+        'memory_type': 'HBM2',
+        'pci_ids': ['1db5', '1dbe', '1df6'],  # PCIe and SXM2 32GB variants
+        'aliases': ['V100 32GB', 'TESLA V100 32GB', 'V100-SXM2-32GB', 'V100-PCIE-32GB', 'NVIDIA V100 32GB', 'V100S']
+    },
     'H100_GPU': {
         'Flops': 989,
         'Memory_size': 80,
