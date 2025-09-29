@@ -2,6 +2,7 @@
 from flask import request, jsonify
 from BudSimulator.src.hardware import BudHardware
 from BudSimulator.src.hardware_recommendation import HardwareRecommendation
+from BudSimulator.src.utils.hardware_formatting import normalize_hardware_keys
 
 
 def create_hardware_routes(app):
@@ -66,10 +67,12 @@ def create_hardware_routes(app):
             
             results = hardware.search_hardware(**params)
             
+            normalized_results = [normalize_hardware_keys(hw) for hw in results]
+
             return jsonify({
                 'success': True,
-                'hardware': results,
-                'count': len(results)
+                'hardware': normalized_results,
+                'count': len(normalized_results)
             }), 200
             
         except Exception as e:
