@@ -155,7 +155,26 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'rt_cores': None,
         'memory_type': 'HBM3e'
     },
-    
+    'L40S_48GB_GPU': {
+        'name': 'L40S_48GB_GPU',
+        'Flops': 362,
+        'Memory_size': 48,
+        'Memory_BW': 864,
+        'ICN': 300,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'ADA_LOVELACE',
+        'generation': 'Professional Data Center GPU',
+        'compute_capability': '8.9',
+        'release_year': 2024,
+        'tensor_cores': 'gen4',
+        'rt_cores': 'gen3',
+        'memory_type': 'GDDR6',
+        'pci_ids': ['26ba'],
+        'aliases': ['L40S', 'L40S-48GB', 'NVIDIA L40S', 'NVIDIA-L40S', 'L40S 48GB']
+    },
+
     # Google TPUs
     'TPUv6': {
         'Flops': 926,

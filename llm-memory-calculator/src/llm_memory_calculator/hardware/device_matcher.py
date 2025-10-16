@@ -312,6 +312,7 @@ class DeviceMatcher:
         '10de:2336': 'H200',  # H200 NVL
         '10de:233a': 'GH200', # GH200
         '10de:26b9': 'L40',   # L40
+        '10de:26ba': 'L40S',  # L40S
         '10de:27b8': 'L4',    # L4
         '10de:1db4': 'V100',  # V100 PCIe 16GB
         '10de:1db5': 'V100',  # V100 PCIe 32GB
@@ -350,6 +351,7 @@ class DeviceMatcher:
         'H200': ['H200', 'H200-SXM', 'H200-NVL', 'NVIDIA H200'],
         'GH200': ['GH200', 'GRACE HOPPER', 'GH200-96GB', 'GH200-144GB'],
         'L40': ['L40', 'L40-48GB', 'NVIDIA L40'],
+        'L40S': ['L40S', 'L40S-48GB', 'NVIDIA L40S', 'NVIDIA-L40S'],
         'L4': ['L4', 'L4-24GB', 'NVIDIA L4'],
         'V100': ['V100', 'TESLA V100', 'V100-SXM2', 'V100-PCIE', 'VOLTA'],
         'T4': ['T4', 'TESLA T4', 'T4-16GB'],
