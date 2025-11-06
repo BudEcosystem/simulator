@@ -314,7 +314,127 @@ class ModelMemoryCalculator:
         # State memory is constant regardless of sequence length
         state_elements = batch_size * num_layers * state_size * hidden_size * expand_factor
         return (state_elements * bytes_per_element) / 1e9
-    
+
+    def calculate_lora_adapter_memory(
+        self,
+        config: Dict[str, Any],
+        lora_config: Any,
+        precision: str,
+        tensor_parallel: int = 1
+    ) -> float:
+        """
+        Calculate memory for LoRA adapters using vLLM-style allocation.
+
+        Following vLLM's approach:
+        - Pre-allocates memory for max_loras adapters
+        - Each LoRA layer has A and B matrices
+        - LoRA A: [max_loras, 1, max_lora_rank, input_size]
+        - LoRA B: [max_loras, 1, output_size, max_lora_rank]
+
+        Args:
+            config: Model configuration
+            lora_config: LoRA configuration with max_loras, max_lora_rank, etc.
+            precision: Model precision for base model
+            tensor_parallel: Tensor parallelism degree
+
+        Returns:
+            Total LoRA adapter memory in GB
+        """
+        if not lora_config or not lora_config.enabled:
+            return 0.0
+
+        # For multimodal models, use text_config
+        if self.model_type == 'multimodal' and 'text_config' in config:
+            text_config = config['text_config']
+        else:
+            text_config = config
+
+        # Get LoRA dtype (defaults to model precision if 'auto')
+        lora_dtype = lora_config.lora_dtype
+        if lora_dtype == 'auto':
+            lora_dtype = precision
+        bytes_per_element = self.PRECISION_BYTES.get(lora_dtype.lower(), 2)
+
+        # Extract model dimensions
+        hidden_size = text_config.get('hidden_size', text_config.get('d_model', 768))
+        intermediate_size = text_config.get('intermediate_size',
+                                           text_config.get('ffn_dim', hidden_size * 4))
+        num_layers = text_config.get('num_hidden_layers', text_config.get('n_layers', 12))
+
+        # Count only attention layers for hybrid models
+        if self.model_type == 'hybrid':
+            num_attention_layers = self._count_attention_layers(text_config, num_layers)
+        else:
+            num_attention_layers = num_layers
+
+        max_loras = lora_config.max_loras
+        max_lora_rank = lora_config.max_lora_rank
+        target_modules = lora_config.target_modules
+
+        total_elements = 0
+
+        # Calculate memory for each target module type
+        for module in target_modules:
+            module_lower = module.lower()
+
+            # Attention modules: Q, K, V, O projections
+            if any(x in module_lower for x in ['attn', 'attention', 'qkv', 'query', 'key', 'value', 'out']):
+                # Each attention layer typically has 4 projections: Q, K, V, O
+                # Each projection: hidden_size -> hidden_size
+                num_projections = 4
+
+                for _ in range(num_projections):
+                    # LoRA A: [max_loras, 1, max_lora_rank, input_size]
+                    lora_a_elements = max_loras * 1 * max_lora_rank * hidden_size
+
+                    # LoRA B: [max_loras, 1, output_size, max_lora_rank]
+                    lora_b_elements = max_loras * 1 * hidden_size * max_lora_rank
+
+                    # Apply tensor parallelism sharding
+                    if lora_config.fully_sharded_loras:
+                        # Both A and B are sharded
+                        lora_a_elements = lora_a_elements / tensor_parallel
+                        lora_b_elements = lora_b_elements / tensor_parallel
+                    else:
+                        # Only B is sharded by default
+                        lora_b_elements = lora_b_elements / tensor_parallel
+
+                    total_elements += (lora_a_elements + lora_b_elements) * num_attention_layers
+
+            # FFN modules: up, down, gate projections
+            if any(x in module_lower for x in ['ffn', 'mlp', 'feed_forward', 'up', 'down', 'gate']):
+                # Typical FFN has 3 projections for SwiGLU: up, down, gate
+                # or 2 for standard: up, down
+                act_fn = text_config.get('activation_function',
+                                        text_config.get('hidden_act', 'gelu')).lower()
+                num_ffn_projections = 3 if any(x in act_fn for x in ['swiglu', 'silu', 'swish']) else 2
+
+                for i in range(num_ffn_projections):
+                    if i < num_ffn_projections - 1:  # up/gate projections
+                        input_dim = hidden_size
+                        output_dim = intermediate_size
+                    else:  # down projection
+                        input_dim = intermediate_size
+                        output_dim = hidden_size
+
+                    # LoRA A: [max_loras, 1, max_lora_rank, input_size]
+                    lora_a_elements = max_loras * 1 * max_lora_rank * input_dim
+
+                    # LoRA B: [max_loras, 1, output_size, max_lora_rank]
+                    lora_b_elements = max_loras * 1 * output_dim * max_lora_rank
+
+                    # Apply tensor parallelism sharding
+                    if lora_config.fully_sharded_loras:
+                        lora_a_elements = lora_a_elements / tensor_parallel
+                        lora_b_elements = lora_b_elements / tensor_parallel
+                    else:
+                        lora_b_elements = lora_b_elements / tensor_parallel
+
+                    total_elements += (lora_a_elements + lora_b_elements) * num_layers
+
+        # Convert to GB
+        return (total_elements * bytes_per_element) / 1e9
+
     def calculate_total_memory(
         self,
         config: Dict[str, Any],
@@ -326,11 +446,12 @@ class ModelMemoryCalculator:
         include_gradients: bool = False,
         decode_length: Optional[int] = None,
         num_images: Optional[int] = None,
-        image_resolution: int = 1024
+        image_resolution: int = 1024,
+        lora_config: Optional[Any] = None
     ) -> MemoryReport:
         """
         Calculate total memory requirements for model inference.
-        
+
         Args:
             config: Model configuration dictionary
             batch_size: Batch size for inference
@@ -342,7 +463,8 @@ class ModelMemoryCalculator:
             decode_length: Length of tokens to generate (defaults to seq_length)
             num_images: Number of images for multimodal models
             image_resolution: Image resolution for vision models
-            
+            lora_config: Optional LoRA configuration for adapter memory calculation
+
         Returns:
             MemoryReport with detailed breakdown
         """
@@ -367,7 +489,14 @@ class ModelMemoryCalculator:
         
         # Calculate state memory (for SSM models)
         state_memory = self.calculate_state_memory(config, batch_size, precision)
-        
+
+        # Calculate LoRA adapter memory (if enabled)
+        lora_memory = 0.0
+        if lora_config:
+            lora_memory = self.calculate_lora_adapter_memory(
+                config, lora_config, precision, tensor_parallel
+            )
+
         # Calculate image memory (for multimodal models)
         image_memory = 0.0
         if num_images and num_images > 0:
@@ -398,6 +527,7 @@ class ModelMemoryCalculator:
         kv_bytes = kv_cache * 1e9
         activation_bytes = activations * 1e9
         state_bytes = state_memory * 1e9
+        lora_bytes = lora_memory * 1e9
         image_bytes = image_memory * 1e9
         
         # Apply framework overhead to runtime components (not weights)
@@ -419,5 +549,6 @@ class ModelMemoryCalculator:
             activation_memory_bytes=activation_bytes,
             state_memory_bytes=state_bytes,
             image_memory_bytes=image_bytes,
+            lora_adapter_memory_bytes=lora_bytes,
             extra_work_bytes=extra_work_bytes + (runtime_bytes_with_overhead - runtime_bytes),
         )

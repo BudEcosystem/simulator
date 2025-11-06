@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional, Union
 from .calculator import ModelMemoryCalculator
 from .types import MemoryReport
 from .huggingface_loader import HuggingFaceConfigLoader
+from .lora.config import LoraConfig
 
 
 def calculate_memory(
@@ -16,14 +17,22 @@ def calculate_memory(
     framework_overhead: float = 1.2,
     include_gradients: bool = False,
     token: Optional[str] = None,
+    # LoRA parameters (simplified API)
+    max_loras: Optional[int] = None,
+    max_lora_rank: Optional[int] = None,
+    lora_dtype: Optional[str] = None,
+    fully_sharded_loras: Optional[bool] = None,
+    target_modules: Optional[List[str]] = None,
+    # Advanced: pass LoraConfig directly (overrides individual parameters)
+    lora_config: Optional[LoraConfig] = None,
     **kwargs
 ) -> MemoryReport:
     """
     Calculate memory requirements for a model.
-    
+
     This is a convenience function that handles both HuggingFace model IDs
     and direct config dictionaries.
-    
+
     Args:
         model_id_or_config: HuggingFace model ID or config dictionary
         batch_size: Batch size for inference
@@ -33,18 +42,43 @@ def calculate_memory(
         framework_overhead: Multiplicative overhead for framework memory
         include_gradients: Include gradient memory (for training)
         token: Optional HuggingFace API token
+
+        max_loras: Maximum number of LoRA adapters to serve simultaneously
+        max_lora_rank: Maximum rank across all LoRA adapters
+        lora_dtype: Data type for LoRA weights ('auto', 'fp16', 'bf16', 'fp32')
+        fully_sharded_loras: Whether to shard both A and B matrices with TP
+        target_modules: Which modules to apply LoRA to (default: ['attn', 'ffn'])
+
+        lora_config: Advanced - pass LoraConfig object directly (overrides other LoRA params)
         **kwargs: Additional arguments passed to calculator
-        
+
     Returns:
         MemoryReport with detailed breakdown
-        
+
     Examples:
-        # From HuggingFace model ID
+        # Basic usage
         report = calculate_memory("meta-llama/Llama-2-7b-hf")
-        
-        # From config dictionary
-        config = {"hidden_size": 4096, "num_hidden_layers": 32, ...}
-        report = calculate_memory(config)
+
+        # With LoRA adapters (simplified API)
+        report = calculate_memory(
+            "meta-llama/Llama-2-7b-hf",
+            max_loras=5,
+            max_lora_rank=256
+        )
+
+        # With custom LoRA configuration
+        report = calculate_memory(
+            "meta-llama/Llama-2-7b-hf",
+            max_loras=5,
+            max_lora_rank=256,
+            target_modules=['attn'],  # attention only
+            fully_sharded_loras=True
+        )
+
+        # Advanced: using LoraConfig object
+        from llm_memory_calculator.lora.config import LoraConfig
+        lora_cfg = LoraConfig(enabled=True, max_loras=5, max_lora_rank=256)
+        report = calculate_memory("meta-llama/Llama-2-7b-hf", lora_config=lora_cfg)
     """
     # Handle config vs model ID
     if isinstance(model_id_or_config, str):
@@ -54,7 +88,18 @@ def calculate_memory(
     else:
         # It's already a config dictionary
         config = model_id_or_config
-    
+
+    # Auto-create LoraConfig if individual parameters are provided
+    if lora_config is None and (max_loras is not None or max_lora_rank is not None):
+        lora_config = LoraConfig(
+            enabled=True,
+            max_loras=max_loras or 1,
+            max_lora_rank=max_lora_rank or 256,
+            target_modules=target_modules or ['attn', 'ffn'],
+            lora_dtype=lora_dtype or 'auto',
+            fully_sharded_loras=fully_sharded_loras or False
+        )
+
     # Create calculator and compute memory
     calculator = ModelMemoryCalculator()
     return calculator.calculate_total_memory(
@@ -65,6 +110,7 @@ def calculate_memory(
         tensor_parallel=tensor_parallel,
         framework_overhead=framework_overhead,
         include_gradients=include_gradients,
+        lora_config=lora_config,
         **kwargs
     )
 

@@ -17,6 +17,7 @@ class MemoryReport:
     state_memory_bytes: float
     image_memory_bytes: float
     extra_work_bytes: float
+    lora_adapter_memory_bytes: float = 0.0
     
     @property
     def total_memory_bytes(self) -> float:
@@ -27,6 +28,7 @@ class MemoryReport:
             self.activation_memory_bytes +
             self.state_memory_bytes +
             self.image_memory_bytes +
+            self.lora_adapter_memory_bytes +
             self.extra_work_bytes
         )
     
@@ -59,6 +61,11 @@ class MemoryReport:
     def extra_work_gb(self) -> float:
         """Extra work memory in GB."""
         return self.extra_work_bytes / 1e9
+
+    @property
+    def lora_adapter_memory_gb(self) -> float:
+        """LoRA adapter memory in GB."""
+        return self.lora_adapter_memory_bytes / 1e9
     
     @property
     def total_memory_gb(self) -> float:
@@ -108,6 +115,8 @@ class MemoryReport:
             lines.append(f"  State: {self.state_memory_gb:.2f} GB")
         if self.image_memory_gb > 0:
             lines.append(f"  Images: {self.image_memory_gb:.2f} GB")
+        if self.lora_adapter_memory_gb > 0:
+            lines.append(f"  LoRA Adapters: {self.lora_adapter_memory_gb:.2f} GB")
         if self.extra_work_gb > 0:
             lines.append(f"  Extra/Overhead: {self.extra_work_gb:.2f} GB")
         
