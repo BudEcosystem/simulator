@@ -170,16 +170,17 @@ class HuggingFaceConfigLoader:
         else:
             raise Exception(f"No config file found for {model_id_or_path}")
     
-    def get_model_config(self, model_id_or_path: str, add_param_count: bool = True) -> Dict[str, Any]:
+    def get_model_config(self, model_id_or_path: str, add_param_count: bool = True, respect_weight_tying: bool = True) -> Dict[str, Any]:
         """
         Get model configuration with enhanced parameter counting.
-        
+
         This method fetches the config and optionally adds parameter count from model metadata.
-        
+
         Args:
             model_id_or_path: HuggingFace model identifier or local path
             add_param_count: Whether to try to add parameter count from model info
-            
+            respect_weight_tying: Whether to respect tie_word_embeddings in parameter counting
+
         Returns:
             Enhanced config dictionary with num_parameters
         """
@@ -203,8 +204,8 @@ class HuggingFaceConfigLoader:
         if 'num_parameters' not in config:
             from .parameter_counter import UniversalParameterCounter
             counter = UniversalParameterCounter()
-            config['num_parameters'] = counter.count_parameters(config)
-            
+            config['num_parameters'] = counter.count_parameters(config, respect_weight_tying=respect_weight_tying)
+
         return config
     
     def get_model_info(self, model_id_or_path: str) -> Any:

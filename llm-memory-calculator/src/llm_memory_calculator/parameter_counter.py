@@ -22,13 +22,15 @@ class UniversalParameterCounter:
             'experts_share_output', 'share_expert_down_proj'
         }
     
-    def count_parameters(self, config: Union[Dict[str, Any], Any]) -> int:
+    def count_parameters(self, config: Union[Dict[str, Any], Any], respect_weight_tying: bool = True) -> int:
         """
         Main entry point to count parameters from a config.
-        
+
         Args:
             config: Model configuration (dict or HuggingFace config object)
-            
+            respect_weight_tying: Whether to respect tie_word_embeddings config (default True).
+                                 Set to False for accurate memory estimation.
+
         Returns:
             Total parameter count
         """
@@ -43,16 +45,16 @@ class UniversalParameterCounter:
         
         try:
             if arch_type == "multimodal":
-                return self._calculate_multimodal_params(config)
+                return self._calculate_multimodal_params(config, respect_weight_tying)
             elif arch_type == "mamba":
                 return self._calculate_mamba_params(config)
             elif arch_type == "hybrid":
-                return self._calculate_hybrid_params(config)
+                return self._calculate_hybrid_params(config, respect_weight_tying)
             elif arch_type == "diffusion":
                 return self._calculate_diffusion_params(config)
             else:
                 # Standard transformer with potential modifications
-                return self._calculate_transformer_params(config)
+                return self._calculate_transformer_params(config, respect_weight_tying)
         except Exception as e:
             warnings.warn(f"Error calculating params for {arch_type}: {e}. Using fallback.")
             return self._fallback_calculation(config)
@@ -162,15 +164,19 @@ class UniversalParameterCounter:
             
         return total_aux
     
-    def _calculate_transformer_params(self, config: Dict[str, Any]) -> int:
+    def _calculate_transformer_params(self, config: Dict[str, Any], respect_weight_tying: bool = True) -> int:
         """Calculate parameters for transformer models."""
         # Basic dimensions
         hidden_size = config.get('hidden_size', config.get('d_model', 768))
         num_layers = config.get('num_hidden_layers', config.get('n_layers', 12))
         vocab_size = config.get('vocab_size', config.get('n_vocab', 50257))
-        
+
         # Determine if embeddings are tied
-        tie_embeddings = self._get_actual_tie_embeddings(config)
+        if respect_weight_tying:
+            tie_embeddings = self._get_actual_tie_embeddings(config)
+        else:
+            # For accurate memory estimation, always count both embeddings separately
+            tie_embeddings = False
         
         # Embeddings
         embeddings = vocab_size * hidden_size
@@ -374,11 +380,11 @@ class UniversalParameterCounter:
         
         return embeddings + num_layers * ssm_params_per_layer + norm_params
     
-    def _calculate_hybrid_params(self, config: Dict[str, Any]) -> int:
+    def _calculate_hybrid_params(self, config: Dict[str, Any], respect_weight_tying: bool = True) -> int:
         """Calculate parameters for hybrid models (e.g., Jamba with both attention and Mamba)."""
         # Get layer configuration
         num_layers = config.get('num_hidden_layers', 12)
-        
+
         # Some hybrids specify layer types explicitly
         layer_types = config.get('layer_types', [])
         if layer_types:
@@ -389,11 +395,11 @@ class UniversalParameterCounter:
             attention_ratio = config.get('attention_ratio', 0.5)
             attention_layers = int(num_layers * attention_ratio)
             mamba_layers = num_layers - attention_layers
-        
+
         # Calculate transformer params for attention layers
         transformer_config = config.copy()
         transformer_config['num_hidden_layers'] = attention_layers
-        attention_params = self._calculate_transformer_params(transformer_config) if attention_layers > 0 else 0
+        attention_params = self._calculate_transformer_params(transformer_config, respect_weight_tying) if attention_layers > 0 else 0
         
         # Calculate Mamba params for SSM layers
         mamba_config = config.copy()
@@ -416,24 +422,24 @@ class UniversalParameterCounter:
         
         return embedding_params + attention_params + mamba_params
     
-    def _calculate_multimodal_params(self, config: Dict[str, Any]) -> int:
+    def _calculate_multimodal_params(self, config: Dict[str, Any], respect_weight_tying: bool = True) -> int:
         """Calculate parameters for multimodal models (e.g., LLaVA, Llama-4-Scout)."""
         total_params = 0
-        
+
         # Process text config
         if 'text_config' in config and isinstance(config['text_config'], dict):
             text_config = config['text_config'].copy()
-            
+
             # Ensure model_type is set for proper calculation
             if 'model_type' not in text_config:
                 text_config['model_type'] = text_config.get('model_type', 'decoder-only')
-            
+
             # Handle MoE parameters from text config
             if 'num_local_experts' in text_config:
                 text_config['n_routed_experts'] = text_config.get('num_local_experts')
             if 'num_experts' in text_config:
                 text_config['n_routed_experts'] = text_config.get('num_experts')
-            
+
             # For Llama-4 style configs:
             # - intermediate_size is the MoE expert size
             # - intermediate_size_mlp is the dense FFN size (if any)
@@ -443,7 +449,7 @@ class UniversalParameterCounter:
                 text_config['moe_intermediate_size'] = text_config['intermediate_size']
                 # Set intermediate_size to the larger value for dense layers
                 text_config['intermediate_size'] = text_config['intermediate_size_mlp']
-                
+
             # Check MoE frequency
             interleave_step = text_config.get('interleave_moe_layer_step', 1)
             if interleave_step == 1:
@@ -453,9 +459,9 @@ class UniversalParameterCounter:
             else:
                 # Some layers are dense
                 text_config['moe_layer_freq'] = interleave_step
-            
+
             # Calculate text model parameters
-            text_params = self._calculate_transformer_params(text_config)
+            text_params = self._calculate_transformer_params(text_config, respect_weight_tying)
             total_params += text_params
         
         # Process vision config

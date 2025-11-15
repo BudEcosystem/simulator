@@ -17,6 +17,7 @@ def calculate_memory(
     framework_overhead: float = 1.2,
     include_gradients: bool = False,
     token: Optional[str] = None,
+    respect_weight_tying: bool = True,
     # LoRA parameters (simplified API)
     max_loras: Optional[int] = None,
     max_lora_rank: Optional[int] = None,
@@ -42,6 +43,9 @@ def calculate_memory(
         framework_overhead: Multiplicative overhead for framework memory
         include_gradients: Include gradient memory (for training)
         token: Optional HuggingFace API token
+        respect_weight_tying: Whether to respect tie_word_embeddings config for parameter
+                             counting (default True). Set to False for accurate memory
+                             estimation that counts all physical tensors.
 
         max_loras: Maximum number of LoRA adapters to serve simultaneously
         max_lora_rank: Maximum rank across all LoRA adapters
@@ -84,7 +88,7 @@ def calculate_memory(
     if isinstance(model_id_or_config, str):
         # It's a HuggingFace model ID
         loader = HuggingFaceConfigLoader(token=token)
-        config = loader.get_model_config(model_id_or_config)
+        config = loader.get_model_config(model_id_or_config, respect_weight_tying=respect_weight_tying)
     else:
         # It's already a config dictionary
         config = model_id_or_config
@@ -111,6 +115,7 @@ def calculate_memory(
         framework_overhead=framework_overhead,
         include_gradients=include_gradients,
         lora_config=lora_config,
+        respect_weight_tying=respect_weight_tying,
         **kwargs
     )
 
@@ -196,7 +201,8 @@ def estimate_max_batch_size(
     gpu_memory_gb: float,
     seq_length: int = 2048,
     precision: str = 'fp16',
-    token: Optional[str] = None
+    token: Optional[str] = None,
+    respect_weight_tying: bool = True
 ) -> int:
     """
     Estimate maximum batch size that fits in given GPU memory.
@@ -207,14 +213,15 @@ def estimate_max_batch_size(
         seq_length: Sequence length
         precision: Model precision
         token: Optional HuggingFace API token
-        
+        respect_weight_tying: Whether to respect tie_word_embeddings config (default True)
+
     Returns:
         Maximum batch size that fits in memory
     """
     # Get config
     if isinstance(model_id_or_config, str):
         loader = HuggingFaceConfigLoader(token=token)
-        config = loader.get_model_config(model_id_or_config)
+        config = loader.get_model_config(model_id_or_config, respect_weight_tying=respect_weight_tying)
     else:
         config = model_id_or_config
     
@@ -247,7 +254,8 @@ def analyze_attention_efficiency(
     seq_lengths: List[int] = [1024, 4096, 16384, 32768],
     batch_size: int = 1,
     precision: str = 'fp16',
-    token: Optional[str] = None
+    token: Optional[str] = None,
+    respect_weight_tying: bool = True
 ) -> Dict[str, Any]:
     """
     Analyze KV cache memory efficiency for different sequence lengths.
@@ -258,14 +266,15 @@ def analyze_attention_efficiency(
         batch_size: Batch size
         precision: Model precision
         token: Optional HuggingFace API token
-        
+        respect_weight_tying: Whether to respect tie_word_embeddings config (default True)
+
     Returns:
         Dictionary with efficiency analysis
     """
     # Get config
     if isinstance(model_id_or_config, str):
         loader = HuggingFaceConfigLoader(token=token)
-        config = loader.get_model_config(model_id_or_config)
+        config = loader.get_model_config(model_id_or_config, respect_weight_tying=respect_weight_tying)
         model_name = model_id_or_config
     else:
         config = model_id_or_config

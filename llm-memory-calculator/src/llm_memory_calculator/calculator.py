@@ -115,12 +115,12 @@ class ModelMemoryCalculator:
             return 3
         return 2
     
-    def calculate_model_weights(self, config: Dict[str, Any], precision: str) -> tuple[int, float]:
+    def calculate_model_weights(self, config: Dict[str, Any], precision: str, respect_weight_tying: bool = True) -> tuple[int, float]:
         """Calculate model weight memory in GB and return (param_count, memory_gb)."""
         # Get parameter count
         param_count = config.get('num_parameters')
         if not param_count:
-            param_count = self.param_counter.count_parameters(config)
+            param_count = self.param_counter.count_parameters(config, respect_weight_tying=respect_weight_tying)
         
         # Calculate memory
         bytes_per_param = self.PRECISION_BYTES.get(precision.lower(), 2)
@@ -447,7 +447,8 @@ class ModelMemoryCalculator:
         decode_length: Optional[int] = None,
         num_images: Optional[int] = None,
         image_resolution: int = 1024,
-        lora_config: Optional[Any] = None
+        lora_config: Optional[Any] = None,
+        respect_weight_tying: bool = True
     ) -> MemoryReport:
         """
         Calculate total memory requirements for model inference.
@@ -464,6 +465,7 @@ class ModelMemoryCalculator:
             num_images: Number of images for multimodal models
             image_resolution: Image resolution for vision models
             lora_config: Optional LoRA configuration for adapter memory calculation
+            respect_weight_tying: Whether to respect tie_word_embeddings config (default True)
 
         Returns:
             MemoryReport with detailed breakdown
@@ -473,7 +475,7 @@ class ModelMemoryCalculator:
         self.attention_type = self.detect_attention_type(config)
         
         # Calculate model weights
-        param_count, weight_memory = self.calculate_model_weights(config, precision)
+        param_count, weight_memory = self.calculate_model_weights(config, precision, respect_weight_tying)
         
         # Divide weights by tensor parallelism
         weight_memory = weight_memory / tensor_parallel
