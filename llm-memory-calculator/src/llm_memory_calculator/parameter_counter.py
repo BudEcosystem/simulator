@@ -2,6 +2,7 @@
 
 import warnings
 from typing import Dict, Any, Union
+from .config_normalizer import ConfigNormalizer
 
 
 class UniversalParameterCounter:
@@ -39,6 +40,9 @@ class UniversalParameterCounter:
             config = vars(config)
         elif not isinstance(config, dict):
             raise ValueError("Config must be a dict or have __dict__ attribute")
+        
+        # Normalize config to handle various key formats
+        config = ConfigNormalizer.normalize_config(config)
         
         # Detect and calculate based on architecture
         arch_type = self._detect_architecture_type(config)

@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional, List
 
 from .types import MemoryReport
 from .parameter_counter import UniversalParameterCounter
+from .config_normalizer import ConfigNormalizer
 
 
 class ModelMemoryCalculator:
@@ -29,7 +30,17 @@ class ModelMemoryCalculator:
         'float16': 2, 'fp16': 2, 
         'bfloat16': 2, 'bf16': 2,
         'int8': 1, 'uint8': 1,
-        'int4': 0.5, 'uint4': 0.5
+        'int4': 0.5, 'uint4': 0.5,
+        # Advanced quantization methods
+        'mxfp4': 0.5,    # Microsoft MX-FP4
+        'fp4': 0.5,      # 4-bit float
+        'nf4': 0.5,      # NormalFloat4 (QLoRA)
+        'fp8': 1.0,      # FP8 formats
+        'fp8_e4m3': 1.0,
+        'fp8_e5m2': 1.0,
+        'awq': 0.5,      # Activation-aware Weight Quantization
+        'gptq': 0.5,     # GPTQ 4-bit
+        'squeezellm': 0.5,
     }
     
     def __init__(self):
@@ -117,16 +128,146 @@ class ModelMemoryCalculator:
     
     def calculate_model_weights(self, config: Dict[str, Any], precision: str, respect_weight_tying: bool = True) -> tuple[int, float]:
         """Calculate model weight memory in GB and return (param_count, memory_gb)."""
+        # Normalize config for consistent key handling
+        config = ConfigNormalizer.normalize_config(config)
+        
         # Get parameter count
         param_count = config.get('num_parameters')
         if not param_count:
             param_count = self.param_counter.count_parameters(config, respect_weight_tying=respect_weight_tying)
         
-        # Calculate memory
-        bytes_per_param = self.PRECISION_BYTES.get(precision.lower(), 2)
-        weight_memory_gb = (param_count * bytes_per_param) / 1e9  # Use decimal GB to match API
+        # Check for mixed precision quantization
+        if '_quantization' in config and config['_quantization'].get('has_mixed_precision'):
+            weight_memory_gb = self._calculate_mixed_precision_memory(
+                config, param_count, precision
+            )
+        else:
+            # Standard calculation
+            bytes_per_param = self.PRECISION_BYTES.get(precision.lower(), 2)
+            weight_memory_gb = (param_count * bytes_per_param) / 1e9  # Use decimal GB to match API
         
         return param_count, weight_memory_gb
+    
+    def _calculate_mixed_precision_memory(
+        self, 
+        config: Dict[str, Any],
+        param_count: int,
+        default_precision: str
+    ) -> float:
+        """
+        Calculate weight memory with mixed precision quantization.
+        
+        Handles cases where different modules use different precisions,
+        such as quantized experts but fp16 attention/embeddings.
+        
+        Args:
+            config: Normalized config with _quantization metadata
+            param_count: Total parameter count
+            default_precision: Default precision for non-quantized modules
+            
+        Returns:
+            Memory in GB
+        """
+        quant_info = config.get('_quantization', {})
+        
+        # Get quantization settings
+        skip_patterns = quant_info.get('skip_modules', [])
+        quant_bytes = quant_info.get('bytes_per_param', 0.5)
+        default_bytes = self.PRECISION_BYTES.get(default_precision.lower(), 2)
+        
+        # Estimate proportion of non-quantized parameters
+        skip_ratio = self._estimate_skip_ratio(config, skip_patterns, param_count)
+        
+        # Calculate mixed memory
+        quantized_params = param_count * (1 - skip_ratio)
+        non_quantized_params = param_count * skip_ratio
+        
+        memory_gb = (quantized_params * quant_bytes + 
+                     non_quantized_params * default_bytes) / 1e9
+        
+        return memory_gb
+    
+    def _estimate_skip_ratio(
+        self, 
+        config: Dict[str, Any], 
+        skip_patterns: List[str],
+        total_params: int
+    ) -> float:
+        """
+        Estimate proportion of parameters that are NOT quantized.
+        
+        Uses heuristics based on module patterns:
+        - "*.self_attn" -> attention layers
+        - "*.mlp.router" -> MoE router
+        - "*embed*" -> embeddings
+        - "*lm_head*" -> output head
+        
+        Args:
+            config: Model configuration
+            skip_patterns: List of module patterns to skip
+            total_params: Total parameter count
+            
+        Returns:
+            Ratio of non-quantized parameters (0.0 to 1.0)
+        """
+        if not skip_patterns:
+            return 0.0
+        
+        skip_param_count = 0
+        
+        # Extract config values
+        vocab_size = config.get('vocab_size', 50000)
+        hidden_size = config.get('hidden_size', 4096)
+        num_layers = config.get('num_hidden_layers', 24)
+        num_heads = config.get('num_attention_heads', 32)
+        num_kv_heads = config.get('num_key_value_heads', num_heads)
+        head_dim = config.get('head_dim', hidden_size // num_heads)
+        
+        # Check if embeddings are tied
+        tie_embeddings = config.get('tie_word_embeddings', False)
+        
+        for pattern in skip_patterns:
+            pattern_lower = pattern.lower()
+            
+            if 'embed' in pattern_lower:
+                # Embeddings: input + output (if not tied)
+                embedding_params = vocab_size * hidden_size
+                if not tie_embeddings:
+                    embedding_params *= 2
+                skip_param_count += embedding_params
+            
+            elif 'lm_head' in pattern_lower or ('output' in pattern_lower and 'layer' not in pattern_lower):
+                # Output head (if not already counted in embeddings)
+                if tie_embeddings:
+                    head_params = vocab_size * hidden_size
+                    skip_param_count += head_params
+            
+            elif 'attn' in pattern_lower or 'attention' in pattern_lower:
+                # Attention layers: Q, K, V, O projections
+                # Q projection: hidden -> num_heads * head_dim
+                q_params = hidden_size * num_heads * head_dim
+               # K, V projections: hidden -> num_kv_heads * head_dim
+                kv_params = 2 * hidden_size * num_kv_heads * head_dim
+                # O projection: num_heads * head_dim -> hidden
+                o_params = num_heads * head_dim * hidden_size
+                
+                attn_params_per_layer = q_params + kv_params + o_params
+                skip_param_count += num_layers * attn_params_per_layer
+            
+            elif 'router' in pattern_lower:
+                # MoE router
+                num_experts = config.get('n_routed_experts', 1)
+                if num_experts > 1:
+                    moe_freq = config.get('moe_layer_freq', 1)
+                    num_moe_layers = num_layers // moe_freq if moe_freq > 0 else 0
+                    router_params = num_moe_layers * hidden_size * num_experts
+                    skip_param_count += router_params
+        
+        # Calculate ratio, capped at 1.0
+        ratio = min(skip_param_count / total_params, 1.0) if total_params > 0 else 0.0
+        
+        return ratio
+
     
     def calculate_kv_cache(
         self,
@@ -135,10 +276,15 @@ class ModelMemoryCalculator:
         seq_length: int,
         precision: str
     ) -> float:
-        """Calculate KV cache memory in GB based on attention type."""
+        """Calculate KV cache memory in GB with per-layer attention type support."""
+        # Normalize config for consistent key handling
+        config = ConfigNormalizer.normalize_config(config)
+        
         # For multimodal models, use text_config
         if self.model_type == 'multimodal' and 'text_config' in config:
             text_config = config['text_config']
+            # Normalize text_config as well
+            text_config = ConfigNormalizer.normalize_config(text_config)
         else:
             text_config = config
             
@@ -150,6 +296,14 @@ class ModelMemoryCalculator:
         # Get bytes per element
         bytes_per_element = self.PRECISION_BYTES.get(precision.lower(), 2)
         
+        # Check for per-layer attention types (e.g., mixed sliding/full)
+        if '_layer_metadata' in config and config['_layer_metadata'].get('has_mixed_attention'):
+            return self._calculate_kv_cache_per_layer(
+                text_config, config['_layer_metadata'], 
+                batch_size, seq_length, bytes_per_element, attention_type
+            )
+        
+        # Standard calculation: global sliding window or full seq
         # Handle sliding window attention
         if 'sliding_window' in text_config and text_config['sliding_window'] is not None:
             seq_length = min(seq_length, text_config['sliding_window'])
@@ -163,6 +317,98 @@ class ModelMemoryCalculator:
             return self._calculate_kv_cache_gqa(text_config, batch_size, seq_length, bytes_per_element)
         else:  # mha
             return self._calculate_kv_cache_mha(text_config, batch_size, seq_length, bytes_per_element)
+    
+    def _calculate_kv_cache_per_layer(
+        self,
+        config: Dict[str, Any],
+        layer_metadata: Dict[str, Any],
+        batch_size: int,
+        seq_length: int,
+        bytes_per_element: float,
+        attention_type: str
+    ) -> float:
+        """
+        Calculate KV cache for models with per-layer attention types.
+        
+        Handles mixed sliding/full attention layers (e.g., GPT-OSS-20B).
+        
+        Args:
+            config: Model configuration
+            layer_metadata: Layer metadata from config normalization
+            batch_size: Batch size
+            seq_length: Full sequence length
+            bytes_per_element: Bytes per KV element
+            attention_type: Attention mechanism type
+            
+        Returns:
+            Total KV cache memory in GB
+        """
+        num_sliding_layers = layer_metadata.get('num_sliding_layers', 0)
+        num_full_layers = layer_metadata.get('num_full_layers', 0)
+        
+        sliding_window = config.get('sliding_window', seq_length)
+        
+        total_kv_cache = 0.0
+        
+        # Calculate KV cache for sliding attention layers
+        if num_sliding_layers > 0:
+            effective_seq = min(seq_length, sliding_window)
+            sliding_kv = self._calculate_kv_for_layers(
+                config, num_sliding_layers, batch_size, 
+                effective_seq, bytes_per_element, attention_type
+            )
+            total_kv_cache += sliding_kv
+        
+        # Calculate KV cache for full attention layers
+        if num_full_layers > 0:
+            full_kv = self._calculate_kv_for_layers(
+                config, num_full_layers, batch_size,
+                seq_length, bytes_per_element, attention_type
+            )
+            total_kv_cache += full_kv
+        
+        return total_kv_cache
+    
+    def _calculate_kv_for_layers(
+        self,
+        config: Dict[str, Any],
+        num_layers: int,
+        batch_size: int,
+        seq_length: int,
+        bytes_per_element: float,
+        attention_type: str
+    ) -> float:
+        """Calculate KV cache for a specific number of layers.
+        
+        Args:
+            config: Model configuration
+            num_layers: Number of layers to calculate for
+            batch_size: Batch size
+            seq_length: Sequence length for these layers
+            bytes_per_element: Bytes per KV element
+            attention_type: Attention mechanism type
+            
+        Returns:
+            KV cache memory in GB
+        """
+        hidden_size = config.get('hidden_size', config.get('d_model', 768))
+        num_attention_heads = config.get('num_attention_heads', 12)
+        num_key_value_heads = config.get('num_key_value_heads', num_attention_heads)
+        head_dim = config.get('head_dim', hidden_size // num_attention_heads)
+        
+        if attention_type == 'mla':
+            kv_lora_rank = config.get('kv_lora_rank', 512)
+            compressed_kv_dim = config.get('compressed_kv_dim', kv_lora_rank)
+            kv_elements = 2 * batch_size * num_layers * seq_length * compressed_kv_dim
+        elif attention_type == 'mqa':
+            kv_elements = 2 * batch_size * num_layers * seq_length * head_dim
+        elif attention_type == 'gqa':
+            kv_elements = 2 * batch_size * num_layers * seq_length * num_key_value_heads * head_dim
+        else:  # mha
+            kv_elements = 2 * batch_size * num_layers * seq_length * hidden_size
+        
+        return (kv_elements * bytes_per_element) / 1e9
+
     
     def _calculate_kv_cache_mha(self, config: Dict[str, Any], batch_size: int, seq_length: int, bytes_per_element: float) -> float:
         """Calculate KV cache for Multi-Head Attention."""
