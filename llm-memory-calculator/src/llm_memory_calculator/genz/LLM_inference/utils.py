@@ -94,12 +94,12 @@ def get_inference_system(system_name='A100_40GB_GPU', bits='bf16', ceff=1, meff=
         else:
             raise ValueError(f'System mentioned:{system_name} not present in predefined systems. Please use systems from systems/system_configs')
     if isinstance(system_name, dict):
-        if system_name.get('real_values',False) == True:
-            NUM_FLOPS = system_name.get('Flops', 320)
-            OFFCHIP_MEM_BW = system_name.get('Memory_BW',40)
-            per_chip_memory = system_name.get('Memory_size',2000)
-            C2C_BW = system_name.get('ICN',150)
-            C2C_LL = system_name.get('ICN_LL',1)
+        # Initialize variables with defaults from the dict
+        NUM_FLOPS = system_name.get('Flops', 320)
+        OFFCHIP_MEM_BW = system_name.get('Memory_BW', 40)
+        per_chip_memory = system_name.get('Memory_size', 2000)
+        C2C_BW = system_name.get('ICN', 150)
+        C2C_LL = system_name.get('ICN_LL', 1)
     elif isinstance(system_name, System):
         system_name.bits = bits
         system_name.compute_efficiency = ceff
