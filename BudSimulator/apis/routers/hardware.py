@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from src.hardware import BudHardware
 from src.hardware_recommendation import HardwareRecommendation
+from src.utils.hardware_formatting import normalize_hardware_keys
 
 
 router = APIRouter(prefix="/api/hardware", tags=["hardware"])
@@ -170,8 +171,10 @@ async def create_hardware(hardware: HardwareCreate):
         created = hardware_manager.get_hardware_by_name(hardware.name)
         if not created:
             raise HTTPException(status_code=500, detail="Failed to create hardware")
-        
-        return HardwareResponse(**created)
+
+        created_normalized = normalize_hardware_keys(created)
+
+        return HardwareResponse(**created_normalized)
         
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -203,22 +206,24 @@ async def list_hardware(
         # Add price indicators to each hardware item
         enhanced_results = []
         for hw in results:
+            normalized_hw = normalize_hardware_keys(hw)
+
             # Calculate price indicator if specs are available
-            flops = hw.get('flops', 0)
-            memory_size = hw.get('memory_size', 0)
-            memory_bw = hw.get('memory_bw', 0)
-            
+            flops = normalized_hw.get('flops', 0)
+            memory_size = normalized_hw.get('memory_size', 0)
+            memory_bw = normalized_hw.get('memory_bw', 0)
+
             if flops > 0 and memory_size > 0 and memory_bw > 0:
-                hw['price_approx'] = BudHardware.calculate_price_indicator(
+                normalized_hw['price_approx'] = BudHardware.calculate_price_indicator(
                     flops=flops,
                     memory_gb=memory_size,
                     bandwidth_gbs=memory_bw
                 )
             else:
-                hw['price_approx'] = None
-                
-            enhanced_results.append(hw)
-        
+                normalized_hw['price_approx'] = None
+
+            enhanced_results.append(normalized_hw)
+
         return [HardwareResponse(**hw) for hw in enhanced_results]
         
     except Exception as e:
@@ -276,22 +281,24 @@ async def filter_hardware(
         # Add price indicators to each hardware item
         enhanced_results = []
         for hw in results:
+            normalized_hw = normalize_hardware_keys(hw)
+
             # Calculate price indicator if specs are available
-            flops = hw.get('flops', 0)
-            memory_size = hw.get('memory_size', 0)
-            memory_bw = hw.get('memory_bw', 0)
-            
+            flops = normalized_hw.get('flops', 0)
+            memory_size = normalized_hw.get('memory_size', 0)
+            memory_bw = normalized_hw.get('memory_bw', 0)
+
             if flops > 0 and memory_size > 0 and memory_bw > 0:
-                hw['price_approx'] = BudHardware.calculate_price_indicator(
+                normalized_hw['price_approx'] = BudHardware.calculate_price_indicator(
                     flops=flops,
                     memory_gb=memory_size,
                     bandwidth_gbs=memory_bw
                 )
             else:
-                hw['price_approx'] = None
-                
-            enhanced_results.append(hw)
-        
+                normalized_hw['price_approx'] = None
+
+            enhanced_results.append(normalized_hw)
+
         return [HardwareResponse(**hw) for hw in enhanced_results]
         
     except Exception as e:
@@ -306,30 +313,32 @@ async def get_hardware(hardware_name: str):
         hardware = hardware_manager.get_hardware_by_name(hardware_name)
         if not hardware:
             raise HTTPException(status_code=404, detail="Hardware not found")
-        
+
+        normalized_hardware = normalize_hardware_keys(hardware)
+
         # Get vendor details with pricing
         vendors = hardware_manager.get_hardware_vendors(hardware_name)
-        
+
         # Get cloud details with instance pricing
         clouds = hardware_manager.get_hardware_clouds(hardware_name)
-        
+
         # Build detailed response
         response = HardwareDetailResponse(
-            name=hardware['name'],
-            type=hardware['type'],
-            manufacturer=hardware.get('manufacturer'),
-            flops=hardware['flops'],
-            memory_size=hardware['memory_size'],
-            memory_bw=hardware['memory_bw'],
-            icn=hardware.get('icn'),
-            icn_ll=hardware.get('icn_ll'),
-            power=hardware.get('power'),
-            real_values=hardware.get('real_values', True),
-            url=hardware.get('url'),
-            description=hardware.get('description'),
+            name=normalized_hardware['name'],
+            type=normalized_hardware['type'],
+            manufacturer=normalized_hardware.get('manufacturer'),
+            flops=normalized_hardware['flops'],
+            memory_size=normalized_hardware['memory_size'],
+            memory_bw=normalized_hardware['memory_bw'],
+            icn=normalized_hardware.get('icn'),
+            icn_ll=normalized_hardware.get('icn_ll'),
+            power=normalized_hardware.get('power'),
+            real_values=normalized_hardware.get('real_values', True),
+            url=normalized_hardware.get('url'),
+            description=normalized_hardware.get('description'),
             vendors=vendors,
             clouds=clouds,
-            source=hardware.get('source', 'manual')
+            source=normalized_hardware.get('source', 'manual')
         )
         
         return response
@@ -354,7 +363,8 @@ async def update_hardware(hardware_name: str, updates: HardwareUpdate):
         
         # Get updated hardware
         updated = hardware_manager.get_hardware_by_name(hardware_name)
-        return HardwareResponse(**updated)
+        normalized_updated = normalize_hardware_keys(updated)
+        return HardwareResponse(**normalized_updated)
         
     except HTTPException:
         raise
