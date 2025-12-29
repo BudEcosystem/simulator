@@ -53,35 +53,57 @@ class ModelMemoryCalculator:
         """Detect the model type from configuration."""
         # Check model_type field
         model_type = config.get('model_type', '').lower()
-        
-        # Multimodal models (check first as they often have nested configs)
-        if 'vision_config' in config or 'text_config' in config:
+
+        # Audio-LLM models (check first)
+        if 'audio_config' in config:
+            # Check for text_config OR top-level LLM parameters (Ultravox style)
+            if 'text_config' in config:
+                return 'audio-llm'
+            # Ultravox has hidden_size at top level instead of text_config
+            if 'hidden_size' in config and config.get('hidden_size', 0) > 2000:
+                return 'audio-llm'
+            return 'encoder-decoder'
+
+        # Pure audio model types
+        if model_type in ['whisper', 'speech_to_text', 'wav2vec2', 'hubert']:
+            return 'encoder-decoder'
+
+        # Audio-LLM model types
+        if model_type in ['qwen2_audio', 'ultravox', 'audio-flamingo']:
+            return 'audio-llm'
+
+        # Check for encoder-decoder by structure
+        if 'encoder_layers' in config and 'decoder_layers' in config:
+            return 'encoder-decoder'
+
+        # Multimodal models (vision + text)
+        if 'vision_config' in config and 'text_config' in config:
             return 'multimodal'
-        
+
         # Mamba/SSM models
         if model_type in ['mamba', 's4', 'ssm', 'state-space']:
             return 'state-space'
-        
+
         # Hybrid models
         if model_type in ['jamba', 'hybrid'] or 'mamba_config' in config:
             return 'hybrid'
-        
+
         # Text-to-speech
         if model_type in ['bark', 'vall-e', 'tortoise-tts', 'xtts']:
             return 'text-to-speech'
-        
+
         # Diffusion models
         if model_type in ['unet', 'diffusion', 'stable-diffusion', 'dit']:
             return 'diffusion'
-        
+
         # Check for encoder-decoder
         if config.get('is_encoder_decoder', False):
             return 'encoder-decoder'
-            
+
         # Check for hybrid architectures
         if 'mamba_config' in config or 'attention_layers' in config:
             return 'hybrid'
-            
+
         # Infer from config structure if model_type not specified
         if 'num_attention_heads' in config and 'hidden_size' in config and 'num_hidden_layers' in config:
             # It's likely a transformer model
@@ -91,7 +113,7 @@ class ModelMemoryCalculator:
                 return 'encoder-decoder'
             else:
                 return 'encoder-only'
-            
+
         return 'unknown'
     
     def detect_attention_type(self, config: Dict[str, Any]) -> Optional[str]:
@@ -130,12 +152,17 @@ class ModelMemoryCalculator:
         """Calculate model weight memory in GB and return (param_count, memory_gb)."""
         # Normalize config for consistent key handling
         config = ConfigNormalizer.normalize_config(config)
-        
+
         # Get parameter count
         param_count = config.get('num_parameters')
         if not param_count:
-            param_count = self.param_counter.count_parameters(config, respect_weight_tying=respect_weight_tying)
-        
+            # Check for encoder-decoder / audio models
+            model_type = self.detect_model_type(config)
+            if model_type in ['encoder-decoder', 'audio-llm']:
+                param_count = self._calculate_encoder_decoder_params(config)
+            else:
+                param_count = self.param_counter.count_parameters(config, respect_weight_tying=respect_weight_tying)
+
         # Check for mixed precision quantization
         if '_quantization' in config and config['_quantization'].get('has_mixed_precision'):
             weight_memory_gb = self._calculate_mixed_precision_memory(
@@ -145,8 +172,16 @@ class ModelMemoryCalculator:
             # Standard calculation
             bytes_per_param = self.PRECISION_BYTES.get(precision.lower(), 2)
             weight_memory_gb = (param_count * bytes_per_param) / 1e9  # Use decimal GB to match API
-        
+
         return param_count, weight_memory_gb
+
+    def _calculate_encoder_decoder_params(self, config: Dict[str, Any]) -> int:
+        """Calculate total parameters for encoder-decoder models."""
+        encoder_params = self.calculate_encoder_params(config)
+        decoder_params = self.calculate_decoder_params(config)
+        projector_params = self.calculate_projector_params(config)
+
+        return encoder_params + decoder_params + projector_params
     
     def _calculate_mixed_precision_memory(
         self, 
@@ -476,10 +511,386 @@ class ModelMemoryCalculator:
         layer_types = config.get('layer_types', [])
         if layer_types:
             return sum(1 for lt in layer_types if 'attention' in str(lt).lower())
-        
+
         # Use attention ratio if specified
         attention_ratio = config.get('attention_ratio', 0.5)
         return int(total_layers * attention_ratio)
+
+    # =========================================================================
+    # Encoder-Decoder / Audio Model Support
+    # =========================================================================
+
+    def _get_encoder_d_model(self, config: Dict[str, Any]) -> int:
+        """Get encoder hidden dimension."""
+        # Check for audio_config (Qwen2-Audio, Ultravox style)
+        if 'audio_config' in config:
+            audio_config = config['audio_config']
+            return audio_config.get('d_model', audio_config.get('hidden_size', 1280))
+        # Whisper-style config
+        return config.get('d_model', config.get('hidden_size', 1280))
+
+    def _get_decoder_d_model(self, config: Dict[str, Any]) -> int:
+        """Get decoder hidden dimension."""
+        # Check for text_config (Qwen2-Audio style)
+        if 'text_config' in config:
+            text_config = config['text_config']
+            # text_config may be incomplete, infer from intermediate_size if needed
+            if 'hidden_size' in text_config:
+                return text_config['hidden_size']
+            # Infer from intermediate_size (typically 4x or 2.67x hidden_size)
+            if 'intermediate_size' in text_config:
+                # Qwen2 uses ~2.75x ratio: 4096 * 2.6875 ≈ 11008
+                return int(text_config['intermediate_size'] / 2.6875)
+            return text_config.get('d_model', 4096)
+        # Ultravox style: audio_config + top-level LLM params
+        if 'audio_config' in config and 'hidden_size' in config:
+            return config['hidden_size']
+        # Whisper-style (shared d_model for encoder/decoder)
+        return config.get('d_model', config.get('hidden_size', 1280))
+
+    def _get_encoder_layers(self, config: Dict[str, Any]) -> int:
+        """Get number of encoder layers."""
+        if 'audio_config' in config:
+            return config['audio_config'].get('encoder_layers', 32)
+        return config.get('encoder_layers', 0)
+
+    def _get_decoder_layers(self, config: Dict[str, Any]) -> int:
+        """Get number of decoder layers."""
+        if 'text_config' in config:
+            text_cfg = config['text_config']
+            return text_cfg.get('num_hidden_layers', text_cfg.get('decoder_layers', 32))
+        # For encoder-decoder models (Whisper), prefer decoder_layers over num_hidden_layers
+        # num_hidden_layers in Whisper config refers to encoder, not decoder
+        if 'decoder_layers' in config:
+            return config['decoder_layers']
+        # For audio-LLM with top-level params (Ultravox), use num_hidden_layers
+        if 'audio_config' in config and 'hidden_size' in config:
+            return config.get('num_hidden_layers', 32)
+        return config.get('num_hidden_layers', 4)
+
+    def _get_num_attention_heads(self, config: Dict[str, Any]) -> int:
+        """Get number of attention heads for decoder."""
+        if 'text_config' in config:
+            text_cfg = config['text_config']
+            if 'num_attention_heads' in text_cfg:
+                return text_cfg['num_attention_heads']
+            # Infer from intermediate_size / hidden_size ratio for Qwen2 family
+            hidden_size = self._get_decoder_d_model(config)
+            # Qwen2-7B: 4096 hidden, 28 heads -> head_dim ~146 (non-standard)
+            # Common: head_dim = 128 -> num_heads = hidden_size / 128
+            return hidden_size // 128  # Default to 128 head_dim
+        # Ultravox style: audio_config + top-level LLM params
+        if 'audio_config' in config and 'num_attention_heads' in config:
+            return config['num_attention_heads']
+        return config.get('decoder_attention_heads', config.get('num_attention_heads', 20))
+
+    def _get_num_kv_heads(self, config: Dict[str, Any]) -> int:
+        """Get number of key-value heads for decoder (for GQA)."""
+        if 'text_config' in config:
+            text_cfg = config['text_config']
+            if 'num_key_value_heads' in text_cfg:
+                return text_cfg['num_key_value_heads']
+            # Qwen2 family typically uses GQA with 4 KV heads
+            if text_cfg.get('model_type', '').lower().startswith('qwen'):
+                return 4
+            num_heads = self._get_num_attention_heads(config)
+            return num_heads
+        # Ultravox style: audio_config + top-level LLM params
+        if 'audio_config' in config and 'num_attention_heads' in config:
+            num_heads = config['num_attention_heads']
+            return config.get('num_key_value_heads', num_heads)
+        num_heads = config.get('decoder_attention_heads', config.get('num_attention_heads', 20))
+        return config.get('num_key_value_heads', num_heads)
+
+    def _get_bytes_per_element(self, precision: str) -> float:
+        """Get bytes per element for given precision."""
+        return self.PRECISION_BYTES.get(precision.lower(), 2)
+
+    def calculate_encoder_params(self, config: Dict[str, Any]) -> int:
+        """
+        Calculate encoder-only parameters for encoder-decoder models.
+
+        For Whisper-like encoders:
+        - Self-attention: 4 × d_model² per layer (Q, K, V, O)
+        - FFN: 2 × d_model × ffn_dim per layer
+        - LayerNorm: 2 × d_model per layer
+        - Conv layers (audio): 2 conv1d layers
+        """
+        # Get encoder config
+        if 'audio_config' in config:
+            enc_config = config['audio_config']
+        else:
+            enc_config = config
+
+        d_model = enc_config.get('d_model', enc_config.get('hidden_size', 1280))
+        encoder_layers = enc_config.get('encoder_layers', 32)
+        encoder_ffn_dim = enc_config.get('encoder_ffn_dim', d_model * 4)
+        num_mel_bins = enc_config.get('num_mel_bins', 128)
+
+        params = 0
+
+        # Audio conv layers (Whisper-style: 2 Conv1D)
+        # Conv1: num_mel_bins -> d_model, kernel=3
+        # Conv2: d_model -> d_model, kernel=3
+        conv1_params = num_mel_bins * d_model * 3 + d_model  # weights + bias
+        conv2_params = d_model * d_model * 3 + d_model
+        params += conv1_params + conv2_params
+
+        # Position embedding
+        max_source_positions = enc_config.get('max_source_positions', 1500)
+        params += max_source_positions * d_model
+
+        # Self-attention per layer (Q, K, V, O)
+        params += encoder_layers * 4 * d_model * d_model
+
+        # FFN per layer (up + down)
+        params += encoder_layers * 2 * d_model * encoder_ffn_dim
+
+        # LayerNorm per layer (2 per layer: pre-attn, pre-ffn) + final
+        params += (2 * encoder_layers + 1) * d_model
+
+        return params
+
+    def calculate_decoder_params(self, config: Dict[str, Any]) -> int:
+        """
+        Calculate decoder-only parameters for encoder-decoder models.
+
+        Includes:
+        - Self-attention
+        - Cross-attention (for encoder-decoder)
+        - FFN
+        - LayerNorm
+        - Embeddings
+        """
+        # Use helper methods for consistent extraction
+        d_model = self._get_decoder_d_model(config)
+        decoder_layers = self._get_decoder_layers(config)
+        num_heads = self._get_num_attention_heads(config)
+        num_kv_heads = self._get_num_kv_heads(config)
+        head_dim = d_model // num_heads if num_heads > 0 else 64
+
+        # Determine if this is an audio-LLM (uses projector) vs encoder-decoder (uses cross-attention)
+        is_audio_llm = (
+            ('text_config' in config) or
+            ('audio_config' in config and 'hidden_size' in config and config['hidden_size'] > 2000)
+        )
+
+        # Get decoder-specific config for other params
+        if 'text_config' in config:
+            dec_config = config['text_config']
+        elif 'audio_config' in config and 'hidden_size' in config:
+            # Ultravox style: top-level params
+            dec_config = config
+        else:
+            dec_config = config
+
+        vocab_size = dec_config.get('vocab_size', config.get('vocab_size', 51866))
+        decoder_ffn_dim = dec_config.get('intermediate_size', dec_config.get('decoder_ffn_dim', d_model * 4))
+
+        params = 0
+
+        # Embeddings (input + output, often tied)
+        tie_embeddings = dec_config.get('tie_word_embeddings', True)
+        params += vocab_size * d_model
+        if not tie_embeddings:
+            params += vocab_size * d_model
+
+        # Position embeddings (if not RoPE)
+        max_positions = dec_config.get('max_position_embeddings', dec_config.get('max_target_positions', 448))
+        use_rope = dec_config.get('rope_theta', 0) > 0 or dec_config.get('rope_scaling') is not None
+        if not use_rope and max_positions > 0:
+            params += max_positions * d_model
+
+        # Self-attention per layer
+        # Q projection: d_model -> num_heads * head_dim
+        params += decoder_layers * d_model * (num_heads * head_dim)
+        # K, V projections: d_model -> num_kv_heads * head_dim (with GQA)
+        params += decoder_layers * 2 * d_model * (num_kv_heads * head_dim)
+        # O projection
+        params += decoder_layers * (num_heads * head_dim) * d_model
+
+        # Cross-attention per layer (if encoder-decoder, not audio-LLM)
+        # Audio-LLM models typically fuse via projector, not cross-attention
+        if not is_audio_llm and (config.get('is_encoder_decoder') or 'encoder_layers' in config):
+            encoder_d_model = self._get_encoder_d_model(config)
+            # Q from decoder, K/V from encoder
+            params += decoder_layers * d_model * d_model  # Q
+            params += decoder_layers * 2 * encoder_d_model * d_model  # K, V from encoder
+            params += decoder_layers * d_model * d_model  # O
+
+        # FFN per layer
+        # Check for SwiGLU
+        act_fn = dec_config.get('hidden_act', dec_config.get('activation_function', 'gelu')).lower()
+        if any(x in act_fn for x in ['swiglu', 'silu', 'swish']):
+            params += decoder_layers * 3 * d_model * decoder_ffn_dim
+        else:
+            params += decoder_layers * 2 * d_model * decoder_ffn_dim
+
+        # LayerNorm (3 per layer for encoder-decoder: self-attn, cross-attn, FFN; 2 for LLM)
+        norms_per_layer = 3 if not is_audio_llm else 2
+        params += (norms_per_layer * decoder_layers + 1) * d_model
+
+        return params
+
+    def calculate_projector_params(self, config: Dict[str, Any]) -> int:
+        """
+        Calculate projector parameters for audio-LLM models.
+
+        The projector maps audio encoder output to text decoder input space.
+        """
+        # Check if this is an audio-LLM model
+        if 'audio_config' not in config:
+            return 0
+        # Must have text_config OR top-level hidden_size (Ultravox style)
+        if 'text_config' not in config and 'hidden_size' not in config:
+            return 0
+
+        audio_d_model = self._get_encoder_d_model(config)
+        text_d_model = self._get_decoder_d_model(config)
+
+        # Base linear projection
+        params = audio_d_model * text_d_model
+
+        # Check for projector config (could be nested or at top level)
+        proj_config = config.get('projector_config', {})
+
+        # Stack factor - check both projector_config and top level
+        stack_factor = proj_config.get('stack_factor', config.get('stack_factor', 1))
+        if stack_factor > 1:
+            params = (audio_d_model * stack_factor) * text_d_model
+
+        # SwiGLU projector has 3x parameters - check both locations
+        projector_act = proj_config.get('projector_act', config.get('projector_act', '')).lower()
+        if projector_act == 'swiglu':
+            params *= 3
+
+        # Layer norm in projector - check both locations
+        if proj_config.get('projector_ln_mid', config.get('projector_ln_mid', False)):
+            params += text_d_model
+
+        return params
+
+    def calculate_encoder_kv_cache(
+        self,
+        config: Dict[str, Any],
+        batch_size: int,
+        precision: str = "fp16"
+    ) -> float:
+        """
+        Calculate encoder self-attention KV cache (STATIC after encoding).
+
+        This is computed once when processing audio input and reused
+        during all decoder steps.
+
+        Size: 2 × batch × encoder_layers × encoder_seq_len × d_model
+        """
+        encoder_d_model = self._get_encoder_d_model(config)
+        encoder_layers = self._get_encoder_layers(config)
+
+        # Get max source positions (audio sequence length)
+        if 'audio_config' in config:
+            max_source_positions = config['audio_config'].get('max_source_positions', 1500)
+        else:
+            max_source_positions = config.get('max_source_positions', 1500)
+
+        bytes_per_element = self._get_bytes_per_element(precision)
+
+        # 2 (K+V) × batch × layers × seq_len × d_model
+        elements = 2 * batch_size * encoder_layers * max_source_positions * encoder_d_model
+        return (elements * bytes_per_element) / 1e9
+
+    def calculate_decoder_kv_cache(
+        self,
+        config: Dict[str, Any],
+        batch_size: int,
+        seq_length: int,
+        precision: str = "fp16"
+    ) -> float:
+        """
+        Calculate decoder self-attention KV cache (GROWS during generation).
+
+        This grows by one position per generated token.
+        Supports GQA where num_kv_heads < num_attention_heads.
+
+        Size: 2 × batch × decoder_layers × seq_len × num_kv_heads × head_dim
+        """
+        decoder_d_model = self._get_decoder_d_model(config)
+        decoder_layers = self._get_decoder_layers(config)
+        num_heads = self._get_num_attention_heads(config)
+        num_kv_heads = self._get_num_kv_heads(config)
+        head_dim = decoder_d_model // num_heads
+
+        bytes_per_element = self._get_bytes_per_element(precision)
+
+        # With GQA: 2 × batch × layers × seq_len × num_kv_heads × head_dim
+        elements = 2 * batch_size * decoder_layers * seq_length * num_kv_heads * head_dim
+        return (elements * bytes_per_element) / 1e9
+
+    def calculate_cross_attention_kv_cache(
+        self,
+        config: Dict[str, Any],
+        batch_size: int,
+        encoder_seq_length: int,
+        precision: str = "fp16"
+    ) -> float:
+        """
+        Calculate cross-attention KV cache (STATIC, from encoder output).
+
+        This is the encoder output projected to K,V for each decoder layer.
+        It's computed once and reused for all decoder steps.
+
+        Size: 2 × batch × decoder_layers × encoder_seq_len × d_model
+        """
+        # Cross-attention uses encoder hidden size for K,V
+        encoder_d_model = self._get_encoder_d_model(config)
+        decoder_layers = self._get_decoder_layers(config)
+
+        bytes_per_element = self._get_bytes_per_element(precision)
+
+        # 2 × batch × decoder_layers × encoder_seq_len × encoder_d_model
+        elements = 2 * batch_size * decoder_layers * encoder_seq_length * encoder_d_model
+        return (elements * bytes_per_element) / 1e9
+
+    def calculate_audio_input_memory(
+        self,
+        num_mel_bins: int = 128,
+        audio_frames: int = 3000,
+        batch_size: int = 1,
+        precision: str = "fp32"
+    ) -> float:
+        """
+        Calculate memory for mel spectrogram input.
+
+        Whisper uses 128 mel bins × ~3000 frames for 30s audio.
+        """
+        bytes_per_element = self._get_bytes_per_element(precision)
+        elements = batch_size * num_mel_bins * audio_frames
+        return (elements * bytes_per_element) / 1e9
+
+    def calculate_audio_conv_memory(
+        self,
+        config: Dict[str, Any],
+        audio_frames: int,
+        batch_size: int,
+        precision: str = "fp16"
+    ) -> float:
+        """
+        Calculate memory for audio conv layer activations.
+
+        Whisper uses 2 Conv1D layers:
+        - Conv1: mel_bins -> d_model, stride=1
+        - Conv2: d_model -> d_model, stride=2
+        """
+        encoder_d_model = self._get_encoder_d_model(config)
+        bytes_per_element = self._get_bytes_per_element(precision)
+
+        # Conv1 output: batch × d_model × audio_frames
+        conv1_elements = batch_size * encoder_d_model * audio_frames
+        # Conv2 output: batch × d_model × (audio_frames // 2)
+        conv2_elements = batch_size * encoder_d_model * (audio_frames // 2)
+
+        total_elements = conv1_elements + conv2_elements
+        return (total_elements * bytes_per_element) / 1e9
     
     def calculate_activation_memory(
         self,
@@ -694,7 +1105,8 @@ class ModelMemoryCalculator:
         num_images: Optional[int] = None,
         image_resolution: int = 1024,
         lora_config: Optional[Any] = None,
-        respect_weight_tying: bool = True
+        respect_weight_tying: bool = True,
+        encoder_seq_length: Optional[int] = None
     ) -> MemoryReport:
         """
         Calculate total memory requirements for model inference.
@@ -702,7 +1114,7 @@ class ModelMemoryCalculator:
         Args:
             config: Model configuration dictionary
             batch_size: Batch size for inference
-            seq_length: Maximum sequence length (context + generation)
+            seq_length: Maximum sequence length (context + generation) or decoder output length
             precision: Model precision (fp32, fp16, bf16, int8, int4)
             tensor_parallel: Tensor parallelism degree
             framework_overhead: Multiplicative overhead for framework/kernel memory (default 1.2)
@@ -712,6 +1124,7 @@ class ModelMemoryCalculator:
             image_resolution: Image resolution for vision models
             lora_config: Optional LoRA configuration for adapter memory calculation
             respect_weight_tying: Whether to respect tie_word_embeddings config (default True)
+            encoder_seq_length: Encoder sequence length for encoder-decoder models (audio/speech)
 
         Returns:
             MemoryReport with detailed breakdown
@@ -719,19 +1132,46 @@ class ModelMemoryCalculator:
         # Detect model and attention types
         self.model_type = self.detect_model_type(config)
         self.attention_type = self.detect_attention_type(config)
-        
+
         # Calculate model weights
         param_count, weight_memory = self.calculate_model_weights(config, precision, respect_weight_tying)
-        
+
         # Divide weights by tensor parallelism
         weight_memory = weight_memory / tensor_parallel
-        
-        # Calculate KV cache
-        kv_cache = self.calculate_kv_cache(config, batch_size, seq_length, precision)
-        
+
+        # Calculate KV cache based on model type
+        encoder_kv_cache = 0.0
+        decoder_kv_cache = 0.0
+        cross_attn_kv_cache = 0.0
+
+        if self.model_type in ['encoder-decoder', 'audio-llm']:
+            # Get encoder sequence length (default from config or parameter)
+            enc_seq_len = encoder_seq_length
+            if enc_seq_len is None:
+                if 'audio_config' in config:
+                    enc_seq_len = config['audio_config'].get('max_source_positions', 1500)
+                else:
+                    enc_seq_len = config.get('max_source_positions', 1500)
+
+            # Encoder self-attention KV (static)
+            encoder_kv_cache = self.calculate_encoder_kv_cache(config, batch_size, precision)
+
+            # Decoder self-attention KV (grows with output)
+            decoder_kv_cache = self.calculate_decoder_kv_cache(config, batch_size, seq_length, precision)
+
+            # Cross-attention KV (static, based on encoder output)
+            cross_attn_kv_cache = self.calculate_cross_attention_kv_cache(
+                config, batch_size, enc_seq_len, precision
+            )
+
+            kv_cache = encoder_kv_cache + decoder_kv_cache + cross_attn_kv_cache
+        else:
+            # Standard decoder-only model
+            kv_cache = self.calculate_kv_cache(config, batch_size, seq_length, precision)
+
         # Divide KV cache by tensor parallelism (each device holds a slice)
         kv_cache = kv_cache / tensor_parallel
-        
+
         # Calculate activations
         activations = self.calculate_activation_memory(config, batch_size, seq_length, precision)
         
@@ -753,7 +1193,29 @@ class ModelMemoryCalculator:
             hidden_size = config.get('vision_config', {}).get('hidden_size', config.get('hidden_size', 768))
             bytes_per_value = self.PRECISION_BYTES.get(precision.lower(), 2)
             image_memory = (num_images * patches_per_image * hidden_size * bytes_per_value) / 1e9
-        
+
+        # Calculate audio input memory (for encoder-decoder/audio models)
+        audio_memory = 0.0
+        if self.model_type in ['encoder-decoder', 'audio-llm']:
+            # Get audio config
+            if 'audio_config' in config:
+                audio_config = config['audio_config']
+            else:
+                audio_config = config
+
+            num_mel_bins = audio_config.get('num_mel_bins', 128)
+            if num_mel_bins > 0:
+                # Approximate audio frames from encoder sequence length
+                enc_seq_len = encoder_seq_length or audio_config.get('max_source_positions', 1500)
+                audio_frames = enc_seq_len * 2  # Approximate: ~2 frames per position
+                audio_memory = self.calculate_audio_input_memory(
+                    num_mel_bins, audio_frames, batch_size, precision
+                )
+                # Add conv layer activations
+                audio_memory += self.calculate_audio_conv_memory(
+                    config, audio_frames, batch_size, precision
+                )
+
         # Extra work buffers (important for TTS, diffusion, etc.)
         extra_work_bytes = config.get('extra_work_bytes', 0)
         
@@ -777,9 +1239,10 @@ class ModelMemoryCalculator:
         state_bytes = state_memory * 1e9
         lora_bytes = lora_memory * 1e9
         image_bytes = image_memory * 1e9
-        
+        audio_bytes = audio_memory * 1e9
+
         # Apply framework overhead to runtime components (not weights)
-        runtime_bytes = (kv_bytes + activation_bytes + state_bytes + image_bytes)
+        runtime_bytes = (kv_bytes + activation_bytes + state_bytes + image_bytes + audio_bytes)
         runtime_bytes_with_overhead = runtime_bytes * framework_overhead + extra_work_bytes
         
         # Add gradients if training
