@@ -1,6 +1,6 @@
 # LLM Performance Simulator
 
-A comprehensive ecosystem for simulating and analyzing Large Language Model (LLM) performance across diverse hardware platforms. This repository provides accurate memory estimation, performance modeling, and **training simulation** for LLM deployment and fine-tuning.
+A comprehensive ecosystem for simulating and analyzing Large Language Model (LLM) performance across diverse hardware platforms. This repository provides accurate memory estimation, **inference simulation**, performance modeling, and **training simulation** for LLM deployment and fine-tuning.
 
 ## Repository Structure
 
@@ -8,26 +8,136 @@ A comprehensive ecosystem for simulating and analyzing Large Language Model (LLM
 simulator/
 ├── BudSimulator/              # Full-stack web application for LLM analysis
 │   ├── frontend/              # React TypeScript UI
-│   ├── apis/                  # FastAPI backend with training APIs
+│   │   └── src/
+│   │       ├── components/    # Reusable UI components
+│   │       ├── services/      # API service layer
+│   │       └── types/         # TypeScript interfaces
+│   ├── apis/                  # FastAPI backend
+│   │   └── routers/           # API route handlers
+│   │       ├── models.py      # Model validation, memory calculation
+│   │       ├── hardware.py    # Hardware management, recommendations
+│   │       ├── usecases.py    # Usecase management, SLO validation
+│   │       └── training.py    # Training simulation APIs
 │   └── Website/               # Streamlit dashboard
+│       └── pages/             # Comparison tools
 │
 └── llm-memory-calculator/     # Core LLM performance modeling engine
     └── src/                   # Python package with GenZ framework
         ├── genz/              # Roofline-based performance modeling
         │   ├── LLM_inference/ # Prefill/decode simulation
-        │   └── LLM_training/  # Training simulation (NEW)
-        └── training/          # Training memory & cluster optimization (NEW)
+        │   └── LLM_training/  # Training simulation
+        └── training/          # Training memory & cluster optimization
 ```
 
-## What's New
+## Features Overview
 
-### Training Simulation (Major Feature)
-Complete training performance simulation using GenZ roofline analysis:
-- **Forward/backward pass timing** with hardware-calibrated models
-- **Communication overhead** (AllReduce, ReduceScatter, AllGather)
-- **Memory estimation** with ZeRO stages 0-3
-- **Optimal parallelization** strategy discovery (TP, PP, DP, EP)
-- **Training time & cost estimation** for any dataset size
+| Feature | Inference | Training |
+|---------|-----------|----------|
+| Memory Estimation | ✅ Weights + KV Cache + Activations | ✅ + Gradients + Optimizer States |
+| Performance Modeling | ✅ Prefill, Decode, Speculative | ✅ Forward, Backward, Communication |
+| Parallelism | ✅ TP, PP, EP | ✅ TP, PP, DP, EP, ZeRO 0-3 |
+| Hardware Support | ✅ 57 profiles (GPU/TPU/ASIC/CPU) | ✅ Same |
+| Cost Estimation | ✅ Per-request | ✅ Per-training-run |
+| SLO Validation | ✅ TTFT, E2E, Throughput | ✅ Time to completion |
+
+---
+
+## Inference Simulation
+
+### Core Inference Functions
+
+```python
+from llm_memory_calculator.genz.LLM_inference import (
+    prefill_moddeling,      # First token latency simulation
+    decode_moddeling,       # Token generation simulation
+    spec_prefill_modeling,  # Speculative decoding
+)
+from llm_memory_calculator.genz.LLM_inference.best_parallelization import (
+    get_best_parallization_strategy,    # Find optimal TP/PP
+    get_pareto_optimal_performance,     # Pareto frontier analysis
+)
+from llm_memory_calculator.genz.LLM_inference.platform_size import (
+    get_minimum_system_size,            # Minimum nodes required
+)
+```
+
+### Prefill Phase Simulation
+```python
+from llm_memory_calculator.genz.LLM_inference import prefill_moddeling
+
+result = prefill_moddeling(
+    model='meta-llama/Llama-3.1-8B',
+    batch_size=4,
+    input_tokens=2048,
+    system_name='H100_GPU',
+    bits='bf16',
+    tensor_parallel=1,
+    pipeline_parallel=1,
+)
+
+print(f"TTFT: {result['Latency(ms)']:.1f} ms")
+print(f"Throughput: {result['Throughput_tokens_per_sec']:.0f} tokens/s")
+```
+
+### Decode Phase Simulation
+```python
+from llm_memory_calculator.genz.LLM_inference import decode_moddeling
+
+result = decode_moddeling(
+    model='meta-llama/Llama-3.1-8B',
+    batch_size=4,
+    input_tokens=2048,
+    output_tokens=256,
+    Bb=4,                    # Beam size
+    system_name='H100_GPU',
+    bits='bf16',
+    tensor_parallel=1,
+)
+
+print(f"Decode Latency: {result['Latency(ms)']:.1f} ms")
+print(f"Output Throughput: {result['Throughput_tokens_per_sec']:.0f} tokens/s")
+```
+
+### Find Optimal Parallelization for Inference
+```python
+from llm_memory_calculator.genz.LLM_inference.best_parallelization import (
+    get_best_parallization_strategy
+)
+
+df = get_best_parallization_strategy(
+    stage='decode',
+    model='meta-llama/Llama-3.1-70B',
+    total_nodes=8,
+    batch_size=16,
+    beam_size=4,
+    input_tokens=2048,
+    output_tokens=256,
+    system_name='H100_GPU',
+    bits='bf16',
+)
+print(df)  # DataFrame with TP, PP, Latency, Throughput
+```
+
+### Memory Calculation
+```python
+from llm_memory_calculator import calculate_memory
+
+memory = calculate_memory(
+    model="meta-llama/Llama-3.1-8B",  # HuggingFace ID or config dict
+    batch_size=4,
+    sequence_length=2048,
+    precision="bf16",
+)
+
+print(f"Model Weights: {memory.weights_memory_gb:.2f} GB")
+print(f"KV Cache: {memory.kv_cache_gb:.2f} GB")
+print(f"Activations: {memory.activations_gb:.2f} GB")
+print(f"Total: {memory.total_memory_gb:.2f} GB")
+```
+
+---
+
+## Training Simulation
 
 ### Supported Training Stages
 | Stage | Description | Models Required |
@@ -52,104 +162,18 @@ Complete training performance simulation using GenZ roofline analysis:
 | **PiSSA** | ~0.5% | ~70% |
 | **Freeze** | Variable | Variable |
 
-### Hardware Support (57 Profiles)
-- **NVIDIA GPUs**: A100, H100, GH200, B100, GB200, V100, RTX 4090/4080/3090, L40S
-- **AMD GPUs**: MI300X, MI325X
-- **Google TPUs**: TPUv4, TPUv5e, TPUv5p, TPUv6
-- **Intel**: Gaudi3, MAX 1550, MAX 1100, Arc A770
-- **Specialty**: Cerebras WSE-2/3, Groq LPU, SambaNova SN40L, AWS Trainium/Inferentia
-- **CPUs**: Intel Xeon (Sapphire/Emerald Rapids), AMD EPYC (Milan/Genoa/Bergamo), ARM (Grace, Graviton)
-
-## Quick Start
-
-### Option 1: Full Stack Application
-```bash
-cd BudSimulator
-python setup.py  # Automated setup
-# Server runs at http://localhost:8000
-# API docs at http://localhost:8000/docs
-```
-
-### Option 2: Python Package Only
-```bash
-cd llm-memory-calculator
-pip install -e .
-```
-
-## Training Simulation API
-
-### REST API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/simulator/hardware` | GET | List all 57 hardware profiles |
-| `/api/simulator/estimate-training` | POST | Estimate training memory requirements |
-| `/api/simulator/recommend-cluster` | POST | Get cluster recommendations (cost/speed optimized) |
-| `/api/simulator/check-fit` | POST | Check if training fits on specific hardware |
-| `/api/simulator/estimate-time` | POST | Estimate training time and cost |
-
-### API Examples
-
-#### List Available Hardware
-```bash
-curl http://localhost:8000/api/simulator/hardware
-```
-
-#### Estimate Training Memory
-```bash
-curl -X POST http://localhost:8000/api/simulator/estimate-training \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "meta-llama/Llama-3.1-8B",
-    "method": "lora",
-    "batch_size": 4,
-    "seq_length": 2048,
-    "precision": "bf16",
-    "optimizer": "adamw",
-    "lora_rank": 16
-  }'
-```
-
-#### Get Cluster Recommendations
-```bash
-curl -X POST http://localhost:8000/api/simulator/recommend-cluster \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "meta-llama/Llama-3.1-8B",
-    "method": "full",
-    "prefer_cost": true,
-    "max_gpus": 32
-  }'
-```
-
-#### Estimate Training Time
-```bash
-curl -X POST http://localhost:8000/api/simulator/estimate-time \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "meta-llama/Llama-3.1-8B",
-    "hardware": "H100_GPU",
-    "num_gpus": 8,
-    "dataset_tokens": 1000000000,
-    "batch_size": 4,
-    "seq_length": 2048
-  }'
-```
-
-## Python SDK Usage
-
 ### Training Memory Estimation
 ```python
 from llm_memory_calculator.training import TrainingMemoryCalculator
 
 calculator = TrainingMemoryCalculator()
 estimate = calculator.calculate_training_memory(
-    config="meta-llama/Llama-3.1-8B",  # HuggingFace model ID or config dict
+    config="meta-llama/Llama-3.1-8B",
     batch_size=4,
     seq_length=2048,
     precision="bf16",
     method="lora",           # full, lora, qlora, freeze, dora, pissa
-    optimizer="adamw",       # adamw, adamw_8bit, sgd, galore, apollo, adafactor
+    optimizer="adamw",
     gradient_checkpointing=True,
     lora_rank=16,
 )
@@ -168,14 +192,14 @@ from llm_memory_calculator.genz.LLM_training import training_modeling
 result = training_modeling(
     model='meta-llama/Llama-3.1-8B',
     training_stage='sft',      # sft, dpo, ppo, grpo, kto, orpo, simpo, rm
-    method='lora',             # full, lora, qlora
+    method='lora',
     batch_size=4,
     seq_length=2048,
     system_name='H100_GPU',
     num_gpus=8,
     tensor_parallel=1,
     data_parallel=8,
-    zero_stage=0,
+    zero_stage=2,
     optimizer='adamw',
     lora_rank=16,
 )
@@ -184,10 +208,9 @@ print(f"Step Time: {result.step_time_ms:.1f} ms")
 print(f"Throughput: {result.tokens_per_second:.0f} tokens/s")
 print(f"Memory/GPU: {result.memory_per_gpu_gb:.1f} GB")
 print(f"MFU: {result.model_flops_utilization:.1%}")
-print(f"Forward: {result.forward_pct:.1%}, Backward: {result.backward_pct:.1%}")
 ```
 
-### Find Optimal Parallelization
+### Find Optimal Training Parallelization
 ```python
 from llm_memory_calculator.genz.LLM_training import get_best_training_parallelization
 
@@ -203,93 +226,202 @@ print(f"Optimal: TP={config.tensor_parallel}, PP={config.pipeline_parallel}, DP=
 print(f"Throughput: {result.tokens_per_second:.0f} tokens/s")
 ```
 
-### Cluster Recommendations
-```python
-from llm_memory_calculator.training import TrainingClusterSelector
+---
 
-selector = TrainingClusterSelector()
-recommendations = selector.recommend_clusters(
-    training_estimate=estimate.to_dict(),
-    prefer_cost=True,          # Sort by cost (True) or speed (False)
-    max_budget_per_hour=50.0,  # Optional budget constraint
-    max_gpus=32,
-)
+## Hardware Support (57 Profiles)
 
-for rec in recommendations[:5]:
-    print(f"{rec.hardware_name}: {rec.total_gpus} GPUs, ${rec.estimated_cost_per_hour:.2f}/hr")
+### GPUs
+- **NVIDIA**: A100 (40GB, 80GB), H100, H200, GH200, B100, GB200, V100, RTX 4090/4080/3090, L40S, A10G
+- **AMD**: MI300X, MI325X, MI210, MI100
+
+### TPUs & ASICs
+- **Google TPUs**: TPUv4, TPUv5e, TPUv5p, TPUv6
+- **Intel**: Gaudi3, MAX 1550, MAX 1100
+- **AWS**: Trainium, Inferentia
+- **Specialty**: Cerebras WSE-2/3, Groq LPU, SambaNova SN40L
+
+### CPUs
+- **Intel Xeon**: Sapphire Rapids, Emerald Rapids, Granite Rapids
+- **AMD EPYC**: Milan, Genoa, Bergamo
+- **ARM**: NVIDIA Grace, AWS Graviton3/4
+
+---
+
+## REST API Endpoints
+
+### Inference APIs (`/api/models`, `/api/hardware`, `/api/usecases`)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/models/validate` | POST | Validate model URL/ID from HuggingFace |
+| `/api/models/{model_id}/config` | GET | Get model architecture details |
+| `/api/models/calculate` | POST | Calculate inference memory requirements |
+| `/api/models/compare` | POST | Compare multiple models' memory |
+| `/api/models/analyze` | POST | Analyze efficiency across sequence lengths |
+| `/api/models/list` | GET | List all available models |
+| `/api/models/popular` | GET | Get popular models with logos |
+| `/api/models/filter` | GET | Advanced filtering (author, type, params) |
+| `/api/hardware` | GET | List hardware with filters |
+| `/api/hardware/filter` | GET | Advanced hardware filtering |
+| `/api/hardware/recommend` | POST | Get hardware recommendations |
+| `/api/usecases` | GET/POST | Usecase CRUD operations |
+| `/api/usecases/{id}` | GET/PUT/DELETE | Single usecase operations |
+| `/api/usecases/{id}/recommendations` | POST | Model/hardware recommendations for usecase |
+| `/api/usecases/{id}/optimize-hardware` | POST | GenZ-based optimization sweep |
+
+### Training APIs (`/api/simulator`)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/simulator/hardware` | GET | List all 57 hardware profiles |
+| `/api/simulator/estimate-training` | POST | Estimate training memory |
+| `/api/simulator/recommend-cluster` | POST | Cluster recommendations (cost/speed) |
+| `/api/simulator/check-fit` | POST | Check if training fits on hardware |
+| `/api/simulator/estimate-time` | POST | Estimate training time and cost |
+
+### API Examples
+
+#### List Hardware with Filters
+```bash
+curl "http://localhost:8000/api/hardware?type=gpu&min_memory=40"
 ```
 
-### Training Time Estimation
-```python
-from llm_memory_calculator.training import estimate_training_time
-
-estimate = estimate_training_time(
-    model='meta-llama/Llama-3.1-8B',
-    dataset_tokens=1_000_000_000,
-    num_epochs=1.0,
-    batch_size=4,
-    seq_length=2048,
-    system_name='H100_GPU',
-    num_gpus=8,
-)
-
-print(f"Total Steps: {estimate.total_steps:,}")
-print(f"Training Time: {estimate.total_hours:.1f} hours")
-print(f"Estimated Cost: ${estimate.total_cost:.2f}")
+#### Calculate Inference Memory
+```bash
+curl -X POST http://localhost:8000/api/models/calculate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "meta-llama/Llama-3.1-8B",
+    "batch_size": 8,
+    "seq_length": 4096,
+    "precision": "bf16"
+  }'
 ```
 
-### Auto-Configuration
-```python
-from llm_memory_calculator.training import auto_configure_training
-
-plan = auto_configure_training(
-    model='meta-llama/Llama-3.1-8B',
-    dataset_tokens=1_000_000_000,
-    training_stage='sft',
-    optimization_goal='minimize_cost',  # or 'minimize_time', 'balanced'
-)
-
-print(plan.summary())
-config = plan.to_llamafactory_config()  # Export to LlamaFactory format
+#### Get Usecase Recommendations
+```bash
+curl -X POST "http://localhost:8000/api/usecases/chatbot-1/recommendations" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "batch_sizes": [1, 4, 8],
+    "model_categories": ["8B", "70B"]
+  }'
 ```
 
-### LlamaFactory Config Generation
-```python
-from llm_memory_calculator.training import (
-    build_llamafactory_config,
-    build_deepspeed_config,
-    generate_launch_command,
-)
-
-# Generate LlamaFactory YAML config
-llamafactory_config = build_llamafactory_config(
-    model_name='meta-llama/Llama-3.1-8B',
-    training_stage='sft',
-    method='lora',
-    dataset_name='your_dataset',
-    output_dir='./output',
-    num_epochs=3,
-    batch_size=4,
-    learning_rate=2e-5,
-    lora_rank=16,
-)
-
-# Generate DeepSpeed config
-deepspeed_config = build_deepspeed_config(
-    zero_stage=2,
-    batch_size=4,
-    gradient_accumulation=4,
-)
-
-# Generate launch command
-cmd = generate_launch_command(
-    num_gpus=8,
-    config_file='train_config.yaml',
-)
-print(cmd)  # llamafactory-cli train train_config.yaml
+#### Estimate Training Memory
+```bash
+curl -X POST http://localhost:8000/api/simulator/estimate-training \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "meta-llama/Llama-3.1-8B",
+    "method": "lora",
+    "batch_size": 4,
+    "seq_length": 2048,
+    "optimizer": "adamw",
+    "lora_rank": 16
+  }'
 ```
+
+#### Get Cluster Recommendations
+```bash
+curl -X POST http://localhost:8000/api/simulator/recommend-cluster \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "meta-llama/Llama-3.1-8B",
+    "method": "full",
+    "prefer_cost": true,
+    "max_gpus": 32
+  }'
+```
+
+---
+
+## Web Interfaces
+
+### React Frontend (Port 3000)
+
+A modern TypeScript React application for interactive LLM analysis.
+
+#### Features
+- **Hardware Browser**: Searchable catalog with advanced filtering
+  - Filter by type, manufacturer, memory, FLOPS, bandwidth
+  - Sort by performance, cost, efficiency
+  - Detailed specs with tooltips
+  - Vendor and cloud pricing information
+  - Model compatibility matrix
+
+- **Usecase Management**: Configure inference workloads
+  - Industry and tag-based filtering
+  - Latency profiles: real-time, interactive, responsive, batch
+  - SLO configuration (TTFT, E2E, inter-token latency)
+  - Token range configuration
+
+- **AI Optimization**: GenZ-powered recommendations
+  - Batch size and model size selection
+  - Optimization modes: Cost, Speed, Balanced
+  - SLO compliance indicators
+  - Deployment guidance
+
+- **Model Details**: Architecture analysis
+  - Parameters, attention type, model type
+  - Memory requirements at various sequence lengths
+  - Links to HuggingFace
+
+#### Running the Frontend
+```bash
+cd BudSimulator/frontend
+npm install
+npm start  # Opens at http://localhost:3000
+```
+
+### Streamlit Dashboard (Port 8501)
+
+An interactive analytical dashboard for performance visualization.
+
+#### Pages
+
+1. **Home**: GenZ framework overview and documentation
+   - Supported models and hardware
+   - Quantization options (FP32, BF16, INT8, INT4, INT2)
+   - Parallelism strategies visualization
+
+2. **Usecase Comparison**: Compare performance across use cases
+   - Pre-configured use cases: Q&A, Summarization, Chatbots, Code Gen
+   - Scatter plots: TTFT vs Throughput with performance zones
+   - Bar charts: Latency, Throughput, Total Response Time
+
+3. **Model Comparison**: Compare models at varying batch sizes
+   - Multi-model selection
+   - Batch sweep visualization (1-256)
+   - Prefill/Decode phase analysis
+   - Demand curve generation
+
+4. **Platform Comparison**: Compare hardware accelerators
+   - Multi-platform selection with custom specs
+   - Hardware datasheet links
+   - Performance quadrant analysis
+   - Memory requirement checks
+
+#### Running the Streamlit App
+```bash
+cd BudSimulator/Website
+streamlit run Home.py  # Opens at http://localhost:8501
+```
+
+---
 
 ## Key Functions Reference
+
+### Inference Module (`llm_memory_calculator.genz.LLM_inference`)
+
+| Function | Description |
+|----------|-------------|
+| `prefill_moddeling()` | Simulate first token latency (TTFT) |
+| `decode_moddeling()` | Simulate token generation with KV cache growth |
+| `spec_prefill_modeling()` | Speculative decoding simulation |
+| `get_best_parallization_strategy()` | Find optimal TP/PP for inference |
+| `get_pareto_optimal_performance()` | Pareto frontier analysis |
+| `get_minimum_system_size()` | Calculate minimum nodes required |
 
 ### Training Module (`llm_memory_calculator.training`)
 
@@ -301,8 +433,6 @@ print(cmd)  # llamafactory-cli train train_config.yaml
 | `auto_configure_training()` | Auto-configure optimal training setup |
 | `build_llamafactory_config()` | Generate LlamaFactory YAML config |
 | `build_deepspeed_config()` | Generate DeepSpeed JSON config |
-| `get_gpu_spec()` | Get detailed GPU specifications |
-| `calculate_tco()` | Calculate total cost of ownership |
 
 ### GenZ Training Module (`llm_memory_calculator.genz.LLM_training`)
 
@@ -313,19 +443,27 @@ print(cmd)  # llamafactory-cli train train_config.yaml
 | `get_best_training_parallelization()` | Find optimal parallelism strategy |
 | `estimate_dpo_training()` | DPO-specific estimation |
 | `estimate_ppo_training()` | PPO-specific estimation |
-| `estimate_grpo_training()` | GRPO-specific estimation |
 | `validate_against_benchmark()` | Validate against published benchmarks |
 
-### Inference Module (`llm_memory_calculator.genz`)
+### Memory Module (`llm_memory_calculator`)
 
 | Function | Description |
 |----------|-------------|
-| `prefill_moddeling()` | Prefill phase simulation |
-| `decode_moddeling()` | Decode phase simulation |
-| `calculate_memory()` | Memory requirements calculation |
-| `get_best_parallelization_strategy()` | Optimal parallelism for inference |
+| `calculate_memory()` | Calculate inference memory requirements |
+| `estimate_max_batch_size()` | Max batch for given GPU memory |
+| `estimate_max_sequence_length()` | Max sequence for given constraints |
+| `analyze_attention_efficiency()` | Analyze attention type efficiency |
+
+---
 
 ## Sample Results
+
+### LLaMA 3.1-8B Inference (H100, batch=4, seq=2048)
+
+| Phase | Latency | Throughput | Memory |
+|-------|---------|------------|--------|
+| Prefill | 45 ms | 181,689 tok/s | 17.2 GB |
+| Decode (256 tokens) | 312 ms | 3,282 tok/s | 18.1 GB |
 
 ### LLaMA 3.1-8B Training Memory (batch=4, seq=2048)
 
@@ -345,7 +483,65 @@ print(cmd)  # llamafactory-cli train train_config.yaml
 |--------|------|------|------------|-----|
 | Full | 6.8h | $259 | 40,824 tok/s | 24.9% |
 | LoRA | 6.8h | $259 | 40,824 tok/s | 24.9% |
-| QLoRA | 6.8h | $259 | 40,824 tok/s | 24.9% |
+
+---
+
+## Quick Start
+
+### Option 1: Full Stack Application
+```bash
+cd BudSimulator
+python setup.py  # Automated setup
+
+# Server runs at http://localhost:8000
+# API docs at http://localhost:8000/docs
+# Frontend at http://localhost:3000 (after npm start)
+```
+
+### Option 2: Python Package Only
+```bash
+cd llm-memory-calculator
+pip install -e .
+```
+
+### Option 3: Streamlit Dashboard
+```bash
+cd BudSimulator/Website
+pip install -r requirements.txt
+streamlit run Home.py
+```
+
+---
+
+## Running Tests
+
+```bash
+# Test inference
+cd llm-memory-calculator
+pytest tests/ -v -k "inference"
+
+# Test training module
+pytest tests/training/ -v
+
+# Test full API
+cd BudSimulator
+python comprehensive_api_test.py
+
+# Quick validation
+python -c "
+from llm_memory_calculator.genz.LLM_inference import prefill_moddeling
+result = prefill_moddeling(
+    model='meta-llama/Llama-3.1-8B',
+    batch_size=4,
+    input_tokens=2048,
+    system_name='H100_GPU',
+    bits='bf16',
+)
+print(f'TTFT: {result[\"Latency(ms)\"]:.1f}ms')
+"
+```
+
+---
 
 ## Accuracy & Validation
 
@@ -360,73 +556,58 @@ Typical accuracy:
 - Throughput estimation: ±15%
 - Training time: ±20%
 
+---
+
 ## Architecture
 
 ```
-┌─────────────────┐     ┌──────────────────────────────────────┐
-│   React Web UI  │────▶│         FastAPI Backend              │
-└─────────────────┘     │  /api/simulator/* (Training APIs)    │
-                        │  /api/models/*    (Model APIs)       │
-                        │  /api/hardware/*  (Hardware APIs)    │
-                        └──────────────────────────────────────┘
-                                         │
-                                         ▼
-                        ┌──────────────────────────────────────┐
-                        │      llm-memory-calculator           │
-                        │                                      │
-                        │  ┌────────────┐  ┌────────────────┐ │
-                        │  │   GenZ     │  │   Training     │ │
-                        │  │  Engine    │  │   Module       │ │
-                        │  │            │  │                │ │
-                        │  │ - Roofline │  │ - Memory Calc  │ │
-                        │  │ - Prefill  │  │ - Cluster Sel  │ │
-                        │  │ - Decode   │  │ - Time Est     │ │
-                        │  │ - Training │  │ - Config Gen   │ │
-                        │  └────────────┘  └────────────────┘ │
-                        │                                      │
-                        │  ┌──────────────────────────────────┐│
-                        │  │     Hardware Configs (57)        ││
-                        │  │  GPUs, TPUs, ASICs, CPUs         ││
-                        │  └──────────────────────────────────┘│
-                        └──────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         User Interfaces                                  │
+├─────────────────┬─────────────────────────┬─────────────────────────────┤
+│  React Web UI   │   Streamlit Dashboard   │      REST API Clients       │
+│  (Port 3000)    │     (Port 8501)         │     (curl, Python, etc)     │
+└────────┬────────┴───────────┬─────────────┴──────────────┬──────────────┘
+         │                    │                            │
+         ▼                    ▼                            ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      FastAPI Backend (Port 8000)                        │
+├─────────────────┬─────────────────┬─────────────────┬───────────────────┤
+│  /api/models    │  /api/hardware  │  /api/usecases  │  /api/simulator   │
+│  - validate     │  - list         │  - CRUD         │  - estimate       │
+│  - config       │  - filter       │  - recommend    │  - recommend      │
+│  - calculate    │  - recommend    │  - optimize     │  - check-fit      │
+│  - compare      │                 │                 │  - estimate-time  │
+└────────┬────────┴────────┬────────┴────────┬────────┴────────┬──────────┘
+         │                 │                 │                 │
+         ▼                 ▼                 ▼                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     llm-memory-calculator Package                       │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                      GenZ Engine                                 │   │
+│  ├────────────────────────┬────────────────────────────────────────┤   │
+│  │    LLM_inference/      │           LLM_training/                │   │
+│  │    - prefill_moddeling │           - training_modeling          │   │
+│  │    - decode_moddeling  │           - get_best_parallelization   │   │
+│  │    - spec_decode       │           - training_stages            │   │
+│  │    - best_parallelism  │           - validation                 │   │
+│  └────────────────────────┴────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                    Training Module                               │   │
+│  │    - TrainingMemoryCalculator    - auto_configure_training      │   │
+│  │    - TrainingClusterSelector     - build_llamafactory_config    │   │
+│  │    - estimate_training_time      - build_deepspeed_config       │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │              Hardware Configs (57 Profiles)                      │   │
+│  │         GPUs | TPUs | ASICs | Accelerators | CPUs               │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Running Tests
-
-```bash
-# Test training module
-cd llm-memory-calculator
-pytest tests/training/ -v
-
-# Test full API
-cd BudSimulator
-python comprehensive_api_test.py
-
-# Quick validation
-python -c "
-from llm_memory_calculator.genz.LLM_training import training_modeling
-result = training_modeling(
-    model='meta-llama/Llama-3.1-8B',
-    training_stage='sft',
-    batch_size=4,
-    seq_length=2048,
-    system_name='H100_GPU',
-    num_gpus=8,
-)
-print(f'Step: {result.step_time_ms:.1f}ms, MFU: {result.model_flops_utilization:.1%}')
-"
-```
-
-## Docker Deployment
-
-```bash
-# Build and run
-docker build -t budsimulator .
-docker run -p 8000:8000 -p 3000:3000 budsimulator
-
-# Or use docker-compose
-docker-compose up --build
-```
+---
 
 ## Contributing
 
