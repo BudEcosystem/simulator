@@ -24,6 +24,19 @@ class OpType(IntEnum):
     GEMM_LORA_B = 20
     ADD = 21
 
+    # Training-specific op types (backward pass)
+    BACKWARD_GEMM = 30
+    BACKWARD_FC = 31
+    BACKWARD_LOGIT = 32
+    BACKWARD_ATTEND = 33
+    OPTIMIZER_UPDATE = 34
+    GRADIENT_ACCUMULATE = 35
+    GRADIENT_ALLREDUCE = 36
+    GRADIENT_REDUCE_SCATTER = 37
+    WEIGHT_ALLGATHER = 38
+    BACKWARD_NORM = 39       # Phase 7: LayerNorm/RMSNorm backward
+    BACKWARD_EMBEDDING = 40  # Phase 7: Embedding backward
+
 
 class ResidencyInfo(IntEnum):
     All_offchip = 0

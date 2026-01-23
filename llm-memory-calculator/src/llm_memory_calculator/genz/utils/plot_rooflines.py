@@ -3,7 +3,14 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from llm_memory_calculator.genz.unit import Unit
-from IPython.display import display
+
+# IPython is optional - only needed for interactive display
+try:
+    from IPython.display import display
+except ImportError:
+    def display(x):
+        """Fallback display function when IPython is not available."""
+        print(x)
 
 unit = Unit()
 

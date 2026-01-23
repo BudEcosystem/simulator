@@ -55,9 +55,12 @@ def prefill_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     #################################################################################
     is_offloaded = False
     per_chip_memory = system.get_off_chip_mem_size()   ## MB
-    if  per_chip_memory  < total_memory_req/pipeline_parallel:
+    # Phase 6 Fix: Divide by both PP and EP for MoE models
+    # Each GPU only holds 1/PP of layers and 1/EP of experts
+    memory_parallelism = pipeline_parallel * expert_parallel
+    if  per_chip_memory  < total_memory_req/memory_parallelism:
         if model_offload:
-            system = get_offload_system(system=system, total_memory_req = total_memory_req/pipeline_parallel , debug=debug)
+            system = get_offload_system(system=system, total_memory_req = total_memory_req/memory_parallelism , debug=debug)
             warnings.warn(f"Some Parameter offloaded, effective Memory BW:{unit.raw_to_unit(system.offchip_mem_bw, type='BW')} ")
             is_offloaded = True
         elif model_profilling:

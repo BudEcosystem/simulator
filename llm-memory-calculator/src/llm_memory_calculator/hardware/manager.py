@@ -49,15 +49,17 @@ class HardwareManager:
         
         # Cache for merged hardware data
         self._hardware_cache = {}
+        self._alias_map = {}  # alias (lowercase) -> canonical hardware name
         self._cache_valid = False
-        
+
         # Cache for device matching (cluster_info_hash -> hardware_config)
         self._match_cache = {}
     
     def _refresh_cache(self):
         """Refresh the hardware cache by merging static configs and database."""
         self._hardware_cache = {}
-        
+        self._alias_map = {}
+
         # First, add all static configs
         for hw_name, hw_config in self._static_configs.items():
             config = hw_config.copy()
@@ -65,7 +67,11 @@ class HardwareManager:
             if 'name' not in config:
                 config['name'] = hw_name
             self._hardware_cache[hw_name] = config
-        
+
+            # Build alias map (case-insensitive)
+            for alias in config.get('aliases', []):
+                self._alias_map[alias.lower()] = hw_name
+
         # Then, overlay database hardware if available
         if self._db:
             try:
@@ -74,25 +80,38 @@ class HardwareManager:
                     hw_name = hw['name']
                     # Database hardware overwrites static if names match
                     self._hardware_cache[hw_name] = hw
+                    # Add aliases from database hardware
+                    for alias in hw.get('aliases', []):
+                        self._alias_map[alias.lower()] = hw_name
             except Exception as e:
                 logger.error(f"Failed to load hardware from database: {e}")
-        
+
         self._cache_valid = True
     
     def get_hardware_config(self, name: str) -> Union[Dict[str, Any], bool]:
-        """Get specific hardware configuration by name.
-        
+        """Get specific hardware configuration by name or alias.
+
         Args:
-            name: Hardware name (case-sensitive).
-            
+            name: Hardware name or alias (case-sensitive for exact match,
+                  case-insensitive for alias lookup).
+
         Returns:
             Hardware dictionary if found, False otherwise (for GenZ compatibility).
         """
         if not self._cache_valid:
             self._refresh_cache()
-        
+
+        # Direct lookup first (case-sensitive)
         config = self._hardware_cache.get(name)
-        return config if config else False
+        if config:
+            return config
+
+        # Try alias lookup (case-insensitive)
+        canonical_name = self._alias_map.get(name.lower())
+        if canonical_name:
+            return self._hardware_cache.get(canonical_name)
+
+        return False
     
     def get_all_hardware(self) -> List[Dict[str, Any]]:
         """Get all hardware from both static configs and database.

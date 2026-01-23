@@ -104,10 +104,10 @@ class BudHardware(HardwareManager):
                 )
                 
                 if not cursor.fetchone():
-                    # Add minimal record for system_config hardware
+                    # Add minimal record for system_config hardware (ignore if exists)
                     cursor.execute("""
-                        INSERT INTO hardware (
-                            name, type, flops, memory_size, memory_bw, 
+                        INSERT OR IGNORE INTO hardware (
+                            name, type, flops, memory_size, memory_bw,
                             icn, icn_ll, real_values, source
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'system_config')
                     """, (

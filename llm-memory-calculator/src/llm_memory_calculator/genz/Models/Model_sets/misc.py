@@ -137,6 +137,29 @@ deep_seek_moe_16b_config = ModelConfig(model='deepseek-ai/deepseek-moe-16b-base'
     vocab_size=102400, max_model_len=4*1024,  hidden_act="silu",
 )
 
+# DeepSeek V2 236B MoE - Actual architecture (NOT the 16B proxy)
+# https://arxiv.org/abs/2405.04434
+# 236B total params, 21B active per forward pass
+# Uses MLA (Multi-head Latent Attention) for compressed KV
+DeepseekV2_moe_236b_config = ModelConfig(model='deepseek-ai/DeepSeek-V2',
+    hidden_size=5120, num_attention_heads=128,
+    num_key_value_heads=128,  # MLA: same as heads (uses latent compression)
+    num_ffi=2,
+    intermediate_size=12288,  # Shared expert intermediate
+    num_decoder_layers=60,
+    expert_top_k=6, num_experts=160,
+    moe_intermediate_size=1536,  # Per-expert intermediate
+    n_shared_experts=2, shared_expert_intermediate_size=12288,
+    first_k_dense_replace=1, ffn_implementation='deepseek',
+    vocab_size=102400, max_model_len=128*1024, hidden_act="silu",
+    # MLA-specific attributes (for config-based detection)
+    kv_lora_rank=512,           # Compressed KV dimension
+    q_lora_rank=1536,           # Query low-rank dimension
+    qk_rope_head_dim=64,        # RoPE dimension
+    qk_nope_head_dim=128,       # Non-RoPE dimension
+    v_head_dim=128,             # Value head dimension
+)
+
 DeepseekV3_moe_671b_config = ModelConfig(model='deepseek-ai/DeepSeek-V3-Base',
     hidden_size=7168, num_attention_heads=128,
     num_key_value_heads=2, num_ffi = 2,
@@ -146,10 +169,47 @@ DeepseekV3_moe_671b_config = ModelConfig(model='deepseek-ai/DeepSeek-V3-Base',
     n_shared_experts=1, shared_expert_intermediate_size=18432,
     first_k_dense_replace = 3,     ffn_implementation='deepseek',
     vocab_size=129280, max_model_len=160*1024,  hidden_act="silu",
+    # MLA-specific attributes (for config-based detection)
+    kv_lora_rank=512,           # Compressed KV dimension
+    q_lora_rank=1536,           # Query low-rank dimension
+    qk_rope_head_dim=64,        # RoPE dimension
+    qk_nope_head_dim=128,       # Non-RoPE dimension
+    v_head_dim=128,             # Value head dimension
 )
 ## TODO: account for shared expert, shared account is regular MLP which is always added.
 ## This has a special case where the first layer is dense and the rest are MoE with shared experts.
 ## MLP in this case is n_shared_experts*shared_expert_intermediate_size + Activated*moe_intermediate_size
+
+# DeepSeek 67B Dense Model (NOT MoE)
+# https://huggingface.co/deepseek-ai/deepseek-llm-67b-base
+deepseek_67b_config = ModelConfig(model='deepseek-ai/deepseek-llm-67b-base',
+    hidden_size=8192,
+    num_attention_heads=64,
+    num_key_value_heads=8,
+    num_ffi=2,
+    intermediate_size=22016,
+    num_decoder_layers=95,
+    vocab_size=102400,
+    max_model_len=4096,
+    hidden_act="silu",
+)
+
+
+# BLOOM Models (Phase 6 addition for Jean Zay cluster benchmark)
+# https://huggingface.co/bigscience/bloom/blob/main/config.json
+bloom_176b_config = ModelConfig(model='bigscience/bloom-176b',
+    hidden_size=14336, num_attention_heads=112,
+    num_key_value_heads=112, num_ffi=1,  # MHA
+    intermediate_size=4*14336, num_decoder_layers=70,
+    vocab_size=250880, max_model_len=2048, hidden_act="gelu",
+)
+
+bloom_7b_config = ModelConfig(model='bigscience/bloom-7b1',
+    hidden_size=4096, num_attention_heads=32,
+    num_key_value_heads=32, num_ffi=1,
+    intermediate_size=4*4096, num_decoder_layers=30,
+    vocab_size=250880, max_model_len=2048, hidden_act="gelu",
+)
 
 
 misc_models = get_all_model_configs(__name__)
@@ -171,4 +231,30 @@ misc_models.update({
     'tiiuae/falcon-7b-instruct': falcon7b_config,
     'tiiuae/falcon-mamba-7b': falcon_mamba_7b_config,
     'xai-org/grok-1': grok_1_config,
+    # DeepSeek 67B Dense aliases
+    'DeepSeek-67B': deepseek_67b_config,
+    'deepseek-67b': deepseek_67b_config,
+    'deepseek-llm-67b-base': deepseek_67b_config,
+    'deepseek-ai/deepseek-llm-67b-base': deepseek_67b_config,
+    # BLOOM models (Phase 6 for Jean Zay benchmark)
+    'bigscience/bloom-176b': bloom_176b_config,
+    'bigscience/bloom': bloom_176b_config,
+    'bloom-176b': bloom_176b_config,
+    'bloom_176b': bloom_176b_config,
+    'bigscience/bloom-7b1': bloom_7b_config,
+    # DeepSeek V3 MoE aliases (Phase 6)
+    'deepseek-ai/DeepSeek-V3-Base': DeepseekV3_moe_671b_config,
+    'DeepSeek-V3-Base': DeepseekV3_moe_671b_config,
+    'deepseek-v3': DeepseekV3_moe_671b_config,
+    'deepseek_v3': DeepseekV3_moe_671b_config,
+    # DeepSeek MoE 16B aliases
+    'deepseek-ai/deepseek-moe-16b-base': deep_seek_moe_16b_config,
+    'deepseek-moe-16b-base': deep_seek_moe_16b_config,
+    'deepseek-moe-16b': deep_seek_moe_16b_config,
+    # DeepSeek V2 236B MoE aliases (Phase 6: use proper V2 config)
+    'deepseek-ai/DeepSeek-V2': DeepseekV2_moe_236b_config,
+    'deepseek-v2-moe': DeepseekV2_moe_236b_config,
+    'DeepSeek-V2': DeepseekV2_moe_236b_config,
+    'deepseek_v2': DeepseekV2_moe_236b_config,
+    'deepseek-v2': DeepseekV2_moe_236b_config,
 })

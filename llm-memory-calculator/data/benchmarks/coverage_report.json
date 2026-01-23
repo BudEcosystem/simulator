@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "description": "Coverage Matrix Report",
+  "generated_at": "2026-01-23",
+  "targets": {
+    "total_benchmarks": 250,
+    "high_confidence_rate": 0.8,
+    "min_per_training_type": 5,
+    "min_per_hardware": 10,
+    "min_per_model_size": 10,
+    "min_per_optimizer": 10
+  },
+  "current_state": {
+    "total_benchmarks": 0,
+    "high_confidence_count": 0,
+    "high_confidence_rate": 0.0,
+    "overall_coverage": 0.0
+  },
+  "coverage_by_dimension": {
+    "training_type": {},
+    "quantization": {},
+    "gpu_scale": {},
+    "hardware": {},
+    "model_size": {},
+    "optimizer": {}
+  },
+  "gaps": [],
+  "collection_priorities": [],
+  "success_metrics": {
+    "overall_mre_target": 0.15,
+    "mre_multimodel_target": 0.20,
+    "pearson_correlation_target": 0.85
+  }
+}

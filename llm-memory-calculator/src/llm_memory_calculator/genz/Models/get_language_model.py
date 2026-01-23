@@ -3,6 +3,7 @@ import os
 from math import ceil
 import numpy as np
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Union
 from llm_memory_calculator.genz.parallelism import ParallelismConfig
 
@@ -26,36 +27,117 @@ except ImportError:
     from lora.injection import inject_lora_ops
 
 def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> ModelConfig:
-    """Convert HuggingFace config to ModelConfig format."""
+    """Convert HuggingFace config to ModelConfig format.
+
+    Supports:
+    - Standard transformer models (LLaMA, GPT, etc.)
+    - MoE models (Mixtral, DeepSeek, Qwen MoE, etc.)
+    - Mamba/SSM models (Mamba, Jamba, etc.)
+    - Hybrid models (Jamba with Mamba + MoE)
+    """
     # Extract architecture type
     architectures = hf_config.get('architectures', [])
-    is_mamba = any('mamba' in arch.lower() for arch in architectures)
-    
+    model_type = hf_config.get('model_type', '').lower()
+    is_mamba = any('mamba' in arch.lower() for arch in architectures) or 'mamba' in model_type
+    is_jamba = 'jamba' in model_type or any('jamba' in arch.lower() for arch in architectures)
+
     # Extract key parameters with proper defaults
     vocab_size = hf_config.get('vocab_size', 32000)
     hidden_size = hf_config.get('hidden_size', 4096)
     num_layers = hf_config.get('num_hidden_layers', 32)
     num_heads = hf_config.get('num_attention_heads', 32)
-    
+
     # Handle different naming conventions for intermediate size
-    intermediate_size = hf_config.get('intermediate_size', 
-                                     hf_config.get('ffn_dim', 
+    intermediate_size = hf_config.get('intermediate_size',
+                                     hf_config.get('ffn_dim',
                                      hf_config.get('mlp_dim', 11008)))
-    
+
     # Handle KV heads
     num_kv_heads = hf_config.get('num_key_value_heads', num_heads)
-    
+
     # Handle head dim
-    head_dim = hf_config.get('head_dim', hidden_size // num_heads)
-    
+    head_dim = hf_config.get('head_dim', hidden_size // num_heads if num_heads > 0 else 128)
+
     # Get max position embeddings
-    max_seq_len = hf_config.get('max_position_embeddings', 
+    max_seq_len = hf_config.get('max_position_embeddings',
                                hf_config.get('max_sequence_length', 128000))
-    
-    # Determine layer type
-    layer_type = [("Mamba", num_layers)] if is_mamba else [("MHA-global", num_layers)]
-    
-    # Create ModelConfig
+
+    # ============================================================
+    # MoE (Mixture of Experts) Attribute Extraction
+    # ============================================================
+    # Different HF configs use different naming conventions
+    num_experts = hf_config.get('num_local_experts',  # Mixtral, Qwen
+                               hf_config.get('num_experts',  # DeepSeek
+                               hf_config.get('n_routed_experts',  # DeepSeek V2/V3
+                               1)))
+
+    expert_top_k = hf_config.get('num_experts_per_tok',  # Mixtral, DeepSeek
+                                hf_config.get('num_experts_per_token',
+                                hf_config.get('expert_top_k',
+                                hf_config.get('top_k', 1 if num_experts <= 1 else 2))))
+
+    # MoE intermediate size (per expert)
+    moe_intermediate_size = hf_config.get('moe_intermediate_size',  # DeepSeek V2/V3
+                                         hf_config.get('expert_intermediate_size',
+                                         intermediate_size))
+
+    # Shared experts (DeepSeek V2/V3 specific)
+    n_shared_experts = hf_config.get('n_shared_experts',
+                                    hf_config.get('num_shared_experts', 0))
+
+    shared_expert_intermediate_size = hf_config.get('shared_expert_intermediate_size',
+                                                   intermediate_size if n_shared_experts > 0 else None)
+
+    # MoE layer frequency (which layers have MoE)
+    moe_layer_freq = hf_config.get('moe_layer_freq',
+                                  hf_config.get('expert_layer_freq'))
+
+    # First K dense layers before MoE kicks in (DeepSeek)
+    first_k_dense_replace = hf_config.get('first_k_dense_replace',
+                                         hf_config.get('num_dense_layers'))
+
+    # Expert layer period and offset
+    expert_layer_period = hf_config.get('expert_layer_period', 1 if num_experts > 1 else 1)
+    expert_layer_offset = hf_config.get('expert_layer_offset', 0)
+
+    # ============================================================
+    # Mamba/SSM Attribute Extraction
+    # ============================================================
+    mamba_d_state = hf_config.get('mamba_d_state',
+                                 hf_config.get('state_size',
+                                 hf_config.get('ssm_state_size', None)))
+
+    mamba_d_conv = hf_config.get('mamba_d_conv',
+                                hf_config.get('conv_kernel',
+                                hf_config.get('ssm_conv_kernel', None)))
+
+    mamba_expand = hf_config.get('mamba_expand',
+                                hf_config.get('expand',
+                                hf_config.get('ssm_expand', None)))
+
+    mamba_dt_rank = hf_config.get('mamba_dt_rank',
+                                 hf_config.get('time_step_rank', 'auto'))
+
+    mamba_conv_bias = hf_config.get('mamba_conv_bias',
+                                   hf_config.get('use_conv_bias', True))
+
+    mamba_proj_bias = hf_config.get('mamba_proj_bias',
+                                   hf_config.get('use_bias', False))
+
+    # Jamba-specific: attention layer period
+    attn_layer_period = hf_config.get('attn_layer_period', 1)
+    attn_layer_offset = hf_config.get('attn_layer_offset', 0)
+    mamba_layer_period = hf_config.get('mamba_layer_period', 1)
+
+    # ============================================================
+    # FFN Implementation Selection
+    # ============================================================
+    # DeepSeek models use a special FFN implementation with shared experts
+    ffn_implementation = "default"
+    if n_shared_experts > 0 or 'deepseek' in model_name.lower():
+        ffn_implementation = "deepseek"
+
+    # Create ModelConfig with all extracted attributes
     return ModelConfig(
         model=model_name,
         vocab_size=vocab_size,
@@ -66,25 +148,63 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         num_attention_heads=num_heads,
         head_dim=head_dim,
         num_key_value_heads=num_kv_heads,
-        layer_type=layer_type,
-        unique_layers=1,
-        hidden_act=hf_config.get('hidden_act', 'silu'),
-        attention_bias=hf_config.get('attention_bias', False),
-        tie_word_embeddings=hf_config.get('tie_word_embeddings', False),
-        rope_theta=hf_config.get('rope_theta', 10000.0),
-        sliding_window=hf_config.get('sliding_window', None)
+        hidden_act=hf_config.get('hidden_act', hf_config.get('activation_function', 'silu')),
+        sliding_window=hf_config.get('sliding_window', None),
+        ffn_implementation=ffn_implementation,
+        # MoE parameters
+        moe_layer_freq=moe_layer_freq,
+        num_experts=num_experts,
+        expert_top_k=expert_top_k,
+        moe_intermediate_size=moe_intermediate_size,
+        n_shared_experts=n_shared_experts,
+        shared_expert_intermediate_size=shared_expert_intermediate_size,
+        first_k_dense_replace=first_k_dense_replace,
+        # Mamba parameters
+        mamba_d_state=mamba_d_state,
+        mamba_d_conv=mamba_d_conv,
+        mamba_expand=mamba_expand,
+        mamba_dt_rank=mamba_dt_rank,
+        mamba_conv_bias=mamba_conv_bias,
+        mamba_proj_bias=mamba_proj_bias,
+        # Multi-type model parameters
+        mamba_layer_period=mamba_layer_period,
+        attn_layer_period=attn_layer_period,
+        attn_layer_offset=attn_layer_offset,
+        expert_layer_period=expert_layer_period,
+        expert_layer_offset=expert_layer_offset,
     )
 
-def get_configs(name) -> ModelConfig:
+def get_configs(name: Union[str, dict, 'ModelConfig', SimpleNamespace]) -> ModelConfig:
+    """Get model configuration from various input types.
+
+    Args:
+        name: Can be one of:
+            - str: Model name (from MODEL_DICT or HuggingFace model ID)
+            - dict: HuggingFace config dict (e.g., from config.json)
+            - ModelConfig: Already a ModelConfig object (passed through)
+            - SimpleNamespace: Config object with attributes (converted to dict then ModelConfig)
+
+    Returns:
+        ModelConfig object with the model's configuration
+    """
     if isinstance(name, ModelConfig):
         return name
+    elif isinstance(name, SimpleNamespace):
+        # Convert SimpleNamespace back to dict, then to ModelConfig
+        config_dict = vars(name)
+        model_name = getattr(name, 'name', getattr(name, 'model', getattr(name, '_name_or_path', 'custom')))
+        return huggingface_config_to_model_config(config_dict, model_name)
+    elif isinstance(name, dict):
+        # Handle HuggingFace config dicts
+        model_name = name.get('name', name.get('model', name.get('_name_or_path', 'custom')))
+        return huggingface_config_to_model_config(name, model_name)
     elif isinstance(name, str):
         # First try the static MODEL_DICT with lowercase
         name_lower = name.lower()
         if model := MODEL_DICT.get_model(name_lower):
             model_config = model
             return model_config
-        
+
         # If not found in MODEL_DICT, try loading from HuggingFace
         try:
             loader = HuggingFaceConfigLoader()

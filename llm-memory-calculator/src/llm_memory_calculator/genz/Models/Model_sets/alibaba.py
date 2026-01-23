@@ -151,3 +151,20 @@ qwen2_72b_config = ModelConfig(model='Qwen/Qwen2.5-72B',
 
 alibaba_models = get_all_model_configs(__name__)
 
+# Phase 6: Add aliases for benchmark compatibility
+alibaba_models.update({
+    # Qwen 1 aliases (without Qwen/ prefix)
+    'Qwen-72B': qwen1_72b_config,
+    'qwen-72b': qwen1_72b_config,
+    'Qwen-14B': qwen1_14b_config,
+    'qwen-14b': qwen1_14b_config,
+    'Qwen-7B': qwen1_7b_config,
+    'qwen-7b': qwen1_7b_config,
+    # Qwen 1.5 aliases
+    'Qwen1.5-72B': qwen1_5_72b_config,
+    'qwen1.5-72b': qwen1_5_72b_config,
+    # Qwen 2/2.5 aliases
+    'Qwen2.5-72B': qwen2_72b_config,
+    'qwen2.5-72b': qwen2_72b_config,
+})
+

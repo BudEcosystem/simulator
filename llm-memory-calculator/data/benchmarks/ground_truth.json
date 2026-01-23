@@ -1,0 +1,37 @@
+{
+  "version": "1.0.0",
+  "description": "Ground Truth Benchmark Database for Training Simulation Validation",
+  "created_at": "2026-01-23",
+  "updated_at": "2026-01-23",
+  "schema_version": "1.0",
+  "metadata": {
+    "total_benchmarks": 0,
+    "high_confidence_count": 0,
+    "sources": {
+      "arxiv": 0,
+      "mlperf": 0,
+      "github": 0,
+      "huggingface": 0,
+      "community": 0
+    },
+    "training_types": {
+      "pretraining": 0,
+      "sft": 0,
+      "lora": 0,
+      "qlora": 0,
+      "dpo": 0,
+      "ppo": 0,
+      "grpo": 0,
+      "orpo": 0
+    },
+    "hardware_types": {
+      "h100_sxm": 0,
+      "a100_80gb": 0,
+      "a100_40gb": 0,
+      "mi300x": 0,
+      "tpu_v4": 0,
+      "tpu_v5p": 0
+    }
+  },
+  "benchmarks": []
+}

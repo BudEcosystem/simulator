@@ -122,7 +122,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'aliases': ['GH200', 'GRACE HOPPER', 'GH200-144GB', 'NVIDIA GH200']
     },
     'B100': {
-        'Flops': 3500,
+        'Flops': 1750,  # BF16 TFLOPS (3500 FP8). B100 GPU: ~1.75 PFLOPS BF16
         'Memory_size': 192,
         'Memory_BW': 8000,
         'ICN': 900,
@@ -139,7 +139,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'memory_type': 'HBM3e'
     },
     'GB200': {
-        'Flops': 4500,
+        'Flops': 2250,  # BF16 TFLOPS (4500 FP8). B200 GPU: ~2.25 PFLOPS BF16
         'Memory_size': 192,
         'Memory_BW': 8000,
         'ICN': 900,
@@ -175,54 +175,140 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'aliases': ['L40S', 'L40S-48GB', 'NVIDIA L40S', 'NVIDIA-L40S', 'L40S 48GB']
     },
 
+    # NVIDIA Consumer GPUs (Ada Lovelace)
+    'RTX4090_GPU': {
+        'name': 'RTX4090_GPU',
+        'Flops': 330,  # FP16 Tensor TFLOPS (82.6 FP32 TFLOPS)
+        'Memory_size': 24,
+        'Memory_BW': 1008,  # 21 Gbps × 384-bit
+        'ICN': 64,  # PCIe 4.0 x16 (no NVLink)
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'ADA_LOVELACE',
+        'generation': 'Consumer GPU',
+        'compute_capability': '8.9',
+        'release_year': 2022,
+        'tensor_cores': 'gen4',
+        'rt_cores': 'gen3',
+        'memory_type': 'GDDR6X',
+        'pci_ids': ['2684', '2717'],  # Standard and variants
+        'tdp_watts': 450,
+        'aliases': ['RTX4090', 'RTX 4090', 'rtx_4090', 'NVIDIA RTX 4090', 'GeForce RTX 4090']
+    },
+    'RTX4080_GPU': {
+        'name': 'RTX4080_GPU',
+        'Flops': 242,  # FP16 Tensor TFLOPS
+        'Memory_size': 16,
+        'Memory_BW': 717,  # 22.4 Gbps × 256-bit
+        'ICN': 64,  # PCIe 4.0 x16
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'ADA_LOVELACE',
+        'generation': 'Consumer GPU',
+        'compute_capability': '8.9',
+        'release_year': 2022,
+        'tensor_cores': 'gen4',
+        'rt_cores': 'gen3',
+        'memory_type': 'GDDR6X',
+        'pci_ids': ['2704'],
+        'tdp_watts': 320,
+        'aliases': ['RTX4080', 'RTX 4080', 'rtx_4080', 'NVIDIA RTX 4080', 'GeForce RTX 4080']
+    },
+    'RTX3090_GPU': {
+        'name': 'RTX3090_GPU',
+        'Flops': 142,  # FP16 Tensor TFLOPS (35.6 FP32)
+        'Memory_size': 24,
+        'Memory_BW': 936,  # 19.5 Gbps × 384-bit
+        'ICN': 64,  # PCIe 4.0 x16 (NVLink available on some models)
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'AMPERE',
+        'generation': 'Consumer GPU',
+        'compute_capability': '8.6',
+        'release_year': 2020,
+        'tensor_cores': 'gen3',
+        'rt_cores': 'gen2',
+        'memory_type': 'GDDR6X',
+        'pci_ids': ['2204', '2208'],  # Standard and Ti
+        'tdp_watts': 350,
+        'aliases': ['RTX3090', 'RTX 3090', 'rtx_3090', 'NVIDIA RTX 3090', 'GeForce RTX 3090', 'RTX3090Ti']
+    },
+
     # Google TPUs
+    # TPU interconnect is hierarchical:
+    # - ICI (Inter-Chip Interconnect): High-bandwidth, low-latency within pod/slice
+    # - DCN (Data Center Network): Lower-bandwidth, higher-latency across pods
+    # ICN value represents effective ICI bandwidth per chip
+    # Reference: https://cloud.google.com/tpu/docs/system-architecture-tpu-vm
     'TPUv6': {
         'Flops': 926,
         'Memory_size': 32,
         'Memory_BW': 1640,
-        'ICN': 100,
+        'ICN': 200,  # Estimated ICI bandwidth (GB/s) per chip
+        'ICI_bandwidth': 200,  # ICI: ~200 GB/s per chip
+        'DCN_bandwidth': 50,   # DCN: ~50 GB/s cross-pod
+        'ICI_latency': 3e-6,   # ICI latency: ~3µs
+        'DCN_latency': 200e-6, # DCN latency: ~200µs
         'real_values': True,
         'type': 'asic',
         'manufacturer': 'Google',
         'architecture': 'TPU_V6',
-        'generation': 'Tensor Processing Unit v6',
+        'generation': 'Tensor Processing Unit v6 (Trillium)',
         'release_year': 2024,
         'tensor_cores': 'custom_matrix_units',
-        'memory_type': 'HBM'
+        'memory_type': 'HBM',
+        'aliases': ['TPU_v6', 'TPU v6', 'tpu-v6', 'Google TPU v6', 'Trillium']
     },
     'TPUv5e': {
         'Flops': 197,
         'Memory_size': 16,
         'Memory_BW': 820,
-        'ICN': 50,
+        'ICN': 100,  # ICI bandwidth (GB/s) per chip
+        'ICI_bandwidth': 100,  # ICI: ~100 GB/s per chip
+        'DCN_bandwidth': 25,   # DCN: ~25 GB/s cross-pod
+        'ICI_latency': 5e-6,   # ICI latency: ~5µs
+        'DCN_latency': 300e-6, # DCN latency: ~300µs
         'real_values': True,
         'type': 'asic',
         'manufacturer': 'Google',
         'architecture': 'TPU_V5E',
-        'generation': 'Tensor Processing Unit v5e',
+        'generation': 'Tensor Processing Unit v5e (cost-optimized)',
         'release_year': 2023,
         'tensor_cores': 'custom_matrix_units',
-        'memory_type': 'HBM'
+        'memory_type': 'HBM',
+        'aliases': ['TPU_v5e', 'TPU v5e', 'tpu-v5e', 'Google TPU v5e']
     },
     'TPUv5p': {
         'Flops': 459,
         'Memory_size': 95,
         'Memory_BW': 2765,
-        'ICN': 450,
+        'ICN': 150,  # ICI bandwidth (GB/s) per chip - higher than v5e
+        'ICI_bandwidth': 150,  # ICI: ~150 GB/s per chip
+        'DCN_bandwidth': 50,   # DCN: ~50 GB/s cross-pod
+        'ICI_latency': 4e-6,   # ICI latency: ~4µs
+        'DCN_latency': 250e-6, # DCN latency: ~250µs
         'real_values': True,
         'type': 'asic',
         'manufacturer': 'Google',
         'architecture': 'TPU_V5P',
-        'generation': 'Tensor Processing Unit v5p',
+        'generation': 'Tensor Processing Unit v5p (performance-optimized)',
         'release_year': 2023,
         'tensor_cores': 'custom_matrix_units',
-        'memory_type': 'HBM'
+        'memory_type': 'HBM',
+        'aliases': ['TPU_v5p', 'TPU v5p', 'tpu-v5p', 'Google TPU v5p']
     },
     'TPUv4': {
         'Flops': 275,
         'Memory_size': 32,
         'Memory_BW': 1228,
-        'ICN': 24,
+        'ICN': 100,  # ICI bandwidth (GB/s) per chip - was 24, severely underspecified
+        'ICI_bandwidth': 100,  # ICI: ~100 GB/s per chip (4.8 Tb/s total / 6 links / 8 bits)
+        'DCN_bandwidth': 25,   # DCN: ~25 GB/s cross-pod (InfiniBand-class)
+        'ICI_latency': 5e-6,   # ICI latency: ~5µs (very low)
+        'DCN_latency': 300e-6, # DCN latency: ~300µs (cross-datacenter)
         'real_values': True,
         'type': 'asic',
         'manufacturer': 'Google',
@@ -230,7 +316,8 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'generation': 'Tensor Processing Unit v4',
         'release_year': 2021,
         'tensor_cores': 'custom_matrix_units',
-        'memory_type': 'HBM'
+        'memory_type': 'HBM',
+        'aliases': ['TPU_v4', 'TPU v4', 'tpu-v4', 'Google TPU v4']
     },
     
     # AMD GPUs

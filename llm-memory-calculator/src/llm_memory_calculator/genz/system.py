@@ -3,8 +3,70 @@ import math
 from llm_memory_calculator.genz.unit import Unit
 import json
 class System(object):
-    compute_multiplier = {'int8': 0.5, 'bf16': 1, 'f32': 2, 'int4': 0.25, 'int2':0.125, 'fp8': 0.5,  'fp6':0.5, 'fp4': 0.25}
-    mem_multiplier = {'int8': 1, 'bf16': 2, 'f32': 4, 'int4':0.5, 'int2':0.25, 'fp8':1,  'fp6':0.75, 'fp4':0.5}
+    # Extended precision support with comprehensive data types
+    compute_multiplier = {
+        # Integer quantized types
+        'int2': 0.125,
+        'int4': 0.25,
+        'int8': 0.5,
+
+        # Floating point quantized types
+        'fp4': 0.25,
+        'nf4': 0.25,      # Normalized float 4-bit (QLoRA)
+        'fp6': 0.5,
+        'fp8': 0.5,
+        'fp8_e4m3': 0.5,  # E4M3 format (for forward)
+        'fp8_e5m2': 0.5,  # E5M2 format (for backward)
+
+        # Standard precision
+        'fp16': 1,
+        'bf16': 1,
+        'tf32': 1,        # TensorFloat-32 (A100+)
+        'f32': 2,
+        'fp32': 2,
+
+        # Mixed precision configurations
+        'mixed_bf16': 1,     # Compute in bf16, master weights in fp32
+        'mixed_fp16': 1,     # Compute in fp16, master weights in fp32
+        'mixed_fp8': 0.5,    # FP8 forward, BF16 backward
+        'mixed_fp8_bf16': 0.5,  # FP8 compute, BF16 master weights
+
+        # Training-specific mixed precision
+        'amp_bf16': 1,       # Automatic mixed precision with bf16
+        'amp_fp16': 1,       # Automatic mixed precision with fp16
+    }
+
+    mem_multiplier = {
+        # Integer quantized types
+        'int2': 0.25,
+        'int4': 0.5,
+        'int8': 1,
+
+        # Floating point quantized types
+        'fp4': 0.5,
+        'nf4': 0.5,       # Normalized float 4-bit (QLoRA)
+        'fp6': 0.75,
+        'fp8': 1,
+        'fp8_e4m3': 1,
+        'fp8_e5m2': 1,
+
+        # Standard precision
+        'fp16': 2,
+        'bf16': 2,
+        'tf32': 4,        # TF32 uses FP32 memory
+        'f32': 4,
+        'fp32': 4,
+
+        # Mixed precision configurations
+        'mixed_bf16': 2,     # Weights stored in bf16
+        'mixed_fp16': 2,     # Weights stored in fp16
+        'mixed_fp8': 1,      # Weights stored in fp8
+        'mixed_fp8_bf16': 1, # Forward weights in fp8
+
+        # Training-specific mixed precision
+        'amp_bf16': 2,
+        'amp_fp16': 2,
+    }
     def __init__(self, unit=None,
                 flops=123, mxu_shape=None,
                 onchip_mem_bw=18000, on_chip_mem_size=float('Inf'),

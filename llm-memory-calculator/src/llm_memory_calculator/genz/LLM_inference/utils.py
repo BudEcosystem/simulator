@@ -5,6 +5,7 @@ import warnings
 from llm_memory_calculator.genz.system import System
 import pandas as pd
 from llm_memory_calculator.systems.system_configs import system_configs
+from llm_memory_calculator.hardware import get_hardware_config
 
 OFFLOAD_BW = 128
 
@@ -36,13 +37,46 @@ class RuntimeBreakdown():
         return vars(self)
 
 class ModdelingOutput(dict):
-    Latency: float = 0
-    Throughput: float = 0
-    Runtime_breakdown: Optional[RuntimeBreakdown] = None
-    is_offload: Optional[bool] = False
-    model_df: Optional[pd.DataFrame] = None
-    summary_table: Optional[pd.DataFrame] = None
-    tokens_generated: Optional[int] = 0
+    """Output container for inference modeling results.
+
+    Stores modeling results as both dict items and instance attributes
+    for flexible access patterns.
+    """
+
+    def __init__(self,
+                 Latency: float = 0,
+                 Throughput: float = 0,
+                 Throughput_tokens_per_sec: float = 0,
+                 Runtime_breakdown: Optional[RuntimeBreakdown] = None,
+                 is_offload: Optional[bool] = False,
+                 model_df: Optional[pd.DataFrame] = None,
+                 summary_table: Optional[pd.DataFrame] = None,
+                 tokens_generated: Optional[int] = 0,
+                 **kwargs):
+        # Initialize dict with all values
+        super().__init__(
+            Latency=Latency,
+            Throughput=Throughput,
+            Throughput_tokens_per_sec=Throughput_tokens_per_sec,
+            Runtime_breakdown=Runtime_breakdown,
+            is_offload=is_offload,
+            model_df=model_df,
+            summary_table=summary_table,
+            tokens_generated=tokens_generated,
+            **kwargs
+        )
+        # Also set as instance attributes for attribute access
+        self.Latency = Latency
+        self.Throughput = Throughput
+        self.Throughput_tokens_per_sec = Throughput_tokens_per_sec
+        self.Runtime_breakdown = Runtime_breakdown
+        self.is_offload = is_offload
+        self.model_df = model_df
+        self.summary_table = summary_table
+        self.tokens_generated = tokens_generated
+        # Handle any additional kwargs
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 def get_offload_system(system, total_memory_req, debug):
     """Create a new system with offloaded memory connections
@@ -89,7 +123,12 @@ def get_inference_system(system_name='A100_40GB_GPU', bits='bf16', ceff=1, meff=
         return system_name
     
     if isinstance(system_name, str):
-        if system_name in system_configs:
+        # Try hardware manager with alias support first
+        hw_config = get_hardware_config(system_name)
+        if hw_config:
+            system_name = hw_config
+        elif system_name in system_configs:
+            # Fallback to direct lookup for backward compatibility
             system_name = system_configs[system_name]
         else:
             raise ValueError(f'System mentioned:{system_name} not present in predefined systems. Please use systems from systems/system_configs')

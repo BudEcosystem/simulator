@@ -76,6 +76,12 @@ class ModelConfig():
         model_quality: Optional[QualityMetricsCollection] = None,
         # LoRA configuration
         lora_config: Optional['LoraConfig'] = None,
+        # MLA (Multi-head Latent Attention) parameters - DeepSeek V2/V3
+        kv_lora_rank: Optional[int] = None,      # Compressed KV dimension
+        q_lora_rank: Optional[int] = None,       # Query low-rank dimension
+        qk_rope_head_dim: Optional[int] = None,  # RoPE head dimension
+        qk_nope_head_dim: Optional[int] = None,  # Non-RoPE head dimension
+        v_head_dim: Optional[int] = None,        # Value head dimension for MLA
         **kwargs,
     ):
         self.model = model
@@ -181,6 +187,16 @@ class ModelConfig():
             self.lora_config = LC(enabled=False)
         else:
             self.lora_config = lora_config
+
+        # MLA (Multi-head Latent Attention) Parameters
+        # Used by DeepSeek V2/V3 for compressed KV cache
+        self.kv_lora_rank = kv_lora_rank
+        self.q_lora_rank = q_lora_rank
+        self.qk_rope_head_dim = qk_rope_head_dim
+        self.qk_nope_head_dim = qk_nope_head_dim
+        self.v_head_dim = v_head_dim
+        # MLA detection: if any MLA-specific parameter is set, this is an MLA model
+        self.is_mla = (kv_lora_rank is not None)
 
         super().__init__()
 
