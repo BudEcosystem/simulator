@@ -3,7 +3,8 @@ Hardware configuration management for LLM Memory Calculator.
 
 This module provides read-only access to hardware configurations,
 supporting both static configs and optional database loading.
-It also includes device matching capabilities for cluster integration.
+It also includes device matching capabilities for cluster integration
+and cost utility functions for pricing analysis.
 """
 
 from .configs import HARDWARE_CONFIGS
@@ -22,6 +23,11 @@ from .device_matcher import (
     DeviceMatcher,
     match_device,
 )
+from .cost_utils import (
+    get_best_rate,
+    has_cost_data,
+    get_all_provider_rates,
+)
 
 __all__ = [
     "HardwareManager",
@@ -36,4 +42,7 @@ __all__ = [
     "DeviceParser",
     "DeviceMatcher",
     "match_device",
+    "get_best_rate",
+    "has_cost_data",
+    "get_all_provider_rates",
 ]

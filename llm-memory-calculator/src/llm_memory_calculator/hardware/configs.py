@@ -27,7 +27,21 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'rt_cores': None,
         'memory_type': 'HBM2e',
         'pci_ids': ['20b0', '20f1'],  # PCIe and SXM4 variants
-        'aliases': ['A100', 'TESLA A100', 'A100-SXM4-40GB', 'A100-PCIE-40GB', 'NVIDIA A100 40GB']
+        'aliases': ['A100', 'TESLA A100', 'A100-SXM4-40GB', 'A100-PCIE-40GB', 'NVIDIA A100 40GB'],
+        'cost': {
+            'aws_on_demand': 2.21,
+            'aws_spot': 0.80,
+            'gcp_on_demand': 2.06,
+            'gcp_preemptible': 0.72,
+            'azure_on_demand': 2.42,
+            'azure_spot': 0.73,
+            'lambda_labs': 1.10,
+            'coreweave': 1.28,
+            'runpod': 0.79,
+            'vast_ai': 0.80,
+            'purchase_price_usd': 10000,
+            'tdp_watts': 400,
+        },
     },
     'A100_80GB_GPU': {
         'Flops': 312,
@@ -45,7 +59,21 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'rt_cores': None,
         'memory_type': 'HBM2e',
         'pci_ids': ['20b2', '20b5'],  # SXM4 and PCIe variants
-        'aliases': ['A100 80GB', 'TESLA A100 80GB', 'A100-SXM4-80GB', 'A100-PCIE-80GB', 'NVIDIA A100 80GB']
+        'aliases': ['A100 80GB', 'TESLA A100 80GB', 'A100-SXM4-80GB', 'A100-PCIE-80GB', 'NVIDIA A100 80GB'],
+        'cost': {
+            'aws_on_demand': 3.67,
+            'aws_spot': 1.40,
+            'gcp_on_demand': 3.67,
+            'gcp_preemptible': 1.10,
+            'azure_on_demand': 3.67,
+            'azure_spot': 1.28,
+            'lambda_labs': 1.29,
+            'coreweave': 1.85,
+            'runpod': 1.19,
+            'vast_ai': 1.10,
+            'purchase_price_usd': 15000,
+            'tdp_watts': 400,
+        },
     },
     'V100_16GB_GPU': {
         'name': 'V100_16GB_GPU',
@@ -64,7 +92,18 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'rt_cores': None,
         'memory_type': 'HBM2',
         'pci_ids': ['1db4', '1db6'],  # PCIe and SXM2 16GB variants
-        'aliases': ['V100 16GB', 'TESLA V100 16GB', 'V100-SXM2-16GB', 'V100-PCIE-16GB', 'NVIDIA V100 16GB']
+        'aliases': ['V100 16GB', 'TESLA V100 16GB', 'V100-SXM2-16GB', 'V100-PCIE-16GB', 'NVIDIA V100 16GB'],
+        'cost': {
+            'aws_on_demand': 0.90,
+            'aws_spot': 0.27,
+            'gcp_on_demand': 0.74,
+            'gcp_preemptible': 0.22,
+            'lambda_labs': 0.50,
+            'runpod': 0.39,
+            'vast_ai': 0.25,
+            'purchase_price_usd': 8000,  # New ~$8k-$11k, used ~$2k-$4k
+            'tdp_watts': 250,
+        },
     },
     'V100_32GB_GPU': {
         'name': 'V100_32GB_GPU',
@@ -83,7 +122,18 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'rt_cores': None,
         'memory_type': 'HBM2',
         'pci_ids': ['1db5', '1dbe', '1df6'],  # PCIe and SXM2 32GB variants
-        'aliases': ['V100 32GB', 'TESLA V100 32GB', 'V100-SXM2-32GB', 'V100-PCIE-32GB', 'NVIDIA V100 32GB', 'V100S']
+        'aliases': ['V100 32GB', 'TESLA V100 32GB', 'V100-SXM2-32GB', 'V100-PCIE-32GB', 'NVIDIA V100 32GB', 'V100S'],
+        'cost': {
+            'aws_on_demand': 1.21,
+            'aws_spot': 0.36,
+            'gcp_on_demand': 0.99,
+            'gcp_preemptible': 0.30,
+            'lambda_labs': 0.60,
+            'runpod': 0.49,
+            'vast_ai': 0.35,
+            'purchase_price_usd': 10000,  # New ~$8k-$11k, used ~$3k-$5k
+            'tdp_watts': 250,
+        },
     },
     'H100_GPU': {
         'Flops': 989,
@@ -101,7 +151,21 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'rt_cores': None,
         'memory_type': 'HBM3',
         'pci_ids': ['2330', '2331', '2339'],  # SXM5, PCIe, NVL variants
-        'aliases': ['H100', 'HOPPER', 'H100-SXM5', 'H100-PCIE', 'H100-NVL', 'NVIDIA H100']
+        'aliases': ['H100', 'HOPPER', 'H100-SXM5', 'H100-PCIE', 'H100-NVL', 'NVIDIA H100'],
+        'cost': {
+            'aws_on_demand': 4.76,
+            'aws_spot': 2.00,
+            'gcp_on_demand': 4.76,
+            'gcp_preemptible': 1.90,
+            'azure_on_demand': 5.12,
+            'azure_spot': 2.05,
+            'lambda_labs': 2.49,
+            'coreweave': 2.85,
+            'runpod': 2.39,
+            'vast_ai': 2.00,
+            'purchase_price_usd': 30000,
+            'tdp_watts': 700,
+        },
     },
     'GH200_GPU': {
         'Flops': 1979,
@@ -119,7 +183,17 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'rt_cores': None,
         'memory_type': 'HBM3',
         'pci_ids': ['233a'],  # GH200
-        'aliases': ['GH200', 'GRACE HOPPER', 'GH200-144GB', 'NVIDIA GH200']
+        'aliases': ['GH200', 'GRACE HOPPER', 'GH200-144GB', 'NVIDIA GH200'],
+        'cost': {
+            'aws_on_demand': 5.50,
+            'aws_spot': 2.50,
+            'gcp_on_demand': 5.50,
+            'gcp_preemptible': 2.20,
+            'lambda_labs': 3.00,
+            'coreweave': 3.50,
+            'purchase_price_usd': 45000,  # Superchip (Grace CPU + H100 GPU), systems start ~$41.5k
+            'tdp_watts': 900,
+        },
     },
     'B100': {
         'Flops': 1750,  # BF16 TFLOPS (3500 FP8). B100 GPU: ~1.75 PFLOPS BF16
@@ -136,7 +210,13 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'release_year': 2024,
         'tensor_cores': 'gen5',
         'rt_cores': None,
-        'memory_type': 'HBM3e'
+        'memory_type': 'HBM3e',
+        'cost': {
+            'lambda_labs': 5.00,
+            'coreweave': 5.50,
+            'purchase_price_usd': 32500,  # Estimated $30k-$35k (HSBC estimate)
+            'tdp_watts': 700,
+        },
     },
     'GB200': {
         'Flops': 2250,  # BF16 TFLOPS (4500 FP8). B200 GPU: ~2.25 PFLOPS BF16
@@ -153,7 +233,13 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'release_year': 2024,
         'tensor_cores': 'gen5',
         'rt_cores': None,
-        'memory_type': 'HBM3e'
+        'memory_type': 'HBM3e',
+        'cost': {
+            'lambda_labs': 7.00,
+            'coreweave': 7.50,
+            'purchase_price_usd': 70000,
+            'tdp_watts': 1000,
+        },
     },
     'L40S_48GB_GPU': {
         'name': 'L40S_48GB_GPU',
@@ -172,7 +258,16 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'rt_cores': 'gen3',
         'memory_type': 'GDDR6',
         'pci_ids': ['26ba'],
-        'aliases': ['L40S', 'L40S-48GB', 'NVIDIA L40S', 'NVIDIA-L40S', 'L40S 48GB']
+        'aliases': ['L40S', 'L40S-48GB', 'NVIDIA L40S', 'NVIDIA-L40S', 'L40S 48GB'],
+        'cost': {
+            'aws_on_demand': 1.98,
+            'gcp_on_demand': 1.70,
+            'lambda_labs': 0.99,
+            'coreweave': 1.14,
+            'runpod': 0.99,
+            'purchase_price_usd': 8000,
+            'tdp_watts': 350,
+        },
     },
 
     # NVIDIA Consumer GPUs (Ada Lovelace)
@@ -334,7 +429,14 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'release_year': 2023,
         'matrix_cores': 'gen3',
         'rt_cores': None,
-        'memory_type': 'HBM3'
+        'memory_type': 'HBM3',
+        'cost': {
+            'aws_on_demand': 3.50,
+            'gcp_on_demand': 3.50,
+            'coreweave': 2.50,
+            'purchase_price_usd': 15000,  # Bulk ~$10k (Samsung), retail estimated $12k-$18k
+            'tdp_watts': 750,
+        },
     },
     'MI325X': {
         'Flops': 1307,
@@ -349,7 +451,14 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'release_year': 2024,
         'matrix_cores': 'gen3',
         'rt_cores': None,
-        'memory_type': 'HBM3'
+        'memory_type': 'HBM3',
+        'cost': {
+            'aws_on_demand': 4.00,
+            'gcp_on_demand': 4.00,
+            'coreweave': 3.00,
+            'purchase_price_usd': 20000,  # Estimated, ~25-30% premium over MI300X
+            'tdp_watts': 750,
+        },
     },
     
     # Intel GPUs

@@ -13,6 +13,7 @@ from functools import lru_cache
 from .configs import HARDWARE_CONFIGS
 from .db_connection import ReadOnlyDatabaseConnection
 from .device_matcher import match_device, DeviceParser, DeviceMatcher
+from .cost_utils import get_best_rate, has_cost_data
 
 logger = logging.getLogger(__name__)
 
@@ -375,13 +376,14 @@ class HardwareManager:
     def get_cluster_hardware_specs(self, device_info: Dict[str, Any]) -> Dict[str, Any]:
         """
         Get hardware specifications for a cluster device.
-        
+
         This method matches a cluster device and returns the complete
-        performance specifications needed for LLM calculations.
-        
+        performance specifications needed for LLM calculations, including
+        cost data when available.
+
         Args:
             device_info: Device information from cluster.
-            
+
         Returns:
             Dictionary containing:
                 - device_name: Matched configuration name
@@ -390,24 +392,46 @@ class HardwareManager:
                 - memory_bandwidth_gbs: Memory bandwidth in GB/s
                 - interconnect_bandwidth_gbs: Interconnect bandwidth in GB/s
                 - matched: Boolean indicating if match was successful
-                
+                - cost: Full cost dictionary (or None if unavailable)
+                - has_cost_data: Boolean indicating if cost data is available
+                - best_hourly_rate: Best available hourly rate (or None)
+                - best_provider: Provider with best rate (or None)
+                - best_tier: Pricing tier for best rate (or None)
+                - tdp_watts: Power consumption in watts (or None)
+                - purchase_price_usd: Purchase price in USD (or None)
+
         Example:
             >>> specs = manager.get_cluster_hardware_specs(device_info)
             >>> if specs['matched']:
             ...     print(f"Device: {specs['device_name']}")
             ...     print(f"FP16 Performance: {specs['flops_fp16']} TFLOPS")
+            >>> if specs['has_cost_data']:
+            ...     print(f"Best rate: ${specs['best_hourly_rate']}/hr from {specs['best_provider']}")
         """
         matched_config = self.match_cluster_device(device_info)
-        
+
         if matched_config:
+            cost_data = matched_config.get('cost')
+            best_rate, best_provider, best_tier = get_best_rate(cost_data)
+
             return {
+                # Existing performance fields
                 'device_name': matched_config.get('name'),
                 'flops_fp16': matched_config.get('Flops', matched_config.get('flops', 0)),
                 'memory_size_gb': matched_config.get('Memory_size', matched_config.get('memory_size', 0)),
                 'memory_bandwidth_gbs': matched_config.get('Memory_BW', matched_config.get('memory_bw', 0)),
                 'interconnect_bandwidth_gbs': matched_config.get('ICN', matched_config.get('icn', 0)),
                 'real_values': matched_config.get('real_values', True),
-                'matched': True
+                'matched': True,
+
+                # New cost fields
+                'cost': cost_data,
+                'has_cost_data': has_cost_data(matched_config),
+                'best_hourly_rate': best_rate,
+                'best_provider': best_provider,
+                'best_tier': best_tier,
+                'tdp_watts': cost_data.get('tdp_watts') if cost_data else None,
+                'purchase_price_usd': cost_data.get('purchase_price_usd') if cost_data else None,
             }
         else:
             # Return empty specs for unmatched device
@@ -418,7 +442,14 @@ class HardwareManager:
                 'memory_bandwidth_gbs': 0,
                 'interconnect_bandwidth_gbs': 0,
                 'real_values': False,
-                'matched': False
+                'matched': False,
+                'cost': None,
+                'has_cost_data': False,
+                'best_hourly_rate': None,
+                'best_provider': None,
+                'best_tier': None,
+                'tdp_watts': None,
+                'purchase_price_usd': None,
             }
     
     def clear_match_cache(self):
