@@ -3,9 +3,12 @@ Usecase management API routes.
 Provides endpoints for CRUD operations on usecases and SLOs.
 """
 
+import logging
 from typing import List, Optional, Dict, Any, Union
 from fastapi import APIRouter, HTTPException, Query, Body
 from pydantic import BaseModel, Field, validator
+
+logger = logging.getLogger(__name__)
 
 from src.usecases import BudUsecases
 from src.bud_models import ModelMemoryCalculator
@@ -20,17 +23,59 @@ memory_calculator = ModelMemoryCalculator()
 hardware_manager = BudHardware()
 model_manager = ModelManager()
 
+# Default model categories — single source of truth for both table creation and population.
+DEFAULT_MODEL_CATEGORIES: Dict[str, List[str]] = {
+    '3B': [
+        'google/gemma-3-4B',
+        'microsoft/Phi-3-mini',
+        'meta-llama/Llama-3.2-3B',
+    ],
+    '8B': [
+        'meta-llama/meta-llama-3.1-8b',
+        'google/gemma-2-9b',
+        'Qwen/Qwen2.5-7B',
+    ],
+    '32B': [
+        'Qwen/Qwen2.5-32B',
+        'Qwen/Qwen1.5-32B',
+        'google/gemma-3-27B',
+    ],
+    '72B': [
+        'Qwen/Qwen2.5-72B',
+        'meta-llama/meta-llama-3.1-70b',
+        'meta-llama/Llama-4-Scout-17B-16E',
+    ],
+    '200B+': [
+        'meta-llama/Llama-3.1-405B',
+        'meta-llama/Llama-4-Maverick-17B-128E',
+        'deepseek-ai/DeepSeek-V3-Base',
+    ],
+}
+
+
+def _populate_model_categories(db: Any, model_categories: Dict[str, List[str]]) -> None:
+    """Insert model categories into the database table."""
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM model_recommendation_categories")
+        insert_sql = """
+        INSERT INTO model_recommendation_categories (category, model_id, display_order)
+        VALUES (?, ?, ?)
+        """
+        for category, models in model_categories.items():
+            for order, model_id in enumerate(models, 1):
+                cursor.execute(insert_sql, (category, model_id, order))
+        conn.commit()
+
 
 def _ensure_model_categories_table():
     """Ensure the model_recommendation_categories table exists and is populated."""
     try:
         from src.db.connection import DatabaseConnection
-        
+
         db = DatabaseConnection()
-        
-        # Check if table exists
+
         if not db.table_exists('model_recommendation_categories'):
-            # Create table
             create_table_sql = """
             CREATE TABLE IF NOT EXISTS model_recommendation_categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,118 +88,38 @@ def _ensure_model_categories_table():
                 UNIQUE(category, model_id)
             );
             """
-            
-            # Create index
             create_index_sql = """
-            CREATE INDEX IF NOT EXISTS idx_model_categories_category 
+            CREATE INDEX IF NOT EXISTS idx_model_categories_category
             ON model_recommendation_categories(category, display_order);
             """
-            
-            # Define the model categories as specified by the user
-            model_categories = {
-                '3B': [
-                    'google/gemma-3-4B',
-                    'microsoft/Phi-3-mini',
-                    'meta-llama/Llama-3.2-3B'
-                ],
-                '8B': [
-                    'meta-llama/meta-llama-3.1-8b',
-                    'google/gemma-2-9b',
-                    'Qwen/Qwen2.5-7B'
-                ],
-                '32B': [
-                    'Qwen/Qwen2.5-32B',
-                    'Qwen/Qwen1.5-32B',
-                    'google/gemma-3-27B'
-                ],
-                '72B': [
-                    'Qwen/Qwen2.5-72B',
-                    'meta-llama/meta-llama-3.1-70b',
-                    'meta-llama/Llama-4-Scout-17B-16E'
-                ],
-                '200B+': [
-                    'meta-llama/Llama-3.1-405B',
-                    'meta-llama/Llama-4-Maverick-17B-128E',
-                    'deepseek-ai/DeepSeek-V3-Base'
-                ]
-            }
-            
             with db.get_connection() as conn:
                 cursor = conn.cursor()
-                
-                # Create table and index
                 cursor.execute(create_table_sql)
                 cursor.execute(create_index_sql)
-                
-                # Insert data
-                insert_sql = """
-                INSERT INTO model_recommendation_categories (category, model_id, display_order)
-                VALUES (?, ?, ?)
-                """
-                
-                for category, models in model_categories.items():
-                    for order, model_id in enumerate(models, 1):
-                        cursor.execute(insert_sql, (category, model_id, order))
-                
                 conn.commit()
-                print(f"✅ Created and populated model_recommendation_categories table with {sum(len(models) for models in model_categories.values())} mappings")
-        
-        # Check if table has data
-        count_result = db.execute_one("SELECT COUNT(*) as count FROM model_recommendation_categories WHERE is_active = 1")
-        if not count_result or count_result['count'] == 0:
-            # Populate table if empty
-            model_categories = {
-                '3B': [
-                    'google/gemma-3-4B',
-                    'microsoft/Phi-3-mini',
-                    'meta-llama/Llama-3.2-3B'
-                ],
-                '8B': [
-                    'meta-llama/meta-llama-3.1-8b',
-                    'google/gemma-2-9b',
-                    'Qwen/Qwen2.5-7B'
-                ],
-                '32B': [
-                    'Qwen/Qwen2.5-32B',
-                    'Qwen/Qwen1.5-32B',
-                    'google/gemma-3-27B'
-                ],
-                '72B': [
-                    'Qwen/Qwen2.5-72B',
-                    'meta-llama/meta-llama-3.1-70b',
-                    'meta-llama/Llama-4-Scout-17B-16E'
-                ],
-                '200B+': [
-                    'meta-llama/Llama-3.1-405B',
-                    'meta-llama/Llama-4-Maverick-17B-128E',
-                    'deepseek-ai/DeepSeek-V3-Base'
-                ]
-            }
-            
-            with db.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Clear and repopulate
-                cursor.execute("DELETE FROM model_recommendation_categories")
-                
-                insert_sql = """
-                INSERT INTO model_recommendation_categories (category, model_id, display_order)
-                VALUES (?, ?, ?)
-                """
-                
-                for category, models in model_categories.items():
-                    for order, model_id in enumerate(models, 1):
-                        cursor.execute(insert_sql, (category, model_id, order))
-                
-                conn.commit()
-                print(f"✅ Populated model_recommendation_categories table with {sum(len(models) for models in model_categories.values())} mappings")
-                
-    except Exception as e:
-        print(f"⚠️ Warning: Failed to ensure model categories table: {e}")
-        # Continue without the table - will fall back to parameter ranges
 
-# Call this function when the module is loaded
-_ensure_model_categories_table()
+            _populate_model_categories(db, DEFAULT_MODEL_CATEGORIES)
+
+        # Repopulate if empty
+        count_result = db.execute_one(
+            "SELECT COUNT(*) as count FROM model_recommendation_categories WHERE is_active = 1"
+        )
+        if not count_result or count_result['count'] == 0:
+            _populate_model_categories(db, DEFAULT_MODEL_CATEGORIES)
+
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Failed to ensure model categories table: %s", e)
+
+_model_categories_initialized = False
+
+
+def _lazy_ensure_model_categories():
+    """Lazily ensure model categories table on first use."""
+    global _model_categories_initialized
+    if not _model_categories_initialized:
+        _ensure_model_categories_table()
+        _model_categories_initialized = True
 
 
 # Pydantic models for request/response
@@ -648,7 +613,7 @@ async def get_usecase_recommendations(unique_id: str, request: RecommendationReq
                         ))
                         
                 except Exception as e:
-                    print(f"Error processing model {model_data.get('model_id', 'unknown')}: {e}")
+                    logging.getLogger(__name__).warning("Error processing model %s: %s", model_data.get('model_id', 'unknown'), e)
                     continue
             
             if category_models:
@@ -744,7 +709,7 @@ def _get_hardware_recommendations(required_memory_gb: float, model_config: Dict[
         # Try to calculate parameters from config if not available in model_data
         try:
             model_params = memory_calculator.calculate_parameters(model_config)
-        except:
+        except Exception:
             model_params = 0
     
     # CPU exclusion criteria
@@ -754,9 +719,9 @@ def _get_hardware_recommendations(required_memory_gb: float, model_config: Dict[
     )
     
     if exclude_cpus:
-        print(f"🚫 Excluding CPUs: Model has {model_params/1e9:.1f}B params, requires {required_memory_gb:.1f}GB memory")
+        logger.info(f"Excluding CPUs: Model has {model_params/1e9:.1f}B params, requires {required_memory_gb:.1f}GB memory")
     else:
-        print(f"✅ Including CPUs: Model has {model_params/1e9:.1f}B params, requires {required_memory_gb:.1f}GB memory")
+        logger.info(f"Including CPUs: Model has {model_params/1e9:.1f}B params, requires {required_memory_gb:.1f}GB memory")
     
     for hw in all_hardware:
         # Get hardware type
@@ -855,7 +820,7 @@ def _get_models_by_category(categories: List[str]) -> Dict[str, List[Dict[str, A
                                     try:
                                         param_count = memory_calculator.calculate_parameters(config)
                                         model_data['parameter_count'] = param_count
-                                    except:
+                                    except Exception:
                                         model_data['parameter_count'] = 0
                             
                             # Ensure attention type is detected
@@ -865,13 +830,13 @@ def _get_models_by_category(categories: List[str]) -> Dict[str, List[Dict[str, A
                                     try:
                                         attention_type = memory_calculator.detect_attention_type(config)
                                         model_data['attention_type'] = attention_type
-                                    except:
+                                    except Exception:
                                         model_data['attention_type'] = 'mha'
                             
                             category_models.append(model_data)
                         else:
                             # If model not found in database, create a minimal entry
-                            print(f"⚠️ Model {model_id} not found in database, creating minimal entry")
+                            logger.warning(f"Model {model_id} not found in database, creating minimal entry")
                             category_models.append({
                                 'model_id': model_id,
                                 'parameter_count': 0,
@@ -882,24 +847,24 @@ def _get_models_by_category(categories: List[str]) -> Dict[str, List[Dict[str, A
                     categorized[category] = category_models
                 else:
                     # Category not found in table, use empty list
-                    print(f"⚠️ No models found for category {category} in model_recommendation_categories table")
+                    logger.warning(f"No models found for category {category} in model_recommendation_categories table")
                     categorized[category] = []
             
             # If we got any results from the table, return them
             if any(categorized.values()):
                 return categorized
             else:
-                print("⚠️ No models found in model_recommendation_categories table, falling back to parameter ranges")
+                logger.warning("No models found in model_recommendation_categories table, falling back to parameter ranges")
                 
         except Exception as e:
-            print(f"⚠️ Failed to use model categories table: {e}")
+            logger.warning(f"Failed to use model categories table: {e}")
             # Fall back to parameter ranges
             
     except Exception as e:
-        print(f"⚠️ Database connection failed: {e}")
+        logger.warning(f"Database connection failed: {e}")
     
     # Fallback: use parameter ranges (original implementation)
-    print("Using parameter ranges fallback for model categorization")
+    logger.info("Using parameter ranges fallback for model categorization")
     all_models = model_manager.list_models()
     
     # Define parameter ranges (in billions) - updated to match new categories
@@ -915,7 +880,7 @@ def _get_models_by_category(categories: List[str]) -> Dict[str, List[Dict[str, A
     
     for category in categories:
         if category not in param_ranges:
-            print(f"⚠️ Unknown category {category}, skipping")
+            logger.warning(f"Unknown category {category}, skipping")
             categorized[category] = []
             continue
             
@@ -932,7 +897,7 @@ def _get_models_by_category(categories: List[str]) -> Dict[str, List[Dict[str, A
                         try:
                             attention_type = memory_calculator.detect_attention_type(config)
                             model['attention_type'] = attention_type
-                        except:
+                        except Exception:
                             model['attention_type'] = 'mha'
                 
                 category_models.append(model)

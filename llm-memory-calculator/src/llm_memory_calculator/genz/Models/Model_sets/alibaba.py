@@ -87,16 +87,18 @@ qwen1_5_110b_config = ModelConfig(model='Qwen/Qwen1.5-110B',
     vocab_size=152064, max_model_len=32*1024, sliding_window=32*1024,hidden_act="silu")
 
 # https://huggingface.co/Qwen/Qwen1.5-MoE-A2.7B/blob/main/config.json
+# Qwen1.5-MoE has shared experts (always-active MLPs alongside routed experts).
+# Total FFN per token = n_shared_experts * shared_expert_intermediate_size + top_k * moe_intermediate_size
 qwen1_5_moe_2_7b_config = ModelConfig(model='Qwen/Qwen1.5-MoE-A2.7B',
     hidden_size=2048, num_attention_heads=16,
     num_key_value_heads=16, num_ffi = 2,
     intermediate_size=5632, num_decoder_layers=40,
     expert_top_k=4, num_experts=60,
-    moe_intermediate_size=1408, shared_expert_intermediate_size=5632,
+    moe_intermediate_size=1408,
+    n_shared_experts=4, shared_expert_intermediate_size=5632,
+    ffn_implementation='deepseek',
     vocab_size=151936, max_model_len=8*1024, sliding_window=32*1024, hidden_act="silu",
 )
-## TODO: account for shared expert, shared account is regular MLP which is always added.
-## MLP in this case is shared_expert_intermediate_size + Activated*moe_intermediate_size
 
 ##### Qwen2 Models ########
 # https://huggingface.co/Qwen/Qwen2-0.5B/blob/main/config.json

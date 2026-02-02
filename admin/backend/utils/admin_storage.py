@@ -34,7 +34,7 @@ class AdminStorage:
         try:
             with open(file_path, 'r') as f:
                 return json.load(f)
-        except:
+        except Exception:
             return {}
     
     def _write_file(self, file_path: str, data: Dict[str, Any]):

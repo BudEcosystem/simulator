@@ -176,9 +176,9 @@ DeepseekV3_moe_671b_config = ModelConfig(model='deepseek-ai/DeepSeek-V3-Base',
     qk_nope_head_dim=128,       # Non-RoPE dimension
     v_head_dim=128,             # Value head dimension
 )
-## TODO: account for shared expert, shared account is regular MLP which is always added.
-## This has a special case where the first layer is dense and the rest are MoE with shared experts.
-## MLP in this case is n_shared_experts*shared_expert_intermediate_size + Activated*moe_intermediate_size
+# Shared experts are handled by deepseek_ffn_prefill() when ffn_implementation='deepseek'.
+# The first `first_k_dense_replace` layers (3) are dense; remaining are MoE with shared experts.
+# Per-token FFN cost = n_shared_experts * shared_expert_intermediate_size + top_k * moe_intermediate_size
 
 # DeepSeek 67B Dense Model (NOT MoE)
 # https://huggingface.co/deepseek-ai/deepseek-llm-67b-base

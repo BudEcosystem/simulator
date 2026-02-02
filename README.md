@@ -228,6 +228,59 @@ print(f"Throughput: {result.tokens_per_second:.0f} tokens/s")
 
 ---
 
+## Cluster Ranking & Requirements Prediction
+
+### Rank Clusters by Training Performance
+```python
+from llm_memory_calculator.training import rank_clusters
+
+rankings = rank_clusters(
+    model="meta-llama/Llama-3.1-8B",
+    method="lora",
+    seq_length=2048,
+    dataset_tokens=1e9,
+    rank_by="composite",  # throughput, eta, cost, composite
+)
+
+for r in rankings[:3]:
+    print(f"{r.cluster_name}: {r.throughput:.0f} tok/s, ETA={r.eta_hours:.1f}h, ${r.cost:.0f}")
+```
+
+### Predict Minimum Cluster Requirements
+```python
+from llm_memory_calculator.training import predict_minimum_requirements
+
+reqs = predict_minimum_requirements(
+    model="meta-llama/Llama-3.1-70B",
+    method="full",
+    seq_length=4096,
+    batch_size=4,
+)
+
+print(f"Min GPUs: {reqs.min_gpus}")
+print(f"Min GPU Memory: {reqs.min_gpu_memory_gb:.0f} GB")
+print(f"Recommended ZeRO: {reqs.recommended_zero_stage}")
+```
+
+### Generate Comprehensive Training Configs
+```python
+from llm_memory_calculator.training import build_comprehensive_config
+
+config = build_comprehensive_config(
+    model="meta-llama/Llama-3.1-8B",
+    method="lora",
+    num_gpus=8,
+    optimization_focus="stable",  # stable, convergence, speed, tco
+)
+
+# Produces LlamaFactory YAML, DeepSpeed JSON, launch commands, etc.
+print(config.llamafactory_yaml)
+print(config.deepspeed_json)
+print(config.launch_command)
+```
+
+---
+
 ## Hardware Support (57 Profiles)
 
 ### GPUs
@@ -433,6 +486,9 @@ streamlit run Home.py  # Opens at http://localhost:8501
 | `auto_configure_training()` | Auto-configure optimal training setup |
 | `build_llamafactory_config()` | Generate LlamaFactory YAML config |
 | `build_deepspeed_config()` | Generate DeepSpeed JSON config |
+| `rank_clusters()` | Rank clusters by throughput, ETA, cost, or composite score |
+| `predict_minimum_requirements()` | Predict minimum cluster requirements for a training config |
+| `build_comprehensive_config()` | Generate full training config (LlamaFactory + DeepSpeed + launch commands) |
 
 ### GenZ Training Module (`llm_memory_calculator.genz.LLM_training`)
 
@@ -606,6 +662,24 @@ Typical accuracy:
 │  └─────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Recent Changes
+
+- **Cluster ranking & requirements prediction**: New modules for ranking GPU clusters by throughput/cost/ETA and predicting minimum hardware requirements for training workloads
+- **Comprehensive config builder**: Generate full LlamaFactory YAML, DeepSpeed JSON, Accelerate configs, and launch commands with best-practice defaults per optimization focus (stable, convergence, speed, tco)
+- **Training best practices module**: Codified best practices from LlamaFactory analysis (200+ parameters) covering learning rates, optimizers, LoRA configs, PPO multi-model setups, and hardware-specific tuning
+- **Versioned database migrations**: Replaced one-off migration script with a decorator-based migration framework tracked in a `migration_history` table
+- **Rate limiting**: Optional `slowapi`-based rate limiting on the FastAPI backend (60 req/min default)
+- **Deferred MODEL_DICT patching**: Moved model dictionary patching from import-time to application startup for reliability
+- **Improved hardware detection**: Expanded keyword-based hardware type classification covering NVIDIA, AMD, Intel, ARM, and specialty accelerators
+- **BudSimulator core rework**: Fully implemented `BudSimulator.run()` with GenZ `SimulationEngine` integration, proper Pydantic v2 models, and feature mapping per simulation type
+- **SQL injection hardening**: Table name whitelist validation in `DatabaseConnection` for insert/update/delete operations
+- **Logging cleanup**: Replaced `print()` statements across routers and training modeling with `logging` module calls
+- **Expanded NVIDIA model set**: Added Nemotron, Cosmos, and additional NVIDIA model configurations
+- **Enhanced attention & FFN modeling**: Improved sliding window attention, cross-attention, and GLU/bilinear FFN parameter calculations
+- **Training optimizer enhancements**: Added Adan, Prodigy, ADOPT, Schedule-Free optimizers with memory/convergence profiles
 
 ---
 

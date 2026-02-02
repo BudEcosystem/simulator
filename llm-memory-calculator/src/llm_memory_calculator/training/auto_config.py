@@ -821,7 +821,12 @@ def _evaluate_configuration(
         # Scaling
         scaling_efficiency=scaling_efficiency,
         communication_overhead_pct=comm_overhead,
-        bubble_overhead_pct=0,  # TODO: Calculate PP bubble
+        # PP bubble overhead for 1F1B schedule: (pp - 1) / (microbatches + pp - 1)
+        # microbatches = gradient_accumulation_steps in standard pipeline parallelism
+        bubble_overhead_pct=(
+            (config.pipeline_parallel - 1) / (gradient_accumulation_steps + config.pipeline_parallel - 1)
+            * 100 if config.pipeline_parallel > 1 else 0
+        ),
 
         # Input
         model=model,

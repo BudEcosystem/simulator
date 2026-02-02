@@ -20,6 +20,7 @@ from .types import (
     DeepSpeedStage,
     TrainingMemoryEstimate,
 )
+from .optimizers import OPTIMIZER_CONFIGS, get_optimizer_config, ADAMW_BASELINE_BYTES, OPTIMIZER_ALIASES
 
 
 class TrainingMemoryCalculator:
@@ -43,16 +44,12 @@ class TrainingMemoryCalculator:
         'nf4': 0.5,  # NormalFloat4 (QLoRA)
     }
 
-    # Optimizer state multipliers (number of states per param)
+    # Optimizer state multipliers - legacy dict kept for backward compatibility.
+    # The actual calculation now uses OPTIMIZER_CONFIGS from optimizers.py
+    # which has precise bytes_per_param for all supported optimizers.
     OPTIMIZER_STATE_MULTIPLIERS = {
-        'adamw': 2,       # momentum + variance
-        'adam': 2,
-        'adamw_8bit': 2,  # 2 states in 8-bit each
-        'sgd': 1,         # only momentum
-        'galore': 0.25,   # low-rank approximation
-        'apollo': 0.25,   # low-rank
-        'adafactor': 0.5, # factored states
-        'lion': 1,        # only momentum
+        name: config.state_count * (config.state_precision_bytes / 4.0)
+        for name, config in OPTIMIZER_CONFIGS.items()
     }
 
     # Cost per GPU-hour (approximate cloud pricing)
@@ -66,6 +63,16 @@ class TrainingMemoryCalculator:
         'MI300X': 3.50,
         'TPUv5e': 2.50,
         'TPUv5p': 4.50,
+        # Consumer GPUs (estimated electricity cost for local hardware)
+        'RTX4090_GPU': 0.50,
+        'RTX4080_GPU': 0.40,
+        'RTX4070Ti_GPU': 0.35,
+        'RTX4070_GPU': 0.30,
+        'RTX3090_GPU': 0.45,
+        'RTX3080Ti_GPU': 0.40,
+        'RTX3080_GPU': 0.35,
+        'RTX3070_GPU': 0.25,
+        'RTX3060_GPU': 0.20,
     }
 
     def __init__(self):
@@ -125,7 +132,7 @@ class TrainingMemoryCalculator:
 
         # Calculate weight memory (divided by TP)
         weight_memory = self._calculate_weight_memory(
-            config, precision, tensor_parallel, deepspeed_stage, data_parallel
+            config, precision, tensor_parallel, deepspeed_stage, data_parallel, method
         )
 
         # Calculate gradient memory
@@ -192,12 +199,16 @@ class TrainingMemoryCalculator:
                 f"Valid methods: {valid_methods}"
             )
 
-        valid_optimizers = set(self.OPTIMIZER_STATE_MULTIPLIERS.keys())
-        if optimizer.lower() not in valid_optimizers:
-            raise ValueError(
-                f"Invalid optimizer: {optimizer}. "
-                f"Valid optimizers: {valid_optimizers}"
-            )
+        optimizer_lower = optimizer.lower()
+        # Accept any optimizer known to OPTIMIZER_CONFIGS or OPTIMIZER_STATE_MULTIPLIERS.
+        # For truly unknown optimizers, fall back to AdamW-equivalent memory.
+        if optimizer_lower not in OPTIMIZER_CONFIGS and optimizer_lower not in self.OPTIMIZER_STATE_MULTIPLIERS:
+            if optimizer_lower not in OPTIMIZER_ALIASES:
+                import warnings
+                warnings.warn(
+                    f"Unknown optimizer '{optimizer}', using AdamW memory estimate. "
+                    f"Known optimizers: {sorted(OPTIMIZER_CONFIGS.keys())}"
+                )
 
     def _get_total_params(self, config: Dict[str, Any]) -> int:
         """Get total parameter count from config."""
@@ -220,21 +231,33 @@ class TrainingMemoryCalculator:
             return total_params
 
         elif method in ('lora', 'qlora', 'dora', 'pissa'):
-            # LoRA params: 2 × rank × (hidden_size + intermediate_size/3) × num_layers × num_adapters
+            # LlamaFactory defaults to 7 targets: q,k,v,o projections + gate,up,down MLP
             hidden_size = config.get('hidden_size', 4096)
             num_layers = config.get('num_hidden_layers', 32)
-
-            # Typical LoRA targets: q_proj, k_proj, v_proj, o_proj + up/down projections
-            # Each adapter: rank × in_dim + rank × out_dim ≈ 2 × rank × hidden
-            num_adapters = 4  # Q, K, V, O projections
-            lora_params_per_layer = num_adapters * 2 * lora_rank * hidden_size
-
-            # Add MLP adapters (optional, depends on config)
+            num_heads = config.get('num_attention_heads', 32)
+            num_kv_heads = config.get('num_key_value_heads', num_heads)
             intermediate_size = config.get('intermediate_size', hidden_size * 4)
-            mlp_adapters = 2  # gate_proj, up_proj typically
-            mlp_params_per_layer = mlp_adapters * 2 * lora_rank * (hidden_size + intermediate_size) // 2
 
-            return num_layers * (lora_params_per_layer + mlp_params_per_layer)
+            # KV dimension for GQA models
+            kv_dim = hidden_size * num_kv_heads // num_heads
+
+            # Attention LoRA params per layer:
+            # q_proj: 2r(h+h), k_proj: 2r(h+kv_dim), v_proj: 2r(h+kv_dim), o_proj: 2r(h+h)
+            attn_params = (
+                2 * lora_rank * (hidden_size + hidden_size) +      # q_proj
+                2 * lora_rank * (hidden_size + kv_dim) +           # k_proj
+                2 * lora_rank * (hidden_size + kv_dim) +           # v_proj
+                2 * lora_rank * (hidden_size + hidden_size)        # o_proj
+            )
+
+            # MLP LoRA params per layer (gate, up, down projections):
+            mlp_params = (
+                2 * lora_rank * (hidden_size + intermediate_size) +  # gate_proj
+                2 * lora_rank * (hidden_size + intermediate_size) +  # up_proj
+                2 * lora_rank * (hidden_size + intermediate_size)    # down_proj
+            )
+
+            return num_layers * (attn_params + mlp_params)
 
         elif method == 'freeze':
             # Only train last N layers
@@ -256,13 +279,28 @@ class TrainingMemoryCalculator:
         tensor_parallel: int,
         deepspeed_stage: Optional[str],
         data_parallel: int,
+        method: str = "lora",
     ) -> float:
         """Calculate weight memory in GB."""
         total_params = self._get_total_params(config)
-        bytes_per_param = self.PRECISION_BYTES.get(precision.lower(), 2)
 
-        # Base weight memory
-        weight_memory = (total_params * bytes_per_param) / 1e9
+        if method.lower() == 'qlora':
+            # QLoRA: NF4 + double quantization ≈ 0.516 bytes per param
+            weight_memory = (total_params * 0.516) / 1e9
+            # Per-layer dequantization buffer
+            hidden_size = config.get('hidden_size', 4096)
+            intermediate_size = config.get('intermediate_size', hidden_size * 4)
+            num_layers = config.get('num_hidden_layers', 32)
+            dequant_buffer = num_layers * hidden_size * intermediate_size * 2 / 1e9
+            weight_memory += dequant_buffer
+        else:
+            bytes_per_param = self.PRECISION_BYTES.get(precision.lower(), 2)
+            weight_memory = (total_params * bytes_per_param) / 1e9
+
+            # fp32 master weight copy for mixed-precision training
+            if precision.lower() in ('fp16', 'float16', 'bf16', 'bfloat16'):
+                master_copy_memory = (total_params * 4) / 1e9
+                weight_memory += master_copy_memory
 
         # Divide by tensor parallelism
         weight_memory /= tensor_parallel
@@ -287,8 +325,8 @@ class TrainingMemoryCalculator:
         # Gradients in fp32 (4 bytes per param)
         gradient_memory = (trainable_params * 4) / 1e9
 
-        # ZeRO-3 shards gradients across DP ranks
-        if deepspeed_stage == 'zero3':
+        # ZeRO-2 and ZeRO-3 shard gradients across DP ranks
+        if deepspeed_stage in ('zero2', 'zero3'):
             gradient_memory /= data_parallel
 
         return gradient_memory
@@ -309,14 +347,17 @@ class TrainingMemoryCalculator:
         GaLore/Apollo: low-rank approximation
         """
         optimizer = optimizer.lower()
-        multiplier = self.OPTIMIZER_STATE_MULTIPLIERS.get(optimizer, 2)
 
-        # Optimizer states in fp32 (4 bytes per param per state)
-        if optimizer == 'adamw_8bit':
-            # 8-bit states: 1 byte per param per state
-            bytes_per_param = 1 * multiplier
+        # Resolve aliases for common Transformers/LlamaFactory optimizer names
+        resolved = OPTIMIZER_ALIASES.get(optimizer, optimizer)
+
+        # Use OPTIMIZER_CONFIGS for precise bytes_per_param
+        if resolved in OPTIMIZER_CONFIGS:
+            opt_config = OPTIMIZER_CONFIGS[resolved]
+            bytes_per_param = opt_config.total_bytes_per_param
         else:
-            bytes_per_param = 4 * multiplier
+            # Unknown optimizer: assume AdamW-like (8 bytes/param)
+            bytes_per_param = ADAMW_BASELINE_BYTES
 
         optimizer_memory = (trainable_params * bytes_per_param) / 1e9
 
@@ -336,42 +377,38 @@ class TrainingMemoryCalculator:
         tensor_parallel: int,
     ) -> float:
         """
-        Calculate activation memory in GB.
+        Calculate activation memory in GB using Megatron-LM formula.
 
-        Without checkpointing: Store all layer activations
-        With checkpointing: Store sqrt(num_layers) checkpoints
+        Megatron-LM formula per layer:
+            sbh × (10 + 24/T + 5×a×s×kv_ratio/(h×T))
+        where s=seq_length, b=batch_size, h=hidden_size, T=tensor_parallel,
+        a=num_attention_heads, kv_ratio=num_kv_heads/num_heads (for GQA).
+
+        With gradient checkpointing, only sqrt(L) layers stored.
         """
         hidden_size = config.get('hidden_size', 4096)
         num_layers = config.get('num_hidden_layers', 32)
-        intermediate_size = config.get('intermediate_size', hidden_size * 4)
-        bytes_per_element = self.PRECISION_BYTES.get(precision.lower(), 2)
+        num_heads = config.get('num_attention_heads', 32)
+        num_kv_heads = config.get('num_key_value_heads', num_heads)
 
-        # Activations per layer:
-        # - Hidden states: batch × seq × hidden
-        # - Attention: batch × heads × seq × seq (for attention scores)
-        # - FFN: batch × seq × intermediate
+        s = seq_length
+        b = batch_size
+        h = hidden_size
+        T = tensor_parallel
+        a = num_heads
+        kv_ratio = num_kv_heads / num_heads
 
-        # Approximate total activations per layer
-        attention_elements = batch_size * seq_length * hidden_size  # Q, K, V, output
-        attention_scores = batch_size * config.get('num_attention_heads', 32) * seq_length * seq_length
-        ffn_elements = batch_size * seq_length * intermediate_size
-
-        elements_per_layer = attention_elements * 4 + attention_scores + ffn_elements * 2
+        # Megatron-LM activation memory per layer (in bytes)
+        per_layer_bytes = s * b * h * (10 + 24.0 / T + 5.0 * a * s * kv_ratio / (h * T))
 
         if gradient_checkpointing:
-            # With checkpointing, only store sqrt(n) layers worth of activations
-            # Plus recomputation overhead during backward pass
             effective_layers = math.sqrt(num_layers)
-            # Add some overhead for checkpoint boundaries
             effective_layers = max(effective_layers, 2)
         else:
             effective_layers = num_layers
 
-        total_elements = elements_per_layer * effective_layers
-        activation_memory = (total_elements * bytes_per_element) / 1e9
-
-        # Divide by tensor parallelism (attention is split)
-        activation_memory /= tensor_parallel
+        total_bytes = per_layer_bytes * effective_layers
+        activation_memory = total_bytes / 1e9
 
         return activation_memory
 

@@ -2,7 +2,7 @@
 Main FastAPI application for BudSimulator API.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +12,17 @@ from .routers import models, hardware, usecases, usecases_optimization, training
 from .health import router as health_router
 from src.hardware_registry import HardwareRegistry
 
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.util import get_remote_address
+
+    limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+    _SLOWAPI_AVAILABLE = True
+except ImportError:
+    limiter = None
+    _SLOWAPI_AVAILABLE = False
+
 # Create FastAPI app
 app = FastAPI(
     title="BudSimulator Model API",
@@ -20,6 +31,10 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+if _SLOWAPI_AVAILABLE:
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add TrustedHost middleware for proxy support
 app.add_middleware(
@@ -65,5 +80,13 @@ async def root():
 # Startup event
 @app.on_event("startup")
 async def startup_event():
-    """Initialize hardware registry on startup."""
-    HardwareRegistry.initialize() 
+    """Initialize hardware registry and apply runtime patches on startup."""
+    HardwareRegistry.initialize()
+
+    # Patch MODEL_DICT at startup instead of at import time
+    try:
+        from .routers.models import apply_model_dict_patch
+        apply_model_dict_patch()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"MODEL_DICT patching failed: {e}")

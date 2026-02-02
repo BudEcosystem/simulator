@@ -1,4 +1,6 @@
 import numpy as np
+from copy import copy
+from dataclasses import dataclass, field
 from math import ceil, lcm
 import sys
 from typing import Optional, TYPE_CHECKING
@@ -7,6 +9,31 @@ from .model_quality import QualityMetricsCollection
 
 if TYPE_CHECKING:
     from BudSimulator.lora.config import LoraConfig
+
+
+@dataclass
+class LayerConfig:
+    """Per-layer configuration overrides for heterogeneous models (e.g. Nemotron-51B / DeciLM).
+
+    When a field is None the model-level default from ModelConfig is used.
+    """
+    # Attention behaviour: "MHA-global", "MHA-local", "linear", "no_op", "Mamba"
+    attention_type: str = "MHA-global"
+    # FFN behaviour: "Dense", "MoE", "linear", "no_op"
+    ffn_type: str = "Dense"
+    # Optional per-layer dimensional overrides
+    num_attention_heads: Optional[int] = None
+    num_key_value_heads: Optional[int] = None
+    intermediate_size: Optional[int] = None
+    # Convenience multiplier applied to the model-level intermediate_size
+    # (ignored when intermediate_size is set explicitly)
+    ffn_mult: Optional[float] = None
+
+    def effective_key(self) -> tuple:
+        """Return a hashable key for grouping identical layer configs."""
+        return (self.attention_type, self.ffn_type,
+                self.num_attention_heads, self.num_key_value_heads,
+                self.intermediate_size, self.ffn_mult)
 
 class ModelConfig():
     r"""
@@ -72,6 +99,9 @@ class ModelConfig():
         attn_layer_period = 1,
         expert_layer_offset = 0,
         expert_layer_period = 1,
+        # Interleaved attention: every Nth layer uses global attention, rest use local (sliding window)
+        # None = all global (default), e.g. 6 means layer 0,6,12,... are global, rest are local
+        global_attn_every_n_layers = None,
         # Quality of Model
         model_quality: Optional[QualityMetricsCollection] = None,
         # LoRA configuration
@@ -82,6 +112,9 @@ class ModelConfig():
         qk_rope_head_dim: Optional[int] = None,  # RoPE head dimension
         qk_nope_head_dim: Optional[int] = None,  # Non-RoPE head dimension
         v_head_dim: Optional[int] = None,        # Value head dimension for MLA
+        # Per-layer configuration for heterogeneous models (e.g. Nemotron-51B / DeciLM)
+        # When provided, must have exactly num_decoder_layers entries.
+        layer_configs: Optional[list] = None,     # list[LayerConfig]
         **kwargs,
     ):
         self.model = model
@@ -133,35 +166,52 @@ class ModelConfig():
         self.attn_layer_period = attn_layer_period
         self.attn_layer_offset = attn_layer_offset
         self.mamba_layer_period = mamba_layer_period
+        self.global_attn_every_n_layers = global_attn_every_n_layers
 
         # Create the 2D list of parameters
         # print(self.is_mamba, self.is_moe)
         self.layer_type = []
-        if self.is_mamba and self.is_moe:
-            self.unique_layers = lcm(self.mamba_layer_period, self.expert_layer_period, self.attn_layer_period)
-        elif self.is_mamba:
-            self.unique_layers = self.mamba_layer_period
-        elif self.is_moe:
-            self.unique_layers = self.expert_layer_period
+        if self.global_attn_every_n_layers is not None:
+            # Interleaved global/local attention (e.g. Gemma3)
+            # Every layer is unique since the attention pattern spans all layers
+            self.unique_layers = self.num_decoder_layers
+            for i in range(self.unique_layers):
+                if i % self.global_attn_every_n_layers == 0:
+                    attention_type = "MHA-global"
+                else:
+                    attention_type = "MHA-local"
+
+                if self.is_moe and self.expert_layer_period and (i % self.expert_layer_period == self.expert_layer_offset):
+                    layer_type = "MoE"
+                else:
+                    layer_type = "Dense"
+                self.layer_type.append([attention_type, layer_type])
         else:
-            self.unique_layers = 1
-        num_repeats = self.num_decoder_layers / self.unique_layers
-        assert num_repeats.is_integer(), "Number of decoder layers must be divisible by the unique layers"
-        for i in range(self.unique_layers):
-            # Determine the attention type
-            if self.is_mamba and (i % self.mamba_layer_period == 0):
-                attention_type = "Mamba"
-            elif (i % self.attn_layer_period == self.attn_layer_offset):
-                attention_type = "MHA-global"
+            if self.is_mamba and self.is_moe:
+                self.unique_layers = lcm(self.mamba_layer_period, self.expert_layer_period, self.attn_layer_period)
+            elif self.is_mamba:
+                self.unique_layers = self.mamba_layer_period
+            elif self.is_moe:
+                self.unique_layers = self.expert_layer_period
             else:
-                attention_type = "MHA-global"
+                self.unique_layers = 1
+            num_repeats = self.num_decoder_layers / self.unique_layers
+            assert num_repeats.is_integer(), "Number of decoder layers must be divisible by the unique layers"
+            for i in range(self.unique_layers):
+                # Determine the attention type
+                if self.is_mamba and (i % self.mamba_layer_period == 0):
+                    attention_type = "Mamba"
+                elif (i % self.attn_layer_period == self.attn_layer_offset):
+                    attention_type = "MHA-global"
+                else:
+                    attention_type = "MHA-global"
 
-            if self.is_moe and self.expert_layer_period and (i % self.expert_layer_period == self.expert_layer_offset):
-                layer_type = "MoE"
-            else:
-                layer_type = "Dense"
+                if self.is_moe and self.expert_layer_period and (i % self.expert_layer_period == self.expert_layer_offset):
+                    layer_type = "MoE"
+                else:
+                    layer_type = "Dense"
 
-            self.layer_type.append([attention_type, layer_type])
+                self.layer_type.append([attention_type, layer_type])
 
         self.ffn_implementation = ffn_implementation
 
@@ -198,6 +248,19 @@ class ModelConfig():
         # MLA detection: if any MLA-specific parameter is set, this is an MLA model
         self.is_mla = (kv_lora_rank is not None)
 
+        # Per-layer heterogeneous configs (e.g. DeciLM / Nemotron-51B)
+        self.layer_configs = layer_configs
+        if layer_configs is not None:
+            assert len(layer_configs) == self.num_decoder_layers, (
+                f"layer_configs length ({len(layer_configs)}) must equal "
+                f"num_decoder_layers ({self.num_decoder_layers})"
+            )
+            # Override layer_type from layer_configs
+            self.unique_layers = self.num_decoder_layers
+            self.layer_type = [
+                [lc.attention_type, lc.ffn_type] for lc in layer_configs
+            ]
+
         super().__init__()
 
     @property
@@ -214,7 +277,42 @@ class ModelConfig():
             for i in range(self.num_hidden_layers)
         ]
 
+    def get_layer_view(self, layer_idx: int) -> 'ModelConfig':
+        """Return a shallow copy of this config with per-layer overrides applied.
+
+        If layer_configs is None (uniform model), returns self unchanged.
+        Otherwise applies LayerConfig overrides for the given layer index.
+        """
+        if self.layer_configs is None:
+            return self
+        lc = self.layer_configs[layer_idx]
+        view = copy(self)
+        if lc.num_attention_heads is not None:
+            view.num_attention_heads = lc.num_attention_heads
+            if lc.num_key_value_heads is None:
+                view.num_key_value_heads = lc.num_attention_heads
+            view.head_dim = self.hidden_size // lc.num_attention_heads
+        if lc.num_key_value_heads is not None:
+            view.num_key_value_heads = lc.num_key_value_heads
+        if lc.intermediate_size is not None:
+            view.intermediate_size = lc.intermediate_size
+        elif lc.ffn_mult is not None:
+            view.intermediate_size = int(self.hidden_size * lc.ffn_mult)
+        return view
+
     def get_kv_size(self):
+        if self.is_mla:
+            # MLA stores compressed KV: (kv_lora_rank + qk_rope_head_dim) per token per layer
+            return self.num_decoder_layers * (self.kv_lora_rank + self.qk_rope_head_dim)
+        if self.layer_configs is not None:
+            # Heterogeneous: sum per-layer KV sizes (no_op layers contribute 0)
+            total = 0
+            for i, lc in enumerate(self.layer_configs):
+                if lc.attention_type == "no_op":
+                    continue
+                view = self.get_layer_view(i)
+                total += 2 * view.head_dim * view.num_key_value_heads
+            return total
         return 2*self.num_decoder_layers*self.head_dim*self.num_key_value_heads
 
     def __str__(self):

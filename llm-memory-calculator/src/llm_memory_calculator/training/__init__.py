@@ -21,7 +21,7 @@ from .types import (
     TrainingTimeEstimate,
 )
 
-from .calculator import TrainingMemoryCalculator
+from .calculator import TrainingMemoryCalculator, calculate_training_memory
 from .cluster_selector import TrainingClusterSelector
 from .time_estimator import TrainingTimeEstimator
 
@@ -167,6 +167,54 @@ from .cluster_optimizer import (
     design_optimal_training_cluster,
 )
 
+# Cluster ranking types (NEW)
+from .cluster_ranking_types import (
+    ClusterRankingResult,
+    MinimumClusterRequirements,
+    ComprehensiveLlamaFactoryConfig,
+    MemoryBreakdownDetails,
+    GPURequirement,
+    PPOModelConfig,
+    RankingMetric,
+    ClusterTopology,
+    format_eta,
+)
+
+# Cluster ranker (NEW)
+from .cluster_ranker import rank_clusters_for_training
+
+# Cluster requirements predictor (NEW)
+from .cluster_requirements import predict_cluster_requirements
+
+# Comprehensive config builder (NEW)
+from .comprehensive_config_builder import generate_comprehensive_training_config
+
+# Best practices (NEW)
+from .best_practices import (
+    TRAINING_TYPE_MEMORY_MULTIPLIERS,
+    TRAINING_TYPE_DEFAULTS,
+    LEARNING_RATES,
+    OPTIMIZER_STATE_MULTIPLIERS,
+    OPTIMIZER_BEST_PRACTICES,
+    STABILITY_CONFIGS,
+    CONVERGENCE_CONFIGS,
+    LORA_CONFIGS,
+    QLORA_CONFIGS,
+    PPO_BEST_PRACTICES,
+    GRPO_BEST_PRACTICES,
+    DISTRIBUTED_CONFIGS,
+    ZERO_STAGE_SELECTION,
+    DEEPSPEED_ZERO_CONFIGS,
+    SCENARIO_CONFIGS,
+    HARDWARE_SPECIFIC,
+    TROUBLESHOOTING,
+    PRECISION_CONFIGS,
+    get_recommended_learning_rate,
+    get_precision_bytes,
+    get_optimizer_memory_multiplier,
+    get_training_type_memory_multiplier,
+)
+
 # Validation suite
 from .validation_suite import (
     ValidationConfig,
@@ -241,6 +289,7 @@ __all__ = [
 
     # Original classes
     "TrainingMemoryCalculator",
+    "calculate_training_memory",
     "TrainingClusterSelector",
     "TrainingTimeEstimator",
 
@@ -362,6 +411,50 @@ __all__ = [
     "ClusterOptimizer",
     "select_optimal_cluster",
     "design_optimal_training_cluster",
+
+    # Cluster ranking types (NEW)
+    "ClusterRankingResult",
+    "MinimumClusterRequirements",
+    "ComprehensiveLlamaFactoryConfig",
+    "MemoryBreakdownDetails",
+    "GPURequirement",
+    "PPOModelConfig",
+    "RankingMetric",
+    "ClusterTopology",
+    "format_eta",
+
+    # Cluster ranker (NEW)
+    "rank_clusters_for_training",
+
+    # Cluster requirements predictor (NEW)
+    "predict_cluster_requirements",
+
+    # Comprehensive config builder (NEW)
+    "generate_comprehensive_training_config",
+
+    # Best practices (NEW)
+    "TRAINING_TYPE_MEMORY_MULTIPLIERS",
+    "TRAINING_TYPE_DEFAULTS",
+    "LEARNING_RATES",
+    "OPTIMIZER_STATE_MULTIPLIERS",
+    "OPTIMIZER_BEST_PRACTICES",
+    "STABILITY_CONFIGS",
+    "CONVERGENCE_CONFIGS",
+    "LORA_CONFIGS",
+    "QLORA_CONFIGS",
+    "PPO_BEST_PRACTICES",
+    "GRPO_BEST_PRACTICES",
+    "DISTRIBUTED_CONFIGS",
+    "ZERO_STAGE_SELECTION",
+    "DEEPSPEED_ZERO_CONFIGS",
+    "SCENARIO_CONFIGS",
+    "HARDWARE_SPECIFIC",
+    "TROUBLESHOOTING",
+    "PRECISION_CONFIGS",
+    "get_recommended_learning_rate",
+    "get_precision_bytes",
+    "get_optimizer_memory_multiplier",
+    "get_training_type_memory_multiplier",
 
     # Validation suite
     "ValidationConfig",

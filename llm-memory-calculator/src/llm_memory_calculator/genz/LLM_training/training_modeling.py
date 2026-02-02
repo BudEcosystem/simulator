@@ -17,8 +17,11 @@ from typing import Dict, Any, Optional, List, Tuple, Union, TYPE_CHECKING
 from types import SimpleNamespace
 import numpy as np
 import math
+import logging
 import warnings
 from functools import lru_cache
+
+logger = logging.getLogger(__name__)
 
 from ..system import System
 from ..unit import Unit
@@ -2884,7 +2887,7 @@ def training_modeling(
         forward_summary = forward_result.summary_table
     except Exception as e:
         if debug:
-            print(f"Forward modeling failed: {e}, using FLOPs estimate")
+            logger.debug("Forward modeling failed: %s, using FLOPs estimate", e)
         # Fallback to FLOP-based estimate
         forward_flops = _estimate_forward_flops(
             total_params, batch_size, seq_length, hidden_size, num_layers, num_heads
@@ -2943,13 +2946,13 @@ def training_modeling(
                 generation_time_ms = decode_result.Latency * generation_tokens
 
                 if debug:
-                    print(f"Generation phase: {generation_tokens} tokens @ {decode_result.Latency:.2f}ms/token")
-                    print(f"  Total generation time: {generation_time_ms:.2f}ms")
-                    print(f"  Samples per prompt: {num_samples}")
+                    logger.debug("Generation phase: %d tokens @ %.2fms/token", generation_tokens, decode_result.Latency)
+                    logger.debug("  Total generation time: %.2fms", generation_time_ms)
+                    logger.debug("  Samples per prompt: %d", num_samples)
 
             except Exception as e:
                 if debug:
-                    print(f"Decode modeling failed: {e}, using FLOPs estimate")
+                    logger.debug("Decode modeling failed: %s, using FLOPs estimate", e)
                 # Fallback: estimate generation time from FLOPs
                 gen_flops = calculate_generation_flops(
                     batch_size, generation_tokens, total_params, num_samples
@@ -2970,7 +2973,7 @@ def training_modeling(
             scoring_time_ms = _flops_to_time_ms(scoring_flops, system, tensor_parallel)
 
             if debug:
-                print(f"Scoring phase: {scoring_time_ms:.2f}ms (reward model inference)")
+                logger.debug("Scoring phase: %.2fms (reward model inference)", scoring_time_ms)
 
     # ========================================
     # Backward Pass Timing (Phase 7: Operator-Level Roofline)
@@ -3009,16 +3012,16 @@ def training_modeling(
             backward_multiplier = backward_time_base_ms / forward_time_ms if forward_time_ms > 0 else 2.0
 
             if debug:
-                print(f"Backward pass (operator-level):")
-                print(f"  Method: {backward_result.get('backward_method', 'unknown')}")
-                print(f"  Time: {backward_time_base_ms:.2f}ms")
-                print(f"  Effective multiplier: {backward_multiplier:.2f}x")
+                logger.debug("Backward pass (operator-level):")
+                logger.debug("  Method: %s", backward_result.get('backward_method', 'unknown'))
+                logger.debug("  Time: %.2fms", backward_time_base_ms)
+                logger.debug("  Effective multiplier: %.2fx", backward_multiplier)
                 if backward_breakdown:
-                    print(f"  Breakdown: {backward_breakdown}")
+                    logger.debug("  Breakdown: %s", backward_breakdown)
 
         except Exception as e:
             if debug:
-                print(f"Operator-level backward failed: {e}, falling back to multiplier method")
+                logger.debug("Operator-level backward failed: %s, falling back to multiplier method", e)
             use_operator_backward = False  # Fall back to multiplier method
 
     if not use_operator_backward or forward_model_df is None:
@@ -3520,11 +3523,11 @@ def training_modeling(
         step_time_ms = training_time_ms + generation_time_ms + scoring_time_ms
 
         if debug:
-            print(f"RLHF step time breakdown:")
-            print(f"  Generation: {generation_time_ms:.2f}ms ({generation_time_ms/step_time_ms*100:.1f}%)")
-            print(f"  Scoring: {scoring_time_ms:.2f}ms ({scoring_time_ms/step_time_ms*100:.1f}%)")
-            print(f"  Training: {training_time_ms:.2f}ms ({training_time_ms/step_time_ms*100:.1f}%)")
-            print(f"  Total: {step_time_ms:.2f}ms")
+            logger.debug("RLHF step time breakdown:")
+            logger.debug("  Generation: %.2fms (%.1f%%)", generation_time_ms, generation_time_ms/step_time_ms*100)
+            logger.debug("  Scoring: %.2fms (%.1f%%)", scoring_time_ms, scoring_time_ms/step_time_ms*100)
+            logger.debug("  Training: %.2fms (%.1f%%)", training_time_ms, training_time_ms/step_time_ms*100)
+            logger.debug("  Total: %.2fms", step_time_ms)
 
     # Extract exposed communication times for breakdown
     effective_dp_comm = overlap_breakdown.get('dp_exposed_ms', dp_comm_time_ms * 0.5)
@@ -3695,9 +3698,9 @@ def training_modeling(
     # Research: OPT/BLOOM achieve ~35-40% MFU vs LLaMA's ~48-52% MFU
     # DEBUG: Print architecture detection
     if debug:
-        print(f"DEBUG MFU Section: model_name_lower={model_name_lower}")
-        print(f"DEBUG MFU Section: is_dense_ffn={is_dense_ffn}, is_mha={is_mha}, is_mla={is_mla}")
-        print(f"DEBUG MFU Section: mfu before penalties={mfu:.4f}")
+        logger.debug("MFU Section: model_name_lower=%s", model_name_lower)
+        logger.debug("MFU Section: is_dense_ffn=%s, is_mha=%s, is_mla=%s", is_dense_ffn, is_mha, is_mla)
+        logger.debug("MFU Section: mfu before penalties=%.4f", mfu)
 
     # Phase 6 Fix: MLA models use a different attention mechanism (latent compression)
     # MLA is NOT the same as MHA even if num_kv_heads == num_attention_heads
@@ -3710,19 +3713,19 @@ def training_modeling(
         arch_mfu_factor = 0.80
         mfu *= arch_mfu_factor
         if debug:
-            print(f"DEBUG: Applied dense_ffn+mha penalty: {arch_mfu_factor}, mfu={mfu:.4f}")
+            logger.debug("Applied dense_ffn+mha penalty: %s, mfu=%.4f", arch_mfu_factor, mfu)
     elif is_dense_ffn:
         # Dense FFN only: ~12% lower MFU
         arch_mfu_factor = 0.88
         mfu *= arch_mfu_factor
         if debug:
-            print(f"DEBUG: Applied dense_ffn penalty: {arch_mfu_factor}, mfu={mfu:.4f}")
+            logger.debug("Applied dense_ffn penalty: %s, mfu=%.4f", arch_mfu_factor, mfu)
     elif apply_mha_penalty:
         # MHA only: ~8% lower MFU (not applied to MLA models)
         arch_mfu_factor = 0.92
         mfu *= arch_mfu_factor
         if debug:
-            print(f"DEBUG: Applied mha penalty: {arch_mfu_factor}, mfu={mfu:.4f}")
+            logger.debug("Applied mha penalty: %s, mfu=%.4f", arch_mfu_factor, mfu)
 
     # Phase 6 CORRECTED: DeepSeek V2/V3 model-specific calibration
     # These models have complex overhead from:
@@ -3749,7 +3752,7 @@ def training_modeling(
             deepseek_v3_penalty = 0.41  # Calibrated: 21% / 51% ≈ 0.41
             mfu *= deepseek_v3_penalty
             if debug:
-                print(f"DEBUG: Applied DeepSeek V3 penalty: {deepseek_v3_penalty:.3f}, mfu={mfu:.4f}")
+                logger.debug("Applied DeepSeek V3 penalty: %.3f, mfu=%.4f", deepseek_v3_penalty, mfu)
         elif is_v2:
             # DeepSeek V2: Reported 28% MFU
             # Base MFU calculation is affected by memory issues
@@ -3757,7 +3760,7 @@ def training_modeling(
             deepseek_v2_factor = 2.0  # Correction for base MFU under-estimation
             mfu *= deepseek_v2_factor
             if debug:
-                print(f"DEBUG: Applied DeepSeek V2 correction: {deepseek_v2_factor:.2f}x, mfu={mfu:.4f}")
+                logger.debug("Applied DeepSeek V2 correction: %.2fx, mfu=%.4f", deepseek_v2_factor, mfu)
         else:
             # Generic MLA model (future DeepSeek variants)
             mla_overhead = 1.07
@@ -3768,7 +3771,7 @@ def training_modeling(
             deepseek_penalty = 1.0 / (mla_overhead * shared_overhead * fp8_overhead)
             mfu *= deepseek_penalty
             if debug:
-                print(f"DEBUG: Applied generic MLA penalty: {deepseek_penalty:.3f}, mfu={mfu:.4f}")
+                logger.debug("Applied generic MLA penalty: %.3f, mfu=%.4f", deepseek_penalty, mfu)
 
     # Phase 6: BLOOM cluster penalty (Jean Zay)
     # BLOOM was trained on Jean Zay (French HPC) with:
@@ -3780,7 +3783,7 @@ def training_modeling(
         bloom_cluster_penalty = 0.74  # Calibrated: 35% / 47% ≈ 0.74
         mfu *= bloom_cluster_penalty
         if debug:
-            print(f"DEBUG: Applied BLOOM cluster penalty: {bloom_cluster_penalty}, mfu={mfu:.4f}")
+            logger.debug("Applied BLOOM cluster penalty: %s, mfu=%.4f", bloom_cluster_penalty, mfu)
 
     # Phase 6: Qwen 1.x early training penalty
     # Qwen 1.x (2023) was trained with earlier infrastructure and less optimized stack
@@ -3795,7 +3798,7 @@ def training_modeling(
         qwen1x_penalty = 0.65  # Calibrated from Qwen-72B: 45% / 69% ≈ 0.65
         mfu *= qwen1x_penalty
         if debug:
-            print(f"DEBUG: Applied Qwen 1.x penalty: {qwen1x_penalty}, mfu={mfu:.4f}")
+            logger.debug("Applied Qwen 1.x penalty: %s, mfu=%.4f", qwen1x_penalty, mfu)
 
     # Phase 6: Large-scale MoE efficiency penalty
     # Large MoE models (>100 experts) have significant additional overhead:
@@ -3817,15 +3820,15 @@ def training_modeling(
         moe_scale_penalty = max(0.35, min(0.65, moe_scale_penalty))  # Clamp
         mfu *= moe_scale_penalty
         if debug:
-            print(f"DEBUG: Applied large MoE penalty ({moe_num_experts} experts): {moe_scale_penalty:.3f}, mfu={mfu:.4f}")
+            logger.debug("Applied large MoE penalty (%d experts): %.3f, mfu=%.4f", moe_num_experts, moe_scale_penalty, mfu)
     elif moe_num_experts > 1 and not skip_large_moe_penalty:
         # Smaller MoE models still have some overhead
         moe_base_penalty = 0.85  # 15% efficiency loss for basic MoE
         mfu *= moe_base_penalty
         if debug:
-            print(f"DEBUG: Applied MoE penalty ({moe_num_experts} experts): {moe_base_penalty}, mfu={mfu:.4f}")
+            logger.debug("Applied MoE penalty (%d experts): %s, mfu=%.4f", moe_num_experts, moe_base_penalty, mfu)
     elif skip_large_moe_penalty and moe_num_experts > 1 and debug:
-        print(f"DEBUG: Skipped MoE penalty for DeepSeek ({moe_num_experts} experts, already has MLA penalty)")
+        logger.debug("Skipped MoE penalty for DeepSeek (%d experts, already has MLA penalty)", moe_num_experts)
 
     # Hardware FLOPs Utilization (HFU) - same as MFU for our purposes
     # Both measure achieved FLOPs per GPU / peak FLOPs per GPU

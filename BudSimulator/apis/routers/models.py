@@ -2,17 +2,12 @@
 Models router for FastAPI application.
 """
 
-import sys
-import os
 from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse
 import logging
 import json
 from datetime import datetime
-
-# Add parent directories to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 # Import schemas
 from ..schemas import (
@@ -32,7 +27,7 @@ from ..schemas import (
 # Import BudSimulator modules
 try:
     from src.bud_models import (
-        HuggingFaceConfigLoader, 
+        HuggingFaceConfigLoader,
         ModelMemoryCalculator,
         estimate_memory,
         analyze_hf_model
@@ -40,17 +35,25 @@ try:
     from src.db import ModelManager, HuggingFaceModelImporter
     from src.db.model_loader import patch_genz_model_dict
     from llm_memory_calculator.genz.Models import MODEL_DICT
-    
-    # Patch MODEL_DICT to use dynamic version
-    patch_success = patch_genz_model_dict()
-    if patch_success:
+
+    # MODEL_DICT patching is deferred to startup_event() in apis/main.py
+    _PATCH_GENZ_MODEL_DICT = patch_genz_model_dict
+except ImportError as e:
+    logging.error(f"Failed to import BudSimulator modules: {e}")
+    _PATCH_GENZ_MODEL_DICT = None
+    raise
+
+
+def apply_model_dict_patch() -> bool:
+    """Apply MODEL_DICT patch. Called from startup_event() in main.py."""
+    if _PATCH_GENZ_MODEL_DICT is None:
+        return False
+    success = _PATCH_GENZ_MODEL_DICT()
+    if success:
         logging.info("Successfully patched MODEL_DICT with dynamic version")
     else:
         logging.warning("Failed to patch MODEL_DICT, using static version")
-        
-except ImportError as e:
-    logging.error(f"Failed to import BudSimulator modules: {e}")
-    raise
+    return success
 
 # Create router
 router = APIRouter()
@@ -200,7 +203,7 @@ async def get_model_config(model_id: str, request: Request):
                         # Simply check if it's a valid dict with at least description
                         if analysis_data and isinstance(analysis_data, dict) and 'description' in analysis_data:
                             model_analysis = analysis_data
-                    except:
+                    except Exception:
                         model_analysis = None
             else:
                 # This is either a user-provided config or fetched from HuggingFace
@@ -242,7 +245,7 @@ async def get_model_config(model_id: str, request: Request):
                 size_gb = (parameter_count * 2) / (1024**3)
             else:
                 size_gb = None
-        except:
+        except Exception:
             downloads = 0
             likes = 0
             tags = []
@@ -768,7 +771,7 @@ async def get_popular_models(request: Request, limit: int = 10):
                     model_info = hf_loader.get_model_info(model_id)
                     downloads = getattr(model_info, 'downloads', 0)
                     likes = getattr(model_info, 'likes', 0)
-                except:
+                except Exception:
                     downloads = 0
                     likes = 0
                 
@@ -956,9 +959,9 @@ async def list_all_models(request: Request):
                     # Simply check if it's a valid dict with at least description
                     if analysis_data and isinstance(analysis_data, dict) and 'description' in analysis_data:
                         model_analysis = analysis_data
-                except:
+                except Exception:
                     model_analysis = None
-            
+
             summary = ModelSummary(
                     model_id=model_id,
                     name=extract_model_name(model_id),
@@ -1010,6 +1013,7 @@ async def list_all_models(request: Request):
 
 @router.get("/filter", response_model=FilterModelsResponse)
 async def filter_models(
+    request: Request,
     author: Optional[str] = None,
     model_type: Optional[str] = None,
     attention_type: Optional[str] = None,
@@ -1032,7 +1036,7 @@ async def filter_models(
     """
     try:
         # First get all models
-        all_models_response = await list_all_models()
+        all_models_response = await list_all_models(request)
         models = all_models_response.models
         
         # Apply filters
@@ -1089,7 +1093,7 @@ async def filter_models(
                             continue
                     else:
                         continue
-                except:
+                except Exception:
                     continue
             
             filtered_models.append(model)
@@ -1233,7 +1237,7 @@ async def add_model_from_config(request: AddModelFromConfigRequest):
                 layer_norm_params = num_layers * 4 * hidden_size  # Multiple LayerNorms per layer
                 
                 parameter_count = embedding_params + attention_params + ffn_params + layer_norm_params
-            except:
+            except Exception:
                 parameter_count = None
         
         # Add metadata to config if provided
@@ -1368,7 +1372,7 @@ async def get_model_details(model_id: str, request: Request):
                 try:
                     hf_config = hf_loader.get_model_config(model_id)
                     config = hf_config
-                except:
+                except Exception:
                     # If HuggingFace fails, try user config
                     user_config = model_manager.get_user_model_config(model_id)
                     if user_config:

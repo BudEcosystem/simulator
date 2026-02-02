@@ -140,7 +140,7 @@ OPTIMIZER_CONFIGS: Dict[str, OptimizerConfig] = {
         description="Memory-efficient optimizer with factorized second moment",
         category=OptimizerCategory.MEMORY_EFFICIENT,
         state_count=1,  # Factorized states
-        state_precision_bytes=2.0,  # Effectively lower precision
+        state_precision_bytes=4.0,  # FP32
         total_bytes_per_param=4.0,  # Approximately 4 bytes effective
         memory_reduction_vs_adamw=0.5,  # 50% of AdamW
         extra_params={
@@ -200,7 +200,7 @@ OPTIMIZER_CONFIGS: Dict[str, OptimizerConfig] = {
         category=OptimizerCategory.LOW_RANK,
         state_count=2,  # Still AdamW states, but on low-rank gradients
         state_precision_bytes=4.0,
-        total_bytes_per_param=2.0,  # ~25% of full due to low-rank
+        total_bytes_per_param=4.0,  # 2 states × 4 bytes (LOW_RANK category handles reduction)
         memory_reduction_vs_adamw=0.25,  # 75% reduction
         requires_pure_bf16=True,  # Works better without AMP
         supports_gradient_accumulation=False,  # Not in layerwise mode
@@ -219,7 +219,7 @@ OPTIMIZER_CONFIGS: Dict[str, OptimizerConfig] = {
         category=OptimizerCategory.LOW_RANK,
         state_count=2,
         state_precision_bytes=1.0,
-        total_bytes_per_param=0.5,  # Very efficient
+        total_bytes_per_param=2.0,  # 2 states × 1 byte (LOW_RANK category handles reduction)
         memory_reduction_vs_adamw=0.0625,  # 93.75% reduction
         requires_pure_bf16=True,
         supports_gradient_accumulation=False,
@@ -235,10 +235,10 @@ OPTIMIZER_CONFIGS: Dict[str, OptimizerConfig] = {
         display_name="APOLLO",
         description="Approximate second-order optimizer with low-rank projection",
         category=OptimizerCategory.LOW_RANK,
-        state_count=2,
+        state_count=1,
         state_precision_bytes=4.0,
-        total_bytes_per_param=2.0,
-        memory_reduction_vs_adamw=0.25,
+        total_bytes_per_param=4.0,
+        memory_reduction_vs_adamw=0.5,
         requires_pure_bf16=True,
         supports_gradient_accumulation=False,  # Not in layerwise mode
         extra_params={
@@ -286,7 +286,7 @@ OPTIMIZER_CONFIGS: Dict[str, OptimizerConfig] = {
         description="Momentum + Newton-Schulz orthogonalization, hybrid with AdamW",
         category=OptimizerCategory.HYBRID,
         state_count=1,  # Momentum only for Muon part
-        state_precision_bytes=2.0,  # BF16
+        state_precision_bytes=4.0,  # FP32
         total_bytes_per_param=4.0,  # Mixed with AdamW for some params
         memory_reduction_vs_adamw=0.5,
         requires_large_batch=True,
@@ -307,13 +307,162 @@ OPTIMIZER_CONFIGS: Dict[str, OptimizerConfig] = {
         category=OptimizerCategory.MEMORY_EFFICIENT,
         state_count=2,
         state_precision_bytes=4.0,
-        total_bytes_per_param=8.0 / 32,  # Roughly 1/num_layers
+        total_bytes_per_param=1.0,  # Only 1 layer active at a time
         memory_reduction_vs_adamw=0.03,  # ~97% reduction (for 32 layers)
         supports_distributed=True,  # Works with DeepSpeed ZeRO-3
         extra_params={
             "switch_mode": "ascending",  # ascending, descending, random, fixed
             "switch_interval": 50,
         },
+    ),
+
+    # Paged optimizers (CPU offload variants)
+    "paged_adamw_32bit": OptimizerConfig(
+        name="paged_adamw_32bit",
+        display_name="Paged 32-bit AdamW",
+        description="AdamW with CPU offloading for memory spikes",
+        category=OptimizerCategory.STANDARD,
+        state_count=2,
+        state_precision_bytes=4.0,
+        total_bytes_per_param=8.0,
+        memory_reduction_vs_adamw=1.0,
+        extra_params={
+            "requires_bitsandbytes": True,
+            "supports_paging": True,
+        },
+    ),
+
+    "lion_8bit": OptimizerConfig(
+        name="lion_8bit",
+        display_name="8-bit Lion",
+        description="Lion optimizer with quantized momentum state",
+        category=OptimizerCategory.QUANTIZED,
+        state_count=1,
+        state_precision_bytes=1.0,
+        total_bytes_per_param=1.0,
+        memory_reduction_vs_adamw=0.125,
+        extra_params={
+            "requires_bitsandbytes": True,
+        },
+    ),
+
+    "paged_lion_8bit": OptimizerConfig(
+        name="paged_lion_8bit",
+        display_name="Paged 8-bit Lion",
+        description="8-bit Lion with CPU offloading",
+        category=OptimizerCategory.QUANTIZED,
+        state_count=1,
+        state_precision_bytes=1.0,
+        total_bytes_per_param=1.0,
+        memory_reduction_vs_adamw=0.125,
+        extra_params={
+            "requires_bitsandbytes": True,
+            "supports_paging": True,
+        },
+    ),
+
+    "paged_lion_32bit": OptimizerConfig(
+        name="paged_lion_32bit",
+        display_name="Paged 32-bit Lion",
+        description="Lion with CPU offloading",
+        category=OptimizerCategory.MEMORY_EFFICIENT,
+        state_count=1,
+        state_precision_bytes=4.0,
+        total_bytes_per_param=4.0,
+        memory_reduction_vs_adamw=0.5,
+        extra_params={
+            "requires_bitsandbytes": True,
+            "supports_paging": True,
+        },
+    ),
+
+    # ADEMAMIX variants
+    "ademamix": OptimizerConfig(
+        name="ademamix",
+        display_name="AdemaMix",
+        description="Adam with exponential moving average mixture for better convergence",
+        category=OptimizerCategory.STANDARD,
+        state_count=3,  # momentum1 + momentum2 + variance
+        state_precision_bytes=4.0,
+        total_bytes_per_param=12.0,
+        memory_reduction_vs_adamw=1.5,  # 50% more than AdamW
+    ),
+
+    "ademamix_8bit": OptimizerConfig(
+        name="ademamix_8bit",
+        display_name="8-bit AdemaMix",
+        description="AdemaMix with quantized optimizer states",
+        category=OptimizerCategory.QUANTIZED,
+        state_count=3,
+        state_precision_bytes=1.0,
+        total_bytes_per_param=3.0,
+        memory_reduction_vs_adamw=0.375,
+        extra_params={
+            "requires_bitsandbytes": True,
+        },
+    ),
+
+    # LOMO family
+    "lomo": OptimizerConfig(
+        name="lomo",
+        display_name="LOMO",
+        description="LOw-Memory Optimization - fuses gradient into weight update",
+        category=OptimizerCategory.MEMORY_EFFICIENT,
+        state_count=0,  # No optimizer states
+        state_precision_bytes=0.0,
+        total_bytes_per_param=0.0,
+        memory_reduction_vs_adamw=0.0,
+        supports_gradient_accumulation=False,
+        extra_params={
+            "note": "Zero optimizer memory but may converge slower",
+        },
+    ),
+
+    "adalomo": OptimizerConfig(
+        name="adalomo",
+        display_name="AdaLOMO",
+        description="Adaptive LOMO with second-moment estimation for stability",
+        category=OptimizerCategory.MEMORY_EFFICIENT,
+        state_count=1,  # running variance only
+        state_precision_bytes=4.0,
+        total_bytes_per_param=4.0,
+        memory_reduction_vs_adamw=0.5,
+        supports_gradient_accumulation=False,
+    ),
+
+    # Schedule-free optimizers
+    "schedule_free_adamw": OptimizerConfig(
+        name="schedule_free_adamw",
+        display_name="Schedule-Free AdamW",
+        description="AdamW without learning rate schedule, uses interpolation",
+        category=OptimizerCategory.STANDARD,
+        state_count=2,
+        state_precision_bytes=4.0,
+        total_bytes_per_param=8.0,
+        memory_reduction_vs_adamw=1.0,
+    ),
+
+    "schedule_free_sgd": OptimizerConfig(
+        name="schedule_free_sgd",
+        display_name="Schedule-Free SGD",
+        description="SGD without learning rate schedule",
+        category=OptimizerCategory.STANDARD,
+        state_count=1,
+        state_precision_bytes=4.0,
+        total_bytes_per_param=4.0,
+        memory_reduction_vs_adamw=0.5,
+    ),
+
+    # GrokAdamW
+    "grokadamw": OptimizerConfig(
+        name="grokadamw",
+        display_name="GrokAdamW",
+        description="AdamW variant for grokking with weight norm penalty",
+        category=OptimizerCategory.STANDARD,
+        state_count=2,
+        state_precision_bytes=4.0,
+        total_bytes_per_param=8.0,
+        memory_reduction_vs_adamw=1.0,
     ),
 
     "badam_ratio": OptimizerConfig(
@@ -334,6 +483,24 @@ OPTIMIZER_CONFIGS: Dict[str, OptimizerConfig] = {
 }
 
 
+OPTIMIZER_ALIASES: Dict[str, str] = {
+    "adamw_torch": "adamw", "adamw_torch_fused": "adamw",
+    "adamw_hf": "adamw", "adamw_bnb_8bit": "adamw_8bit",
+    "adamw_apex_fused": "adamw", "adamw_anyprecision": "adamw",
+    "paged_adamw": "paged_adamw_8bit",
+    "adam_bnb_8bit": "adamw_8bit",
+    "adamw_torch_xla": "adamw", "adamw_torch_npu_fused": "adamw",
+    "adamax": "adamw", "rmsprop": "sgd", "rprop": "sgd",
+    "asgd": "sgd", "adagrad": "adafactor", "lbfgs": "sgd",
+    "adadelta": "sgd",
+    # LlamaFactory custom
+    "galore_adamw": "galore", "galore_adamw_8bit": "galore_8bit",
+    "galore_adafactor": "galore", "galore_adamw_layerwise": "galore",
+    "galore_adamw_8bit_layerwise": "galore_8bit",
+    "badam": "badam_layer", "adam_mini": "adam_mini",
+}
+
+
 def get_optimizer_config(name: str) -> OptimizerConfig:
     """
     Get configuration for an optimizer.
@@ -348,6 +515,8 @@ def get_optimizer_config(name: str) -> OptimizerConfig:
         ValueError: If optimizer is not found
     """
     name = name.lower()
+    # Resolve aliases
+    name = OPTIMIZER_ALIASES.get(name, name)
     if name in OPTIMIZER_CONFIGS:
         return OPTIMIZER_CONFIGS[name]
 

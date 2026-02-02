@@ -37,6 +37,16 @@ from .tco_calculator import calculate_tco, get_gpu_pricing, GPU_PRICING
 from .llamafactory_config_builder import build_llamafactory_config, build_deepspeed_config
 from .hardware_catalog import GPU_SPECS, get_gpu_spec
 
+# Import new ranking and requirements modules
+from .cluster_ranking_types import (
+    ClusterRankingResult,
+    MinimumClusterRequirements,
+    ComprehensiveLlamaFactoryConfig,
+)
+from .cluster_ranker import rank_clusters_for_training
+from .cluster_requirements import predict_cluster_requirements
+from .comprehensive_config_builder import generate_comprehensive_training_config
+
 # Import GenZ training modeling
 from ..genz.LLM_training.training_modeling import training_modeling, TrainingModelingOutput
 from ..genz.LLM_training.training_parallelization import (
@@ -642,6 +652,109 @@ class ClusterOptimizer:
             return rate
         except Exception:
             return 5.0  # Default fallback
+
+    # =========================================================================
+    # NEW METHODS: Cluster Ranking and Requirements
+    # =========================================================================
+
+    def rank_clusters(
+        self,
+        job_spec: TrainingJobSpec,
+        clusters: List[ClusterDefinition],
+        sort_by: str = "throughput",
+        k: int = 10,
+    ) -> List[ClusterRankingResult]:
+        """
+        Rank clusters by throughput, ETA, and cost with optimal batch size.
+
+        Wrapper for rank_clusters_for_training() that uses job_spec.
+
+        Args:
+            job_spec: Training job specification
+            clusters: List of available clusters
+            sort_by: Sorting metric (throughput, eta, cost, composite)
+            k: Number of top results to return
+
+        Returns:
+            List of ClusterRankingResult sorted by requested metric
+        """
+        return rank_clusters_for_training(
+            model=job_spec.model,
+            training_type=job_spec.training_type,
+            clusters=clusters,
+            dataset_tokens=job_spec.dataset_tokens,
+            avg_sequence_length=job_spec.avg_sequence_length,
+            num_epochs=job_spec.num_epochs,
+            method=job_spec.method,
+            optimizer=job_spec.optimizer,
+            precision=job_spec.precision,
+            max_training_hours=job_spec.max_time_hours,
+            max_budget_usd=job_spec.max_budget_usd,
+            sort_by=sort_by,
+            return_top_k=k,
+            debug=self.debug,
+        )
+
+    def predict_requirements(
+        self,
+        job_spec: TrainingJobSpec,
+        max_training_hours: Optional[float] = None,
+        target_mfu: float = 0.4,
+    ) -> MinimumClusterRequirements:
+        """
+        Predict minimum cluster requirements for a training job.
+
+        Wrapper for predict_cluster_requirements() that uses job_spec.
+
+        Args:
+            job_spec: Training job specification
+            max_training_hours: Maximum acceptable training time
+            target_mfu: Target Model FLOPS Utilization
+
+        Returns:
+            MinimumClusterRequirements with detailed requirements
+        """
+        return predict_cluster_requirements(
+            training_type=job_spec.training_type,
+            model=job_spec.model,
+            dtype=job_spec.precision,
+            optimizer=job_spec.optimizer,
+            dataset_size_tokens=job_spec.dataset_tokens,
+            batch_size=job_spec.batch_size or 4,
+            seq_length=job_spec.avg_sequence_length,
+            method=job_spec.method,
+            max_training_hours=max_training_hours or job_spec.max_time_hours,
+            target_mfu=target_mfu,
+        )
+
+    def generate_comprehensive_config(
+        self,
+        job_spec: TrainingJobSpec,
+        parallelism: ParallelismStrategy,
+        cluster: ClusterDefinition,
+        focus: str = "balanced",
+    ) -> ComprehensiveLlamaFactoryConfig:
+        """
+        Generate comprehensive LlamaFactory configuration with best practices.
+
+        Wrapper for generate_comprehensive_training_config().
+
+        Args:
+            job_spec: Training job specification
+            parallelism: Parallelism strategy
+            cluster: Cluster configuration
+            focus: Optimization focus (stable, convergence, speed, tco, balanced)
+
+        Returns:
+            ComprehensiveLlamaFactoryConfig with all configurations
+        """
+        return generate_comprehensive_training_config(
+            job_spec=job_spec,
+            parallelism=parallelism,
+            cluster=cluster,
+            optimization_focus=focus,
+            enable_best_practices=True,
+        )
 
     def _can_potentially_satisfy_constraints(
         self,

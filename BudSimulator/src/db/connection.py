@@ -13,39 +13,78 @@ from pathlib import Path
 from .schema import get_schema_statements, SCHEMA_VERSION
 
 
+_VALID_TABLES = frozenset({
+    "models",
+    "model_cache",
+    "model_versions",
+    "model_quality_metrics",
+    "user_model_configs",
+    "schema_version",
+    "model_recommendation_categories",
+    "usecases",
+    "hardware",
+})
+
+
+def _validate_table(table: str) -> str:
+    """Validate table name against whitelist to prevent SQL injection.
+
+    Args:
+        table: Table name to validate.
+
+    Returns:
+        The validated table name.
+
+    Raises:
+        ValueError: If the table name is not in the whitelist.
+    """
+    if table not in _VALID_TABLES:
+        raise ValueError(f"Invalid table name: {table!r}")
+    return table
+
+
 class DatabaseConnection:
     """Singleton database connection manager."""
-    
+
     _instance = None
     _lock = threading.Lock()
-    
+
     def __new__(cls, db_path: Optional[str] = None):
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     def __init__(self, db_path: Optional[str] = None):
         """Initialize database connection.
-        
+
         Args:
             db_path: Path to SQLite database file. If None, uses default location.
         """
-        if hasattr(self, '_initialized'):
-            return
-            
-        if db_path is None:
-            # Default database location - use local prepopulated.db
-            db_dir = Path(__file__).parent.parent.parent / 'data'
-            db_dir.mkdir(parents=True, exist_ok=True)
-            db_path = str(db_dir / 'prepopulated.db')
-            
-        self.db_path = db_path
-        self._conn = None
-        self._initialized = True
-        
-        # Initialize database schema
+        with self._lock:
+            if hasattr(self, '_initialized'):
+                if db_path is not None and db_path != self.db_path:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "DatabaseConnection singleton already initialized with db_path=%s, "
+                        "ignoring new db_path=%s. Use reset_instance() first to change.",
+                        self.db_path,
+                        db_path,
+                    )
+                return
+
+            if db_path is None:
+                # Default database location - use local prepopulated.db
+                db_dir = Path(__file__).parent.parent.parent / 'data'
+                db_dir.mkdir(parents=True, exist_ok=True)
+                db_path = str(db_dir / 'prepopulated.db')
+
+            self.db_path = db_path
+            self._conn = None
+            self._initialized = True
+
+        # Initialize database schema (outside lock to avoid deadlock)
         self._initialize_database()
     
     def _initialize_database(self):
@@ -72,7 +111,7 @@ class DatabaseConnection:
     @contextmanager
     def get_connection(self):
         """Get a database connection context manager."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row  # Enable column access by name
         try:
             yield conn
@@ -112,6 +151,7 @@ class DatabaseConnection:
     
     def insert(self, table: str, data: dict) -> int:
         """Insert a record and return the last inserted ID."""
+        _validate_table(table)
         columns = ', '.join(data.keys())
         placeholders = ', '.join(['?' for _ in data])
         query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
@@ -123,6 +163,7 @@ class DatabaseConnection:
     
     def update(self, table: str, data: dict, where: str, where_params: Tuple) -> int:
         """Update records and return the number of affected rows."""
+        _validate_table(table)
         set_clause = ', '.join([f"{k} = ?" for k in data.keys()])
         query = f"UPDATE {table} SET {set_clause} WHERE {where}"
         params = tuple(data.values()) + where_params
@@ -134,6 +175,7 @@ class DatabaseConnection:
     
     def delete(self, table: str, where: str, where_params: Tuple) -> int:
         """Delete records and return the number of affected rows."""
+        _validate_table(table)
         query = f"DELETE FROM {table} WHERE {where}"
         
         with self.get_connection() as conn:
@@ -161,11 +203,12 @@ class DatabaseConnection:
         )
         info['tables'] = [row['name'] for row in tables]
         
-        # Get row counts for each table
+        # Get row counts for each table (only for known tables)
         table_counts = {}
         for table in info['tables']:
-            count = self.execute_one(f"SELECT COUNT(*) as count FROM {table}")
-            table_counts[table] = count['count'] if count else 0
+            if table in _VALID_TABLES:
+                count = self.execute_one(f"SELECT COUNT(*) as count FROM {table}")
+                table_counts[table] = count['count'] if count else 0
         info['table_counts'] = table_counts
         
         return info

@@ -124,16 +124,45 @@ class BudHardware(HardwareManager):
             conn.commit()
     
     def _detect_hardware_type(self, name: str) -> str:
-        """Detect hardware type from name."""
+        """Detect hardware type from name.
+
+        Uses keyword matching against known GPU, CPU, and ASIC product names
+        to classify hardware. Falls back to 'accelerator' for unknown types.
+        """
         name_lower = name.lower()
-        if 'cpu' in name_lower:
-            return 'cpu'
-        elif 'gpu' in name_lower:
-            return 'gpu'
-        elif 'tpu' in name_lower:
-            return 'asic'
-        else:
-            return 'accelerator'
+
+        # GPU keywords (NVIDIA, AMD, Intel)
+        gpu_keywords = (
+            'gpu', 'a100', 'h100', 'h200', 'b100', 'b200',
+            'rtx', 'v100', 'p100', 't4', 'l4', 'l40',
+            'mi100', 'mi200', 'mi250', 'mi300',
+            'geforce', 'titan', 'quadro', 'tesla',
+            'arc', 'a770', 'a750',
+        )
+        # CPU keywords (Intel, AMD, ARM server)
+        cpu_keywords = (
+            'cpu', 'xeon', 'epyc', 'threadripper',
+            'core', 'ryzen', 'graviton', 'neoverse',
+            'sapphire', 'emerald', 'genoa', 'bergamo',
+        )
+        # ASIC / specialized accelerator keywords
+        asic_keywords = (
+            'tpu', 'gaudi', 'trainium', 'inferentia',
+            'ipu', 'colossus', 'groq', 'lpu',
+            'cerebras', 'wse', 'dojo',
+        )
+
+        for kw in gpu_keywords:
+            if kw in name_lower:
+                return 'gpu'
+        for kw in cpu_keywords:
+            if kw in name_lower:
+                return 'cpu'
+        for kw in asic_keywords:
+            if kw in name_lower:
+                return 'asic'
+
+        return 'accelerator'
     
     def get_all_hardwares(self) -> List[Dict[str, Any]]:
         """Get all hardware from both static configs and database.

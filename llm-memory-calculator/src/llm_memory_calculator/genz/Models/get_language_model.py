@@ -11,8 +11,12 @@ from llm_memory_calculator.genz.Models.default_models import ModelConfig, MODEL_
 from llm_memory_calculator.huggingface_loader import HuggingFaceConfigLoader
 
 from llm_memory_calculator.genz.Models.utils import OpType, ResidencyInfo, CollectiveType, parse_einsum_expression
-from llm_memory_calculator.genz.Models.attention import mha_flash_attention_prefill, mha_flash_attention_decode, mha_flash_attention_chunked
-from llm_memory_calculator.genz.Models.ffn import ffn_prefill, ffn_decode, deepseek_ffn_prefill
+from llm_memory_calculator.genz.Models.attention import (mha_flash_attention_prefill, mha_flash_attention_decode,
+    mha_flash_attention_chunked, mha_flash_attention_prefill_local, mha_flash_attention_decode_local,
+    mla_attention_prefill, mla_attention_decode,
+    linear_attention_prefill, linear_attention_decode)
+from llm_memory_calculator.genz.Models.ffn import (ffn_prefill, ffn_decode, deepseek_ffn_prefill,
+    linear_ffn_prefill, linear_ffn_decode)
 from llm_memory_calculator.genz.Models.mamba import mamba_prefill, mamba_decode
 from llm_memory_calculator.genz.Models.embedding import input_embedding, output_embedding
 from difflib import get_close_matches
@@ -137,6 +141,45 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
     if n_shared_experts > 0 or 'deepseek' in model_name.lower():
         ffn_implementation = "deepseek"
 
+    # ============================================================
+    # Per-layer heterogeneous configs (DeciLM / Nemotron-51B)
+    # ============================================================
+    layer_configs = None
+    block_configs = hf_config.get('block_configs')
+    if block_configs and isinstance(block_configs, list):
+        from llm_memory_calculator.genz.Models.default_models import LayerConfig
+        layer_configs = []
+        for bc in block_configs:
+            attn_cfg = bc.get('attention', {})
+            ffn_cfg = bc.get('ffn', {})
+            # Determine attention type
+            if attn_cfg.get('no_op', False):
+                attn_type = "no_op"
+            elif attn_cfg.get('replace_with_linear', False):
+                attn_type = "linear"
+            else:
+                attn_type = "MHA-global"
+            # Determine FFN type
+            if ffn_cfg.get('no_op', False):
+                ffn_type_val = "no_op"
+            elif ffn_cfg.get('replace_with_linear', False):
+                ffn_type_val = "linear"
+            else:
+                ffn_type_val = "Dense"
+            # Per-layer head grouping
+            n_heads_in_group = attn_cfg.get('n_heads_in_group')
+            layer_num_kv_heads = None
+            if n_heads_in_group is not None and n_heads_in_group > 0 and attn_type == "MHA-global":
+                layer_num_kv_heads = num_heads // n_heads_in_group
+            # Per-layer FFN multiplier
+            layer_ffn_mult = ffn_cfg.get('ffn_mult')
+            layer_configs.append(LayerConfig(
+                attention_type=attn_type,
+                ffn_type=ffn_type_val,
+                num_key_value_heads=layer_num_kv_heads,
+                ffn_mult=layer_ffn_mult,
+            ))
+
     # Create ModelConfig with all extracted attributes
     return ModelConfig(
         model=model_name,
@@ -150,6 +193,7 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         num_key_value_heads=num_kv_heads,
         hidden_act=hf_config.get('hidden_act', hf_config.get('activation_function', 'silu')),
         sliding_window=hf_config.get('sliding_window', None),
+        global_attn_every_n_layers=hf_config.get('global_attn_every_n_layers', None),
         ffn_implementation=ffn_implementation,
         # MoE parameters
         moe_layer_freq=moe_layer_freq,
@@ -172,6 +216,14 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         attn_layer_offset=attn_layer_offset,
         expert_layer_period=expert_layer_period,
         expert_layer_offset=expert_layer_offset,
+        # MLA parameters
+        kv_lora_rank=hf_config.get('kv_lora_rank', None),
+        q_lora_rank=hf_config.get('q_lora_rank', None),
+        qk_rope_head_dim=hf_config.get('qk_rope_head_dim', None),
+        qk_nope_head_dim=hf_config.get('qk_nope_head_dim', None),
+        v_head_dim=hf_config.get('v_head_dim', None),
+        # Per-layer heterogeneous configs
+        layer_configs=layer_configs,
     )
 
 def get_configs(name: Union[str, dict, 'ModelConfig', SimpleNamespace]) -> ModelConfig:
@@ -320,25 +372,88 @@ def create_full_prefill_model(
         data_parallel=args.get('data_parallel',1),
         )
 
-    def add_layers(layers, num_layers):
-        layers += repeat_layers(num_layers)
-        if model_config.unique_layers == 1:
-            if model_config.layer_type[0][0] == "MHA-global":
-                attn_ops = mha_flash_attention_prefill(model_config, parallelism_config, input_sequence_length)
-                # Inject LoRA ops for attention if configured
-                attn_ops = inject_lora_ops(attn_ops, model_config, parallelism_config, input_sequence_length)
-                layers += attn_ops
-            elif model_config.layer_type[0][0] == "Mamba":
-                layers += mamba_prefill(model_config, parallelism_config, input_sequence_length)
+    def _get_attn_prefill(attn_type, cfg=None):
+        cfg = cfg or model_config
+        if cfg.is_mla:
+            return mla_attention_prefill(cfg, parallelism_config, input_sequence_length)
+        if attn_type == "MHA-global":
+            return mha_flash_attention_prefill(cfg, parallelism_config, input_sequence_length)
+        elif attn_type == "MHA-local":
+            return mha_flash_attention_prefill_local(cfg, parallelism_config, input_sequence_length)
+        elif attn_type == "Mamba":
+            return mamba_prefill(cfg, parallelism_config, input_sequence_length)
+        elif attn_type == "linear":
+            return linear_attention_prefill(cfg, parallelism_config, input_sequence_length)
+        elif attn_type == "no_op":
+            return []
         else:
-            raise ValueError("More then 1 unique layers not supported. Work in progress")
-        
-        # Get FFN operations and inject LoRA if configured
+            raise ValueError(f"Unknown attention type: {attn_type}")
+
+    def _get_ffn_prefill(ffn_type, cfg=None):
+        cfg = cfg or model_config
+        if ffn_type == "no_op":
+            return []
+        elif ffn_type == "linear":
+            return linear_ffn_prefill(cfg, parallelism_config, input_sequence_length)
+        else:
+            ops = ffn_prefill(cfg, parallelism_config, input_sequence_length)
+            return inject_lora_ops(ops, cfg, parallelism_config, input_sequence_length)
+
+    def add_layers(layers, num_layers):
         ffn_ops = ffn_prefill(model_config, parallelism_config, input_sequence_length)
         ffn_ops = inject_lora_ops(ffn_ops, model_config, parallelism_config, input_sequence_length)
-        layers += ffn_ops
-        
-        layers += end_repeat_layers(num_layers)
+
+        if model_config.layer_configs is not None:
+            # Heterogeneous layers: group consecutive identical configs into repeat blocks
+            # Determine the slice of layer indices for this stage
+            # (num_layers may be a subset of total layers for PP stages)
+            layer_indices = list(range(num_layers))
+            i = 0
+            while i < len(layer_indices):
+                lc = model_config.layer_configs[layer_indices[i]]
+                cfg_view = model_config.get_layer_view(layer_indices[i])
+                key = lc.effective_key()
+                # Count consecutive layers with the same effective config
+                j = i + 1
+                while j < len(layer_indices) and model_config.layer_configs[layer_indices[j]].effective_key() == key:
+                    j += 1
+                count = j - i
+                layers += repeat_layers(count)
+                attn_ops = _get_attn_prefill(lc.attention_type, cfg_view)
+                attn_ops = inject_lora_ops(attn_ops, cfg_view, parallelism_config, input_sequence_length)
+                layers += attn_ops
+                layers += _get_ffn_prefill(lc.ffn_type, cfg_view)
+                layers += end_repeat_layers(count)
+                i = j
+        elif model_config.unique_layers == 1:
+            layers += repeat_layers(num_layers)
+            attn_ops = _get_attn_prefill(model_config.layer_type[0][0])
+            attn_ops = inject_lora_ops(attn_ops, model_config, parallelism_config, input_sequence_length)
+            layers += attn_ops
+            layers += ffn_ops
+            layers += end_repeat_layers(num_layers)
+        elif model_config.global_attn_every_n_layers is not None:
+            # Interleaved attention: count global vs local layers proportional to num_layers
+            total = model_config.num_decoder_layers
+            total_global = sum(1 for lt in model_config.layer_type if lt[0] == "MHA-global")
+            n_global = round(total_global * num_layers / total)
+            n_local = num_layers - n_global
+            if n_global > 0:
+                layers += repeat_layers(n_global)
+                attn_ops = _get_attn_prefill("MHA-global")
+                attn_ops = inject_lora_ops(attn_ops, model_config, parallelism_config, input_sequence_length)
+                layers += attn_ops
+                layers += ffn_ops
+                layers += end_repeat_layers(n_global)
+            if n_local > 0:
+                layers += repeat_layers(n_local)
+                attn_ops = _get_attn_prefill("MHA-local")
+                attn_ops = inject_lora_ops(attn_ops, model_config, parallelism_config, input_sequence_length)
+                layers += attn_ops
+                layers += ffn_ops
+                layers += end_repeat_layers(n_local)
+        else:
+            raise ValueError("More than 1 unique layers not supported. Work in progress")
         return layers
 
     full_model = []
@@ -410,25 +525,84 @@ def create_full_decode_model(
         data_parallel=args.get('data_parallel', 1),
     )
 
-    def add_layers(layers, num_layers):
-        layers += repeat_layers(num_layers)
-        if model_config.unique_layers == 1:
-            if model_config.layer_type[0][0] == "MHA-global":
-                attn_ops = mha_flash_attention_decode(model_config, parallelism_config, input_sequence_length, output_gen_tokens)
-                # Inject LoRA ops for attention if configured
-                attn_ops = inject_lora_ops(attn_ops, model_config, parallelism_config, 1)  # decode processes 1 token at a time
-                layers += attn_ops
-            elif model_config.layer_type[0][0] == "Mamba":
-                layers += mamba_decode(model_config, parallelism_config, input_sequence_length)
+    def _get_attn_decode(attn_type, cfg=None):
+        cfg = cfg or model_config
+        if cfg.is_mla:
+            return mla_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens)
+        if attn_type == "MHA-global":
+            return mha_flash_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens)
+        elif attn_type == "MHA-local":
+            return mha_flash_attention_decode_local(cfg, parallelism_config, input_sequence_length, output_gen_tokens)
+        elif attn_type == "Mamba":
+            return mamba_decode(cfg, parallelism_config, input_sequence_length)
+        elif attn_type == "linear":
+            return linear_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens)
+        elif attn_type == "no_op":
+            return []
         else:
-            raise ValueError("More then 1 unique layers not supported. Work in progress")
-        
-        # Get FFN operations and inject LoRA if configured
+            raise ValueError(f"Unknown attention type: {attn_type}")
+
+    def _get_ffn_decode(ffn_type, cfg=None):
+        cfg = cfg or model_config
+        if ffn_type == "no_op":
+            return []
+        elif ffn_type == "linear":
+            return linear_ffn_decode(cfg, parallelism_config)
+        else:
+            ops = ffn_decode(cfg, parallelism_config)
+            return inject_lora_ops(ops, cfg, parallelism_config, 1)
+
+    def add_layers(layers, num_layers):
         ffn_ops = ffn_decode(model_config, parallelism_config)
-        ffn_ops = inject_lora_ops(ffn_ops, model_config, parallelism_config, 1)  # decode processes 1 token at a time
-        layers += ffn_ops
-        
-        layers += end_repeat_layers(num_layers)
+        ffn_ops = inject_lora_ops(ffn_ops, model_config, parallelism_config, 1)
+
+        if model_config.layer_configs is not None:
+            # Heterogeneous layers: group consecutive identical configs
+            layer_indices = list(range(num_layers))
+            i = 0
+            while i < len(layer_indices):
+                lc = model_config.layer_configs[layer_indices[i]]
+                cfg_view = model_config.get_layer_view(layer_indices[i])
+                key = lc.effective_key()
+                j = i + 1
+                while j < len(layer_indices) and model_config.layer_configs[layer_indices[j]].effective_key() == key:
+                    j += 1
+                count = j - i
+                layers += repeat_layers(count)
+                attn_ops = _get_attn_decode(lc.attention_type, cfg_view)
+                attn_ops = inject_lora_ops(attn_ops, cfg_view, parallelism_config, 1)
+                layers += attn_ops
+                layers += _get_ffn_decode(lc.ffn_type, cfg_view)
+                layers += end_repeat_layers(count)
+                i = j
+        elif model_config.unique_layers == 1:
+            layers += repeat_layers(num_layers)
+            attn_ops = _get_attn_decode(model_config.layer_type[0][0])
+            attn_ops = inject_lora_ops(attn_ops, model_config, parallelism_config, 1)
+            layers += attn_ops
+            layers += ffn_ops
+            layers += end_repeat_layers(num_layers)
+        elif model_config.global_attn_every_n_layers is not None:
+            total = model_config.num_decoder_layers
+            total_global = sum(1 for lt in model_config.layer_type if lt[0] == "MHA-global")
+            n_global = round(total_global * num_layers / total)
+            n_local = num_layers - n_global
+            if n_global > 0:
+                layers += repeat_layers(n_global)
+                attn_ops = _get_attn_decode("MHA-global")
+                attn_ops = inject_lora_ops(attn_ops, model_config, parallelism_config, 1)
+                layers += attn_ops
+                layers += ffn_ops
+                layers += end_repeat_layers(n_global)
+            if n_local > 0:
+                layers += repeat_layers(n_local)
+                attn_ops = _get_attn_decode("MHA-local")
+                attn_ops = inject_lora_ops(attn_ops, model_config, parallelism_config, 1)
+                layers += attn_ops
+                layers += ffn_ops
+                layers += end_repeat_layers(n_local)
+        else:
+            raise ValueError("More than 1 unique layers not supported. Work in progress")
         return layers
 
     full_model = []

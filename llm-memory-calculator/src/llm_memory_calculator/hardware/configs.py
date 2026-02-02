@@ -26,6 +26,8 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'tensor_cores': 'gen3',
         'rt_cores': None,
         'memory_type': 'HBM2e',
+        'interconnect': 'nvlink',
+        'interconnect_bandwidth_gbps': 600,
         'pci_ids': ['20b0', '20f1'],  # PCIe and SXM4 variants
         'aliases': ['A100', 'TESLA A100', 'A100-SXM4-40GB', 'A100-PCIE-40GB', 'NVIDIA A100 40GB'],
         'cost': {
@@ -44,6 +46,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         },
     },
     'A100_80GB_GPU': {
+        'name': 'A100_80GB_GPU',
         'Flops': 312,
         'Memory_size': 80,
         'Memory_BW': 2039,
@@ -58,6 +61,8 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'tensor_cores': 'gen3',
         'rt_cores': None,
         'memory_type': 'HBM2e',
+        'interconnect': 'nvlink',
+        'interconnect_bandwidth_gbps': 600,
         'pci_ids': ['20b2', '20b5'],  # SXM4 and PCIe variants
         'aliases': ['A100 80GB', 'TESLA A100 80GB', 'A100-SXM4-80GB', 'A100-PCIE-80GB', 'NVIDIA A100 80GB'],
         'cost': {
@@ -91,6 +96,8 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'tensor_cores': 'gen1',  # First generation tensor cores
         'rt_cores': None,
         'memory_type': 'HBM2',
+        'interconnect': 'nvlink',
+        'interconnect_bandwidth_gbps': 300,
         'pci_ids': ['1db4', '1db6'],  # PCIe and SXM2 16GB variants
         'aliases': ['V100 16GB', 'TESLA V100 16GB', 'V100-SXM2-16GB', 'V100-PCIE-16GB', 'NVIDIA V100 16GB'],
         'cost': {
@@ -121,6 +128,8 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'tensor_cores': 'gen1',  # First generation tensor cores
         'rt_cores': None,
         'memory_type': 'HBM2',
+        'interconnect': 'nvlink',
+        'interconnect_bandwidth_gbps': 300,
         'pci_ids': ['1db5', '1dbe', '1df6'],  # PCIe and SXM2 32GB variants
         'aliases': ['V100 32GB', 'TESLA V100 32GB', 'V100-SXM2-32GB', 'V100-PCIE-32GB', 'NVIDIA V100 32GB', 'V100S'],
         'cost': {
@@ -136,6 +145,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         },
     },
     'H100_GPU': {
+        'name': 'H100_GPU',
         'Flops': 989,
         'Memory_size': 80,
         'Memory_BW': 3400,
@@ -150,6 +160,8 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'tensor_cores': 'gen4',
         'rt_cores': None,
         'memory_type': 'HBM3',
+        'interconnect': 'nvlink',
+        'interconnect_bandwidth_gbps': 900,
         'pci_ids': ['2330', '2331', '2339'],  # SXM5, PCIe, NVL variants
         'aliases': ['H100', 'HOPPER', 'H100-SXM5', 'H100-PCIE', 'H100-NVL', 'NVIDIA H100'],
         'cost': {
@@ -168,6 +180,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         },
     },
     'GH200_GPU': {
+        'name': 'GH200_GPU',
         'Flops': 1979,
         'Memory_size': 144,
         'Memory_BW': 4900,
@@ -182,6 +195,8 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'tensor_cores': 'gen4',
         'rt_cores': None,
         'memory_type': 'HBM3',
+        'interconnect': 'nvlink',
+        'interconnect_bandwidth_gbps': 900,
         'pci_ids': ['233a'],  # GH200
         'aliases': ['GH200', 'GRACE HOPPER', 'GH200-144GB', 'NVIDIA GH200'],
         'cost': {
@@ -196,6 +211,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         },
     },
     'B100': {
+        'name': 'B100',
         'Flops': 1750,  # BF16 TFLOPS (3500 FP8). B100 GPU: ~1.75 PFLOPS BF16
         'Memory_size': 192,
         'Memory_BW': 8000,
@@ -219,6 +235,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         },
     },
     'GB200': {
+        'name': 'GB200',
         'Flops': 2250,  # BF16 TFLOPS (4500 FP8). B200 GPU: ~2.25 PFLOPS BF16
         'Memory_size': 192,
         'Memory_BW': 8000,
@@ -257,6 +274,8 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'tensor_cores': 'gen4',
         'rt_cores': 'gen3',
         'memory_type': 'GDDR6',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
         'pci_ids': ['26ba'],
         'aliases': ['L40S', 'L40S-48GB', 'NVIDIA L40S', 'NVIDIA-L40S', 'L40S 48GB'],
         'cost': {
@@ -287,6 +306,8 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'tensor_cores': 'gen4',
         'rt_cores': 'gen3',
         'memory_type': 'GDDR6X',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
         'pci_ids': ['2684', '2717'],  # Standard and variants
         'tdp_watts': 450,
         'aliases': ['RTX4090', 'RTX 4090', 'rtx_4090', 'NVIDIA RTX 4090', 'GeForce RTX 4090']
@@ -307,9 +328,271 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'tensor_cores': 'gen4',
         'rt_cores': 'gen3',
         'memory_type': 'GDDR6X',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
         'pci_ids': ['2704'],
         'tdp_watts': 320,
         'aliases': ['RTX4080', 'RTX 4080', 'rtx_4080', 'NVIDIA RTX 4080', 'GeForce RTX 4080']
+    },
+    'RTX3080_GPU': {
+        'name': 'RTX3080_GPU',
+        'Flops': 119,  # FP16 Tensor TFLOPS (29.8 FP32 TFLOPS)
+        'Memory_size': 10,
+        'Memory_BW': 760,  # 19 Gbps × 320-bit
+        'ICN': 64,  # PCIe 4.0 x16 (no NVLink)
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'AMPERE',
+        'generation': 'Consumer GPU',
+        'compute_capability': '8.6',
+        'release_year': 2020,
+        'tensor_cores': 'gen3',
+        'rt_cores': 'gen2',
+        'memory_type': 'GDDR6X',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['2206'],
+        'tdp_watts': 320,
+        'aliases': ['RTX3080', 'RTX 3080', 'rtx_3080', 'NVIDIA RTX 3080', 'GeForce RTX 3080', 'RTX3080 10GB']
+    },
+    'RTX3080Ti_GPU': {
+        'name': 'RTX3080Ti_GPU',
+        'Flops': 136,  # FP16 Tensor TFLOPS (34.1 FP32 TFLOPS)
+        'Memory_size': 12,
+        'Memory_BW': 912,  # 19 Gbps × 384-bit
+        'ICN': 64,  # PCIe 4.0 x16
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'AMPERE',
+        'generation': 'Consumer GPU',
+        'compute_capability': '8.6',
+        'release_year': 2021,
+        'tensor_cores': 'gen3',
+        'rt_cores': 'gen2',
+        'memory_type': 'GDDR6X',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['2208'],
+        'tdp_watts': 350,
+        'aliases': ['RTX3080Ti', 'RTX 3080 Ti', 'rtx_3080_ti', 'NVIDIA RTX 3080 Ti', 'GeForce RTX 3080 Ti']
+    },
+    'RTX3070_GPU': {
+        'name': 'RTX3070_GPU',
+        'Flops': 81,  # FP16 Tensor TFLOPS (20.3 FP32 TFLOPS)
+        'Memory_size': 8,
+        'Memory_BW': 448,  # 14 Gbps × 256-bit
+        'ICN': 64,  # PCIe 4.0 x16
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'AMPERE',
+        'generation': 'Consumer GPU',
+        'compute_capability': '8.6',
+        'release_year': 2020,
+        'tensor_cores': 'gen3',
+        'rt_cores': 'gen2',
+        'memory_type': 'GDDR6',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['2484'],
+        'tdp_watts': 220,
+        'aliases': ['RTX3070', 'RTX 3070', 'rtx_3070', 'NVIDIA RTX 3070', 'GeForce RTX 3070']
+    },
+    'RTX3060_GPU': {
+        'name': 'RTX3060_GPU',
+        'Flops': 51,  # FP16 Tensor TFLOPS (12.7 FP32 TFLOPS)
+        'Memory_size': 12,
+        'Memory_BW': 360,  # 15 Gbps × 192-bit
+        'ICN': 32,  # PCIe 4.0 x16
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'AMPERE',
+        'generation': 'Consumer GPU',
+        'compute_capability': '8.6',
+        'release_year': 2021,
+        'tensor_cores': 'gen3',
+        'rt_cores': 'gen2',
+        'memory_type': 'GDDR6',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['2504'],
+        'tdp_watts': 170,
+        'aliases': ['RTX3060', 'RTX 3060', 'rtx_3060', 'NVIDIA RTX 3060', 'GeForce RTX 3060', 'RTX3060 12GB']
+    },
+    'A10_GPU': {
+        'name': 'A10_GPU',
+        'Flops': 125,  # FP16 Tensor TFLOPS
+        'Memory_size': 24,
+        'Memory_BW': 600,
+        'ICN': 64,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'AMPERE',
+        'generation': 'Data Center GPU',
+        'compute_capability': '8.6',
+        'release_year': 2021,
+        'tensor_cores': 'gen3',
+        'rt_cores': None,
+        'memory_type': 'GDDR6',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['2236'],
+        'aliases': ['A10', 'NVIDIA A10', 'A10-24GB'],
+    },
+    'A30_GPU': {
+        'name': 'A30_GPU',
+        'Flops': 165,  # FP16 Tensor TFLOPS
+        'Memory_size': 24,
+        'Memory_BW': 933,
+        'ICN': 64,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'AMPERE',
+        'generation': 'Data Center GPU',
+        'compute_capability': '8.0',
+        'release_year': 2021,
+        'tensor_cores': 'gen3',
+        'rt_cores': None,
+        'memory_type': 'HBM2e',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['20b7'],
+        'aliases': ['A30', 'NVIDIA A30', 'A30-24GB'],
+    },
+    'A40_GPU': {
+        'name': 'A40_GPU',
+        'Flops': 150,  # FP16 Tensor TFLOPS
+        'Memory_size': 48,
+        'Memory_BW': 696,
+        'ICN': 64,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'AMPERE',
+        'generation': 'Professional GPU',
+        'compute_capability': '8.6',
+        'release_year': 2020,
+        'tensor_cores': 'gen3',
+        'rt_cores': 'gen2',
+        'memory_type': 'GDDR6',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['2235'],
+        'aliases': ['A40', 'NVIDIA A40', 'A40-48GB'],
+    },
+    'A6000_GPU': {
+        'name': 'A6000_GPU',
+        'Flops': 155,  # FP16 Tensor TFLOPS (38.7 FP32)
+        'Memory_size': 48,
+        'Memory_BW': 768,
+        'ICN': 64,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'AMPERE',
+        'generation': 'Professional GPU',
+        'compute_capability': '8.6',
+        'release_year': 2020,
+        'tensor_cores': 'gen3',
+        'rt_cores': 'gen2',
+        'memory_type': 'GDDR6',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['2230'],
+        'aliases': ['A6000', 'RTX A6000', 'NVIDIA RTX A6000'],
+    },
+    'RTX4060_GPU': {
+        'name': 'RTX4060_GPU',
+        'Flops': 121,  # FP16 Tensor TFLOPS
+        'Memory_size': 8,
+        'Memory_BW': 272,  # 17 Gbps × 128-bit
+        'ICN': 64,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'ADA_LOVELACE',
+        'generation': 'Consumer GPU',
+        'compute_capability': '8.9',
+        'release_year': 2023,
+        'tensor_cores': 'gen4',
+        'rt_cores': 'gen3',
+        'memory_type': 'GDDR6',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['2803'],
+        'tdp_watts': 115,
+        'aliases': ['RTX4060', 'RTX 4060', 'rtx_4060', 'NVIDIA RTX 4060', 'GeForce RTX 4060'],
+    },
+    'RTX4060Ti_GPU': {
+        'name': 'RTX4060Ti_GPU',
+        'Flops': 177,  # FP16 Tensor TFLOPS
+        'Memory_size': 16,
+        'Memory_BW': 288,  # 18 Gbps × 128-bit
+        'ICN': 64,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'ADA_LOVELACE',
+        'generation': 'Consumer GPU',
+        'compute_capability': '8.9',
+        'release_year': 2023,
+        'tensor_cores': 'gen4',
+        'rt_cores': 'gen3',
+        'memory_type': 'GDDR6',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['2805'],
+        'tdp_watts': 165,
+        'aliases': ['RTX4060Ti', 'RTX 4060 Ti', 'rtx_4060_ti', 'NVIDIA RTX 4060 Ti', 'GeForce RTX 4060 Ti', 'RTX4060Ti 16GB'],
+    },
+    'RTX4070Ti_GPU': {
+        'name': 'RTX4070Ti_GPU',
+        'Flops': 186,  # FP16 Tensor TFLOPS
+        'Memory_size': 12,
+        'Memory_BW': 504,  # 21 Gbps × 192-bit
+        'ICN': 64,  # PCIe 4.0 x16
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'ADA_LOVELACE',
+        'generation': 'Consumer GPU',
+        'compute_capability': '8.9',
+        'release_year': 2023,
+        'tensor_cores': 'gen4',
+        'rt_cores': 'gen3',
+        'memory_type': 'GDDR6X',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['2782'],
+        'tdp_watts': 285,
+        'aliases': ['RTX4070Ti', 'RTX 4070 Ti', 'rtx_4070_ti', 'NVIDIA RTX 4070 Ti', 'GeForce RTX 4070 Ti']
+    },
+    'RTX4070_GPU': {
+        'name': 'RTX4070_GPU',
+        'Flops': 147,  # FP16 Tensor TFLOPS
+        'Memory_size': 12,
+        'Memory_BW': 504,  # 21 Gbps × 192-bit
+        'ICN': 64,  # PCIe 4.0 x16
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'ADA_LOVELACE',
+        'generation': 'Consumer GPU',
+        'compute_capability': '8.9',
+        'release_year': 2023,
+        'tensor_cores': 'gen4',
+        'rt_cores': 'gen3',
+        'memory_type': 'GDDR6X',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['2786'],
+        'tdp_watts': 200,
+        'aliases': ['RTX4070', 'RTX 4070', 'rtx_4070', 'NVIDIA RTX 4070', 'GeForce RTX 4070']
     },
     'RTX3090_GPU': {
         'name': 'RTX3090_GPU',
@@ -327,9 +610,11 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'tensor_cores': 'gen3',
         'rt_cores': 'gen2',
         'memory_type': 'GDDR6X',
-        'pci_ids': ['2204', '2208'],  # Standard and Ti
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['2204'],
         'tdp_watts': 350,
-        'aliases': ['RTX3090', 'RTX 3090', 'rtx_3090', 'NVIDIA RTX 3090', 'GeForce RTX 3090', 'RTX3090Ti']
+        'aliases': ['RTX3090', 'RTX 3090', 'rtx_3090', 'NVIDIA RTX 3090', 'GeForce RTX 3090']
     },
 
     # Google TPUs
@@ -339,6 +624,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
     # ICN value represents effective ICI bandwidth per chip
     # Reference: https://cloud.google.com/tpu/docs/system-architecture-tpu-vm
     'TPUv6': {
+        'name': 'TPUv6',
         'Flops': 926,
         'Memory_size': 32,
         'Memory_BW': 1640,
@@ -358,6 +644,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'aliases': ['TPU_v6', 'TPU v6', 'tpu-v6', 'Google TPU v6', 'Trillium']
     },
     'TPUv5e': {
+        'name': 'TPUv5e',
         'Flops': 197,
         'Memory_size': 16,
         'Memory_BW': 820,
@@ -377,6 +664,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'aliases': ['TPU_v5e', 'TPU v5e', 'tpu-v5e', 'Google TPU v5e']
     },
     'TPUv5p': {
+        'name': 'TPUv5p',
         'Flops': 459,
         'Memory_size': 95,
         'Memory_BW': 2765,
@@ -396,6 +684,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'aliases': ['TPU_v5p', 'TPU v5p', 'tpu-v5p', 'Google TPU v5p']
     },
     'TPUv4': {
+        'name': 'TPUv4',
         'Flops': 275,
         'Memory_size': 32,
         'Memory_BW': 1228,
@@ -417,6 +706,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
     
     # AMD GPUs
     'MI300X': {
+        'name': 'MI300X',
         'Flops': 1307,
         'Memory_size': 192,
         'Memory_BW': 5300,
@@ -439,6 +729,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         },
     },
     'MI325X': {
+        'name': 'MI325X',
         'Flops': 1307,
         'Memory_size': 256,
         'Memory_BW': 6000,
@@ -463,6 +754,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
     
     # Intel GPUs
     'MAX1550': {
+        'name': 'MAX1550',
         'Flops': 45.2,  # FP16 TFLOPS estimate
         'Memory_size': 128,
         'Memory_BW': 3276,
@@ -479,6 +771,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'aliases': ['MAX 1550', 'Ponte Vecchio', 'PVC', 'Data Center GPU Max 1550']
     },
     'MAX1100': {
+        'name': 'MAX1100',
         'Flops': 32.7,  # FP16 TFLOPS estimate
         'Memory_size': 48,
         'Memory_BW': 1640,
@@ -495,6 +788,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'aliases': ['MAX 1100', 'Data Center GPU Max 1100']
     },
     'ARC770': {
+        'name': 'ARC770',
         'Flops': 17.2,  # FP16 TFLOPS estimate
         'Memory_size': 16,
         'Memory_BW': 560,
@@ -514,6 +808,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
     
     # Intel Accelerators
     'Gaudi3': {
+        'name': 'Gaudi3',
         'Flops': 1835,
         'Memory_size': 128,
         'Memory_BW': 3675,

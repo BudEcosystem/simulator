@@ -41,10 +41,6 @@ class BudUsecases:
         
         # Initialize usecase schema
         self._initialize_usecase_schema()
-        
-        # Cache for usecase data
-        self._usecase_cache = {}
-        self._cache_valid = False
     
     def _initialize_usecase_schema(self):
         """Initialize usecase database schema."""
@@ -165,9 +161,6 @@ class BudUsecases:
             """, (unique_id, 1, json.dumps(usecase_data), "Initial version"))
             
             conn.commit()
-        
-        # Invalidate cache
-        self._cache_valid = False
         
         logger.info(f"Added usecase {unique_id}: {usecase_data['name']}")
         return unique_id
@@ -353,9 +346,6 @@ class BudUsecases:
             
             conn.commit()
         
-        # Invalidate cache
-        self._cache_valid = False
-        
         logger.info(f"Updated usecase {unique_id}")
         return True
     
@@ -382,7 +372,6 @@ class BudUsecases:
             
             if cursor.rowcount > 0:
                 conn.commit()
-                self._cache_valid = False
                 logger.info(f"{'Hard' if hard_delete else 'Soft'} deleted usecase {unique_id}")
                 return True
         

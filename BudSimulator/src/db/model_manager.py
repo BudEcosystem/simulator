@@ -13,27 +13,32 @@ from .connection import DatabaseConnection
 logger = logging.getLogger(__name__)
 
 # Import ModelMemoryCalculator for parameter calculation
+_calculator = None
+
 try:
-    import sys
-    import os
-    # Add parent directory to path for import
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(current_dir)
-    if parent_dir not in sys.path:
-        sys.path.insert(0, parent_dir)
-    
-    from bud_models import ModelMemoryCalculator
-    _calculator = None
-    
-    def get_calculator():
-        global _calculator
-        if _calculator is None:
-            _calculator = ModelMemoryCalculator()
-        return _calculator
-except ImportError as e:
-    logger.warning(f"Could not import ModelMemoryCalculator: {e}")
-    def get_calculator():
+    from src.bud_models import ModelMemoryCalculator
+except ImportError:
+    try:
+        # Fallback: relative import when running from within src/
+        import importlib
+        import sys
+        import os
+        _parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _parent not in sys.path:
+            sys.path.insert(0, _parent)
+        from bud_models import ModelMemoryCalculator
+    except ImportError as e:
+        logger.warning(f"Could not import ModelMemoryCalculator: {e}")
+        ModelMemoryCalculator = None  # type: ignore[assignment,misc]
+
+
+def get_calculator():
+    global _calculator
+    if ModelMemoryCalculator is None:
         return None
+    if _calculator is None:
+        _calculator = ModelMemoryCalculator()
+    return _calculator
 
 
 class ModelManager:

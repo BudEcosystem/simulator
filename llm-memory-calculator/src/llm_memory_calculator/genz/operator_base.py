@@ -340,21 +340,23 @@ class Operator(object):
                     if parallelism == "PP":
                             BW = network_config['bandwidth'][0]
                             lat = network_config['latency'][0]
-                            # TODO : There is a bug with astrasim when num_nodes = 2
-                            # Using GenZ for now.
+                            # WORKAROUND: ASTRASIM has a known bug when num_nodes=2 that produces
+                            # incorrect collective timing results for ALLTOALL operations. The issue
+                            # manifests specifically in pipeline-parallel (PP) point-to-point
+                            # communication where ASTRASIM models a 2-node ALLTOALL.
+                            # Until the upstream ASTRASIM fix is available, we use GenZ's
+                            # get_message_pass_time() which correctly models point-to-point latency
+                            # for the 2-node case. The GenZ approach computes:
+                            #   time = data_size / bandwidth + latency
+                            # This is equivalent to the expected ALLTOALL result for num_nodes=2.
                             temp_sys = System(num_nodes=2, topology='FullyConnected', interchip_link_bw=BW, interchip_link_latency=lat)
-                            # pipe_time = max(get_astrasim_collective_time(system=temp_sys,
-                            #                                     collective_type="ALLTOALL",
-                            #                                     collective_size=data_size/2).values())/1e6
                             pipe_time = get_message_pass_time(data_size, temp_sys) / 1000
                             if len(network_config['npus_count']) > 1:   ## PP over more than 1 dimension, we need average time.
                                 # Num hops: (dim[0]-1)*dim[1] + dim[1]-1
-                                first_dim_time = pipe_time * (network_config['npus_count'][0]-1) * network_config['npus_count'][1] 
+                                first_dim_time = pipe_time * (network_config['npus_count'][0]-1) * network_config['npus_count'][1]
                                 temp_sys = System(num_nodes=2, topology='FullyConnected',
-                                                interchip_link_bw=network_config['bandwidth'][1], interchip_link_latency=network_config['latency'][1]) 
-                                # second_dim_time = max(get_astrasim_collective_time(system=temp_sys,
-                                #                             collective_type="ALLTOALL",
-                                #                             collective_size=data_size/2).values())/1e6 * (network_config['npus_count'][1]-1)
+                                                interchip_link_bw=network_config['bandwidth'][1], interchip_link_latency=network_config['latency'][1])
+                                # Same ASTRASIM workaround for the second dimension
                                 second_dim_time = (get_message_pass_time(data_size, temp_sys) / 1000) * (network_config['npus_count'][1]-1)
                                 return (first_dim_time + second_dim_time)/(network_config['npus_count'][0] * network_config['npus_count'][1] -1)
                             else:

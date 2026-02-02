@@ -3,6 +3,39 @@ from llm_memory_calculator.genz.parallelism import ParallelismConfig
 import warnings
 from math import ceil
 
+
+def calculate_activated_experts(
+    num_experts: int,
+    top_k: int,
+    num_tokens: int = 1,
+    capacity_factor: float = 1.0,
+) -> int:
+    """Calculate the number of unique experts activated across all tokens.
+
+    For a single token (decode), exactly top_k experts are activated.
+    For multiple tokens (prefill), up to min(top_k * num_tokens, num_experts)
+    unique experts may be activated, scaled by a capacity factor.
+
+    Args:
+        num_experts: Total number of experts (E).
+        top_k: Number of experts selected per token (K).
+        num_tokens: Number of tokens being processed. 1 for decode phase.
+        capacity_factor: Scaling factor for expert activation estimates.
+            1.0 = assume uniform routing (best case).
+            Values > 1.0 model load imbalance where some experts get more tokens.
+    Returns:
+        Number of unique activated experts across all tokens.
+    """
+    if num_experts <= 1:
+        return 1
+    # For a single token, exactly top_k experts are activated
+    if num_tokens <= 1:
+        return min(top_k, num_experts)
+    # For multiple tokens, estimate unique experts activated
+    # With perfect routing, K * num_tokens slots distributed across E experts
+    raw_activated = int(top_k * num_tokens * capacity_factor)
+    return min(raw_activated, num_experts)
+
 def ffn_prefill(model_config:ModelConfig, parallelism_config:ParallelismConfig, input_sequence_length:int):
 
     tp = parallelism_config.tensor_parallel
@@ -91,9 +124,7 @@ def ffn_decode(model_config:ModelConfig, parallelism_config:ParallelismConfig):
             dispatch_all2all = [["Dispatch A2A",1, K*D, 1, 1, ep, CollectiveType.All2All, OpType.Sync]]
             layers += dispatch_all2all
 
-        ## TODO: Define a function to calculate the number of activated experts
-        A = K
-
+        A = calculate_activated_experts(E, K, num_tokens=1)
         experts_activated_per_chip = max(1,ceil(A/ep))
         ## Understanding load imbalance among experts
         # Lets' say we have 4 experts and 2 experts per token
@@ -137,6 +168,29 @@ def ffn_decode(model_config:ModelConfig, parallelism_config:ParallelismConfig):
 
 
 
+def linear_ffn_prefill(model_config:ModelConfig, parallelism_config:ParallelismConfig, input_sequence_length:int):
+    """Linear replacement for FFN (DeciLM-style). Single GEMM [D, S, D]."""
+    D = model_config.hidden_size
+    tp = parallelism_config.tensor_parallel
+    sp = parallelism_config.sequence_parallel
+
+    layers = [["FFN Linear", D, input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+    if tp > 1:
+        layers += [["FFN Linear AR", input_sequence_length//sp, D, 1, 1, tp, CollectiveType.AllReduce, OpType.Sync]]
+    return layers
+
+
+def linear_ffn_decode(model_config:ModelConfig, parallelism_config:ParallelismConfig):
+    """Linear replacement for FFN (DeciLM-style) in decode phase."""
+    D = model_config.hidden_size
+    tp = parallelism_config.tensor_parallel
+
+    layers = [["FFN Linear", D, 1, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    if tp > 1:
+        layers += [["FFN Linear AR", 1, D, 1, 1, tp, CollectiveType.AllReduce, OpType.Sync]]
+    return layers
+
+
 def deepseek_ffn_prefill(model_config:ModelConfig, parallelism_config:ParallelismConfig, input_sequence_length:int):
 
     tp = parallelism_config.tensor_parallel
@@ -171,32 +225,7 @@ def deepseek_ffn_prefill(model_config:ModelConfig, parallelism_config:Parallelis
             router_AR = [["Gate AR",input_sequence_length//sp, E, 1, 1, tp, CollectiveType.AllReduce, OpType.Sync]]
             layers += router_AR
 
-        ## TODO: Define a function to calculate the number of activated experts
-        '''
-        Load Imbalance Factor = Highest Number of Token to Single Expert / Equal Distribution of tokens to expert
-        - A single expert can recieve at most input_sequence_length tokens and min 0 tokens
-        - Minimum number of experts activated is K.
-        - With equal distribution, each expert will get K*(input_sequence_length)/E
-        - For perfect distribution, load imbalance factor = 1
-        - For worst case, load imbalance factor = input_sequence_length / (K*input_sequence_length/E) = E/K
-
-        All2All traffic with load imbalance factor
-        - All2All traffic total data = input_sequence_length * K * D
-        - Perfect balance All2All traffic per chip = ((input_sequence_length * K * D /ep)
-        - Worst case All2All traffic in a single chip = ((input_sequence_length * min(K, E/ep) * D )
-
-        Expert FFN time
-        Best case:
-            # if K <= EP:
-                1 expert activated per EP.
-                Tokens per expert = input_sequence_length
-            # if K > EP:
-                more than 1 expert activated per EP.
-                Tokens per expert = input_sequence_length * ceil( K / EP)
-        Worst case:
-            
-        '''
-        A = min( K * input_sequence_length, E)
+        A = calculate_activated_experts(E, K, num_tokens=input_sequence_length)
         experts_activated_per_chip = max(1,ceil(A/ep))
         num_tokens_per_expert = (input_sequence_length//sp) * K // A if A > 0 else 0
 

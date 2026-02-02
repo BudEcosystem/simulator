@@ -360,7 +360,7 @@ class Norm(Operator):          ## Vector Execution Unit
         return np.prod(os) if affine else 0
 
     def get_gemms(self):
-        # TODO might have some problems
+        # Norm is a VXU (element-wise) op, not a GEMM. Returns zeros for M/N/K.
         return 0, 0, 0, 1
 
 
@@ -379,7 +379,7 @@ class Avg(Operator):          ## Vector Execution Unit
         return np.prod(os)
 
     def get_gemms(self):
-        # TODO might have some problems
+        # Avg is a VXU (element-wise) op, not a GEMM. Returns zeros for M/N/K.
         return 0, 0, 0, 1
 
 
@@ -401,7 +401,7 @@ class Special_Func(Operator):          ## Vector Execution Unit
         return np.prod(os)
 
     def get_gemms(self):
-        # TODO might have some problems
+        # Special_Func is a VXU (element-wise) op, not a GEMM. Returns zeros for M/N/K.
         return 0, 0, 0, 1
 
 # ---- LoRA Operators -------------------------------------------------

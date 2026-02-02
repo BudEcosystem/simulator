@@ -40,6 +40,15 @@ class TrainingTimeEstimator:
         'TPUv6': 5.50,
         'Gaudi3': 3.00,
         'Trainium1': 2.00,
+        'RTX4090_GPU': 0.50,
+        'RTX4080_GPU': 0.40,
+        'RTX4070Ti_GPU': 0.35,
+        'RTX4070_GPU': 0.30,
+        'RTX3090_GPU': 0.45,
+        'RTX3080Ti_GPU': 0.40,
+        'RTX3080_GPU': 0.35,
+        'RTX3070_GPU': 0.25,
+        'RTX3060_GPU': 0.20,
     }
 
     # Baseline TPS for different model sizes (on A100 80GB)
@@ -59,6 +68,110 @@ class TrainingTimeEstimator:
             '13B': 4000,
             '70B': 900,
         },
+        'RTX4090_GPU': {
+            '1B': 12000,
+            '7B': 850,
+            '8B': 750,
+            '13B': 400,
+            '70B': 80,
+        },
+        'RTX3090_GPU': {
+            '1B': 7000,
+            '7B': 450,
+            '8B': 400,
+            '13B': 200,
+            '70B': 40,
+        },
+        'RTX3080_GPU': {
+            '1B': 5500,
+            '7B': 350,
+            '8B': 300,
+            '13B': 150,
+            '70B': 30,
+        },
+        'RTX3070_GPU': {
+            '1B': 4000,
+            '7B': 250,
+            '8B': 220,
+            '13B': 100,
+            '70B': 20,
+        },
+        'RTX3060_GPU': {
+            '1B': 3000,
+            '7B': 180,
+            '8B': 160,
+            '13B': 80,
+            '70B': 15,
+        },
+        'RTX4080_GPU': {
+            '1B': 10000,
+            '7B': 700,
+            '8B': 620,
+            '13B': 350,
+            '70B': 65,
+        },
+        'RTX4070Ti_GPU': {
+            '1B': 8000,
+            '7B': 550,
+            '8B': 480,
+            '13B': 280,
+            '70B': 50,
+        },
+        'RTX4070_GPU': {
+            '1B': 6500,
+            '7B': 450,
+            '8B': 400,
+            '13B': 220,
+            '70B': 40,
+        },
+    }
+
+    # Per-GPU Model FLOPs Utilization (MFU) for first-principles estimation
+    GPU_MFU = {
+        'H100_GPU': 0.50,
+        'GH200_GPU': 0.50,
+        'B100': 0.50,
+        'GB200': 0.50,
+        'A100_80GB_GPU': 0.47,
+        'A100_40GB_GPU': 0.47,
+        'L40S_48GB_GPU': 0.35,
+        'RTX4090_GPU': 0.30,
+        'RTX4080_GPU': 0.28,
+        'RTX4070Ti_GPU': 0.25,
+        'RTX4070_GPU': 0.23,
+        'RTX3090_GPU': 0.18,
+        'RTX3080_GPU': 0.16,
+        'RTX3080Ti_GPU': 0.17,
+        'RTX3070_GPU': 0.15,
+        'RTX3060_GPU': 0.12,
+        'MI300X': 0.40,
+        'MI325X': 0.40,
+        'TPUv4': 0.45,
+        'TPUv5e': 0.45,
+        'TPUv5p': 0.50,
+        'TPUv6': 0.50,
+        'V100_16GB_GPU': 0.30,
+        'V100_32GB_GPU': 0.30,
+        'Gaudi3': 0.35,
+    }
+
+    # Optimizer compute overhead factors
+    OPTIMIZER_OVERHEAD = {
+        'adamw': 1.0,
+        'adam': 1.0,
+        'adamw_8bit': 1.05,
+        'paged_adamw_8bit': 1.05,
+        'sgd': 0.95,
+        'adafactor': 1.02,
+        'lion': 0.98,
+        'galore': 1.15,
+        'galore_8bit': 1.18,
+        'apollo': 1.12,
+        'adam_mini': 1.03,
+        'muon': 1.08,
+        'lomo': 0.90,
+        'adalomo': 0.95,
+        'badam_layer': 1.0,
     }
 
     def __init__(self):
@@ -76,6 +189,7 @@ class TrainingTimeEstimator:
         num_gpus: int,
         seq_length: int = 2048,
         parallelism: Optional[Dict[str, int]] = None,
+        optimizer: str = "adamw",
     ) -> TrainingTimeEstimate:
         """
         Estimate training time and cost.
@@ -129,6 +243,10 @@ class TrainingTimeEstimator:
             batch_size=batch_size,
             parallelism=parallelism,
         )
+
+        # Apply optimizer compute overhead
+        opt_overhead = self.OPTIMIZER_OVERHEAD.get(optimizer.lower(), 1.0)
+        tps /= opt_overhead
 
         # Calculate training time
         estimated_seconds = total_tokens / tps
@@ -231,8 +349,8 @@ class TrainingTimeEstimator:
             # Training FLOPs per token: ~6 × params
             flops_per_token = 6 * total_params
 
-            # Efficiency: typically 30-50% of peak
-            efficiency = 0.35
+            # Use per-GPU MFU efficiency
+            efficiency = self.GPU_MFU.get(hardware, 0.35)
 
             # Compute bound TPS
             effective_tflops = peak_tflops * efficiency * num_gpus
@@ -243,16 +361,20 @@ class TrainingTimeEstimator:
         tp = int(parallelism.get('tp', 1))
         pp = int(parallelism.get('pp', 1))
 
-        # DP communication overhead (~10% per rank after 1)
+        # Multi-GPU scaling with interconnect-aware penalties
         if dp > 1:
-            # Use log2 approximation for communication overhead
-            dp_ranks = dp.bit_length() - 1  # log2 of dp
-            tps *= 0.9 ** dp_ranks
+            dp_log2 = max(1, dp.bit_length() - 1)
+            # Check interconnect type from hardware config
+            interconnect = hw_config.get('interconnect', 'pcie4')
+            if interconnect == 'nvlink' or hw_config.get('ICN', 0) >= 300:
+                tps *= 0.92 ** dp_log2  # NVLink: better scaling
+            else:
+                tps *= 0.70 ** dp_log2  # PCIe: worse scaling
 
         # TP communication overhead (~5% per rank)
         if tp > 1:
-            tp_ranks = tp.bit_length() - 1  # log2 of tp
-            tps *= 0.95 ** tp_ranks
+            tp_log2 = max(1, tp.bit_length() - 1)
+            tps *= 0.95 ** tp_log2
 
         # PP adds pipeline bubbles (~15% overhead)
         if pp > 1:
