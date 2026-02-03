@@ -36,19 +36,28 @@ if _SLOWAPI_AVAILABLE:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Get allowed origins from environment or use defaults
+import os
+_CORS_ORIGINS = os.getenv(
+    "BUD_CORS_ORIGINS",
+    "http://localhost:3000,http://localhost:3001,http://localhost:8000,http://localhost:8001"
+).split(",")
+
 # Add TrustedHost middleware for proxy support
+# In production, set BUD_ALLOWED_HOSTS environment variable
+_ALLOWED_HOSTS = os.getenv("BUD_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["*"]
+    allowed_hosts=_ALLOWED_HOSTS
 )
 
-# Configure CORS
+# Configure CORS - NEVER use wildcards in production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Accept", "Origin"],
 )
 
 # Mount static files for logos
