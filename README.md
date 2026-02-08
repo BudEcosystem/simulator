@@ -667,6 +667,8 @@ Typical accuracy:
 
 ## Recent Changes
 
+- **ASTRA-SIM subprocess security hardening**: Replaced `shell=True` subprocess calls with `shell=False` and explicit argument lists to prevent shell injection; output redirection now uses file handles instead of shell redirects. Added path validation utilities (`path_utils.py`) and comprehensive security tests for shell injection prevention.
+- **CORS configuration hardening**: Tightened CORS policy on the FastAPI backend to restrict allowed origins
 - **Cluster ranking & requirements prediction**: New modules for ranking GPU clusters by throughput/cost/ETA and predicting minimum hardware requirements for training workloads
 - **Comprehensive config builder**: Generate full LlamaFactory YAML, DeepSpeed JSON, Accelerate configs, and launch commands with best-practice defaults per optimization focus (stable, convergence, speed, tco)
 - **Training best practices module**: Codified best practices from LlamaFactory analysis (200+ parameters) covering learning rates, optimizers, LoRA configs, PPO multi-model setups, and hardware-specific tuning

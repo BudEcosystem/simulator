@@ -269,6 +269,8 @@ test_results/
 # Debug files
 debug_*.py
 test_*.py
+!llm-memory-calculator/tests/**/test_*.py
+!BudSimulator/tests/**/test_*.py
 check_*.py
 
 # Phase check files (temporary scripts)

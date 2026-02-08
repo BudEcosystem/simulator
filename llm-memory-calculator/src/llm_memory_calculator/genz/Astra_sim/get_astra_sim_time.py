@@ -207,11 +207,21 @@ def get_astrasim_collective_time(collective_size, collective_type, system:System
         "Switch": "halvingDoubling"
     }
     collective_impl = [topology_to_algorithm[i] for i in network_config['topology']]
-    replace_collective_implementation('/home/abhimanyu/synergy3/work/GenZ-LLM-Analyzer/GenZ/Astra_sim/system.json', collective_impl) 
+    replace_collective_implementation('/home/abhimanyu/synergy3/work/GenZ-LLM-Analyzer/GenZ/Astra_sim/system.json', collective_impl)
     # Step 6: Run astra-sim
-    result = subprocess.run(f"bash {run_file}>{ASTRA_SIM_OUTPUT_PATH}", shell=True, check=True, stderr=subprocess.PIPE)
-    if result.stdout:
-        print(result.stdout)
+    # SECURITY: Use shell=False with explicit argument list to prevent shell injection
+    # Output redirection is handled via stdout file handle instead of shell redirect
+    with open(ASTRA_SIM_OUTPUT_PATH, 'w') as outfile:
+        result = subprocess.run(
+            ['bash', run_file],
+            stdout=outfile,
+            stderr=subprocess.PIPE,
+            shell=False,
+            check=True
+        )
+    if result.stderr:
+        # Log stderr if any (stdout went to file)
+        print(result.stderr.decode('utf-8', errors='replace'))
 
     def get_cycles_count(file_path):
         cycles_count = {}
