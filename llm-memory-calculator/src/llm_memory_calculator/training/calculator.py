@@ -96,6 +96,7 @@ class TrainingMemoryCalculator:
         tensor_parallel: int = 1,
         data_parallel: int = 1,
         framework_overhead_percent: float = 10.0,
+        flash_attention: bool = True,
     ) -> TrainingMemoryEstimate:
         """
         Calculate complete training memory requirements.
@@ -132,7 +133,8 @@ class TrainingMemoryCalculator:
 
         # Calculate weight memory (divided by TP)
         weight_memory = self._calculate_weight_memory(
-            config, precision, tensor_parallel, deepspeed_stage, data_parallel, method
+            config, precision, tensor_parallel, deepspeed_stage, data_parallel,
+            method, trainable_params=trainable_params
         )
 
         # Calculate gradient memory
@@ -148,15 +150,18 @@ class TrainingMemoryCalculator:
         # Calculate activation memory
         activation_memory = self._calculate_activation_memory(
             config, batch_size, seq_length, precision,
-            gradient_checkpointing, tensor_parallel
+            gradient_checkpointing, tensor_parallel, flash_attention
         )
 
-        # Calculate total with overhead
-        components_sum = (
-            weight_memory + gradient_memory +
-            optimizer_memory + activation_memory
-        )
-        total_memory = components_sum * (1 + framework_overhead_percent / 100)
+        # Peak-of-phases model: memory phases don't fully overlap.
+        # Forward pass:  weights + activations
+        # Backward pass: weights + activations + gradients  (dominates for LoRA)
+        # Optimizer step: weights + gradients + optimizer states (dominates for full FT + checkpointing)
+        forward_peak = weight_memory + activation_memory
+        backward_peak = weight_memory + activation_memory + gradient_memory
+        optimizer_peak = weight_memory + gradient_memory + optimizer_memory
+        peak_memory = max(forward_peak, backward_peak, optimizer_peak)
+        total_memory = peak_memory * (1 + framework_overhead_percent / 100)
 
         return TrainingMemoryEstimate(
             weight_memory_gb=weight_memory,
@@ -280,26 +285,41 @@ class TrainingMemoryCalculator:
         deepspeed_stage: Optional[str],
         data_parallel: int,
         method: str = "lora",
+        trainable_params: int = 0,
     ) -> float:
-        """Calculate weight memory in GB."""
+        """Calculate weight memory in GB.
+
+        Args:
+            trainable_params: Number of trainable parameters. Used to compute
+                fp32 master copy size for LoRA-family methods (only adapter
+                params need a master copy, not the frozen base model).
+        """
         total_params = self._get_total_params(config)
 
         if method.lower() == 'qlora':
             # QLoRA: NF4 + double quantization ≈ 0.516 bytes per param
             weight_memory = (total_params * 0.516) / 1e9
-            # Per-layer dequantization buffer
+            # Dequantization buffer: only ONE layer dequantized at a time
             hidden_size = config.get('hidden_size', 4096)
             intermediate_size = config.get('intermediate_size', hidden_size * 4)
-            num_layers = config.get('num_hidden_layers', 32)
-            dequant_buffer = num_layers * hidden_size * intermediate_size * 2 / 1e9
+            dequant_buffer = hidden_size * intermediate_size * 2 / 1e9
             weight_memory += dequant_buffer
+            # fp32 master copy for LoRA adapter params only
+            if trainable_params > 0:
+                weight_memory += (trainable_params * 4) / 1e9
         else:
             bytes_per_param = self.PRECISION_BYTES.get(precision.lower(), 2)
             weight_memory = (total_params * bytes_per_param) / 1e9
 
             # fp32 master weight copy for mixed-precision training
             if precision.lower() in ('fp16', 'float16', 'bf16', 'bfloat16'):
-                master_copy_memory = (total_params * 4) / 1e9
+                # For LoRA-family: master copy only for trainable adapter params
+                # For full/freeze: master copy for all trainable params
+                if method.lower() in ('lora', 'dora', 'pissa', 'loraplus', 'oft'):
+                    master_params = trainable_params
+                else:
+                    master_params = trainable_params if trainable_params > 0 else total_params
+                master_copy_memory = (master_params * 4) / 1e9
                 weight_memory += master_copy_memory
 
         # Divide by tensor parallelism
@@ -375,42 +395,66 @@ class TrainingMemoryCalculator:
         precision: str,
         gradient_checkpointing: bool,
         tensor_parallel: int,
+        flash_attention: bool = True,
     ) -> float:
         """
-        Calculate activation memory in GB using Megatron-LM formula.
+        Calculate activation memory in GB using config-aware Megatron-LM formula.
 
-        Megatron-LM formula per layer:
-            sbh × (10 + 24/T + 5×a×s×kv_ratio/(h×T))
-        where s=seq_length, b=batch_size, h=hidden_size, T=tensor_parallel,
-        a=num_attention_heads, kv_ratio=num_kv_heads/num_heads (for GQA).
+        Extends the standard Megatron-LM ``sbh(10 + 24/T)`` structure by
+        deriving the TP-parallelized coefficient from actual model dimensions
+        (GQA ratio, SwiGLU vs GeLU, real intermediate_size) and by optionally
+        eliminating the O(s^2) attention-score term when flash attention is used.
 
-        With gradient checkpointing, only sqrt(L) layers stored.
+        With gradient checkpointing, only ceil(sqrt(L)) layers are stored.
         """
-        hidden_size = config.get('hidden_size', 4096)
-        num_layers = config.get('num_hidden_layers', 32)
-        num_heads = config.get('num_attention_heads', 32)
-        num_kv_heads = config.get('num_key_value_heads', num_heads)
+        h = config.get('hidden_size', 4096)
+        L = config.get('num_hidden_layers', 32)
+        a = config.get('num_attention_heads', 32)
+        kv_heads = config.get('num_key_value_heads', a)
+        ffn = config.get('intermediate_size', h * 4)
+        hidden_act = config.get('hidden_act', 'silu')
 
-        s = seq_length
-        b = batch_size
-        h = hidden_size
-        T = tensor_parallel
-        a = num_heads
-        kv_ratio = num_kv_heads / num_heads
+        s, b, T = seq_length, batch_size, tensor_parallel
+        kv_ratio = kv_heads / a  # 1.0 for MHA, <1 for GQA/MQA
 
-        # Megatron-LM activation memory per layer (in bytes)
-        per_layer_bytes = s * b * h * (10 + 24.0 / T + 5.0 * a * s * kv_ratio / (h * T))
+        # --- Non-TP terms (bytes per token, per layer) ---
+        # LayerNorm inputs (2), attn dropout mask (1), MLP dropout mask (1),
+        # two residual connections (2+2), two LayerNorm outputs (2) = 10
+        non_tp_coeff = 10.0
 
+        # --- TP-parallelized attention terms ---
+        # Q(2) + K(2*kv_ratio) + V(2*kv_ratio) + O(2) = 4 + 4*kv_ratio
+        attn_coeff = 4.0 + 4.0 * kv_ratio
+
+        # --- TP-parallelized MLP terms ---
+        ffn_mult = ffn / h
+        if hidden_act in ('silu', 'swish', 'swiglu', 'gelu_new'):
+            # SwiGLU/GeGLU: gate + up + activation input = 3 projections stored
+            mlp_coeff = 6.0 * ffn_mult
+        else:
+            # Standard GeLU/ReLU: up + activation input = 2 projections stored
+            mlp_coeff = 4.0 * ffn_mult
+
+        tp_coeff = attn_coeff + mlp_coeff
+
+        # --- Attention score term (quadratic in seq_length) ---
+        if flash_attention:
+            score_coeff = 0.0  # FlashAttention eliminates O(s^2) materialization
+        else:
+            score_coeff = 5.0 * a * s / h  # Q*K^T scores + softmax + dropout mask
+
+        # Per-layer bytes
+        per_layer_bytes = s * b * h * (non_tp_coeff + tp_coeff / T + score_coeff / T)
+
+        # Gradient checkpointing: store only ceil(sqrt(L)) layers
         if gradient_checkpointing:
-            effective_layers = math.sqrt(num_layers)
+            effective_layers = math.ceil(math.sqrt(L))
             effective_layers = max(effective_layers, 2)
         else:
-            effective_layers = num_layers
+            effective_layers = L
 
         total_bytes = per_layer_bytes * effective_layers
-        activation_memory = total_bytes / 1e9
-
-        return activation_memory
+        return total_bytes / 1e9
 
 
 # Convenience function

@@ -162,8 +162,9 @@ class TestWeightMemory:
             precision="int4",
             method="qlora",
         )
-        # QLoRA: 8B params × 0.516 bytes (NF4+DQ) + dequant buffer ≈ 7.9 GB
-        assert 6.0 < estimate.weight_memory_gb < 10.0
+        # QLoRA: 8B × 0.516 (NF4+DQ) + ONE layer dequant buffer + adapter master copy
+        # ≈ 4.14 + 0.12 + 0.34 = ~4.6 GB
+        assert 4.0 < estimate.weight_memory_gb < 6.0
 
 
 class TestGradientMemory:
@@ -311,10 +312,9 @@ class TestActivationMemory:
             method="full",
             gradient_checkpointing=False,
         )
-        # Without checkpointing: store all activations including attention scores
-        # Per layer: hidden states + attention scores (seq×seq) + FFN intermediates
-        # For Llama-8B with batch=4, seq=2048: ~40-70 GB
-        assert 30.0 < estimate.activation_memory_gb < 80.0
+        # Without checkpointing, FA=True (default): 32 layers × ~1.21 GB ≈ 38.7 GB
+        # Config-aware formula: sbh(10 + (5+21)/T) = sbh*36 per layer
+        assert 35.0 < estimate.activation_memory_gb < 45.0
 
     @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
     def test_activation_with_checkpointing(self, calculator, llama_8b_config):
@@ -327,9 +327,8 @@ class TestActivationMemory:
             method="full",
             gradient_checkpointing=True,
         )
-        # With checkpointing: sqrt(num_layers) effective layers
-        # ~58 GB / sqrt(32) = ~10 GB
-        assert 5.0 < estimate.activation_memory_gb < 15.0
+        # With checkpointing: ceil(sqrt(32))=6 layers × ~1.21 GB ≈ 7.25 GB
+        assert 5.0 < estimate.activation_memory_gb < 10.0
 
     @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
     def test_activation_scales_with_batch(self, calculator, llama_8b_config):
@@ -356,10 +355,10 @@ class TestActivationMemory:
 
     @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
     def test_activation_scales_with_seq_length(self, calculator, llama_8b_config):
-        """Test that activation memory scales super-linearly with sequence length.
+        """Test that activation memory scales linearly with flash attention (default).
 
-        Attention scores scale O(seq²) while hidden states scale O(seq).
-        For 2x seq length, expect ~3-4x increase due to quadratic attention.
+        With flash attention (default), the O(s^2) attention score term is
+        eliminated, so scaling should be ~2x for 2x sequence length.
         """
         estimate_2k = calculator.calculate_training_memory(
             config=llama_8b_config,
@@ -377,9 +376,9 @@ class TestActivationMemory:
             method="full",
             gradient_checkpointing=True,
         )
-        # Attention is O(seq²), so 2x seq → ~3-4x memory increase
+        # With flash attention: linear scaling → exactly 2x
         ratio = estimate_4k.activation_memory_gb / estimate_2k.activation_memory_gb
-        assert 2.5 < ratio < 4.5
+        assert 1.8 < ratio < 2.3
 
 
 class TestDeepSpeedSharding:
@@ -465,10 +464,10 @@ class TestTotalMemory:
             optimizer="adamw",
             gradient_checkpointing=True,
         )
-        # Full 8B: ~48 (weights+master) + 32 (grads) + 64 (opt) + 10 (act) = ~154 GB
-        # With 10% framework overhead: ~170 GB
+        # Peak-of-phases: optimizer_peak = 48(w) + 32(g) + 64(o) = 144 dominates
+        # With 10% overhead: ~159 GB
         assert estimate.total_memory_gb > 140.0
-        assert estimate.total_memory_gb < 200.0
+        assert estimate.total_memory_gb < 175.0
 
     @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
     def test_total_memory_lora_8b(self, calculator, llama_8b_config):
@@ -483,10 +482,10 @@ class TestTotalMemory:
             optimizer="adamw",
             gradient_checkpointing=True,
         )
-        # LoRA 8B: ~48 (weights+master) + 0.3 (grads) + 0.7 (opt) + 10 (act) = ~59 GB
-        # With 10% framework overhead: ~65 GB
-        assert estimate.total_memory_gb > 50.0
-        assert estimate.total_memory_gb < 80.0
+        # LoRA 8B: ~16.4(w+adapter master) + 7.25(act) + 0.34(g) → backward_peak ~24
+        # With 10% overhead: ~26 GB (no fp32 master for frozen base params)
+        assert estimate.total_memory_gb > 22.0
+        assert estimate.total_memory_gb < 35.0
 
     @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
     def test_total_memory_qlora_8b(self, calculator, llama_8b_config):
@@ -501,14 +500,14 @@ class TestTotalMemory:
             optimizer="adamw",
             gradient_checkpointing=True,
         )
-        # QLoRA 8B: ~7.9 (NF4+dequant) + 0.3 (grads) + 0.7 (opt) + 10 (act) = ~19 GB
-        # With 10% framework overhead: ~21 GB. Should fit on RTX 4090 24GB
-        assert estimate.total_memory_gb > 15.0
-        assert estimate.total_memory_gb < 30.0
+        # QLoRA 8B: ~4.6(NF4+1-layer dequant+adapter master) + 7.25(act) + 0.34(g)
+        # backward_peak ~12.2, total ~13.4 GB. Should fit on RTX 4090 24GB.
+        assert estimate.total_memory_gb > 10.0
+        assert estimate.total_memory_gb < 18.0
 
     @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
     def test_memory_breakdown_consistency(self, calculator, llama_8b_config):
-        """Test that memory breakdown sums to total (minus overhead)."""
+        """Test that total equals peak-of-phases with overhead."""
         estimate = calculator.calculate_training_memory(
             config=llama_8b_config,
             batch_size=4,
@@ -519,15 +518,21 @@ class TestTotalMemory:
             optimizer="adamw",
             gradient_checkpointing=True,
         )
-        components_sum = (
+        # Peak-of-phases model
+        backward_peak = (
+            estimate.weight_memory_gb +
+            estimate.activation_memory_gb +
+            estimate.gradient_memory_gb
+        )
+        optimizer_peak = (
             estimate.weight_memory_gb +
             estimate.gradient_memory_gb +
-            estimate.optimizer_memory_gb +
-            estimate.activation_memory_gb
+            estimate.optimizer_memory_gb
         )
-        # Total should be components + overhead (typically 10-20%)
-        assert estimate.total_memory_gb >= components_sum
-        assert estimate.total_memory_gb <= components_sum * 1.3
+        peak = max(backward_peak, optimizer_peak)
+        # Total should be peak * (1 + overhead%)
+        assert estimate.total_memory_gb >= peak
+        assert estimate.total_memory_gb <= peak * 1.15
 
 
 class TestRealWorldScenarios:
@@ -687,6 +692,157 @@ class TestTrainingEstimateDataclass:
         # Might not fit in 16GB
         if estimate.total_memory_gb > 16.0:
             assert not estimate.fits_in_memory(16.0)
+
+
+class TestActivationFormulaImprovements:
+    """Test config-aware activation memory formula improvements."""
+
+    @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
+    def test_flash_attention_eliminates_quadratic(self, calculator, llama_8b_config):
+        """With flash attention, seq_length scaling is linear (no O(s^2) term)."""
+        estimate_fa = calculator.calculate_training_memory(
+            config=llama_8b_config,
+            batch_size=4, seq_length=2048, precision="bf16",
+            method="full", gradient_checkpointing=False, flash_attention=True,
+        )
+        estimate_no_fa = calculator.calculate_training_memory(
+            config=llama_8b_config,
+            batch_size=4, seq_length=2048, precision="bf16",
+            method="full", gradient_checkpointing=False, flash_attention=False,
+        )
+        # Without FA, O(s^2) term adds substantial memory
+        assert estimate_no_fa.activation_memory_gb > estimate_fa.activation_memory_gb * 2.5
+
+        # With FA, 2x seq → 2x memory (linear)
+        estimate_fa_4k = calculator.calculate_training_memory(
+            config=llama_8b_config,
+            batch_size=4, seq_length=4096, precision="bf16",
+            method="full", gradient_checkpointing=False, flash_attention=True,
+        )
+        ratio_fa = estimate_fa_4k.activation_memory_gb / estimate_fa.activation_memory_gb
+        assert 1.95 < ratio_fa < 2.05
+
+    @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
+    def test_gqa_reduces_activation(self, calculator, llama_8b_config):
+        """GQA models (kv_heads < heads) should have lower activation memory."""
+        # Llama-8B has GQA: 32 heads, 8 kv_heads (kv_ratio=0.25)
+        mha_config = {**llama_8b_config, 'num_key_value_heads': 32}  # MHA: ratio=1.0
+
+        estimate_gqa = calculator.calculate_training_memory(
+            config=llama_8b_config,
+            batch_size=4, seq_length=2048, precision="bf16",
+            method="full", gradient_checkpointing=True,
+        )
+        estimate_mha = calculator.calculate_training_memory(
+            config=mha_config,
+            batch_size=4, seq_length=2048, precision="bf16",
+            method="full", gradient_checkpointing=True,
+        )
+        # GQA should use less activation memory than MHA
+        assert estimate_gqa.activation_memory_gb < estimate_mha.activation_memory_gb
+
+    @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
+    def test_lora_no_master_copy_for_frozen_params(self, calculator, llama_8b_config):
+        """LoRA weight memory should be much less than full FT (no master copy for base)."""
+        estimate_lora = calculator.calculate_training_memory(
+            config=llama_8b_config,
+            batch_size=4, seq_length=2048, precision="bf16",
+            method="lora", lora_rank=16,
+        )
+        estimate_full = calculator.calculate_training_memory(
+            config=llama_8b_config,
+            batch_size=4, seq_length=2048, precision="bf16",
+            method="full",
+        )
+        # Full FT: 8B*2 + 8B*4 = 48 GB weights
+        # LoRA: 8B*2 + 84M*4 = 16.3 GB weights (no master copy for frozen 8B)
+        assert estimate_lora.weight_memory_gb < estimate_full.weight_memory_gb * 0.5
+
+    @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
+    def test_swiglu_vs_gelu_activation(self, calculator, llama_8b_config):
+        """SwiGLU models should have higher activation than equivalent GeLU model."""
+        gelu_config = {**llama_8b_config, 'hidden_act': 'gelu'}  # Standard GeLU
+
+        estimate_swiglu = calculator.calculate_training_memory(
+            config=llama_8b_config,  # default: silu (SwiGLU)
+            batch_size=4, seq_length=2048, precision="bf16",
+            method="full", gradient_checkpointing=True,
+        )
+        estimate_gelu = calculator.calculate_training_memory(
+            config=gelu_config,
+            batch_size=4, seq_length=2048, precision="bf16",
+            method="full", gradient_checkpointing=True,
+        )
+        # SwiGLU stores 3 projections vs 2 for GeLU → higher activation
+        assert estimate_swiglu.activation_memory_gb > estimate_gelu.activation_memory_gb
+
+    @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
+    def test_qwen_0_5b_lora_reasonable(self, calculator):
+        """Validate Qwen2.5-0.5B LoRA produces a reasonable estimate."""
+        qwen_05b_config = {
+            "model_type": "qwen2",
+            "hidden_size": 896,
+            "intermediate_size": 4864,
+            "num_hidden_layers": 24,
+            "num_attention_heads": 14,
+            "num_key_value_heads": 2,
+            "vocab_size": 151936,
+            "hidden_act": "silu",
+            "num_parameters": 494_032_896,
+        }
+        estimate = calculator.calculate_training_memory(
+            config=qwen_05b_config,
+            batch_size=2, seq_length=2048, precision="bf16",
+            method="lora", lora_rank=16, optimizer="adamw",
+            gradient_checkpointing=True,
+        )
+        # Measured on RTX 3080: 5.14 GB (includes ~1.5 GB CUDA context).
+        # Formula estimates computational memory only: ~2-4 GB.
+        assert 1.5 < estimate.total_memory_gb < 5.0
+
+    @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
+    def test_peak_phases_backward_dominates_lora(self, calculator, llama_8b_config):
+        """For LoRA (small optimizer), backward_peak should dominate."""
+        estimate = calculator.calculate_training_memory(
+            config=llama_8b_config,
+            batch_size=4, seq_length=2048, precision="bf16",
+            method="lora", lora_rank=16, optimizer="adamw",
+            gradient_checkpointing=True,
+        )
+        backward_peak = (
+            estimate.weight_memory_gb +
+            estimate.activation_memory_gb +
+            estimate.gradient_memory_gb
+        )
+        optimizer_peak = (
+            estimate.weight_memory_gb +
+            estimate.gradient_memory_gb +
+            estimate.optimizer_memory_gb
+        )
+        # LoRA: activations >> optimizer states → backward dominates
+        assert backward_peak > optimizer_peak
+
+    @pytest.mark.skipif(not TRAINING_MODULE_AVAILABLE, reason="Training module not implemented")
+    def test_peak_phases_optimizer_dominates_full_ft(self, calculator, llama_8b_config):
+        """For full FT + AdamW + checkpointing, optimizer_peak should dominate."""
+        estimate = calculator.calculate_training_memory(
+            config=llama_8b_config,
+            batch_size=4, seq_length=2048, precision="bf16",
+            method="full", optimizer="adamw",
+            gradient_checkpointing=True,
+        )
+        backward_peak = (
+            estimate.weight_memory_gb +
+            estimate.activation_memory_gb +
+            estimate.gradient_memory_gb
+        )
+        optimizer_peak = (
+            estimate.weight_memory_gb +
+            estimate.gradient_memory_gb +
+            estimate.optimizer_memory_gb
+        )
+        # Full FT + AdamW: optimizer states (64 GB) >> activations (~7 GB)
+        assert optimizer_peak > backward_peak
 
 
 if __name__ == "__main__":

@@ -667,6 +667,12 @@ Typical accuracy:
 
 ## Recent Changes
 
+- **Peak-of-phases memory model**: Training memory estimation now uses a peak-of-phases model instead of summing all components. Memory phases (forward, backward, optimizer step) don't fully overlap — total memory is the maximum of phase peaks, giving more accurate estimates (especially for LoRA where optimizer memory is small)
+- **QLoRA memory estimation fix**: Fixed QLoRA weight memory to correctly model per-layer dequantization buffer (one layer at a time, not all layers) and include fp32 master copy for LoRA adapter parameters only
+- **Flash attention support**: Added `flash_attention` parameter to memory calculations — when enabled, attention activation memory scales as O(seq_len) instead of O(seq_len^2)
+- **fp32 master copy for mixed-precision**: Weight memory now includes fp32 master copies for mixed-precision training (bf16/fp16). For LoRA-family methods, master copies are only for trainable adapter params, not the frozen base model
+- **Hardware API key normalization**: Fixed hardware list endpoint to normalize GenZ PascalCase keys (e.g., `Flops` → `flops`) to match Pydantic model expectations, and fixed `search_hardware` parameter name (`type` → `hw_type`)
+- **Training calculator test expansion**: Expanded test suite from ~10 to 40+ tests covering peak-of-phases model, QLoRA specifics, flash attention, gradient checkpointing, and edge cases
 - **ASTRA-SIM subprocess security hardening**: Replaced `shell=True` subprocess calls with `shell=False` and explicit argument lists to prevent shell injection; output redirection now uses file handles instead of shell redirects. Added path validation utilities (`path_utils.py`) and comprehensive security tests for shell injection prevention.
 - **CORS configuration hardening**: Tightened CORS policy on the FastAPI backend to restrict allowed origins
 - **Cluster ranking & requirements prediction**: New modules for ranking GPU clusters by throughput/cost/ETA and predicting minimum hardware requirements for training workloads

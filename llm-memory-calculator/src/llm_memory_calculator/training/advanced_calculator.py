@@ -275,6 +275,8 @@ class AdvancedTrainingCalculator:
             tensor_parallel,
             deepspeed_stage,
             data_parallel,
+            method=method,
+            trainable_params=trainable_params,
         )
 
         # Calculate gradient memory
@@ -330,17 +332,15 @@ class AdvancedTrainingCalculator:
             value_head_memory = (value_head_params * precision_bytes) / 1e9
             weight_memory += value_head_memory
 
-        # Calculate total with overhead
-        components_sum = (
-            weight_memory +
-            gradient_memory +
-            optimizer_memory +
-            activation_memory +
-            reference_memory +
-            reward_memory
-        )
-        framework_overhead = components_sum * (framework_overhead_percent / 100)
-        total_memory = components_sum + framework_overhead
+        # Peak-of-phases model: memory phases don't fully overlap.
+        # Reference and reward models are persistent (added to all phases).
+        persistent_memory = reference_memory + reward_memory
+        forward_peak = weight_memory + activation_memory + persistent_memory
+        backward_peak = weight_memory + activation_memory + gradient_memory + persistent_memory
+        optimizer_peak = weight_memory + gradient_memory + optimizer_memory + persistent_memory
+        peak_memory = max(forward_peak, backward_peak, optimizer_peak)
+        framework_overhead = peak_memory * (framework_overhead_percent / 100)
+        total_memory = peak_memory + framework_overhead
 
         # Calculate performance factors
         throughput_factor = 1.0
@@ -464,9 +464,25 @@ class AdvancedTrainingCalculator:
         tensor_parallel: int,
         deepspeed_stage: Optional[str],
         data_parallel: int,
+        method: str = "full",
+        trainable_params: int = 0,
     ) -> float:
-        """Calculate weight memory in GB."""
+        """Calculate weight memory in GB.
+
+        Includes fp32 master copy for mixed-precision training.  For LoRA-family
+        methods the master copy is only for trainable adapter params, not the
+        frozen base model.
+        """
         weight_memory = (total_params * precision_bytes) / 1e9
+
+        # fp32 master copy for mixed-precision (bf16/fp16 → 2 bytes base)
+        if precision_bytes <= 2:
+            if method.lower() in ('lora', 'qlora', 'dora', 'pissa', 'loraplus', 'oft'):
+                master_params = trainable_params
+            else:
+                master_params = trainable_params if trainable_params > 0 else total_params
+            weight_memory += (master_params * 4) / 1e9
+
         weight_memory /= tensor_parallel
 
         if deepspeed_stage == 'zero3':
@@ -496,31 +512,55 @@ class AdvancedTrainingCalculator:
         precision_bytes: float,
         gradient_checkpointing: bool,
         tensor_parallel: int,
+        flash_attention: bool = True,
     ) -> float:
-        """Calculate activation memory in GB."""
-        hidden_size = config.get('hidden_size', 4096)
-        num_layers = config.get('num_hidden_layers', 32)
-        num_heads = config.get('num_attention_heads', 32)
-        intermediate_size = config.get('intermediate_size', hidden_size * 4)
+        """Calculate activation memory in GB using config-aware Megatron-LM formula.
 
-        # Per-layer activations
-        attention_elements = batch_size * seq_length * hidden_size * 4
-        attention_scores = batch_size * num_heads * seq_length * seq_length
-        ffn_elements = batch_size * seq_length * intermediate_size * 2
+        Derives TP-parallelized coefficients from actual model dimensions
+        (GQA ratio, SwiGLU vs GeLU, real intermediate_size) and optionally
+        eliminates the O(s^2) attention-score term when flash attention is used.
+        """
+        h = config.get('hidden_size', 4096)
+        L = config.get('num_hidden_layers', 32)
+        a = config.get('num_attention_heads', 32)
+        kv_heads = config.get('num_key_value_heads', a)
+        ffn = config.get('intermediate_size', h * 4)
+        hidden_act = config.get('hidden_act', 'silu')
 
-        elements_per_layer = attention_elements + attention_scores + ffn_elements
+        s, b, T = seq_length, batch_size, tensor_parallel
+        kv_ratio = kv_heads / a
+
+        # Non-TP terms: LayerNorm(2+2), dropout masks(1+1), residuals(2+2) = 10
+        non_tp_coeff = 10.0
+
+        # TP-parallelized attention: Q(2) + K(2*kv) + V(2*kv) + O(2)
+        attn_coeff = 4.0 + 4.0 * kv_ratio
+
+        # TP-parallelized MLP
+        ffn_mult = ffn / h
+        if hidden_act in ('silu', 'swish', 'swiglu', 'gelu_new'):
+            mlp_coeff = 6.0 * ffn_mult
+        else:
+            mlp_coeff = 4.0 * ffn_mult
+
+        tp_coeff = attn_coeff + mlp_coeff
+
+        # Attention score term
+        if flash_attention:
+            score_coeff = 0.0
+        else:
+            score_coeff = 5.0 * a * s / h
+
+        per_layer_bytes = s * b * h * (non_tp_coeff + tp_coeff / T + score_coeff / T)
 
         if gradient_checkpointing:
-            effective_layers = math.sqrt(num_layers)
+            effective_layers = math.ceil(math.sqrt(L))
             effective_layers = max(effective_layers, 2)
         else:
-            effective_layers = num_layers
+            effective_layers = L
 
-        total_elements = elements_per_layer * effective_layers
-        activation_memory = (total_elements * precision_bytes) / 1e9
-        activation_memory /= tensor_parallel
-
-        return activation_memory
+        total_bytes = per_layer_bytes * effective_layers
+        return total_bytes / 1e9
 
     def _estimate_tps(
         self,

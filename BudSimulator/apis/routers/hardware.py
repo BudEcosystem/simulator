@@ -18,6 +18,27 @@ hardware_manager = BudHardware()
 recommendation_engine = HardwareRecommendation()
 
 
+# Key mapping from GenZ PascalCase to Pydantic lowercase
+_KEY_MAP = {
+    'Flops': 'flops',
+    'Memory_size': 'memory_size',
+    'Memory_BW': 'memory_bw',
+    'Power': 'power',
+    'ICN': 'icn',
+    'ICN_LL': 'icn_ll',
+}
+
+
+def _normalize_hw_keys(hw: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize GenZ PascalCase keys to lowercase for Pydantic models."""
+    normalized = {}
+    for k, v in hw.items():
+        if k.startswith('_'):
+            continue  # Skip internal sort keys
+        normalized[_KEY_MAP.get(k, k)] = v
+    return normalized
+
+
 # Pydantic models for request/response
 class VendorPricing(BaseModel):
     """On-premise vendor with pricing information."""
@@ -190,24 +211,27 @@ async def list_hardware(
 ):
     """List all hardware with optional filters."""
     try:
-        # Search with filters
+        # Search with filters (hw_type matches HardwareManager.search_hardware signature)
         results = hardware_manager.search_hardware(
-            type=type,
+            hw_type=type,
             manufacturer=manufacturer,
             min_memory=min_memory,
             max_memory=max_memory,
-            limit=limit,
-            offset=offset
         )
+        # Apply pagination after search (search_hardware doesn't accept limit/offset)
+        results = results[offset:]
+        if limit is not None:
+            results = results[:limit]
         
-        # Add price indicators to each hardware item
+        # Normalize keys and add price indicators
         enhanced_results = []
         for hw in results:
-            # Calculate price indicator if specs are available
+            hw = _normalize_hw_keys(hw)
+
             flops = hw.get('flops', 0)
             memory_size = hw.get('memory_size', 0)
             memory_bw = hw.get('memory_bw', 0)
-            
+
             if flops > 0 and memory_size > 0 and memory_bw > 0:
                 hw['price_approx'] = BudHardware.calculate_price_indicator(
                     flops=flops,
@@ -216,9 +240,9 @@ async def list_hardware(
                 )
             else:
                 hw['price_approx'] = None
-                
+
             enhanced_results.append(hw)
-        
+
         return [HardwareResponse(**hw) for hw in enhanced_results]
         
     except Exception as e:
@@ -250,7 +274,7 @@ async def filter_hardware(
 ):
     """Advanced hardware filtering with multiple criteria."""
     try:
-        results = hardware_manager.search_hardware(
+        results = hardware_manager.search_hardware_extended(
             query=query,
             type=type,
             manufacturer=manufacturer,
@@ -273,14 +297,15 @@ async def filter_hardware(
             offset=offset
         )
         
-        # Add price indicators to each hardware item
+        # Normalize keys and add price indicators
         enhanced_results = []
         for hw in results:
-            # Calculate price indicator if specs are available
+            hw = _normalize_hw_keys(hw)
+
             flops = hw.get('flops', 0)
             memory_size = hw.get('memory_size', 0)
             memory_bw = hw.get('memory_bw', 0)
-            
+
             if flops > 0 and memory_size > 0 and memory_bw > 0:
                 hw['price_approx'] = BudHardware.calculate_price_indicator(
                     flops=flops,
@@ -289,11 +314,11 @@ async def filter_hardware(
                 )
             else:
                 hw['price_approx'] = None
-                
+
             enhanced_results.append(hw)
-        
+
         return [HardwareResponse(**hw) for hw in enhanced_results]
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
@@ -306,13 +331,15 @@ async def get_hardware(hardware_name: str):
         hardware = hardware_manager.get_hardware_by_name(hardware_name)
         if not hardware:
             raise HTTPException(status_code=404, detail="Hardware not found")
-        
+
+        hardware = _normalize_hw_keys(hardware)
+
         # Get vendor details with pricing
         vendors = hardware_manager.get_hardware_vendors(hardware_name)
-        
+
         # Get cloud details with instance pricing
         clouds = hardware_manager.get_hardware_clouds(hardware_name)
-        
+
         # Build detailed response
         response = HardwareDetailResponse(
             name=hardware['name'],
