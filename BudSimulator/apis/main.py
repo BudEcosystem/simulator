@@ -8,7 +8,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from .routers import models, hardware, usecases, usecases_optimization, training
+from .routers import models, hardware, usecases, usecases_optimization, training, serving
 from .health import router as health_router
 from src.hardware_registry import HardwareRegistry
 
@@ -71,6 +71,7 @@ app.include_router(hardware.router)
 app.include_router(usecases.router)
 app.include_router(usecases_optimization.router)
 app.include_router(training.router)  # Training/simulator endpoints
+app.include_router(serving.router)
 app.include_router(health_router, prefix="/api", tags=["health"])
 
 # Root endpoint
