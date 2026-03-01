@@ -71,12 +71,19 @@ dev = [
 pareto = [
     "paretoset>=1.2.3",
 ]
+evolve = [
+    "pymoo>=0.6.0",
+    "together>=1.0.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/yourusername/llm-memory-calculator"
 Documentation = "https://github.com/yourusername/llm-memory-calculator#readme"
 Repository = "https://github.com/yourusername/llm-memory-calculator.git"
 Issues = "https://github.com/yourusername/llm-memory-calculator/issues"
+
+[project.scripts]
+budsim-evolve = "llm_memory_calculator.budevolve.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
