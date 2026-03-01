@@ -191,7 +191,9 @@ Generate an improved scheduling algorithm that addresses these bottlenecks.
 
 **OpenEvolve configuration**:
 - Islands: 3-5 for diversity
-- LLM: OpenAI-compatible API (configurable)
+- LLM: Together AI (default: `openai/gpt-oss-120b` via `https://api.together.xyz/v1`)
+  - Also supports any OpenAI-compatible API (OpenAI, Anthropic proxy, local Ollama/vLLM)
+  - API key via `TOGETHER_API_KEY` env var (never committed to repo)
 - Cascade evaluation: Stage 1 (syntax check), Stage 2 (quick sim), Stage 3 (full sim)
 - Migration: ring topology, every 20 generations
 
@@ -229,8 +231,8 @@ budsim-evolve evolve-scheduler \
     --hardware H100_GPU \
     --workload bursty \
     --iterations 100 \
-    --llm-endpoint https://api.openai.com/v1 \
-    --llm-model gpt-4o-mini \
+    --llm-endpoint https://api.together.xyz/v1 \
+    --llm-model openai/gpt-oss-120b \
     --output results/evolved_scheduler/
 
 # Sensitivity analysis

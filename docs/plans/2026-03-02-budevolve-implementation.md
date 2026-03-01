@@ -881,6 +881,7 @@ Add to `llm-memory-calculator/pyproject.toml` after the `pareto` optional dep:
 ```toml
 evolve = [
     "pymoo>=0.6.0",
+    "together>=1.0.0",
 ]
 ```
 
@@ -2250,15 +2251,15 @@ class AlgorithmEvolver:
         self,
         model: str,
         hardware: str,
-        llm_endpoint: str = "https://api.openai.com/v1",
-        llm_model: str = "gpt-4o-mini",
+        llm_endpoint: str = "https://api.together.xyz/v1",
+        llm_model: str = "openai/gpt-oss-120b",
         llm_api_key: Optional[str] = None,
     ):
         self._model = model
         self._hardware = hardware
         self._llm_endpoint = llm_endpoint
         self._llm_model = llm_model
-        self._llm_api_key = llm_api_key or os.environ.get("OPENAI_API_KEY", "")
+        self._llm_api_key = llm_api_key or os.environ.get("TOGETHER_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
         self._evaluator = BudSimEvaluator()
         self._roofline = RooflineAnalyzer()
 
@@ -2505,8 +2506,8 @@ def create_parser() -> argparse.ArgumentParser:
     es.add_argument("--model", required=True)
     es.add_argument("--hardware", required=True)
     es.add_argument("--iterations", type=int, default=100)
-    es.add_argument("--llm-endpoint", default="https://api.openai.com/v1")
-    es.add_argument("--llm-model", default="gpt-4o-mini")
+    es.add_argument("--llm-endpoint", default="https://api.together.xyz/v1")
+    es.add_argument("--llm-model", default="openai/gpt-oss-120b")
     es.add_argument("--output", default="evolved_scheduler")
 
     return parser
