@@ -65,6 +65,25 @@ class TestHardwareExplorer:
             assert len(result) == 5
             assert all("offchip_mem_bw_gbps" in r for r in result)
 
+    def test_design_for_model(self):
+        from llm_memory_calculator.budevolve.numeric.hardware_explorer import HardwareExplorer
+
+        results = [
+            _make_hw_eval(312, 1600, 40, 50.0, 100.0, 10000),
+            _make_hw_eval(990, 3350, 80, 120.0, 40.0, 25000),
+        ]
+
+        with patch.object(HardwareExplorer, "_run_search") as mock_run:
+            mock_run.return_value = results
+            explorer = HardwareExplorer(model="test-model")
+            result = explorer.design_for_model(
+                target_throughput_rps=100.0, n_generations=10,
+            )
+            assert isinstance(result, ParetoResult)
+            # Only the second result meets 100 rps target
+            for item in result.pareto_front:
+                assert item["throughput_rps"] >= 100.0
+
     def test_compare_vs_real(self):
         from llm_memory_calculator.budevolve.numeric.hardware_explorer import HardwareExplorer
 

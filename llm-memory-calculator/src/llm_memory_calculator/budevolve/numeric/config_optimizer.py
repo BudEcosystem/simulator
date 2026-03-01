@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Any
 from ..types import EvalResult, ParetoResult, ServingConfig
 from ..evaluator import BudSimEvaluator
 from .search_spaces import ConfigSearchSpace
+from .pareto import compute_pareto_front
 
 
 class NumericOptimizer:
@@ -238,21 +239,7 @@ class NumericOptimizer:
                     vals.append(r.throughput_rps)
             return vals
 
-        pareto = []
-        for i, ri in enumerate(results):
-            vi = get_obj_values(ri)
-            dominated = False
-            for j, rj in enumerate(results):
-                if i == j:
-                    continue
-                vj = get_obj_values(rj)
-                if (all(vj[k] >= vi[k] for k in range(len(objectives))) and
-                        any(vj[k] > vi[k] for k in range(len(objectives)))):
-                    dominated = True
-                    break
-            if not dominated:
-                pareto.append(ri)
-        return pareto
+        return compute_pareto_front(results, get_obj_values)
 
     def _result_to_dict(self, r: EvalResult) -> Dict[str, Any]:
         return {

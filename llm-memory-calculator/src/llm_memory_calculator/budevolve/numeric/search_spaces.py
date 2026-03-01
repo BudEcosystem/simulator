@@ -15,8 +15,8 @@ class ConfigSearchSpace:
 
     @property
     def n_var(self) -> int:
-        """Number of decision variables."""
-        return 6  # tp, pp, batch, precision, chunked_prefill, prefix_caching
+        """Number of decision variables used in pymoo NSGA-II."""
+        return 4  # tp, pp, batch, precision
 
 
 @dataclass

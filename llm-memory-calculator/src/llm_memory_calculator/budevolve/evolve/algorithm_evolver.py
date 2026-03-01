@@ -144,9 +144,11 @@ class AlgorithmEvolver:
 
     def _run_openevolve(self, base_code, algo_type, baseline, roofline,
                         iterations, output_dir):
-        """Run OpenEvolve evolutionary loop."""
-        from openevolve import run_evolution
+        """Run OpenEvolve evolutionary loop.
 
+        Attempts OpenEvolve's class-based API first (OpenEvolve + run()),
+        then falls back to the convenience function (run_evolution).
+        """
         bridge = BudSimEvalBridge(
             model=self._model, hardware=self._hardware,
         )
@@ -159,12 +161,46 @@ class AlgorithmEvolver:
             "tpot_ms": baseline.tpot_ms,
         }
 
-        result = run_evolution(
-            initial_program=base_code,
-            evaluator=bridge.evaluate,
-            iterations=iterations,
-            output_dir=output_dir,
-        )
+        # Write base code to a temp file for OpenEvolve
+        import tempfile
+        import os
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, dir=output_dir if os.path.isdir(output_dir) else None) as f:
+            f.write(base_code)
+            initial_program_path = f.name
+
+        try:
+            # Try class-based API first (newer OpenEvolve versions)
+            try:
+                from openevolve import OpenEvolve
+                oe = OpenEvolve(
+                    initial_program_path=initial_program_path,
+                    evaluator=bridge.evaluate,
+                    config={
+                        "llm": {
+                            "endpoint": self._llm_endpoint,
+                            "model": self._llm_model,
+                            "api_key": self._llm_api_key,
+                        },
+                        "iterations": iterations,
+                        "output_dir": output_dir,
+                    },
+                )
+                result = oe.run()
+            except (ImportError, AttributeError):
+                # Fall back to convenience function
+                from openevolve import run_evolution
+                result = run_evolution(
+                    initial_program=base_code,
+                    evaluator=bridge.evaluate,
+                    iterations=iterations,
+                    output_dir=output_dir,
+                )
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(initial_program_path)
+            except OSError:
+                pass
 
         return {
             "best_code": result.get("best_program", base_code),

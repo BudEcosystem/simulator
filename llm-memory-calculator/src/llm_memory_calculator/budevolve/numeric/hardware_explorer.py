@@ -1,4 +1,5 @@
 """Hardware design space exploration using pymoo NSGA-II."""
+import dataclasses
 import warnings
 from typing import Dict, List, Optional, Any, Tuple
 
@@ -7,6 +8,7 @@ import numpy as np
 from ..types import EvalResult, ParetoResult, HardwareSpec
 from ..evaluator import BudSimEvaluator
 from .search_spaces import HardwareSearchSpace
+from .pareto import compute_pareto_front
 
 # Map real hardware names to approximate specs for comparison
 _REAL_HARDWARE_SPECS = {
@@ -142,7 +144,6 @@ class HardwareExplorer:
         results = []
 
         for val in values:
-            import dataclasses
             hw = dataclasses.replace(base, **{param: float(val)})
             eval_result = self._evaluator.evaluate_hardware(
                 hw, model=self._model,
@@ -154,6 +155,45 @@ class HardwareExplorer:
             results.append(entry)
 
         return results
+
+    def design_for_model(
+        self,
+        target_throughput_rps: float,
+        input_tokens: int = 512,
+        output_tokens: int = 128,
+        batch_size: int = 32,
+        search_space: Optional[HardwareSearchSpace] = None,
+        n_generations: int = 100,
+        pop_size: int = 50,
+    ) -> ParetoResult:
+        """Find cheapest hardware meeting a throughput target.
+
+        Searches the hardware space for designs that achieve the target
+        throughput, then returns results sorted by estimated cost.
+
+        Args:
+            target_throughput_rps: Minimum throughput required.
+            input_tokens: Representative input length.
+            output_tokens: Representative output length.
+            batch_size: Batch size for inference.
+            search_space: Hardware parameter ranges.
+            n_generations: NSGA-II generations.
+            pop_size: Population size per generation.
+
+        Returns:
+            ParetoResult with designs meeting the throughput target,
+            sorted by estimated cost.
+        """
+        return self.explore(
+            objectives=["throughput", "cost"],
+            constraints={"min_throughput_rps": target_throughput_rps},
+            search_space=search_space,
+            n_generations=n_generations,
+            pop_size=pop_size,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            batch_size=batch_size,
+        )
 
     def compare_vs_real(
         self,
@@ -329,10 +369,6 @@ class HardwareExplorer:
     def _compute_pareto(self, results, objectives):
         """Compute non-dominated Pareto front from a list of results.
 
-        For each result, checks whether any other result dominates it
-        (i.e., is at least as good on all objectives and strictly better
-        on at least one). Non-dominated results form the Pareto front.
-
         Args:
             results: List of feasible EvalResult objects.
             objectives: List of objective names to consider.
@@ -355,21 +391,7 @@ class HardwareExplorer:
                     vals.append(r.throughput_rps)
             return vals
 
-        pareto = []
-        for i, ri in enumerate(results):
-            vi = get_vals(ri)
-            dominated = False
-            for j, rj in enumerate(results):
-                if i == j:
-                    continue
-                vj = get_vals(rj)
-                if (all(vj[k] >= vi[k] for k in range(len(objectives))) and
-                        any(vj[k] > vi[k] for k in range(len(objectives)))):
-                    dominated = True
-                    break
-            if not dominated:
-                pareto.append(ri)
-        return pareto
+        return compute_pareto_front(results, get_vals)
 
     def _to_dict(self, r):
         """Convert an EvalResult to a plain dictionary.

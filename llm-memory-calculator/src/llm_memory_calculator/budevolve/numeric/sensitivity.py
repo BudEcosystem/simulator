@@ -1,4 +1,5 @@
 """Sensitivity analysis for config and hardware parameters."""
+import dataclasses
 from typing import Dict, List, Optional, Any
 
 from ..types import ServingConfig, HardwareSpec, EvalResult
@@ -93,7 +94,6 @@ class SensitivityAnalyzer:
         for param, values in params.items():
             max_delta = 0.0
             for val in values:
-                import dataclasses
                 hw = dataclasses.replace(base_hw, **{param: float(val)})
                 result = self._evaluator.evaluate_hardware(
                     hw, model=self._model,
