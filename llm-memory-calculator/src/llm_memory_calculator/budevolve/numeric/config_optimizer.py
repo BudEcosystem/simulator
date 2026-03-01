@@ -186,7 +186,7 @@ class NumericOptimizer:
 
         problem = ServingProblem()
         algorithm = NSGA2(
-            pop_size=min(pop_size, 20),
+            pop_size=pop_size,
             sampling=IntegerRandomSampling(),
             crossover=SBX(prob=0.9, eta=15, vtype=float, repair=lambda _p, X: np.round(X).astype(int)),
             mutation=PM(eta=20, vtype=float, repair=lambda _p, X: np.round(X).astype(int)),
@@ -194,7 +194,7 @@ class NumericOptimizer:
 
         res = minimize(
             problem, algorithm,
-            termination=("n_gen", min(n_generations, 30)),
+            termination=("n_gen", n_generations),
             seed=42, verbose=False,
         )
 

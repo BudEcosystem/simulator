@@ -58,6 +58,15 @@ def create_parser() -> argparse.ArgumentParser:
     es.add_argument("--llm-model", default="openai/gpt-oss-120b")
     es.add_argument("--output", default="evolved_scheduler")
 
+    # evolve-cache-policy
+    ec = subparsers.add_parser("evolve-cache-policy", help="Evolve KV cache eviction policy")
+    ec.add_argument("--model", required=True)
+    ec.add_argument("--hardware", required=True)
+    ec.add_argument("--iterations", type=int, default=100)
+    ec.add_argument("--llm-endpoint", default="https://api.together.xyz/v1")
+    ec.add_argument("--llm-model", default="openai/gpt-oss-120b")
+    ec.add_argument("--output", default="evolved_cache_policy")
+
     return parser
 
 
@@ -143,9 +152,20 @@ def main(argv: List[str] = None):
             output_dir=args.output,
         )
 
+    elif args.command == "evolve-cache-policy":
+        from .evolve.algorithm_evolver import AlgorithmEvolver
+        evolver = AlgorithmEvolver(
+            model=args.model, hardware=args.hardware,
+            llm_endpoint=args.llm_endpoint, llm_model=args.llm_model,
+        )
+        result = evolver.evolve_cache_policy(
+            iterations=args.iterations,
+            output_dir=args.output,
+        )
+
     if result is not None:
         output_str = json.dumps(result, indent=2, default=str)
-        if args.output and args.command != "evolve-scheduler":
+        if args.output and args.command not in ("evolve-scheduler", "evolve-cache-policy"):
             with open(args.output, "w") as f:
                 f.write(output_str)
             print(f"Results written to {args.output}")

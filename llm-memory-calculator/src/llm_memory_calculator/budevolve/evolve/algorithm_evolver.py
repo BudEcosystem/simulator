@@ -1,7 +1,16 @@
-"""Algorithm evolution orchestrator using OpenEvolve + BudSim."""
+"""Algorithm evolution orchestrator using LLM + BudSim.
+
+Supports two backends:
+1. Built-in evolutionary loop (default): Uses any OpenAI-compatible LLM API
+   to generate algorithm mutations, BudSim to evaluate them.
+2. OpenEvolve (optional): Full MAP-Elites with island model.
+"""
+import json
 import os
+import tempfile
+import time
 import warnings
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from ..types import ServingConfig
 from ..evaluator import BudSimEvaluator
@@ -58,11 +67,72 @@ def evict_entries(cache_entries, num_to_evict):
 '''
 
 
-class AlgorithmEvolver:
-    """Evolve scheduling/caching algorithms using OpenEvolve + BudSim.
+def _call_llm_api(endpoint: str, model: str, api_key: str,
+                   prompt: str, temperature: float = 0.8) -> str:
+    """Call an OpenAI-compatible LLM API to generate code.
 
-    Uses OpenEvolve's evolutionary loop with BudSim as the fitness function.
-    Roofline analysis is injected into LLM prompts for informed mutations.
+    Args:
+        endpoint: API base URL (e.g. https://api.together.xyz/v1).
+        model: Model name (e.g. openai/gpt-oss-120b).
+        api_key: API key.
+        prompt: Full prompt text.
+        temperature: Sampling temperature (higher = more creative).
+
+    Returns:
+        Generated text from the LLM.
+
+    Raises:
+        RuntimeError: If the API call fails.
+    """
+    import urllib.request
+    import urllib.error
+
+    url = f"{endpoint.rstrip('/')}/chat/completions"
+    payload = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are an expert algorithm designer. Generate only Python code, no explanations."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": temperature,
+        "max_tokens": 2048,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url, data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            content = data["choices"][0]["message"]["content"]
+            # Extract code from markdown code blocks if present
+            if "```python" in content:
+                code = content.split("```python")[1].split("```")[0]
+                return code.strip()
+            elif "```" in content:
+                code = content.split("```")[1].split("```")[0]
+                return code.strip()
+            return content.strip()
+    except (urllib.error.URLError, urllib.error.HTTPError, KeyError,
+            json.JSONDecodeError, IndexError) as e:
+        raise RuntimeError(f"LLM API call failed: {e}")
+
+
+class AlgorithmEvolver:
+    """Evolve scheduling/caching algorithms using LLM + BudSim.
+
+    Uses an LLM to generate algorithm mutations and BudSim's GenZ engine
+    as the fitness function. Roofline analysis is injected into prompts
+    so the LLM understands system bottlenecks.
+
+    Supports:
+    - Built-in evolutionary loop (no external deps beyond urllib)
+    - OpenEvolve integration (optional, for MAP-Elites + island model)
     """
 
     def __init__(
@@ -77,7 +147,11 @@ class AlgorithmEvolver:
         self._hardware = hardware
         self._llm_endpoint = llm_endpoint
         self._llm_model = llm_model
-        self._llm_api_key = llm_api_key or os.environ.get("TOGETHER_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
+        self._llm_api_key = (
+            llm_api_key
+            or os.environ.get("TOGETHER_API_KEY", "")
+            or os.environ.get("OPENAI_API_KEY", "")
+        )
         self._evaluator = BudSimEvaluator()
         self._roofline = RooflineAnalyzer()
 
@@ -86,6 +160,12 @@ class AlgorithmEvolver:
 
         Args:
             algorithm_type: "scheduler" or "cache_policy"
+
+        Returns:
+            String containing the base Python algorithm code.
+
+        Raises:
+            ValueError: If algorithm_type is unknown.
         """
         if algorithm_type == "scheduler":
             return _BASE_SCHEDULER
@@ -103,6 +183,15 @@ class AlgorithmEvolver:
     ) -> Dict[str, Any]:
         """Evolve a batch scheduling algorithm.
 
+        Runs the built-in evolutionary loop:
+        1. Evaluate baseline algorithm + get roofline analysis
+        2. Build prompt with code, metrics, and bottleneck data
+        3. Ask LLM to generate improved version
+        4. Validate and score the candidate
+        5. Keep the best, repeat
+
+        Falls back gracefully if LLM API is unavailable.
+
         Args:
             iterations: Number of evolutionary iterations.
             input_tokens: Representative input length.
@@ -110,105 +199,359 @@ class AlgorithmEvolver:
             output_dir: Directory to save evolved algorithms.
 
         Returns:
-            Dict with best_code, fitness_history, improvement_pct.
+            Dict with best_code, best_score, baseline_throughput,
+            improvement_pct, iterations_run, fitness_history.
         """
-        base_code = self.get_base_algorithm("scheduler")
+        return self._evolve(
+            algorithm_type="scheduler",
+            iterations=iterations,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            output_dir=output_dir,
+        )
 
-        # Get baseline metrics + roofline
+    def evolve_cache_policy(
+        self,
+        iterations: int = 100,
+        input_tokens: int = 512,
+        output_tokens: int = 128,
+        output_dir: str = "evolved_cache_policy",
+    ) -> Dict[str, Any]:
+        """Evolve a KV cache eviction policy.
+
+        Same evolutionary loop as evolve_scheduler but operates on
+        cache eviction algorithms.
+
+        Args:
+            iterations: Number of evolutionary iterations.
+            input_tokens: Representative input length.
+            output_tokens: Representative output length.
+            output_dir: Directory to save evolved algorithms.
+
+        Returns:
+            Dict with best_code, best_score, baseline metrics, and history.
+        """
+        return self._evolve(
+            algorithm_type="cache_policy",
+            iterations=iterations,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            output_dir=output_dir,
+        )
+
+    def _evolve(
+        self, algorithm_type: str, iterations: int,
+        input_tokens: int, output_tokens: int, output_dir: str,
+    ) -> Dict[str, Any]:
+        """Core evolutionary loop shared by scheduler and cache policy evolution.
+
+        Args:
+            algorithm_type: "scheduler" or "cache_policy".
+            iterations: Number of evolutionary iterations.
+            input_tokens: Representative input length.
+            output_tokens: Representative output length.
+            output_dir: Directory to save evolved algorithms.
+
+        Returns:
+            Dict with evolution results.
+        """
+        base_code = self.get_base_algorithm(algorithm_type)
+
+        # Get baseline metrics
         cfg = ServingConfig(model=self._model, hardware=self._hardware)
         baseline = self._evaluator.evaluate_config(cfg, input_tokens, output_tokens)
+        baseline_metrics = {
+            "throughput_rps": baseline.throughput_rps,
+            "token_throughput_tps": baseline.token_throughput_tps,
+            "ttft_ms": baseline.ttft_ms,
+            "tpot_ms": baseline.tpot_ms,
+            "memory_gb": baseline.memory_gb,
+            "power_w": baseline.power_w,
+        }
 
+        # Get roofline analysis
         try:
             roofline = self._roofline.analyze_config(cfg, input_tokens)
         except Exception:
             roofline = None
 
-        # Try OpenEvolve integration
-        try:
-            return self._run_openevolve(
-                base_code, "scheduler", baseline, roofline,
-                iterations, output_dir,
-            )
-        except ImportError:
+        # Build the evaluation bridge for scoring candidates
+        bridge = BudSimEvalBridge(
+            model=self._model, hardware=self._hardware,
+            input_tokens=input_tokens, output_tokens=output_tokens,
+        )
+
+        # Check if we have an API key
+        if not self._llm_api_key:
             warnings.warn(
-                "openevolve not installed. Install with: pip install openevolve\n"
-                "Returning base algorithm without evolution."
+                "No LLM API key found. Set TOGETHER_API_KEY or OPENAI_API_KEY "
+                "environment variable. Returning base algorithm without evolution."
             )
             return {
                 "best_code": base_code,
+                "best_score": 0.0,
                 "baseline_throughput": baseline.throughput_rps,
+                "baseline_metrics": baseline_metrics,
                 "improvement_pct": 0.0,
                 "iterations_run": 0,
-                "error": "openevolve not installed",
+                "fitness_history": [],
+                "error": "no LLM API key",
             }
 
-    def _run_openevolve(self, base_code, algo_type, baseline, roofline,
-                        iterations, output_dir):
-        """Run OpenEvolve evolutionary loop.
+        # Try OpenEvolve first if available
+        try:
+            return self._run_openevolve(
+                base_code, algorithm_type, baseline, baseline_metrics,
+                roofline, bridge, iterations, output_dir,
+            )
+        except ImportError:
+            pass
 
-        Attempts OpenEvolve's class-based API first (OpenEvolve + run()),
-        then falls back to the convenience function (run_evolution).
-        """
-        bridge = BudSimEvalBridge(
-            model=self._model, hardware=self._hardware,
+        # Built-in evolutionary loop
+        return self._run_builtin_evolution(
+            base_code, algorithm_type, baseline, baseline_metrics,
+            roofline, bridge, iterations, output_dir,
         )
 
-        prompt_fn = build_scheduler_prompt if algo_type == "scheduler" else build_cache_policy_prompt
+    def _run_builtin_evolution(
+        self, base_code: str, algo_type: str,
+        baseline, baseline_metrics: Dict, roofline, bridge: BudSimEvalBridge,
+        iterations: int, output_dir: str,
+    ) -> Dict[str, Any]:
+        """Built-in evolutionary loop using direct LLM API calls.
 
-        baseline_metrics = {
-            "throughput_rps": baseline.throughput_rps,
-            "ttft_ms": baseline.ttft_ms,
-            "tpot_ms": baseline.tpot_ms,
-        }
+        For each iteration:
+        1. Build a prompt with current best code, metrics, and roofline analysis
+        2. Call the LLM API to generate a mutated algorithm
+        3. Write the candidate to a temp file and evaluate via the bridge
+        4. Keep the candidate if it improves on the best score
 
-        # Write base code to a temp file for OpenEvolve
-        import tempfile
-        import os
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, dir=output_dir if os.path.isdir(output_dir) else None) as f:
+        Args:
+            base_code: Seed algorithm code.
+            algo_type: "scheduler" or "cache_policy".
+            baseline: EvalResult from baseline evaluation.
+            baseline_metrics: Dict of baseline metric values.
+            roofline: RooflineReport or None.
+            bridge: BudSimEvalBridge for scoring candidates.
+            iterations: Number of evolutionary iterations.
+            output_dir: Directory for saving results.
+
+        Returns:
+            Dict with evolution results.
+        """
+        prompt_fn = (build_scheduler_prompt if algo_type == "scheduler"
+                     else build_cache_policy_prompt)
+
+        best_code = base_code
+        best_score = 0.0
+        fitness_history: List[Dict] = []
+
+        # Score the baseline
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(base_code)
-            initial_program_path = f.name
-
+            base_path = f.name
         try:
-            # Try class-based API first (newer OpenEvolve versions)
-            try:
-                from openevolve import OpenEvolve
-                oe = OpenEvolve(
-                    initial_program_path=initial_program_path,
-                    evaluator=bridge.evaluate,
-                    config={
-                        "llm": {
-                            "endpoint": self._llm_endpoint,
-                            "model": self._llm_model,
-                            "api_key": self._llm_api_key,
-                        },
-                        "iterations": iterations,
-                        "output_dir": output_dir,
-                    },
-                )
-                result = oe.run()
-            except (ImportError, AttributeError):
-                # Fall back to convenience function
-                from openevolve import run_evolution
-                result = run_evolution(
-                    initial_program=base_code,
-                    evaluator=bridge.evaluate,
-                    iterations=iterations,
-                    output_dir=output_dir,
-                )
+            base_result = bridge.evaluate(base_path)
+            best_score = base_result.get("combined_score", 0.0)
         finally:
-            # Clean up temp file
+            os.unlink(base_path)
+
+        fitness_history.append({
+            "iteration": 0, "score": best_score, "is_baseline": True,
+        })
+
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+
+        for i in range(1, iterations + 1):
             try:
-                os.unlink(initial_program_path)
-            except OSError:
-                pass
+                # Build prompt with current best + roofline insights
+                prompt = prompt_fn(
+                    current_code=best_code,
+                    metrics=baseline_metrics,
+                    roofline=roofline,
+                )
+
+                # Get LLM mutation
+                # Vary temperature: start creative (0.9), get more focused (0.4)
+                temp = max(0.4, 0.9 - (i / iterations) * 0.5)
+                candidate_code = _call_llm_api(
+                    endpoint=self._llm_endpoint,
+                    model=self._llm_model,
+                    api_key=self._llm_api_key,
+                    prompt=prompt,
+                    temperature=temp,
+                )
+
+                # Evaluate candidate
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".py", delete=False, dir=output_dir,
+                ) as f:
+                    f.write(candidate_code)
+                    candidate_path = f.name
+
+                try:
+                    result = bridge.evaluate(candidate_path)
+                    score = result.get("combined_score", 0.0)
+
+                    fitness_history.append({
+                        "iteration": i, "score": score,
+                        "code_quality": result.get("code_quality", 0.0),
+                    })
+
+                    if score > best_score:
+                        best_score = score
+                        best_code = candidate_code
+                        # Save the new best
+                        best_path = os.path.join(output_dir, f"best_gen_{i}.py")
+                        with open(best_path, "w") as bf:
+                            bf.write(candidate_code)
+                finally:
+                    # Clean up temp file (keep saved bests)
+                    try:
+                        os.unlink(candidate_path)
+                    except OSError:
+                        pass
+
+            except RuntimeError as e:
+                warnings.warn(f"Iteration {i} failed: {e}")
+                fitness_history.append({
+                    "iteration": i, "score": best_score, "error": str(e),
+                })
+                continue
+
+        # Save final best
+        final_path = os.path.join(output_dir, "best_final.py")
+        with open(final_path, "w") as f:
+            f.write(best_code)
+
+        initial_score = fitness_history[0]["score"] if fitness_history else 0.0
+        improvement = (
+            (best_score - initial_score) / max(initial_score, 1e-9) * 100
+            if initial_score > 0 else 0.0
+        )
 
         return {
-            "best_code": result.get("best_program", base_code),
-            "best_score": result.get("best_score", 0.0),
+            "best_code": best_code,
+            "best_score": best_score,
             "baseline_throughput": baseline.throughput_rps,
+            "baseline_metrics": baseline_metrics,
+            "improvement_pct": improvement,
+            "iterations_run": len([h for h in fitness_history if "error" not in h]) - 1,
+            "total_iterations": iterations,
+            "fitness_history": fitness_history,
+            "output_dir": output_dir,
+        }
+
+    def _run_openevolve(
+        self, base_code, algo_type, baseline, baseline_metrics,
+        roofline, bridge, iterations, output_dir,
+    ):
+        """Run OpenEvolve evolutionary loop (optional backend).
+
+        OpenEvolve provides MAP-Elites with island model for better
+        diversity than the built-in loop. Requires the openevolve package.
+
+        The evaluator bridge is written as a standalone Python file that
+        OpenEvolve can import and call.
+        """
+        from openevolve import OpenEvolve as OEClass
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Write the initial program file
+        program_path = os.path.join(output_dir, "initial_program.py")
+        with open(program_path, "w") as f:
+            f.write(base_code)
+
+        # Write the evaluator as a standalone file for OpenEvolve
+        evaluator_path = os.path.join(output_dir, "evaluator.py")
+        self._write_evaluator_file(evaluator_path, bridge)
+
+        # Write config YAML
+        config_path = os.path.join(output_dir, "config.yaml")
+        self._write_config_file(config_path, iterations)
+
+        # Run OpenEvolve
+        import asyncio
+        oe = OEClass(
+            initial_program_path=program_path,
+            evaluator_path=evaluator_path,
+            config=config_path,
+        )
+
+        # Handle async run
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    result = pool.submit(asyncio.run, oe.run()).result()
+            else:
+                result = loop.run_until_complete(oe.run())
+        except RuntimeError:
+            result = asyncio.run(oe.run())
+
+        best_program = base_code
+        best_score = 0.0
+        if isinstance(result, dict):
+            best_program = result.get("best_program", base_code)
+            best_score = result.get("best_score", 0.0)
+
+        return {
+            "best_code": best_program,
+            "best_score": best_score,
+            "baseline_throughput": baseline.throughput_rps,
+            "baseline_metrics": baseline_metrics,
             "improvement_pct": (
-                (result.get("best_score", 0) - baseline.throughput_rps)
+                (best_score - baseline.throughput_rps)
                 / max(baseline.throughput_rps, 1e-9) * 100
             ),
             "iterations_run": iterations,
+            "backend": "openevolve",
+            "output_dir": output_dir,
         }
+
+    def _write_evaluator_file(self, path: str, bridge: BudSimEvalBridge):
+        """Write a standalone evaluator.py for OpenEvolve.
+
+        OpenEvolve imports the evaluator module and calls its evaluate()
+        function with a program_path argument.
+        """
+        code = f'''"""BudSim evaluator for OpenEvolve."""
+import ast
+import sys
+sys.path.insert(0, "{os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))}")
+
+from llm_memory_calculator.budevolve.evolve.evaluator_bridge import BudSimEvalBridge
+
+_bridge = BudSimEvalBridge(
+    model="{bridge._model}",
+    hardware="{bridge._hardware}",
+    input_tokens={bridge._input_tokens},
+    output_tokens={bridge._output_tokens},
+    batch_size={bridge._batch_size},
+    precision="{bridge._precision}",
+)
+
+async def evaluate(program_path: str) -> dict:
+    """OpenEvolve evaluator entry point."""
+    return _bridge.evaluate(program_path)
+'''
+        with open(path, "w") as f:
+            f.write(code)
+
+    def _write_config_file(self, path: str, iterations: int):
+        """Write OpenEvolve config YAML."""
+        config = {
+            "num_iterations": iterations,
+            "num_islands": 3,
+            "migration_interval": max(iterations // 5, 10),
+            "llm": {
+                "primary_model": self._llm_model,
+                "api_base": self._llm_endpoint,
+            },
+        }
+        # Write as JSON (YAML-compatible subset)
+        with open(path, "w") as f:
+            json.dump(config, f, indent=2)

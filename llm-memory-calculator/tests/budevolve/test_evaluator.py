@@ -80,7 +80,7 @@ class TestBudSimEvaluator:
                    return_value=mock_modelling_output), \
              patch("llm_memory_calculator.budevolve.evaluator.decode_moddeling",
                    return_value=mock_modelling_output), \
-             patch("llm_memory_calculator.budevolve.evaluator.System") as mock_system:
+             patch("llm_memory_calculator.genz.system.System") as mock_system:
             mock_system.return_value = MagicMock()
             evaluator = BudSimEvaluator()
             hw = HardwareSpec(flops_tflops=500.0, offchip_mem_bw_gbps=3000.0, off_chip_mem_size_gb=80.0)

@@ -331,8 +331,8 @@ class HardwareExplorer:
                 out["F"] = np.array(obj_vals)
 
         problem = HWProblem()
-        algorithm = NSGA2(pop_size=min(pop_size, 20))
-        minimize(problem, algorithm, termination=("n_gen", min(n_gen, 30)),
+        algorithm = NSGA2(pop_size=pop_size)
+        minimize(problem, algorithm, termination=("n_gen", n_gen),
                  seed=42, verbose=False)
         return all_results
 

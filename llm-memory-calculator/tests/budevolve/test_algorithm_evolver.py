@@ -168,5 +168,5 @@ class TestAlgorithmEvolver:
                 )
                 result = evolver.evolve_scheduler(iterations=5)
                 assert "best_code" in result
-                assert result["error"] == "openevolve not installed"
+                assert result["error"] == "no LLM API key"
                 assert result["improvement_pct"] == 0.0
