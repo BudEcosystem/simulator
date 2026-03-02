@@ -122,11 +122,16 @@ class NumericOptimizer:
         """NSGA-II optimization using pymoo."""
         from pymoo.algorithms.moo.nsga2 import NSGA2
         from pymoo.core.problem import ElementwiseProblem
+        from pymoo.core.repair import Repair
         from pymoo.optimize import minimize
         from pymoo.operators.sampling.rnd import IntegerRandomSampling
         from pymoo.operators.crossover.sbx import SBX
         from pymoo.operators.mutation.pm import PM
         import numpy as np
+
+        class RoundToIntRepair(Repair):
+            def _do(self, problem, X, **kwargs):
+                return np.round(X).astype(int)
 
         evaluator = self._evaluator
         model = self._model
@@ -185,11 +190,12 @@ class NumericOptimizer:
                 out["F"] = np.array(obj_values)
 
         problem = ServingProblem()
+        int_repair = RoundToIntRepair()
         algorithm = NSGA2(
             pop_size=pop_size,
             sampling=IntegerRandomSampling(),
-            crossover=SBX(prob=0.9, eta=15, vtype=float, repair=lambda _p, X: np.round(X).astype(int)),
-            mutation=PM(eta=20, vtype=float, repair=lambda _p, X: np.round(X).astype(int)),
+            crossover=SBX(prob=0.9, eta=15, vtype=float, repair=int_repair),
+            mutation=PM(eta=20, vtype=float, repair=int_repair),
         )
 
         res = minimize(

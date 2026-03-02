@@ -16,7 +16,10 @@ from ..types import ServingConfig
 from ..evaluator import BudSimEvaluator
 from ..roofline_analyzer import RooflineAnalyzer
 from .evaluator_bridge import BudSimEvalBridge
-from .prompt_templates import build_scheduler_prompt, build_cache_policy_prompt
+from .prompt_templates import (
+    build_scheduler_prompt, build_cache_policy_prompt,
+    build_cpu_scheduler_prompt,
+)
 
 
 # Base algorithm code for seeding evolution
@@ -64,6 +67,84 @@ def evict_entries(cache_entries, num_to_evict):
     """
     sorted_entries = sorted(cache_entries, key=lambda e: e.last_access_time)
     return sorted_entries[:num_to_evict]
+'''
+
+# CPU-optimized base algorithm (from BudEvolve analysis)
+_BASE_CPU_SCHEDULER = '''
+def schedule_batch_cpu(queue, max_batch_size=64, max_tokens=16384,
+                       numa_nodes=2, l3_cache_mb=288.0,
+                       target_ttft_ms=200.0, model_hidden_dim=4096,
+                       bytes_per_param=1):
+    """CPU-optimized batch scheduling for LLM inference.
+
+    Designed for compute-bound CPU inference where batch size is the
+    primary throughput lever but TTFT scales linearly with batch size.
+
+    Args:
+        queue: List of requests with .input_tokens, .output_tokens
+        max_batch_size: Max requests per batch (CPU sweet spot: 32-64).
+        max_tokens: Max total tokens per batch.
+        numa_nodes: Number of NUMA nodes.
+        l3_cache_mb: L3 cache size in MB.
+        target_ttft_ms: Target TTFT SLO in ms.
+        model_hidden_dim: Model hidden dimension.
+        bytes_per_param: Bytes per parameter (1=INT8, 2=BF16).
+
+    Returns:
+        List of requests for the next batch.
+    """
+    if not queue:
+        return []
+
+    # KV cache budget from L3 capacity (60% for KV, 40% for weights/activations)
+    kv_bytes_per_token = 2 * model_hidden_dim * bytes_per_param
+    kv_budget_bytes = l3_cache_mb * 1024 * 1024 * 0.6
+    max_kv_tokens = int(kv_budget_bytes / kv_bytes_per_token)
+
+    # TTFT-aware batch size limit
+    avg_input = sum(getattr(r, "input_tokens", 512) for r in queue) / len(queue)
+    per_request_ms = (avg_input / 512.0) * 114.0
+    ttft_limit = max(1, int(target_ttft_ms / max(per_request_ms, 1.0)))
+    effective_limit = min(max_batch_size, ttft_limit)
+
+    # Priority + input-length sorting
+    scored = []
+    for i, req in enumerate(queue):
+        priority = getattr(req, "priority", 0)
+        input_len = getattr(req, "input_tokens", 512)
+        arrival = getattr(req, "arrival_time", i)
+        score = priority * 10000 - input_len + 1.0 / (arrival + 1)
+        scored.append((score, i, req))
+    scored.sort(key=lambda x: -x[0])
+
+    # Greedy bin-packing with KV cache and token constraints
+    batch = []
+    total_tokens = 0
+    total_kv = 0
+    for _, _, req in scored:
+        if len(batch) >= effective_limit:
+            break
+        input_t = getattr(req, "input_tokens", 512)
+        output_t = getattr(req, "output_tokens", 128)
+        req_tokens = input_t + output_t
+        if total_tokens + req_tokens > max_tokens:
+            continue
+        kv_t = input_t + output_t
+        if total_kv + kv_t > max_kv_tokens:
+            continue
+        batch.append(req)
+        total_tokens += req_tokens
+        total_kv += kv_t
+
+    # NUMA-aware ordering: group similar-length requests per NUMA node
+    if numa_nodes > 1 and len(batch) > 1:
+        batch.sort(key=lambda r: getattr(r, "input_tokens", 512))
+        groups = [[] for _ in range(numa_nodes)]
+        for i, req in enumerate(batch):
+            groups[i % numa_nodes].append(req)
+        batch = [req for g in groups for req in g]
+
+    return batch
 '''
 
 
@@ -171,6 +252,8 @@ class AlgorithmEvolver:
             return _BASE_SCHEDULER
         elif algorithm_type == "cache_policy":
             return _BASE_CACHE_POLICY
+        elif algorithm_type == "cpu_scheduler":
+            return _BASE_CPU_SCHEDULER
         else:
             raise ValueError(f"Unknown algorithm type: {algorithm_type}")
 
@@ -233,6 +316,39 @@ class AlgorithmEvolver:
         """
         return self._evolve(
             algorithm_type="cache_policy",
+            iterations=iterations,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            output_dir=output_dir,
+        )
+
+    def evolve_cpu_scheduler(
+        self,
+        iterations: int = 100,
+        input_tokens: int = 512,
+        output_tokens: int = 128,
+        output_dir: str = "evolved_cpu_scheduler",
+    ) -> Dict[str, Any]:
+        """Evolve a CPU-optimized batch scheduling algorithm.
+
+        Uses CPU-specific prompt template that includes:
+        - Compute-bound nature of CPU inference
+        - NUMA topology awareness
+        - L3 cache budget constraints
+        - TTFT-aware batch sizing
+        - ISA-specific optimization hints
+
+        Args:
+            iterations: Number of evolutionary iterations.
+            input_tokens: Representative input length.
+            output_tokens: Representative output length.
+            output_dir: Directory to save evolved algorithms.
+
+        Returns:
+            Dict with best_code, best_score, baseline metrics, and history.
+        """
+        return self._evolve(
+            algorithm_type="cpu_scheduler",
             iterations=iterations,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -339,8 +455,12 @@ class AlgorithmEvolver:
         Returns:
             Dict with evolution results.
         """
-        prompt_fn = (build_scheduler_prompt if algo_type == "scheduler"
-                     else build_cache_policy_prompt)
+        if algo_type == "cpu_scheduler":
+            prompt_fn = build_cpu_scheduler_prompt
+        elif algo_type == "scheduler":
+            prompt_fn = build_scheduler_prompt
+        else:
+            prompt_fn = build_cache_policy_prompt
 
         best_code = base_code
         best_score = 0.0

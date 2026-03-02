@@ -67,6 +67,15 @@ def create_parser() -> argparse.ArgumentParser:
     ec.add_argument("--llm-model", default="openai/gpt-oss-120b")
     ec.add_argument("--output", default="evolved_cache_policy")
 
+    # evolve-cpu-scheduler
+    cpu = subparsers.add_parser("evolve-cpu-scheduler", help="Evolve CPU-optimized scheduling algorithm")
+    cpu.add_argument("--model", required=True)
+    cpu.add_argument("--hardware", required=True, help="CPU hardware (e.g. GraniteRapids_CPU, Turin_CPU)")
+    cpu.add_argument("--iterations", type=int, default=100)
+    cpu.add_argument("--llm-endpoint", default="https://api.together.xyz/v1")
+    cpu.add_argument("--llm-model", default="openai/gpt-oss-120b")
+    cpu.add_argument("--output", default="evolved_cpu_scheduler")
+
     return parser
 
 
@@ -163,9 +172,20 @@ def main(argv: List[str] = None):
             output_dir=args.output,
         )
 
+    elif args.command == "evolve-cpu-scheduler":
+        from .evolve.algorithm_evolver import AlgorithmEvolver
+        evolver = AlgorithmEvolver(
+            model=args.model, hardware=args.hardware,
+            llm_endpoint=args.llm_endpoint, llm_model=args.llm_model,
+        )
+        result = evolver.evolve_cpu_scheduler(
+            iterations=args.iterations,
+            output_dir=args.output,
+        )
+
     if result is not None:
         output_str = json.dumps(result, indent=2, default=str)
-        if args.output and args.command not in ("evolve-scheduler", "evolve-cache-policy"):
+        if args.output and args.command not in ("evolve-scheduler", "evolve-cache-policy", "evolve-cpu-scheduler"):
             with open(args.output, "w") as f:
                 f.write(output_str)
             print(f"Results written to {args.output}")
