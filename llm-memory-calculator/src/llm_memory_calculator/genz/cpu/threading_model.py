@@ -100,20 +100,21 @@ class ThreadingModel:
             thread_config, operator
         )
         
-        # SMT resource contention
-        smt_efficiency = 1.0
-        if thread_config.threads_per_core > 1:
-            smt_efficiency = self._calculate_smt_efficiency(operator)
-            
-        # Combined efficiency
-        efficiency = (
+        # Combined efficiency from penalty factors
+        base_efficiency = (
             parallel_fraction *
             (1 - sync_overhead) *
             (1 - bandwidth_saturation) *
-            (1 - numa_overhead) *
-            smt_efficiency
+            (1 - numa_overhead)
         )
-        
+
+        # SMT: adds throughput on top of base efficiency (not multiplicative with penalties)
+        if thread_config.threads_per_core > 1:
+            smt_bonus = self._calculate_smt_efficiency(operator) - 1.0  # e.g. 0.15
+            efficiency = base_efficiency * (1 + smt_bonus)
+        else:
+            efficiency = base_efficiency
+
         return min(efficiency, 1.0)
         
     def _get_compute_intensity(self, operator) -> float:
@@ -189,48 +190,40 @@ class ThreadingModel:
         
     def _calculate_bandwidth_saturation(self, operator, thread_config: ThreadConfig,
                                       system) -> float:
-        """Calculate memory bandwidth saturation effects"""
-        
-        # Check if this is a decode operation
-        is_decode = self._is_decode_operation(operator)
-        
-        # Estimate bandwidth requirement per thread
-        data_volume = operator.get_num_data() if hasattr(operator, 'get_num_data') else operator.get_num_ops() * 4  # Assume 4 bytes per op
-        compute_time = operator.get_num_ops() / (system.peak_fp32_tflops * 1e12) if hasattr(system, 'peak_fp32_tflops') else 1.0
-        
-        # Bandwidth per thread in GB/s
-        bandwidth_per_thread = (data_volume / 1e9) / compute_time / thread_config.num_threads
-        
-        # Total bandwidth requirement in GB/s
-        total_bandwidth_required = bandwidth_per_thread * thread_config.num_threads
-        
+        """Calculate memory bandwidth saturation effects.
+
+        Total BW demand = data_volume / (single-thread compute time / num_threads)
+        = data_volume * num_threads / single-thread-time
+        This correctly scales with thread count: more threads → more BW demand.
+        """
+        # Estimate total data volume in bytes
+        data_volume = operator.get_num_data() if hasattr(operator, 'get_num_data') else operator.get_num_ops() * 4
+
+        # Single-thread compute time (ideal, no BW contention)
+        peak_tflops = getattr(system, 'peak_fp32_tflops', 1.0)
+        single_thread_time = operator.get_num_ops() / (peak_tflops * 1e12) if peak_tflops > 0 else 1.0
+
+        # Wall-clock time with N threads: single_thread_time / num_threads
+        # Total BW demand = data_volume / wall_clock_time
+        wall_clock_time = single_thread_time / max(thread_config.num_threads, 1)
+        total_bandwidth_required = (data_volume / 1e9) / wall_clock_time  # GB/s
+
         # Available bandwidth in GB/s
-        available_bandwidth = system.peak_memory_bandwidth if hasattr(system, 'peak_memory_bandwidth') else 200
-        
-        # For decode operations, apply much lower bandwidth penalties
-        # M=1 operations have high compute intensity per byte accessed
-        if is_decode:
-            # Decode operations are more compute-bound per memory access
-            # Reduce bandwidth requirements significantly
-            total_bandwidth_required *= 0.3  # Decode uses bandwidth more efficiently
-            
-        # Saturation model (queuing theory)
+        available_bandwidth = getattr(system, 'peak_memory_bandwidth', 200)
+
+        # Saturation model (queuing theory inspired)
         utilization = total_bandwidth_required / available_bandwidth
-        
-        # Clamp utilization to reasonable range
+
+        # Clamp to reasonable range
         utilization = min(utilization, 2.0)
-        
+
         if utilization < 0.5:
             return 0.0
         elif utilization < 0.8:
-            return (utilization - 0.5) * 0.5 / 0.3  # Linear from 0 to 0.5
+            return (utilization - 0.5) * 0.5 / 0.3  # Linear 0 → 0.5
         else:
             # Severe saturation
-            penalty = min(0.5 + (utilization - 0.8) * 0.5 / 1.2, 0.9)  # Cap at 0.9
-            # Further reduce penalty for decode
-            if is_decode:
-                penalty *= 0.5  # Less sensitive to bandwidth saturation
-            return penalty
+            return min(0.5 + (utilization - 0.8) * 0.5 / 1.2, 0.9)
             
     def _calculate_numa_overhead(self, thread_config: ThreadConfig, operator) -> float:
         """Calculate NUMA-related overhead"""

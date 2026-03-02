@@ -43,8 +43,9 @@ class FrequencyGovernor:
         # Thermal throttling
         thermal_multiplier = self._get_thermal_multiplier()
         
-        # Memory-bound workloads can maintain higher frequency
-        workload_multiplier = 1.0 if workload_type == 'compute' else 1.1
+        # Memory-bound workloads: execution units idle → less power → CPU can sustain
+        # turbo longer, but cannot exceed the turbo frequency for that core count.
+        workload_multiplier = 1.0  # Turbo curve already handles frequency vs core count
         
         # Apply offset (negative values reduce frequency)
         effective_freq = (turbo_freq + isa_offset) * thermal_multiplier * workload_multiplier
@@ -84,19 +85,23 @@ class FrequencyGovernor:
             return 0.6
             
     def update_thermal_state(self, power: float, duration: float):
-        """Update thermal model based on power consumption"""
-        # Simplified thermal model
+        """Update thermal model based on power consumption.
+
+        Uses Newton's law of cooling: temperature approaches steady state
+        T_ss = T_ambient + P × R_thermal, with time constant τ = R × C.
+        """
         thermal_resistance = 0.3  # C/W
         thermal_capacitance = 100  # J/C
-        
-        # Temperature rise
-        temp_rise = power * thermal_resistance
-        
-        # Exponential rise to steady state
+        ambient_temp = 25.0  # Celsius
+
         tau = thermal_resistance * thermal_capacitance
-        self.thermal_state.temperature += (
-            temp_rise * (1 - np.exp(-duration / tau))
+        steady_state_temp = ambient_temp + power * thermal_resistance
+
+        # Exponential approach to steady state (includes both heating AND cooling)
+        self.thermal_state.temperature = (
+            steady_state_temp +
+            (self.thermal_state.temperature - steady_state_temp) * np.exp(-duration / tau)
         )
-        
+
         self.thermal_state.power_consumed = power
         self.thermal_state.throttling_active = self.thermal_state.temperature > 85 

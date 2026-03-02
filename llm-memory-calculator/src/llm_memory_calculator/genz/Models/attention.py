@@ -8,7 +8,7 @@ def mha_flash_attention_prefill(model_config:ModelConfig, parallelism_config:Par
     D = model_config.hidden_size
     Dq = model_config.head_dim
 
-    tp = parallelism_config.tensor_parallel * parallelism_config.expert_parallel
+    tp = parallelism_config.tensor_parallel
     sp = parallelism_config.sequence_parallel
     per_node_H = max(ceil(H / tp), 1)
     per_node_Hkv = max(ceil(Hkv / tp), 1)
@@ -42,7 +42,7 @@ def mha_flash_attention_prefill_local(model_config:ModelConfig, parallelism_conf
     Dq = model_config.head_dim
     sw = model_config.sliding_window or input_sequence_length
 
-    tp = parallelism_config.tensor_parallel * parallelism_config.expert_parallel
+    tp = parallelism_config.tensor_parallel
     sp = parallelism_config.sequence_parallel
     per_node_H = max(ceil(H / tp), 1)
     per_node_Hkv = max(ceil(Hkv / tp), 1)
@@ -69,7 +69,7 @@ def mha_flash_attention_decode_local(model_config:ModelConfig, parallelism_confi
     Dq = model_config.head_dim
     sw = model_config.sliding_window or input_sequence_length
 
-    tp = parallelism_config.tensor_parallel * parallelism_config.expert_parallel
+    tp = parallelism_config.tensor_parallel
     sp = parallelism_config.sequence_parallel
 
     per_node_H = max(ceil(H / tp), 1)
@@ -97,7 +97,7 @@ def mha_flash_attention_decode(model_config:ModelConfig, parallelism_config:Para
     D = model_config.hidden_size
     Dq = model_config.head_dim
 
-    tp = parallelism_config.tensor_parallel * parallelism_config.expert_parallel
+    tp = parallelism_config.tensor_parallel
     sp = parallelism_config.sequence_parallel
     dp = parallelism_config.data_parallel
 
@@ -144,7 +144,7 @@ def mha_flash_attention_chunked(model_config:ModelConfig, parallelism_config:Par
     D = model_config.hidden_size
     Dq = model_config.head_dim
 
-    tp = parallelism_config.tensor_parallel * parallelism_config.expert_parallel
+    tp = parallelism_config.tensor_parallel
     sp = parallelism_config.sequence_parallel
     dp = parallelism_config.data_parallel
 
@@ -196,7 +196,7 @@ def mha_flash_attention_chunked(model_config:ModelConfig, parallelism_config:Par
 def linear_attention_prefill(model_config:ModelConfig, parallelism_config:ParallelismConfig, input_sequence_length:int):
     """Linear replacement for attention (DeciLM-style). Single GEMM [D, S, D]."""
     D = model_config.hidden_size
-    tp = parallelism_config.tensor_parallel * parallelism_config.expert_parallel
+    tp = parallelism_config.tensor_parallel
     sp = parallelism_config.sequence_parallel
 
     layers = [["Attn Linear", D, input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
@@ -208,7 +208,7 @@ def linear_attention_prefill(model_config:ModelConfig, parallelism_config:Parall
 def linear_attention_decode(model_config:ModelConfig, parallelism_config:ParallelismConfig, input_sequence_length:int, output_gen_tokens:int):
     """Linear replacement for attention (DeciLM-style) in decode phase."""
     D = model_config.hidden_size
-    tp = parallelism_config.tensor_parallel * parallelism_config.expert_parallel
+    tp = parallelism_config.tensor_parallel
 
     layers = [["Attn Linear", D, 1, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
     if tp > 1:
@@ -229,7 +229,7 @@ def mla_attention_prefill(model_config:ModelConfig, parallelism_config:Paralleli
     qk_nope_head_dim = model_config.qk_nope_head_dim
     v_head_dim = model_config.v_head_dim
 
-    tp = parallelism_config.tensor_parallel * parallelism_config.expert_parallel
+    tp = parallelism_config.tensor_parallel
     sp = parallelism_config.sequence_parallel
     per_node_H = max(ceil(H / tp), 1)
 
@@ -278,7 +278,7 @@ def mla_attention_decode(model_config:ModelConfig, parallelism_config:Parallelis
     qk_nope_head_dim = model_config.qk_nope_head_dim
     v_head_dim = model_config.v_head_dim
 
-    tp = parallelism_config.tensor_parallel * parallelism_config.expert_parallel
+    tp = parallelism_config.tensor_parallel
     sp = parallelism_config.sequence_parallel
     per_node_H = max(ceil(H / tp), 1)
 

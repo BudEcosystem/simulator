@@ -72,7 +72,7 @@ class OptimizerConfig:
         if self.category == OptimizerCategory.LOW_RANK and rank is not None:
             # Low-rank optimizers scale with rank, not full params
             effective_params = trainable_params * (rank / self.extra_params.get('default_rank', 16))
-            effective_params = min(effective_params, trainable_params * 0.5)  # Cap at 50%
+            effective_params = min(effective_params, trainable_params * 1.0)  # Cap at 100%
             return (effective_params * self.total_bytes_per_param) / 1e9
 
         return (trainable_params * self.total_bytes_per_param) / 1e9
@@ -137,12 +137,12 @@ OPTIMIZER_CONFIGS: Dict[str, OptimizerConfig] = {
     "adafactor": OptimizerConfig(
         name="adafactor",
         display_name="Adafactor",
-        description="Memory-efficient optimizer with factorized second moment",
+        description="Memory-efficient optimizer with factorized second moment (row+col factors)",
         category=OptimizerCategory.MEMORY_EFFICIENT,
-        state_count=1,  # Factorized states
+        state_count=1,  # Factorized states (row + col factors, not full matrix)
         state_precision_bytes=4.0,  # FP32
-        total_bytes_per_param=4.0,  # Approximately 4 bytes effective
-        memory_reduction_vs_adamw=0.5,  # 50% of AdamW
+        total_bytes_per_param=1.0,  # ~1 byte effective due to factorization
+        memory_reduction_vs_adamw=0.125,  # ~87.5% reduction vs AdamW
         extra_params={
             "scale_parameter": True,
             "relative_step": True,
@@ -564,7 +564,7 @@ def calculate_optimizer_memory(
         optimizer: Optimizer name
         trainable_params: Number of trainable parameters
         rank: For low-rank optimizers, the rank used
-        deepspeed_stage: DeepSpeed ZeRO stage (zero2, zero3)
+        deepspeed_stage: DeepSpeed ZeRO stage (zero1, zero2, zero3)
         data_parallel: Data parallelism degree
 
     Returns:
@@ -574,7 +574,7 @@ def calculate_optimizer_memory(
     memory_gb = config.calculate_memory_gb(trainable_params, rank)
 
     # Apply DeepSpeed sharding
-    if deepspeed_stage in ('zero2', 'zero3'):
+    if deepspeed_stage in ('zero1', 'zero2', 'zero3'):
         memory_gb /= data_parallel
 
     return memory_gb

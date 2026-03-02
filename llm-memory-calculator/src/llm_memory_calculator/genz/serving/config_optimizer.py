@@ -175,11 +175,16 @@ class ConfigOptimizer:
         input_tokens: int = 512,
         output_tokens: int = 128,
     ) -> Dict[str, Any]:
-        """Analyze parameter sensitivity via variance decomposition.
+        """Analyze parameter sensitivity via Morris Elementary Effects method.
 
-        Tests each parameter while holding others at baseline, measuring
-        the impact on the target metric.
+        Morris (1991), Technometrics 33(2): One-at-a-time (OAT) design that
+        computes elementary effects for each parameter at multiple levels.
+
+        Returns mu_star (importance), mu (directional effect), sigma (non-linearity/
+        interaction indicator) for each parameter. Rank by mu_star.
         """
+        import math
+
         baseline_cfg = {
             "tensor_parallel": 1,
             "pipeline_parallel": 1,
@@ -187,48 +192,89 @@ class ConfigOptimizer:
             "precision": "bf16",
         }
 
-        sensitivity = {}
-        baseline_result = self._evaluate_config(baseline_cfg, input_tokens, output_tokens)
-        baseline_score = self._compute_score(baseline_result, target)
-
-        param_ranges = {
+        param_ranges: Dict[str, list] = {
             "batch_size": [1, 4, 8, 16, 32, 64, 128, 256],
             "tensor_parallel": [1, 2, 4, 8],
             "pipeline_parallel": [1, 2, 4],
             "precision": ["bf16", "fp8", "int8"],
         }
 
+        baseline_result = self._evaluate_config(baseline_cfg, input_tokens, output_tokens)
+        baseline_score = self._compute_score(baseline_result, target)
+
+        sensitivity: Dict[str, Any] = {}
+
         for param, values in param_ranges.items():
-            scores = []
-            for val in values:
+            elementary_effects: List[float] = []
+
+            for i in range(len(values)):
+                val = values[i]
                 cfg = dict(baseline_cfg)
                 cfg[param] = val
+
                 tp = cfg.get("tensor_parallel", 1)
                 pp = cfg.get("pipeline_parallel", 1)
                 if tp * pp > self._num_devices:
                     continue
-                result = self._evaluate_config(cfg, input_tokens, output_tokens)
-                score = self._compute_score(result, target)
-                scores.append({"value": val, "score": score})
 
-            if scores:
-                score_vals = [s["score"] for s in scores]
-                mean_score = sum(score_vals) / len(score_vals)
-                variance = sum((s - mean_score) ** 2 for s in score_vals) / len(score_vals)
+                score_at_val = self._compute_score(
+                    self._evaluate_config(cfg, input_tokens, output_tokens), target
+                )
+
+                # Compute elementary effects against adjacent levels
+                for j in range(i + 1, len(values)):
+                    next_val = values[j]
+                    cfg_next = dict(baseline_cfg)
+                    cfg_next[param] = next_val
+
+                    tp_next = cfg_next.get("tensor_parallel", 1)
+                    pp_next = cfg_next.get("pipeline_parallel", 1)
+                    if tp_next * pp_next > self._num_devices:
+                        continue
+
+                    score_next = self._compute_score(
+                        self._evaluate_config(cfg_next, input_tokens, output_tokens), target
+                    )
+
+                    # EE = [f(x+delta) - f(x)] / delta
+                    # For discrete parameters, delta = 1 (level step)
+                    delta = j - i
+                    if delta > 0:
+                        ee = (score_next - score_at_val) / delta
+                        elementary_effects.append(ee)
+                    break  # Only compare adjacent pairs
+
+            if elementary_effects:
+                abs_effects = [abs(ee) for ee in elementary_effects]
+                mu = sum(elementary_effects) / len(elementary_effects)
+                mu_star = sum(abs_effects) / len(abs_effects)
+                variance = sum((ee - mu) ** 2 for ee in elementary_effects) / len(elementary_effects)
+                sigma = math.sqrt(variance)
+
+                # Also compute values for display
+                all_scores = []
+                for val in values:
+                    cfg = dict(baseline_cfg)
+                    cfg[param] = val
+                    tp = cfg.get("tensor_parallel", 1)
+                    pp = cfg.get("pipeline_parallel", 1)
+                    if tp * pp > self._num_devices:
+                        continue
+                    score = self._compute_score(
+                        self._evaluate_config(cfg, input_tokens, output_tokens), target
+                    )
+                    all_scores.append({"value": val, "score": score})
+
                 sensitivity[param] = {
-                    "values": scores,
-                    "variance": variance,
-                    "range": max(score_vals) - min(score_vals) if score_vals else 0,
+                    "mu": mu,
+                    "mu_star": mu_star,
+                    "sigma": sigma,
+                    "values": all_scores,
                     "baseline": baseline_score,
                 }
 
-        total_variance = sum(s["variance"] for s in sensitivity.values())
-        for param in sensitivity:
-            sensitivity[param]["importance"] = (
-                sensitivity[param]["variance"] / total_variance if total_variance > 0 else 0
-            )
-
-        ranked = sorted(sensitivity.items(), key=lambda x: x[1]["variance"], reverse=True)
+        # Rank by mu_star (parameter importance)
+        ranked = sorted(sensitivity.items(), key=lambda x: x[1]["mu_star"], reverse=True)
 
         return {
             "sensitivity": sensitivity,
@@ -236,6 +282,7 @@ class ConfigOptimizer:
             "baseline_config": baseline_cfg,
             "baseline_score": baseline_score,
             "target": target,
+            "method": "morris_elementary_effects",
         }
 
     def _generate_configs(self, space: SearchSpace, budget: int) -> List[Dict]:

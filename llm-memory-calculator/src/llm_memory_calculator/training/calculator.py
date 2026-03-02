@@ -42,6 +42,7 @@ class TrainingMemoryCalculator:
         'int8': 1, 'uint8': 1,
         'int4': 0.5, 'uint4': 0.5,
         'nf4': 0.5,  # NormalFloat4 (QLoRA)
+        'fp8': 1,    # FP8 (E4M3 or E5M2)
     }
 
     # Optimizer state multipliers - legacy dict kept for backward compatibility.
@@ -247,22 +248,39 @@ class TrainingMemoryCalculator:
             kv_dim = hidden_size * num_kv_heads // num_heads
 
             # Attention LoRA params per layer:
-            # q_proj: 2r(h+h), k_proj: 2r(h+kv_dim), v_proj: 2r(h+kv_dim), o_proj: 2r(h+h)
+            # Each adapter: A(r × d_in) + B(d_out × r) = r*(d_in + d_out) params
             attn_params = (
-                2 * lora_rank * (hidden_size + hidden_size) +      # q_proj
-                2 * lora_rank * (hidden_size + kv_dim) +           # k_proj
-                2 * lora_rank * (hidden_size + kv_dim) +           # v_proj
-                2 * lora_rank * (hidden_size + hidden_size)        # o_proj
+                lora_rank * (hidden_size + hidden_size) +      # q_proj
+                lora_rank * (hidden_size + kv_dim) +           # k_proj
+                lora_rank * (hidden_size + kv_dim) +           # v_proj
+                lora_rank * (hidden_size + hidden_size)        # o_proj
             )
 
             # MLP LoRA params per layer (gate, up, down projections):
             mlp_params = (
-                2 * lora_rank * (hidden_size + intermediate_size) +  # gate_proj
-                2 * lora_rank * (hidden_size + intermediate_size) +  # up_proj
-                2 * lora_rank * (hidden_size + intermediate_size)    # down_proj
+                lora_rank * (hidden_size + intermediate_size) +  # gate_proj
+                lora_rank * (hidden_size + intermediate_size) +  # up_proj
+                lora_rank * (hidden_size + intermediate_size)    # down_proj
             )
 
-            return num_layers * (attn_params + mlp_params)
+            total_adapter_params = num_layers * (attn_params + mlp_params)
+
+            # DoRA adds a magnitude vector per target module per layer
+            if method == 'dora':
+                # One magnitude vector (size = output_dim) per adapted weight matrix
+                # 4 attention targets + 3 MLP targets = 7 vectors per layer
+                dora_magnitude = (
+                    hidden_size +    # q_proj magnitude
+                    kv_dim +         # k_proj magnitude
+                    kv_dim +         # v_proj magnitude
+                    hidden_size +    # o_proj magnitude
+                    intermediate_size +  # gate_proj magnitude
+                    intermediate_size +  # up_proj magnitude
+                    hidden_size          # down_proj magnitude (output dim = hidden_size)
+                )
+                total_adapter_params += num_layers * dora_magnitude
+
+            return total_adapter_params
 
         elif method == 'freeze':
             # Only train last N layers
@@ -381,8 +399,8 @@ class TrainingMemoryCalculator:
 
         optimizer_memory = (trainable_params * bytes_per_param) / 1e9
 
-        # ZeRO-2 and ZeRO-3 shard optimizer states
-        if deepspeed_stage in ('zero2', 'zero3'):
+        # ZeRO-1, ZeRO-2, and ZeRO-3 shard optimizer states
+        if deepspeed_stage in ('zero1', 'zero2', 'zero3'):
             optimizer_memory /= data_parallel
 
         return optimizer_memory
@@ -396,6 +414,8 @@ class TrainingMemoryCalculator:
         gradient_checkpointing: bool,
         tensor_parallel: int,
         flash_attention: bool = True,
+        sequence_parallel: bool = False,
+        context_parallel: int = 1,
     ) -> float:
         """
         Calculate activation memory in GB using config-aware Megatron-LM formula.
@@ -444,7 +464,13 @@ class TrainingMemoryCalculator:
             score_coeff = 5.0 * a * s / h  # Q*K^T scores + softmax + dropout mask
 
         # Per-layer bytes
-        per_layer_bytes = s * b * h * (non_tp_coeff + tp_coeff / T + score_coeff / T)
+        # With sequence parallelism, ALL terms are divided by T (activations
+        # are distributed along the sequence dimension across TP ranks).
+        # Without SP, only TP-parallelized terms are divided by T.
+        if sequence_parallel and T > 1:
+            per_layer_bytes = s * b * h * (non_tp_coeff + tp_coeff + score_coeff) / T
+        else:
+            per_layer_bytes = s * b * h * (non_tp_coeff + (tp_coeff + score_coeff) / T)
 
         # Gradient checkpointing: store only ceil(sqrt(L)) layers
         if gradient_checkpointing:
@@ -454,6 +480,12 @@ class TrainingMemoryCalculator:
             effective_layers = L
 
         total_bytes = per_layer_bytes * effective_layers
+
+        # Context parallelism splits the sequence across CP ranks,
+        # reducing activation memory proportionally
+        if context_parallel > 1:
+            total_bytes /= context_parallel
+
         return total_bytes / 1e9
 
 

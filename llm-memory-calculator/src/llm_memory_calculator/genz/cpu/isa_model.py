@@ -74,25 +74,31 @@ class ISASelector:
             )
             
         if 'amx' in self.cpu_config.isa_support:
+            # AMX tile math (Intel ISA Extensions Manual):
+            #   BF16: A=16×32, B=32×16, C=16×16 → ops = 16×32×16×2 = 16,384
+            #   INT8: A=16×64, B=64×16, C=16×16 → ops = 16×64×16×2 = 32,768
+            # Throughput: TDPBF16PS/TDPBSSD = 1 tile per 16 cycles (uops.info)
+            # Latency: 52 cycles (uops.info)
             configs[ISAType.AMX] = ISAConfig(
                 name=ISAType.AMX,
-                vector_width={'int8': 131072, 'bf16': 131072},  # Actual ops per tile: 2*16*64*64
-                throughput={'tilemmul': 0.125},  # 1 tile op per 8 cycles
+                vector_width={'int8': 32768, 'bf16': 16384},
+                throughput={'tilemmul': 0.0625},  # 1 tile per 16 cycles
                 supported_types=['int8', 'bf16'],
-                latency={'tilemmul': 8},  # 8 cycles per tile operation
+                latency={'tilemmul': 52},  # 52 cycles per tile operation
                 special_constraints={
                     'tile_m': 16,
-                    'tile_n': 64,
-                    'tile_k': 64,
+                    'tile_n': 16,         # Output C is 16×16 (not 64)
+                    'tile_k_bf16': 32,    # K dimension for BF16
+                    'tile_k_int8': 64,    # K dimension for INT8
                     'num_tiles': 8,
-                    'amx_units_per_core': 2  # 2 AMX units per core
+                    'amx_units_per_core': 1  # 1 AMX unit per core
                 }
             )
             
         if 'sve2' in self.cpu_config.isa_support:
             configs[ISAType.SVE2] = ISAConfig(
                 name=ISAType.SVE2,
-                vector_width={'fp32': 16, 'fp16': 32, 'int8': 64},  # 512-bit vectors
+                vector_width={'fp32': 16, 'fp16': 32, 'int8': 64},  # 512-bit SVE2
                 throughput={
                     'fma': 2.0,
                     'add': 2.0,
@@ -103,6 +109,30 @@ class ISASelector:
                 supported_types=['fp32', 'fp16', 'int32', 'int8'],
                 latency={'fma': 4, 'add': 3, 'mul': 3},
                 alignment_required=64
+            )
+
+        if 'sve' in self.cpu_config.isa_support and 'sve2' not in self.cpu_config.isa_support:
+            # SVE (ARMv8.4-A) — vector width varies by implementation
+            # Graviton3 (Neoverse V1) uses 256-bit SVE
+            sve_bits = getattr(self.cpu_config, 'sve_vector_bits', 256)
+            scale = sve_bits // 128  # Relative to 128-bit NEON
+            configs[ISAType.SVE] = ISAConfig(
+                name=ISAType.SVE,
+                vector_width={
+                    'fp32': 4 * scale,   # 256-bit: 8 FP32 elements
+                    'fp16': 8 * scale,   # 256-bit: 16 FP16 elements
+                    'int8': 16 * scale,  # 256-bit: 32 INT8 elements
+                },
+                throughput={
+                    'fma': 2.0,  # Neoverse V1 has 2 SVE pipes
+                    'add': 2.0,
+                    'mul': 2.0,
+                    'load': 2.0,
+                    'store': 1.0
+                },
+                supported_types=['fp32', 'fp16', 'int32', 'int8'],
+                latency={'fma': 4, 'add': 3, 'mul': 3},
+                alignment_required=sve_bits // 8  # 32 bytes for 256-bit
             )
             
         if 'neon' in self.cpu_config.isa_support:
@@ -182,6 +212,8 @@ class ISASelector:
             # ARM alternatives for decode
             if ISAType.SVE2 in self.isa_configs:
                 return ISAType.SVE2, 0.75
+            elif ISAType.SVE in self.isa_configs:
+                return ISAType.SVE, 0.75
             elif ISAType.NEON in self.isa_configs:
                 return ISAType.NEON, 0.7
                 
@@ -223,6 +255,8 @@ class ISASelector:
             # ARM alternatives
             if ISAType.SVE2 in self.isa_configs:
                 return ISAType.SVE2, 0.8
+            elif ISAType.SVE in self.isa_configs:
+                return ISAType.SVE, 0.75
             elif ISAType.NEON in self.isa_configs:
                 return ISAType.NEON, 0.6
                 
@@ -237,9 +271,11 @@ class ISASelector:
             return ISAType.AVX2, 0.65
         elif ISAType.SVE2 in self.isa_configs:
             return ISAType.SVE2, 0.7
+        elif ISAType.SVE in self.isa_configs:
+            return ISAType.SVE, 0.65
         elif ISAType.NEON in self.isa_configs:
             return ISAType.NEON, 0.5
-            
+
         return ISAType.SCALAR, 0.25
         
     def _select_isa_default(self, operator, data_type: str) -> Tuple[ISAType, float]:
@@ -251,22 +287,26 @@ class ISASelector:
             return ISAType.AVX2, 0.6
         elif ISAType.SVE2 in self.isa_configs:
             return ISAType.SVE2, 0.65
+        elif ISAType.SVE in self.isa_configs:
+            return ISAType.SVE, 0.6
         elif ISAType.NEON in self.isa_configs:
             return ISAType.NEON, 0.5
-            
+
         return ISAType.SCALAR, 0.3
         
     def _check_amx_constraints(self, M: int, N: int, K: int) -> bool:
         """Check if dimensions are suitable for AMX"""
         if ISAType.AMX not in self.isa_configs:
             return False
-            
+
         constraints = self.isa_configs[ISAType.AMX].special_constraints
-        
-        # Dimensions should be multiples of tile size or at least larger
+        # Use BF16 tile_k as the minimum (32), INT8 tile_k is 64
+        tile_k = constraints.get('tile_k_bf16', constraints.get('tile_k', 32))
+
+        # Dimensions should be at least tile size for reasonable efficiency
         return (M >= constraints['tile_m'] and
-                N >= constraints['tile_n'] and  
-                K >= constraints['tile_k'])
+                N >= constraints['tile_n'] and
+                K >= tile_k)
                 
     def get_compute_time(self, operator, isa: ISAType, 
                         num_threads: int, system) -> float:
@@ -285,23 +325,35 @@ class ISASelector:
         """Calculate GEMM time using AMX tiles"""
         M, N, K = operator.get_gemms()[:3]
         constraints = isa_config.special_constraints
-        
+
+        # Get data-type-specific tile_k
+        data_type = system.base_system.bits if hasattr(system, 'base_system') else 'bf16'
+        if data_type == 'int8':
+            tile_k = constraints.get('tile_k_int8', 64)
+        else:
+            tile_k = constraints.get('tile_k_bf16', 32)
+
         # Number of tile operations needed
         num_tile_ops = (
             np.ceil(M / constraints['tile_m']) *
             np.ceil(N / constraints['tile_n']) *
-            np.ceil(K / constraints['tile_k'])
+            np.ceil(K / tile_k)
         )
-        
-        # Account for 2 AMX units per core
-        amx_units = constraints.get('amx_units_per_core', 1) * num_threads
-        
-        # Cycles accounting for multiple AMX units
-        cycles = num_tile_ops / amx_units * isa_config.latency['tilemmul']
-        
+
+        # AMX units per core (1 per Intel docs)
+        amx_units_per_core = constraints.get('amx_units_per_core', 1)
+
+        # For pipelined execution, use reciprocal throughput (not latency)
+        # Throughput: 1 tile per 16 cycles (0.0625 tiles/cycle)
+        throughput = isa_config.throughput.get('tilemmul', 0.0625)
+        cycles_per_tile = 1.0 / throughput if throughput > 0 else 16.0
+
+        # Total cycles: tiles / (threads × units_per_core)
+        cycles = num_tile_ops * cycles_per_tile / (num_threads * amx_units_per_core)
+
         # Account for frequency reduction
         frequency = system.frequency_governor.get_frequency(ISAType.AMX, num_threads) if hasattr(system, 'frequency_governor') else system.cpu_config.base_frequency
-        
+
         return cycles / frequency
         
     def _calculate_vector_compute_time(self, operator, isa_config: ISAConfig,
@@ -314,10 +366,9 @@ class ISASelector:
         vector_width = isa_config.vector_width.get(data_type, 1)
         throughput = isa_config.throughput.get('fma', 1.0)
         
-        # Apply data type multipliers for compute throughput
-        data_type_multiplier = self._get_data_type_multiplier(data_type)
-        
-        ops_per_cycle = vector_width * throughput * data_type_multiplier
+        # vector_width already encodes data-type width (fp32=16, bf16=32, int8=64)
+        # so no additional data_type_multiplier is needed — applying it would double-count
+        ops_per_cycle = vector_width * throughput
         
         # Total cycles
         total_cycles = num_ops / ops_per_cycle / num_threads

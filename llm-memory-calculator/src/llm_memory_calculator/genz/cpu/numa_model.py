@@ -28,16 +28,27 @@ class NUMATopology:
         return 0
         
     def get_access_penalty(self, core_id: int, memory_address: int) -> float:
-        """Calculate NUMA penalty for memory access"""
+        """Calculate NUMA penalty for memory access.
+
+        Real-world NUMA latency ratios:
+          - Local (distance=10): 1.0×
+          - 1-hop remote (distance=20-21): ~1.3-1.5× (empirical, not 2.1×)
+          - 2-hop remote (distance=32): ~1.7-2.0×
+        """
         core_node = self.get_numa_node(core_id)
         mem_node = self.get_memory_node(memory_address)
-        
+
+        # Clamp indices to valid range
+        core_node = min(core_node, self.distance_matrix.shape[0] - 1)
+        mem_node = min(mem_node, self.distance_matrix.shape[1] - 1)
+
         distance = self.distance_matrix[core_node, mem_node]
-        
-        # Convert distance to penalty
-        # Local access (distance=10) -> 1.0x
-        # Remote access (distance=21) -> ~2.1x
-        return distance / 10.0
+
+        # Calibrated conversion: distance 10 → 1.0×, 21 → ~1.55×, 32 → ~2.1×
+        if distance <= 10:
+            return 1.0
+        else:
+            return 1.0 + (distance - 10) / 10.0 * 0.5
         
     def allocate_memory(self, size: int, preferred_node: int = -1) -> Tuple[int, int]:
         """

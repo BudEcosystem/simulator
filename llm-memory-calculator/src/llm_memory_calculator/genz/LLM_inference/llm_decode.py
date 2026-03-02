@@ -74,9 +74,10 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     #################################################################################
     is_offloaded = False
     per_chip_memory = system.get_off_chip_mem_size()   ## MB
-    if  per_chip_memory < total_memory_req/pipeline_parallel:
+    memory_parallelism = pipeline_parallel * expert_parallel
+    if  per_chip_memory < total_memory_req/memory_parallelism:
         if model_offload:
-            system = get_offload_system(system=system, total_memory_req = total_memory_req/pipeline_parallel , debug=debug)
+            system = get_offload_system(system=system, total_memory_req = total_memory_req/memory_parallelism , debug=debug)
             warnings.warn(f"Some Parameter offloaded, effective Memory BW:{unit.raw_to_unit(system.offchip_mem_bw, type='BW')} ")
             is_offloaded = True
         elif model_profilling:
@@ -125,8 +126,8 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
             final_summary = get_summary_table(final_df, unit, model_characterstics=model_characterstics)
             final_latency = final_summary[f'Latency ({unit.unit_time})'].values[0]
             
-            # Conservative average: weight initial more heavily since most generation happens early
-            decode_latency = initial_latency * 0.8 + final_latency * 0.2
+            # 50/50 average for expected value over uniform KV cache growth
+            decode_latency = (initial_latency + final_latency) / 2.0
         else:
             # For short outputs, just add small growth factor
             decode_latency = initial_latency * (1.0 + 0.1 * output_tokens / 10)
@@ -160,14 +161,13 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     ##################################################################################################
 
     ## 1000x because the latency is in milli seconds. thrpt is in Token/s
-    # if pipeline_parallel > 1:
-    #     micro_batch_latency = decode_latency
-    #     ## If the N micro batches, then the total latency is (N-1)*stage latency + initial_latency
-    #     ## We make the assumption that the pipeline is balanced and the latency is same for all stages
-    #     total_latency = ((num_micro_batches-1) * (decode_latency / pipeline_parallel)) + micro_batch_latency
-    #     thrpt = 1000 * batch_size / total_latency
-    # else:
-    thrpt = 1000 * batch_size / decode_latency  # Requests per second
+    if pipeline_parallel > 1:
+        # Pipeline parallel adds bubble overhead
+        stage_latency = decode_latency / pipeline_parallel
+        total_latency = decode_latency + (pipeline_parallel - 1) * stage_latency
+        thrpt = 1000 * batch_size / total_latency
+    else:
+        thrpt = 1000 * batch_size / decode_latency  # Requests per second
     # For decode, each request generates one token per iteration
     tokens_per_sec = thrpt  # Since decode generates 1 token per request per iteration
 

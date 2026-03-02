@@ -333,13 +333,21 @@ class ParallelismConfig:
             tp_ranks = int(math.log2(self.tensor_parallel))
             overhead += 0.05 * tp_ranks
 
-        # PP adds pipeline bubbles: ~15% overhead
+        # PP adds pipeline bubbles using 1F1B formula: (pp-1)/(pp+m-1)
+        # where m = num_micro_batches, typically 4*pp for good efficiency
         if self.pipeline_parallel > 1:
-            overhead += 0.15
+            pp = self.pipeline_parallel
+            m = 4 * pp  # Standard micro-batch count for good pipeline efficiency
+            bubble_fraction = (pp - 1) / (pp + m - 1)
+            overhead += bubble_fraction
 
         # EP has moderate overhead for all-to-all
         if self.expert_parallel > 1:
             overhead += 0.10
+
+        # CP adds ring-attention communication overhead
+        if self.context_parallel > 1:
+            overhead += 0.08  # ~8% overhead for ring attention communication
 
         return min(overhead, 0.60)  # Cap at 60% overhead
 

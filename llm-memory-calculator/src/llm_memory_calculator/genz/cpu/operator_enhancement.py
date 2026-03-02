@@ -92,9 +92,17 @@ def get_cpu_roofline(self, system, unit) -> Dict[str, Any]:
         self, thread_config, system
     )
     
-    # Update timing values: on CPUs compute and memory are not fully overlapped.
-    # Use additive model (compute + memory + comm) to better approximate latency.
-    exec_time = compute_time + memory_time + comm_time
+    # Roofline model: compute and memory pipelines operate in parallel.
+    # Classical roofline (Williams et al., 2009): exec_time = max(compute, memory)
+    # Intel ECM model adds ~10% overlap inefficiency for cache hierarchy serialization.
+    # AMD has fully overlapping caches: pure max model.
+    vendor = getattr(system.cpu_config, 'vendor', 'intel')
+    if vendor == 'intel':
+        # ECM model: slight overlap inefficiency for serial cache data path
+        exec_time = max(compute_time, memory_time) * 1.1 + comm_time
+    else:
+        # AMD/ARM: fully overlapping compute and memory
+        exec_time = max(compute_time, memory_time) + comm_time
     
     # Determine boundedness
     com_to_mem_ratio = compute_time / memory_time if memory_time else 0

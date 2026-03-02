@@ -296,9 +296,11 @@ class AdvancedTrainingCalculator:
         )
 
         # Calculate activation memory
+        # DPO/KTO process paired data (chosen + rejected), doubling effective batch
+        effective_batch = batch_size * 2 if stage_config.uses_pairwise_data else batch_size
         activation_memory = self._calculate_activation_memory(
             config,
-            batch_size,
+            effective_batch,
             seq_length,
             precision_bytes,
             gradient_checkpointing,
@@ -311,7 +313,7 @@ class AdvancedTrainingCalculator:
 
         if stage_config.requires_reference_model:
             # Reference model in eval mode (less memory, no gradients/optimizer)
-            reference_memory = weight_memory * 0.8  # Slightly less due to eval mode
+            reference_memory = weight_memory  # Reference model in eval mode: same weight footprint, no gradients/optimizer
 
         if stage_config.requires_reward_model:
             # Reward model memory (depends on PPO config)
@@ -437,17 +439,41 @@ class AdvancedTrainingCalculator:
         elif method in ('lora', 'qlora', 'dora', 'pissa'):
             hidden_size = config.get('hidden_size', 4096)
             num_layers = config.get('num_hidden_layers', 32)
-
-            # LoRA typically targets Q, K, V, O projections
-            num_adapters = 4
-            lora_params_per_layer = num_adapters * 2 * lora_rank * hidden_size
-
-            # Optional MLP adapters
+            num_heads = config.get('num_attention_heads', 32)
+            num_kv_heads = config.get('num_key_value_heads', num_heads)
             intermediate_size = config.get('intermediate_size', hidden_size * 4)
-            mlp_adapters = 2
-            mlp_params_per_layer = mlp_adapters * 2 * lora_rank * (hidden_size + intermediate_size) // 2
+            kv_dim = hidden_size * num_kv_heads // num_heads
 
-            return num_layers * (lora_params_per_layer + mlp_params_per_layer)
+            # Attention LoRA params per layer:
+            # Each adapter: A(r × d_in) + B(d_out × r) = r*(d_in + d_out) params
+            attn_params_per_layer = (
+                lora_rank * (hidden_size + hidden_size) +      # q_proj
+                lora_rank * (hidden_size + kv_dim) +           # k_proj
+                lora_rank * (hidden_size + kv_dim) +           # v_proj
+                lora_rank * (hidden_size + hidden_size)        # o_proj
+            )
+            # MLP LoRA params per layer (gate, up, down projections):
+            mlp_params_per_layer = (
+                lora_rank * (hidden_size + intermediate_size) +  # gate_proj
+                lora_rank * (hidden_size + intermediate_size) +  # up_proj
+                lora_rank * (hidden_size + intermediate_size)    # down_proj
+            )
+            total_adapter_params = num_layers * (attn_params_per_layer + mlp_params_per_layer)
+
+            # DoRA adds a magnitude vector per target module per layer
+            if method == 'dora':
+                dora_magnitude = (
+                    hidden_size +            # q_proj magnitude
+                    kv_dim +                 # k_proj magnitude
+                    kv_dim +                 # v_proj magnitude
+                    hidden_size +            # o_proj magnitude
+                    intermediate_size +      # gate_proj magnitude
+                    intermediate_size +      # up_proj magnitude
+                    hidden_size              # down_proj magnitude
+                )
+                total_adapter_params += num_layers * dora_magnitude
+
+            return total_adapter_params
 
         elif method == 'freeze':
             num_layers = config.get('num_hidden_layers', 32)

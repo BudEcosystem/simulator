@@ -96,15 +96,14 @@ def prefill_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     ##################################################################################################
 
     ## 1000x because the latency is in milli seconds. thrpt is in Token/s
-    # if pipeline_parallel > 1:
-    #     micro_batch_latency = prefill_latency
-    #     ## If the N micro batches, then the total latency is (N-1)*stage latency + initial_latency
-    #     ## We make the assumption that the pipeline is balanced and the latency is same for all stages
-    #     total_latency = ((num_micro_batches-1) * (prefill_latency / pipeline_parallel)) + micro_batch_latency
-    #     thrpt = 1000 * batch_size / total_latency
-    # else:
-    # print(f"Prefill Latency: {prefill_latency}, Batch Size: {batch_size}")
-    thrpt = 1000 * batch_size / prefill_latency  # Requests per second
+    if pipeline_parallel > 1:
+        # Pipeline parallel adds bubble overhead
+        # Total latency = full pipeline latency + (PP-1) * stage latency
+        stage_latency = prefill_latency / pipeline_parallel
+        total_latency = prefill_latency + (pipeline_parallel - 1) * stage_latency
+        thrpt = 1000 * batch_size / total_latency
+    else:
+        thrpt = 1000 * batch_size / prefill_latency  # Requests per second
     tokens_per_sec = thrpt * input_tokens  # Tokens per second
 
     attn_time = summary_table[f'Attn Latency ({unit.unit_time})'].values[0]

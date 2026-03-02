@@ -91,27 +91,43 @@ class MemoryModel:
         """Bytes per KV block = bytes_per_token_kv * block_size."""
         return self.bytes_per_token_kv * self._block_size
 
-    def load_weights(self, weight_bytes: int, tier: MemoryTier = MemoryTier.DEVICE_HBM) -> None:
-        """Load model weights into a memory tier."""
+    @property
+    def primary_tier(self) -> MemoryTier:
+        """Return the first (highest-priority) configured memory tier."""
+        return next(iter(self._tier_state))
+
+    def load_weights(self, weight_bytes: int, tier: MemoryTier = None) -> None:
+        """Load model weights into a memory tier.
+
+        If *tier* is ``None``, loads into the primary (first configured) tier.
+        """
+        if tier is None:
+            tier = self.primary_tier
         if tier not in self._tier_state:
             raise ValueError(f"Tier {tier} not configured")
         self._tier_state[tier]["used"] += weight_bytes
         self._tier_state[tier]["weight_bytes"] += weight_bytes
 
     def allocate_kv_blocks(
-        self, request, num_tokens: int, tier: MemoryTier = MemoryTier.DEVICE_HBM
+        self, request, num_tokens: int, tier: MemoryTier = None
     ) -> Tuple[int, MemoryTier]:
         """Allocate KV cache blocks for a request.
 
         Tries the requested tier first, then falls back to lower tiers.
+        If *tier* is ``None``, starts from the primary configured tier.
         Returns (blocks_allocated, tier_used).
         Raises MemoryError if no tier has sufficient capacity.
         """
+        if tier is None:
+            tier = self.primary_tier
         num_blocks = (num_tokens + self._block_size - 1) // self._block_size
         required_bytes = num_blocks * self.bytes_per_block
 
         # Build an ordered list of tiers to try: requested tier first, then hierarchy order
-        tier_order = [MemoryTier.DEVICE_HBM, MemoryTier.HOST_DDR, MemoryTier.CXL, MemoryTier.NVME]
+        tier_order = [
+            MemoryTier.DEVICE_HBM, MemoryTier.DEVICE_DRAM,
+            MemoryTier.HOST_DDR, MemoryTier.CXL, MemoryTier.NVME,
+        ]
         candidates = []
         if tier in self._tier_state:
             candidates.append(tier)
@@ -152,17 +168,17 @@ class MemoryModel:
             del self._lru_order[rid]
         return total_freed
 
-    def evict_blocks(self, tier: MemoryTier, num_blocks: int) -> int:
+    def evict_blocks(self, tier: MemoryTier, num_blocks: int) -> Tuple[int, List[int]]:
         """Evict blocks from a tier using the configured policy.
 
-        Returns the number of blocks actually evicted.
+        Returns tuple of (blocks_evicted, list_of_fully_evicted_request_ids).
         """
         if tier not in self._tier_state:
-            return 0
+            return 0, []
 
         evicted = 0
+        evicted_request_ids = []
         if self._eviction_policy == EvictionPolicy.LRU:
-            # Iterate from least recently used (oldest first)
             to_evict = list(self._lru_order.keys())
             for rid in to_evict:
                 if evicted >= num_blocks:
@@ -187,7 +203,8 @@ class MemoryModel:
                     del self._request_blocks[rid]
                     if rid in self._lru_order:
                         del self._lru_order[rid]
-        return evicted
+                    evicted_request_ids.append(rid)
+        return evicted, evicted_request_ids
 
     def spill_to_next_tier(
         self, from_tier: MemoryTier, num_blocks: int
@@ -197,7 +214,10 @@ class MemoryModel:
         Returns (blocks_moved, target_tier). If no lower tier is
         available, returns (0, from_tier).
         """
-        tier_order = [MemoryTier.DEVICE_HBM, MemoryTier.HOST_DDR, MemoryTier.CXL, MemoryTier.NVME]
+        tier_order = [
+            MemoryTier.DEVICE_HBM, MemoryTier.DEVICE_DRAM,
+            MemoryTier.HOST_DDR, MemoryTier.CXL, MemoryTier.NVME,
+        ]
 
         try:
             idx = tier_order.index(from_tier)

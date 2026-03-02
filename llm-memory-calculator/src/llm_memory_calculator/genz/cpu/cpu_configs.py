@@ -12,38 +12,40 @@ CPU_PRESETS = {
             'bits': 'bf16',
             'compute_efficiency': 0.85,
             'memory_efficiency': 0.75,
+            'off_chip_mem_size': 512 * 1024,  # 512 GB DRAM (typical 2S config)
+            'offchip_mem_bw': 409.6,  # 2S × 8ch × 25.6 GB/s (DDR4-3200)
         },
         'cpu_specific': CPUConfig(
             # Core configuration
             cores_per_socket=40,
             sockets=2,
             threads_per_core=2,
-            
+
             # Cache hierarchy (per core)
             l1i_config=CacheConfig(
-                size=32*1024, latency=4, bandwidth=3200, 
+                size=32*1024, latency=4, bandwidth=3200,
                 associativity=8, is_shared=False
             ),
             l1d_config=CacheConfig(
                 size=48*1024, latency=5, bandwidth=3200,
-                associativity=12, is_shared=False  
+                associativity=12, is_shared=False
             ),
             l2_config=CacheConfig(
                 size=1280*1024, latency=14, bandwidth=1600,
-                associativity=20, is_shared=False
+                associativity=8, is_shared=False
             ),
             l3_config=CacheConfig(
                 size=60*1024*1024, latency=42, bandwidth=800,
                 associativity=12, is_shared=True, is_inclusive=False
             ),
-            
+
             # NUMA
             numa_nodes=2,
             cores_per_numa=40,
             numa_distance_matrix=np.array([[10, 21], [21, 10]]),
-            
-            # ISA
-            isa_support=['amx', 'avx512', 'avx2', 'sse'],
+
+            # ISA — Ice Lake (3rd Gen) does NOT have AMX (AMX is Sapphire Rapids+)
+            isa_support=['avx512', 'avx2', 'sse'],
             
             # Frequency  
             base_frequency=2.3e9,
@@ -66,19 +68,21 @@ CPU_PRESETS = {
     
     'amd_epyc_7763': {
         'base_params': {
-            'unit': None, 
+            'unit': None,
             'frequency': 2.45e9,
             'bits': 'bf16',
             'compute_efficiency': 0.85,
             'memory_efficiency': 0.75,
+            'off_chip_mem_size': 512 * 1024,  # 512 GB DRAM (typical 2S config)
+            'offchip_mem_bw': 409.6,  # 2S × 8ch × 25.6 GB/s (DDR4-3200)
         },
         'cpu_specific': CPUConfig(
             cores_per_socket=64,
             sockets=2,
             threads_per_core=2,
-            
-            # AMD has different L3 architecture (CCX-based)
-            l1i_config=CacheConfig(size=32*1024, latency=4, bandwidth=3200),
+
+            # AMD Zen 3: 64KB L1I per core (not 32KB)
+            l1i_config=CacheConfig(size=64*1024, latency=4, bandwidth=3200),
             l1d_config=CacheConfig(size=32*1024, latency=4, bandwidth=3200),
             l2_config=CacheConfig(size=512*1024, latency=12, bandwidth=1600),
             l3_config=CacheConfig(
@@ -118,32 +122,36 @@ CPU_PRESETS = {
         # ARM-based configuration
         'base_params': {
             'unit': None,
-            'frequency': 2.6e9, 
+            'frequency': 2.6e9,
             'bits': 'bf16',
             'compute_efficiency': 0.85,
             'memory_efficiency': 0.75,
+            'off_chip_mem_size': 256 * 1024,  # 256 GB DRAM (typical c7g.16xlarge)
+            'offchip_mem_bw': 307.2,  # 1S × 8ch × 38.4 GB/s (DDR5-4800)
         },
         'cpu_specific': CPUConfig(
             cores_per_socket=64,
             sockets=1,
             threads_per_core=1,  # No SMT
-            
+
             l1i_config=CacheConfig(size=64*1024, latency=4, bandwidth=3200),
             l1d_config=CacheConfig(size=64*1024, latency=4, bandwidth=3200),
             l2_config=CacheConfig(size=1024*1024, latency=13, bandwidth=1600),
             l3_config=CacheConfig(size=32*1024*1024, latency=35, bandwidth=800),
-            
+
             numa_nodes=1,  # Single socket
             cores_per_numa=64,
             numa_distance_matrix=np.array([[10]]),
-            
-            isa_support=['sve2', 'neon'],  # ARM ISAs
-            
+
+            # Graviton3 (Neoverse V1) has SVE (ARMv8.4), NOT SVE2 (ARMv9/Neoverse V2)
+            isa_support=['sve', 'neon'],
+
             base_frequency=2.6e9,
             turbo_frequency_curve={1: 2.6e9, 64: 2.6e9},  # Fixed frequency
             avx_frequency_offset={},
-            
-            dram_bandwidth_per_channel=25.6,
+
+            # Graviton3 uses DDR5-4800, not DDR4-3200
+            dram_bandwidth_per_channel=38.4,  # DDR5-4800 = 38.4 GB/s/channel
             memory_channels_per_socket=8,
             
             vendor='arm', 
@@ -152,14 +160,16 @@ CPU_PRESETS = {
         )
     },
     
-    # Example: Adding a new CPU - Intel Xeon 6430
+    # Intel Xeon Gold 6430 (Sapphire Rapids)
     'intel_xeon_6430': {
         'base_params': {
             'unit': None,
-            'frequency': 2.6e9,
+            'frequency': 2.1e9,  # Intel ARK: 2.10 GHz base (not 2.6)
             'bits': 'bf16',
             'compute_efficiency': 0.85,
             'memory_efficiency': 0.75,
+            'off_chip_mem_size': 256 * 1024,  # 256 GB DRAM (typical 1S config)
+            'offchip_mem_bw': 281.6,  # 1S × 8ch × 35.2 GB/s (DDR5-4400)
         },
         'cpu_specific': CPUConfig(
             # Core configuration
@@ -206,16 +216,16 @@ CPU_PRESETS = {
             # ISA support
             isa_support=['amx', 'avx512', 'avx2', 'sse'],
             
-            # Frequency
-            base_frequency=2.6e9,
+            # Frequency — Intel ARK: base 2.10 GHz, turbo 3.40 GHz
+            base_frequency=2.1e9,
             turbo_frequency_curve={
                 1: 3.4e9, 2: 3.4e9, 4: 3.2e9, 8: 3.1e9,
                 16: 3.0e9, 32: 2.8e9
             },
             avx_frequency_offset={'avx2': 0, 'avx512': -200e6, 'amx': -300e6},
-            
-            # Memory
-            dram_bandwidth_per_channel=38.4,  # DDR5-4800
+
+            # Memory — Sapphire Rapids 6430 supports DDR5-4400
+            dram_bandwidth_per_channel=35.2,  # DDR5-4400 = 35.2 GB/s/channel
             memory_channels_per_socket=8,
             
             # Vendor information
@@ -231,11 +241,13 @@ CPU_PRESETS = {
         'bits': 'bf16',              # AMX BF16 native
         'compute_efficiency': 0.88,  # perf/W head-room over Ice Lake
         'memory_efficiency': 0.78,   # faster DDR5 helps a bit
+        'off_chip_mem_size': 1024 * 1024,  # 1 TB DRAM (typical 2S high-end config)
+        'offchip_mem_bw': 716.8,  # 2S × 8ch × 44.8 GB/s (DDR5-5600)
     },
     'cpu_specific': CPUConfig(
         # Core configuration
         cores_per_socket=64,
-        sockets=4,
+        sockets=2,               # 8592+ is 2-socket only (Intel ARK)
         threads_per_core=2,
 
         # Cache hierarchy  (sizes are *per core* except the shared L3)
@@ -256,9 +268,9 @@ CPU_PRESETS = {
             associativity=16, is_shared=True,  is_inclusive=False
         ),
 
-        # NUMA (two big tiles per package)
-        numa_nodes=4,
-        cores_per_numa=32,
+        # NUMA — 2 sockets, 1 NUMA node per socket (default non-SNC mode)
+        numa_nodes=2,
+        cores_per_numa=64,
         numa_distance_matrix=np.array([[10, 21],
                                        [21, 10]]),
 
@@ -296,6 +308,8 @@ CPU_PRESETS = {
             'bits': 'bf16',              # Native BF16 support with AMX
             'compute_efficiency': 0.90,  # Improved efficiency over previous generations
             'memory_efficiency': 0.82,   # Better memory efficiency with DDR5-6400
+            'off_chip_mem_size': 1024 * 1024,  # 1 TB DRAM
+            'offchip_mem_bw': 819.2,  # 2S × 8ch × 51.2 GB/s (DDR5-6400)
         },
         'cpu_specific': CPUConfig(
             # Core configuration - 48 cores, 96 threads

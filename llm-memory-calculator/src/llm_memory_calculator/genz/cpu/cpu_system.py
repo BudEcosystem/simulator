@@ -91,13 +91,17 @@ class CPUSystem:
         )
         
     def _get_max_vector_width(self):
-        """Get maximum vector width based on ISA support"""
+        """Get maximum vector width (FP32 elements) based on ISA support"""
         if 'avx512' in self.cpu_config.isa_support:
-            return 16  # 16 FP32 elements
+            return 16  # 16 FP32 elements (512-bit)
         elif 'avx2' in self.cpu_config.isa_support:
-            return 8   # 8 FP32 elements
+            return 8   # 8 FP32 elements (256-bit)
         elif 'sve2' in self.cpu_config.isa_support:
-            return 16  # Scalable, but typically 512-bit
+            return 16  # SVE2 typically 512-bit
+        elif 'sve' in self.cpu_config.isa_support:
+            # SVE width varies: Graviton3 (Neoverse V1) = 256-bit
+            sve_bits = getattr(self.cpu_config, 'sve_vector_bits', 256)
+            return sve_bits // 32  # FP32 elements
         elif 'neon' in self.cpu_config.isa_support:
             return 4   # 128-bit NEON
         else:
@@ -145,8 +149,9 @@ class CPUSystem:
             batch_contention = max(1.0, np.sqrt(batch_size / 10))  # Contention grows with batch size
             return self.cpu_config.l3_config.bandwidth / (np.sqrt(active_cores) * batch_contention)
         else:  # DRAM
+            # get_access_penalty expects integer address; use 0 for default allocation
             numa_penalty = self.numa_topology.get_access_penalty(
-                accessing_core, data_location
+                accessing_core, 0
             ) if self.numa_topology else 1.0
             # High batch sizes saturate memory bandwidth more quickly
             batch_contention = max(1.0, batch_size / 20)  # Linear scaling for DRAM contention

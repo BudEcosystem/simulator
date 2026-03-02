@@ -7,7 +7,7 @@ class System(object):
     compute_multiplier = {
         # Integer quantized types
         'int2': 0.125,
-        'int4': 0.25,
+        'int4': 0.5,
         'int8': 0.5,
 
         # Floating point quantized types
@@ -113,6 +113,17 @@ class System(object):
         self.num_nodes = num_nodes
         self.topology = topology
         self.bits = bits
+
+        # Validate FP8 hardware compatibility
+        # FP8 requires Hopper (H100) or newer architecture
+        if self.bits in ('fp8', 'fp8_e4m3', 'fp8_e5m2', 'mixed_fp8', 'mixed_fp8_bf16'):
+            import warnings
+            warnings.warn(
+                f"FP8 precision selected. FP8 requires NVIDIA Hopper (H100+) or AMD CDNA3 (MI300+) architecture. "
+                f"On unsupported hardware, actual throughput may differ from estimates.",
+                stacklevel=2,
+            )
+
         self.parallelism_heirarchy = parallelism_heirarchy   ## TP{1}_EP{1}_PP{1}
         self.network_config = network_config
         if gear_params:
@@ -174,7 +185,7 @@ class System(object):
         return self.on_chip_mem_left_size
 
     def release_onchip_mem(self, data_sz):
-        self.on_chip_mem_left_size = max(self.on_chip_mem_size, data_sz + self.on_chip_mem_left_size)
+        self.on_chip_mem_left_size = min(self.on_chip_mem_size, data_sz + self.on_chip_mem_left_size)
         return self.on_chip_mem_left_size
 
     def get_bit_multiplier(self, type='C', data='w', operators=None):

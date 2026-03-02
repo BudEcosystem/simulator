@@ -86,14 +86,13 @@ def cpu_aware_prefill_moddeling(model='BERT', batch_size=1, input_tokens=4096,
                 model_offload=model_offload,
                 **kwargs
             )
-            # Apply calibration
-            if isinstance(system_name, CPUSystem):
-                calibrated_latency = result['Latency'] - system_name.cpu_config.framework_overhead_ms
-                result['Latency'] = max(0, calibrated_latency)
+            # Calibration: no flat subtraction (the analytical model has no framework
+            # overhead to remove). Use a multiplicative adjustment if needed.
+            # result['Latency'] is the analytical prediction — leave it as-is.
         finally:
             # Always restore original operators
             restore_original_operators()
-            
+
         return result
     else:
         # Not a CPU system, use original function
@@ -172,14 +171,13 @@ def cpu_aware_decode_moddeling(model='BERT', batch_size=1, input_tokens=4096,
                 meff=meff,
                 **kwargs
             )
-            # Apply calibration
-            if isinstance(system_name, CPUSystem):
-                calibrated_latency = result['Latency'] - system_name.cpu_config.framework_overhead_ms
-                result['Latency'] = max(0, calibrated_latency)
+            # Calibration: no flat subtraction (the analytical model has no framework
+            # overhead to remove). Use a multiplicative adjustment if needed.
+            # result['Latency'] is the analytical prediction — leave it as-is.
         finally:
             # Always restore original operators
             restore_original_operators()
-            
+
         return result
     else:
         # Not a CPU system, use original function

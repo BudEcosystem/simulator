@@ -38,7 +38,7 @@ class CPUOperatorMixin:
         total_time = results['total_cycles'] / system.cpu_config.base_frequency
         
         # Add bandwidth constraints
-        data_volume = self._calculate_data_volume()
+        data_volume = self._calculate_data_volume(system)
         bandwidth_time = self._calculate_bandwidth_limited_time(
             data_volume, results, system
         )
@@ -59,19 +59,24 @@ class CPUOperatorMixin:
         else:
             return AccessPattern.SEQUENTIAL
             
-    def _calculate_data_volume(self) -> Dict[str, float]:
+    def _calculate_data_volume(self, system=None) -> Dict[str, float]:
         """Calculate data volume for this operator"""
+        # Derive bytes_per_element from system precision
+        _precision_bytes = {'fp32': 4, 'f32': 4, 'bf16': 2, 'fp16': 2, 'int8': 1, 'int4': 0.5}
+        data_type = 'fp32'
+        if system is not None and hasattr(system, 'base_system'):
+            data_type = getattr(system.base_system, 'bits', 'fp32')
+        bytes_per_element = _precision_bytes.get(data_type, 4)
+
         # Get tensors
         tensors = self.get_tensors()
         if len(tensors) >= 3:
             input_a, input_w, output = tensors[:3]
-            
-            # Calculate sizes in bytes (assuming fp32)
-            bytes_per_element = 4
+
             input_a_size = np.prod(input_a) * bytes_per_element
             input_w_size = np.prod(input_w) * bytes_per_element
             output_size = np.prod(output) * bytes_per_element
-            
+
             return {
                 'input_a': input_a_size,
                 'input_w': input_w_size,
@@ -81,36 +86,41 @@ class CPUOperatorMixin:
         else:
             # Fallback for operators without standard tensor structure
             num_ops = self.get_num_ops()
-            return {'total': num_ops * 4}  # Rough estimate
+            return {'total': num_ops * bytes_per_element}
             
     def _calculate_bandwidth_limited_time(self, data_volume: Dict[str, float],
                                         cache_results: Dict[str, float],
                                         system: 'CPUSystem') -> float:
-        """Calculate time limited by bandwidth at each level"""
-        time = 0
-        
+        """Calculate time limited by bandwidth at each cache level.
+
+        Intel ECM model: cache-to-cache transfers are serial (additive).
+        AMD: fully overlapping cache levels (take max).
+        """
         # L1 bandwidth
         l1_volume = data_volume['total'] * cache_results['l1_hit_rate']
-        time += l1_volume / (system.cpu_config.l1d_config.bandwidth * 1e9)
-        
-        # L2 bandwidth  
+        l1_time = l1_volume / (system.cpu_config.l1d_config.bandwidth * 1e9) if l1_volume > 0 else 0
+
+        # L2 bandwidth
         l2_volume = data_volume['total'] * cache_results['l2_hit_rate']
-        time += l2_volume / (system.cpu_config.l2_config.bandwidth * 1e9)
-        
-        # L3 bandwidth (shared)
+        l2_time = l2_volume / (system.cpu_config.l2_config.bandwidth * 1e9) if l2_volume > 0 else 0
+
+        # L3 bandwidth (aggregate, shared among all cores)
         l3_volume = data_volume['total'] * cache_results['l3_hit_rate']
-        active_cores = system.get_active_cores()
-        l3_bandwidth = system.cpu_config.l3_config.bandwidth / np.sqrt(active_cores)
-        time += l3_volume / (l3_bandwidth * 1e9)
-        
-        # DRAM bandwidth – for compute-heavy GEMM we assume most data eventually hits DRAM.
-        dram_access_rate = cache_results['dram_access_rate']
-        if self.__class__.__name__ == 'GEMM' and dram_access_rate < 0.8:
-            dram_access_rate = 1.0  # worst-case – all data fetched
-        dram_volume = data_volume['total'] * dram_access_rate
-        time += dram_volume / (system.peak_memory_bandwidth * 1e9)
-        
-        return time
+        l3_bandwidth = system.cpu_config.l3_config.bandwidth  # Already aggregate
+        l3_time = l3_volume / (l3_bandwidth * 1e9) if l3_volume > 0 else 0
+
+        # DRAM bandwidth — use cache simulation results directly (no forced override)
+        dram_volume = data_volume['total'] * cache_results['dram_access_rate']
+        dram_time = dram_volume / (system.peak_memory_bandwidth * 1e9) if dram_volume > 0 else 0
+
+        # Vendor-aware bandwidth model
+        vendor = getattr(system.cpu_config, 'vendor', 'intel')
+        if vendor == 'amd':
+            # AMD: fully overlapping cache levels
+            return max(l1_time, l2_time, l3_time, dram_time)
+        else:
+            # Intel ECM: serial data supply chain
+            return l1_time + l2_time + l3_time + dram_time
         
     def get_cpu_compute_time(self, system: 'CPUSystem') -> float:
         """Calculate compute time on CPU system"""

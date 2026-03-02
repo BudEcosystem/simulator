@@ -3,6 +3,7 @@
 Combines workload generation, batch scheduling, memory management,
 SLO tracking, and power modeling into an event-driven simulation loop.
 """
+import dataclasses
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple
 import heapq
@@ -135,7 +136,13 @@ class ServingSimulator:
 
         # Initialize trackers
         slo_tracker = SLOTracker(slo_targets)
-        power_model = PowerModel.from_hardware_name(self._hardware) if enable_power_tracking else None
+        power_model = None
+        if enable_power_tracking:
+            from llm_memory_calculator.hardware.configs import is_cpu_hardware
+            if is_cpu_hardware(self._hardware):
+                power_model = PowerModel.from_cpu_hardware(self._hardware)
+            else:
+                power_model = PowerModel.from_hardware_name(self._hardware)
 
         # Run event-driven simulation
         result = self._run_simulation_loop(
@@ -176,20 +183,8 @@ class ServingSimulator:
 
         for val in values:
             # Apply parameter override
-            wl = WorkloadConfig(
-                arrival_rate_rps=workload_config.arrival_rate_rps,
-                arrival_pattern=workload_config.arrival_pattern,
-                num_requests=workload_config.num_requests,
-                input_length_distribution=workload_config.input_length_distribution,
-                output_length_distribution=workload_config.output_length_distribution,
-                model=self._model,
-                random_seed=workload_config.random_seed,
-            )
-            sc = SchedulerConfig(
-                max_batch_size=scheduler_config.max_batch_size,
-                max_num_batched_tokens=scheduler_config.max_num_batched_tokens,
-                enable_chunked_prefill=scheduler_config.enable_chunked_prefill,
-            )
+            wl = dataclasses.replace(workload_config, model=self._model)
+            sc = dataclasses.replace(scheduler_config)
 
             if parameter == "arrival_rate_rps":
                 wl.arrival_rate_rps = val
@@ -272,13 +267,27 @@ class ServingSimulator:
                 for req in newly_completed:
                     slo_tracker.record_completed_request(req)
                     completed_requests.append(req)
-                    total_tokens_generated += req.input_tokens + req.tokens_generated
+                    total_tokens_generated += req.tokens_generated
 
-                # Track power for batch duration
+                # Track power for batch duration using full component model
                 if power_model and batch:
-                    latency_ns = current_time_ns - last_batch_end_ns
-                    if latency_ns > 0:
-                        power_model.add_accelerator_active_energy(latency_ns)
+                    batch_latency_ns = current_time_ns - last_batch_end_ns
+                    if batch_latency_ns > 0:
+                        # Use estimate_from_simulation_result for multi-component tracking
+                        batch_latency_ms = batch_latency_ns / NS_PER_MS
+                        batch_util = len(batch.requests) / max(scheduler._config.max_batch_size, 1)
+                        power_model.estimate_from_simulation_result(
+                            latency_ms=batch_latency_ms,
+                            compute_util=min(batch_util, 1.0),
+                            mem_util=min(batch_util * 0.8, 1.0),
+                            num_accel=self._tensor_parallel,
+                        )
+                    # Track idle time since last batch
+                    if last_batch_end_ns > 0 and last_batch_end_ns < current_time_ns:
+                        power_model.add_accelerator_standby_energy(
+                            current_time_ns, last_batch_end_ns, last_power_calc_ns,
+                        )
+                    last_power_calc_ns = current_time_ns
 
                 last_batch_end_ns = current_time_ns
 
@@ -298,8 +307,10 @@ class ServingSimulator:
                 result.time_series["batch_size"].append(scheduler.inflight_count + scheduler.pending_count)
                 result.time_series["queue_depth"].append(scheduler.pending_count)
 
-                hbm_snap = snap.get("device_hbm", {})
-                result.time_series["memory_util"].append(hbm_snap.get("utilization", 0))
+                # Use primary tier (DEVICE_HBM for GPU, DEVICE_DRAM for CPU)
+                primary_tier_name = memory_model.primary_tier.value
+                primary_snap = snap.get(primary_tier_name, {})
+                result.time_series["memory_util"].append(primary_snap.get("utilization", 0))
 
                 duration_so_far_s = next_sample_ns / NS_PER_S
                 if duration_so_far_s > 0:
@@ -380,17 +391,36 @@ class ServingSimulator:
 
     def _default_memory_tiers(self) -> List[MemoryTierConfig]:
         """Create default memory tier config from hardware."""
+        from llm_memory_calculator.hardware.configs import HARDWARE_CONFIGS, is_cpu_hardware
         try:
-            from llm_memory_calculator.hardware.configs import HARDWARE_CONFIGS
-            hw = HARDWARE_CONFIGS.get(self._hardware, {})
-            mem_gb = hw.get("Memory_size", 80)
-            mem_bw = hw.get("Memory_BW", 2000)
+            if self._hardware in HARDWARE_CONFIGS:
+                hw = HARDWARE_CONFIGS[self._hardware]
+                mem_gb = hw.get("Memory_size", 80)
+                mem_bw = hw.get("Memory_BW", 2000)
+            else:
+                # Try CPU_PRESETS for memory specs
+                from llm_memory_calculator.genz.cpu.cpu_configs import CPU_PRESETS
+                preset_key = next(
+                    (k for k in CPU_PRESETS if k.lower() == self._hardware.lower()),
+                    None,
+                )
+                if preset_key:
+                    params = CPU_PRESETS[preset_key]['base_params']
+                    mem_gb = params.get('off_chip_mem_size', 512 * 1024) / 1024
+                    mem_bw = params.get('offchip_mem_bw', 200)
+                else:
+                    mem_gb, mem_bw = 80, 2000
         except Exception:
-            mem_gb = 80
-            mem_bw = 2000
+            mem_gb, mem_bw = 80, 2000
+
+        tier = (
+            MemoryTier.DEVICE_DRAM
+            if is_cpu_hardware(self._hardware)
+            else MemoryTier.DEVICE_HBM
+        )
 
         return [MemoryTierConfig(
-            tier=MemoryTier.DEVICE_HBM,
+            tier=tier,
             capacity_bytes=int(mem_gb * GB_TO_BYTES),
             bandwidth_gbps=float(mem_bw),
         )]
@@ -407,8 +437,13 @@ class ServingSimulator:
             head_dim = hidden // n_heads
 
         # Approximate parameter count
-        # Attention: Q, K, V, O projections per layer
-        attn_params = 4 * hidden * n_heads * head_dim * layers
+        # Attention: Q, K, V, O projections per layer (GQA-aware)
+        num_kv_heads = getattr(model_config, 'num_key_value_heads', n_heads)
+        # Q and O projections use full n_heads; K and V use num_kv_heads
+        attn_params = (
+            2 * hidden * n_heads * head_dim +        # Q and O projections
+            2 * hidden * num_kv_heads * head_dim      # K and V projections
+        ) * layers
         # FFN: gate + up + down per layer
         ffn_params = 3 * hidden * intermediate * layers
         # Embeddings

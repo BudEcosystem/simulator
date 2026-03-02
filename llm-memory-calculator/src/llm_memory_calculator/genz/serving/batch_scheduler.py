@@ -113,8 +113,30 @@ class BatchScheduler:
             try:
                 self._memory_model.allocate_kv_blocks(req, req.input_tokens)
             except MemoryError:
-                remaining_pending.append(req)
-                continue
+                # Attempt eviction before dropping request
+                retry_success = False
+                if hasattr(self._memory_model, 'evict_blocks'):
+                    needed_blocks = (req.input_tokens + self._memory_model._block_size - 1) // self._memory_model._block_size
+                    evicted_count, evicted_rids = self._memory_model.evict_blocks(self._memory_model.primary_tier, needed_blocks)
+                    # Move evicted running requests back to pending
+                    if evicted_rids:
+                        still_running = []
+                        for running_req in self._running:
+                            if running_req.request_id in evicted_rids:
+                                running_req.status = RequestStatus.QUEUED
+                                self._pending.append(running_req)
+                            else:
+                                still_running.append(running_req)
+                        self._running = still_running
+                    if evicted_count > 0:
+                        try:
+                            self._memory_model.allocate_kv_blocks(req, req.input_tokens)
+                            retry_success = True
+                        except MemoryError:
+                            pass
+                if not retry_success:
+                    remaining_pending.append(req)
+                    continue
 
             req.set_prefilling(current_time_ns)
             prefill_requests.append(req)
@@ -153,9 +175,16 @@ class BatchScheduler:
         completed = []
 
         # Prefill requests -> transition to decode
+        # The prefill step produces the first output token from logits
         for req in batch.prefill_requests:
             req.set_decoding(current_time_ns)
-            self._running.append(req)
+            req.record_token(current_time_ns)  # First token from prefill logits
+            if req.tokens_generated >= req.max_output_tokens:
+                req.set_complete(current_time_ns)
+                self._memory_model.deallocate_kv_blocks(req)
+                completed.append(req)
+            else:
+                self._running.append(req)
 
         # Decode requests -> generate one token
         for req in batch.decode_requests:
@@ -187,10 +216,18 @@ class BatchScheduler:
             decode_latency_ms = self._estimate_decode_latency(batch)
 
         # In continuous batching, prefill and decode run in the same iteration
-        # Total latency is dominated by the prefill (compute-bound)
-        # plus the decode (memory-bound), approximated as max + fraction of other
         if prefill_latency_ms > 0 and decode_latency_ms > 0:
-            return max(prefill_latency_ms, decode_latency_ms) + 0.3 * min(prefill_latency_ms, decode_latency_ms)
+            if self._config.enable_chunked_prefill:
+                # With chunked prefill, chunks are sized to fit within one decode step
+                # so prefill and decode overlap on the GPU. Only scheduling overhead
+                # adds to the dominant phase.
+                # Overhead: CUDA kernel launch + block table updates (Sarathi-Serve OSDI 2024)
+                scheduling_overhead_ms = 0.1 + 0.01 * batch.size
+                return max(prefill_latency_ms, decode_latency_ms) + scheduling_overhead_ms
+            else:
+                # Without chunked prefill, prefill and decode use different CUDA
+                # kernels that execute sequentially (Orca-style)
+                return prefill_latency_ms + decode_latency_ms
         return prefill_latency_ms + decode_latency_ms
 
     def _estimate_prefill_latency(self, batch: Batch) -> float:
@@ -205,8 +242,9 @@ class BatchScheduler:
             return self._latency_cache[cache_key]
 
         try:
-            from llm_memory_calculator.genz import prefill_moddeling
-            result = prefill_moddeling(
+            from llm_memory_calculator.genz.serving import get_modeling_functions
+            prefill_fn, _ = get_modeling_functions(self._hardware)
+            result = prefill_fn(
                 model=self._model,
                 batch_size=bs,
                 input_tokens=avg_input,
@@ -239,8 +277,9 @@ class BatchScheduler:
             return self._latency_cache[cache_key]
 
         try:
-            from llm_memory_calculator.genz import decode_moddeling
-            result = decode_moddeling(
+            from llm_memory_calculator.genz.serving import get_modeling_functions
+            _, decode_fn = get_modeling_functions(self._hardware)
+            result = decode_fn(
                 model=self._model,
                 batch_size=bs,
                 input_tokens=avg_context,

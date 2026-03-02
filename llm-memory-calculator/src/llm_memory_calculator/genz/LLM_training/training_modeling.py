@@ -1184,16 +1184,13 @@ def calculate_total_training_flops(
     )
 
     # Gradient checkpointing: recompute activations during backward
-    # With sqrt(L) checkpointing, we recompute ceil(sqrt(L)) segments
-    # Fraction recomputed = ceil(sqrt(L)) / L, typically 11-19% for practical models
+    # Standard gradient checkpointing trades memory for compute by recomputing
+    # the entire forward pass during the backward pass
     recompute_flops = 0
     if gradient_checkpointing:
-        # Recompute forward pass for checkpointed segments
-        # Number of checkpoints = ceil(sqrt(num_layers))
-        # Fraction of layers recomputed = num_checkpoints / num_layers
-        num_checkpoints = math.ceil(math.sqrt(num_layers))
-        recompute_fraction = num_checkpoints / num_layers  # Typically 0.11-0.18
-        recompute_flops = int(total_forward * recompute_fraction)
+        # Standard gradient checkpointing: recompute entire forward pass during backward
+        # This is the cost of recomputation - stored checkpoints save memory but add compute
+        recompute_flops = total_forward
 
     total_flops = total_forward + total_backward + recompute_flops
 
@@ -2827,7 +2824,8 @@ def training_modeling(
     # Calculate trainable parameters based on method
     # Use total_params for memory and optimizer state calculations
     trainable_params = _calculate_trainable_params(
-        total_params, method, lora_rank, num_layers, hidden_size, intermediate_size
+        total_params, method, lora_rank, num_layers, hidden_size, intermediate_size,
+        num_attention_heads=num_heads, num_key_value_heads=num_kv_heads,
     )
 
     # Calculate trainable active params (for FLOPs calculation)
@@ -2836,7 +2834,8 @@ def training_modeling(
     else:
         # For LoRA etc., trainable params are the same regardless of MoE
         trainable_active_params = _calculate_trainable_params(
-            active_params, method, lora_rank, num_layers, hidden_size, intermediate_size
+            active_params, method, lora_rank, num_layers, hidden_size, intermediate_size,
+            num_attention_heads=num_heads, num_key_value_heads=num_kv_heads,
         )
 
     # Create parallelism config
@@ -3041,17 +3040,12 @@ def training_modeling(
         backward_time_base_ms = forward_time_ms * backward_multiplier
 
     # Gradient checkpointing: add recomputation FLOPs separately
-    # With sqrt checkpointing, we recompute ceil(sqrt(N)) segments
-    # This is typically 11-19% for practical model sizes, not fixed 33%
+    # Standard gradient checkpointing: full forward recomputation during backward
     # NOT added to backward multiplier - it's separate compute
     recompute_time_ms = 0.0
     if gradient_checkpointing:
-        # Adaptive recomputation based on model size using sqrt checkpointing
-        # Number of checkpoints = ceil(sqrt(num_layers))
-        # Fraction of layers recomputed = num_checkpoints / num_layers
-        num_checkpoints = math.ceil(math.sqrt(num_layers))
-        recompute_fraction = num_checkpoints / num_layers  # Typically 0.11-0.18
-        recompute_time_ms = forward_time_ms * recompute_fraction
+        # Standard gradient checkpointing: full forward recomputation during backward
+        recompute_time_ms = forward_time_ms
 
     backward_time_ms = backward_time_base_ms + recompute_time_ms
 
@@ -3971,6 +3965,8 @@ def _calculate_trainable_params(
     num_layers: int,
     hidden_size: int,
     intermediate_size: int,
+    num_attention_heads: int = 32,
+    num_key_value_heads: Optional[int] = None,
 ) -> int:
     """Calculate trainable parameters based on method.
 
@@ -3981,6 +3977,8 @@ def _calculate_trainable_params(
         num_layers: Number of transformer layers
         hidden_size: Model hidden dimension
         intermediate_size: FFN intermediate dimension
+        num_attention_heads: Number of attention heads (for GQA-aware LoRA)
+        num_key_value_heads: Number of KV heads (defaults to num_attention_heads)
 
     Returns:
         Number of trainable parameters
@@ -3997,13 +3995,42 @@ def _calculate_trainable_params(
             raise ValueError(f"lora_rank must be positive for {method} method, got {lora_rank}")
         if hidden_size <= 0 or intermediate_size <= 0:
             raise ValueError(f"hidden_size ({hidden_size}) and intermediate_size ({intermediate_size}) must be positive")
-        # LoRA targets: Q, K, V, O in attention
-        attn_lora_params = 4 * 2 * lora_rank * hidden_size * num_layers
 
-        # Optionally target FFN
-        ffn_lora_params = 2 * 2 * lora_rank * (hidden_size + intermediate_size) // 2 * num_layers
+        # GQA-aware KV dimension
+        num_kv = num_key_value_heads if num_key_value_heads is not None else num_attention_heads
+        kv_dim = hidden_size * num_kv // num_attention_heads
 
-        return attn_lora_params + ffn_lora_params
+        # LoRA adapters on 7 targets: q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj
+        # Each adapter has A(r × d_in) + B(d_out × r) = r*(d_in + d_out) parameters
+        attn_params_per_layer = (
+            lora_rank * (hidden_size + hidden_size) +      # q_proj
+            lora_rank * (hidden_size + kv_dim) +           # k_proj
+            lora_rank * (hidden_size + kv_dim) +           # v_proj
+            lora_rank * (hidden_size + hidden_size)        # o_proj
+        )
+
+        mlp_params_per_layer = (
+            lora_rank * (hidden_size + intermediate_size) +  # gate_proj
+            lora_rank * (hidden_size + intermediate_size) +  # up_proj
+            lora_rank * (hidden_size + intermediate_size)    # down_proj
+        )
+
+        total_adapter_params = num_layers * (attn_params_per_layer + mlp_params_per_layer)
+
+        # DoRA adds a magnitude vector per target module per layer
+        if method == 'dora':
+            dora_magnitude = (
+                hidden_size +            # q_proj magnitude
+                kv_dim +                 # k_proj magnitude
+                kv_dim +                 # v_proj magnitude
+                hidden_size +            # o_proj magnitude
+                intermediate_size +      # gate_proj magnitude
+                intermediate_size +      # up_proj magnitude
+                hidden_size              # down_proj magnitude
+            )
+            total_adapter_params += num_layers * dora_magnitude
+
+        return total_adapter_params
 
     elif method == 'freeze':
         # Freeze first half of layers

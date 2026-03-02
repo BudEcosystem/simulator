@@ -105,10 +105,12 @@ def _estimate_memory_per_gpu(
     intermediate_size = getattr(model_config, 'intermediate_size', None) or (hidden_size * 4)
     vocab_size = getattr(model_config, 'vocab_size', 32000) or 32000
     num_heads = getattr(model_config, 'num_attention_heads', 32) or 32
+    num_kv_heads = getattr(model_config, 'num_key_value_heads', None) or num_heads
 
-    # Calculate total parameters
+    # Calculate total parameters (GQA-aware)
+    kv_dim = hidden_size * num_kv_heads // num_heads
     embedding_params = vocab_size * hidden_size * 2
-    attention_params = 4 * hidden_size * hidden_size
+    attention_params = 2 * hidden_size * hidden_size + 2 * hidden_size * kv_dim  # Q,O use h; K,V use kv_dim
     ffn_params = 3 * hidden_size * intermediate_size
     norm_params = 4 * hidden_size
     params_per_layer = attention_params + ffn_params + norm_params
@@ -117,11 +119,30 @@ def _estimate_memory_per_gpu(
     # Calculate trainable params based on method
     if method == 'full':
         trainable_params = total_params
-    elif method in ('lora', 'qlora', 'dora'):
+    elif method in ('lora', 'qlora', 'dora', 'pissa'):
         lora_rank = 16  # Default
-        attn_lora_params = 4 * 2 * lora_rank * hidden_size * num_layers
-        ffn_lora_params = 2 * 2 * lora_rank * (hidden_size + intermediate_size) // 2 * num_layers
-        trainable_params = attn_lora_params + ffn_lora_params
+
+        # GQA-aware LoRA on 7 targets: q, k, v, o, gate, up, down
+        # Each adapter: A(r × d_in) + B(d_out × r) = r*(d_in + d_out) params
+        attn_params_per_layer = (
+            lora_rank * (hidden_size + hidden_size) +      # q_proj
+            lora_rank * (hidden_size + kv_dim) +           # k_proj
+            lora_rank * (hidden_size + kv_dim) +           # v_proj
+            lora_rank * (hidden_size + hidden_size)        # o_proj
+        )
+        mlp_params_per_layer = (
+            lora_rank * (hidden_size + intermediate_size) +  # gate_proj
+            lora_rank * (hidden_size + intermediate_size) +  # up_proj
+            lora_rank * (hidden_size + intermediate_size)    # down_proj
+        )
+        trainable_params = num_layers * (attn_params_per_layer + mlp_params_per_layer)
+
+        if method == 'dora':
+            dora_magnitude = (
+                hidden_size + kv_dim + kv_dim + hidden_size +
+                intermediate_size + intermediate_size + hidden_size
+            )
+            trainable_params += num_layers * dora_magnitude
     else:
         trainable_params = total_params
 

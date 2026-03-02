@@ -1,4 +1,5 @@
 """Cluster-level analysis for multi-instance LLM serving."""
+import math
 from typing import Dict, Any, List, Optional
 import warnings
 
@@ -28,8 +29,9 @@ class ClusterAnalyzer:
     ) -> Dict[str, Any]:
         """Analyze throughput scaling across instance counts.
 
-        Assumes linear scaling with each independent instance
-        (no inter-instance communication overhead).
+        Models sub-linear scaling for data-parallel instances that share
+        memory bus and PCIe bandwidth. Efficiency degrades logarithmically
+        with the number of instances.
         """
         prefill_lat, decode_lat = self._get_latencies(input_tokens, output_tokens)
         time_per_request = prefill_lat + decode_lat * output_tokens
@@ -39,10 +41,15 @@ class ClusterAnalyzer:
 
         results = []
         for n in instance_counts:
-            throughput = single_instance_tps * n
-            # Linear scaling assumption (no communication overhead
-            # for independent instances)
-            efficiency = 1.0
+            # Data parallel scaling efficiency: independent instances share memory bus
+            # and PCIe bandwidth. Efficiency degrades logarithmically with instance count.
+            # Model: efficiency = 1 / (1 + 0.02 * log2(n))
+            # Yields: n=1->100%, n=2->98%, n=4->96%, n=8->94%
+            if n <= 1:
+                efficiency = 1.0
+            else:
+                efficiency = 1.0 / (1.0 + 0.02 * math.log2(n))
+            throughput = single_instance_tps * n * efficiency
             results.append(
                 {
                     "instances": n,
@@ -71,13 +78,26 @@ class ClusterAnalyzer:
 
         Tests combinations of TP and PP that divide num_devices evenly
         and returns the configuration that maximises total throughput.
+
+        Note: TP scaling efficiency (communication overhead from AllReduce
+        collectives across tensor-parallel ranks) is already modeled by the
+        GenZ engine when computing prefill/decode latencies at each TP value.
+        The latencies returned by prefill_moddeling/decode_moddeling naturally
+        include the cost of inter-device communication, so no additional
+        efficiency factor is applied here.
         """
         configs: List[Dict[str, Any]] = []
 
-        for tp in [1, 2, 4, 8]:
+        from llm_memory_calculator.hardware.configs import is_cpu_hardware
+        cpu_mode = is_cpu_hardware(self._hardware)
+        # CPU systems: TP limited to socket count (1-2), PP limited to 1
+        tp_values = [1, 2] if cpu_mode else [1, 2, 4, 8]
+        pp_values = [1] if cpu_mode else [1, 2, 4]
+
+        for tp in tp_values:
             if tp > num_devices:
                 continue
-            for pp in [1, 2, 4]:
+            for pp in pp_values:
                 if tp * pp > num_devices:
                     continue
                 num_instances = num_devices // (tp * pp)
@@ -85,12 +105,10 @@ class ClusterAnalyzer:
                     continue
 
                 try:
-                    from llm_memory_calculator.genz import (
-                        prefill_moddeling,
-                        decode_moddeling,
-                    )
+                    from llm_memory_calculator.genz.serving import get_modeling_functions
+                    prefill_fn, decode_fn = get_modeling_functions(self._hardware)
 
-                    prefill = prefill_moddeling(
+                    prefill = prefill_fn(
                         model=self._model,
                         batch_size=1,
                         input_tokens=input_tokens,
@@ -99,7 +117,7 @@ class ClusterAnalyzer:
                         tensor_parallel=tp,
                         pipeline_parallel=pp,
                     )
-                    decode = decode_moddeling(
+                    decode = decode_fn(
                         model=self._model,
                         batch_size=1,
                         input_tokens=input_tokens,
@@ -154,19 +172,17 @@ class ClusterAnalyzer:
     def _get_latencies(self, input_tokens: int, output_tokens: int):
         """Get prefill and per-token decode latency from GenZ."""
         try:
-            from llm_memory_calculator.genz import (
-                prefill_moddeling,
-                decode_moddeling,
-            )
+            from llm_memory_calculator.genz.serving import get_modeling_functions
+            prefill_fn, decode_fn = get_modeling_functions(self._hardware)
 
-            prefill = prefill_moddeling(
+            prefill = prefill_fn(
                 model=self._model,
                 batch_size=1,
                 input_tokens=input_tokens,
                 system_name=self._hardware,
                 bits=self._precision,
             )
-            decode = decode_moddeling(
+            decode = decode_fn(
                 model=self._model,
                 batch_size=1,
                 input_tokens=input_tokens,

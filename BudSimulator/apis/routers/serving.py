@@ -57,13 +57,33 @@ async def analyze_memory_tiers(req: MemoryTierRequest):
 
         model_config = get_configs(req.model)
 
-        if req.hardware not in HARDWARE_CONFIGS:
-            raise HTTPException(status_code=404, detail=f"Unknown hardware: {req.hardware}")
-        hw = HARDWARE_CONFIGS[req.hardware]
+        from llm_memory_calculator.hardware.configs import is_cpu_hardware
+        if req.hardware in HARDWARE_CONFIGS:
+            hw = HARDWARE_CONFIGS[req.hardware]
+        else:
+            # Try CPU_PRESETS for memory specs
+            try:
+                from llm_memory_calculator.genz.cpu.cpu_configs import CPU_PRESETS
+                preset_key = next(
+                    (k for k in CPU_PRESETS if k.lower() == req.hardware.lower()),
+                    None,
+                )
+                if preset_key is None:
+                    raise HTTPException(status_code=404, detail=f"Unknown hardware: {req.hardware}")
+                params = CPU_PRESETS[preset_key]['base_params']
+                hw = {
+                    'Memory_size': params.get('off_chip_mem_size', 512 * 1024) / 1024,
+                    'Memory_BW': params.get('offchip_mem_bw', 200),
+                }
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=404, detail=f"Unknown hardware: {req.hardware}")
 
+        primary_tier = MemoryTier.DEVICE_DRAM if is_cpu_hardware(req.hardware) else MemoryTier.DEVICE_HBM
         tier_configs = [
             MemoryTierConfig(
-                tier=MemoryTier.DEVICE_HBM,
+                tier=primary_tier,
                 capacity_bytes=int(hw['Memory_size'] * GB_TO_BYTES),
                 bandwidth_gbps=float(hw['Memory_BW']),
             )
@@ -112,24 +132,50 @@ async def estimate_power(req: PowerEstimateRequest):
         from llm_memory_calculator.genz.serving import PowerModel
         from llm_memory_calculator.hardware.configs import HARDWARE_CONFIGS
 
-        if req.hardware not in HARDWARE_CONFIGS:
+        from llm_memory_calculator.hardware.configs import is_cpu_hardware
+        if req.hardware not in HARDWARE_CONFIGS and not is_cpu_hardware(req.hardware):
             raise HTTPException(status_code=404, detail=f"Unknown hardware: {req.hardware}")
 
-        pm = PowerModel.from_hardware_name(req.hardware, num_accel=req.num_accelerators)
+        if is_cpu_hardware(req.hardware):
+            pm = PowerModel.from_cpu_hardware(req.hardware, num_sockets=req.num_accelerators)
+        else:
+            pm = PowerModel.from_hardware_name(req.hardware, num_accel=req.num_accelerators)
 
-        # Estimate power using analytical mode
-        compute_util = min(0.95, 0.3 + 0.05 * req.batch_size)
-        mem_util = min(0.95, 0.4 + 0.03 * req.batch_size)
+        try:
+            from llm_memory_calculator.genz.serving import get_modeling_functions
+            prefill_fn, decode_fn = get_modeling_functions(req.hardware)
+            prefill_result = prefill_fn(
+                model=req.model, batch_size=req.batch_size,
+                input_tokens=req.input_tokens, system_name=req.hardware,
+                bits=req.precision, tensor_parallel=req.tensor_parallel,
+            )
+            decode_result = decode_fn(
+                model=req.model, batch_size=req.batch_size,
+                input_tokens=req.input_tokens, output_tokens=req.output_tokens,
+                system_name=req.hardware, bits=req.precision,
+                tensor_parallel=req.tensor_parallel,
+            )
+            prefill_latency_ms = prefill_result.Latency
+            decode_latency_ms = decode_result.Latency * req.output_tokens
+            total_latency_ms = prefill_latency_ms + decode_latency_ms
+            compute_util = min(0.95, getattr(prefill_result, 'compute_utilization', 0.5))
+            mem_util = min(0.95, getattr(decode_result, 'memory_utilization', 0.5))
+        except Exception:
+            compute_util = min(0.95, 0.3 + 0.05 * req.batch_size)
+            mem_util = min(0.95, 0.4 + 0.03 * req.batch_size)
+            prefill_latency_ms = req.input_tokens * 0.01 * req.batch_size / req.tensor_parallel
+            decode_latency_ms = req.output_tokens * 0.5 / req.tensor_parallel
+            total_latency_ms = prefill_latency_ms + decode_latency_ms
 
-        # Rough latency estimate: prefill + decode
-        prefill_latency_ms = req.input_tokens * 0.01 * req.batch_size / req.tensor_parallel
-        decode_latency_ms = req.output_tokens * 0.5 / req.tensor_parallel
-        total_latency_ms = prefill_latency_ms + decode_latency_ms
+        # Communication utilization for tensor parallel
+        import math
+        comm_util = 0.15 * math.log2(req.tensor_parallel) if req.tensor_parallel > 1 else 0.0
 
         estimated = pm.estimate_from_simulation_result(
             latency_ms=total_latency_ms,
             compute_util=compute_util,
             mem_util=mem_util,
+            comm_util=comm_util,
             num_accel=req.num_accelerators,
         )
 
@@ -265,7 +311,8 @@ async def simulate_serving(req: ServingSimulationRequest):
 async def analyze_batch(req: BatchAnalysisRequest):
     """Single batch analysis using GenZ analytical engine."""
     try:
-        from llm_memory_calculator.genz import prefill_moddeling, decode_moddeling
+        from llm_memory_calculator.genz.serving import get_modeling_functions
+        prefill_moddeling, decode_moddeling = get_modeling_functions(req.hardware)
 
         prefill_result = prefill_moddeling(
             model=req.model, batch_size=req.batch_size, input_tokens=req.input_tokens,

@@ -32,7 +32,7 @@ class CacheLevel:
         # Cache state
         self.tags = np.zeros((self.num_sets, config.associativity), dtype=np.uint64)
         self.valid = np.zeros((self.num_sets, config.associativity), dtype=bool)
-        self.lru = np.zeros((self.num_sets, config.associativity), dtype=np.uint8)
+        self.lru = np.zeros((self.num_sets, config.associativity), dtype=np.uint32)
         
         # Statistics
         self.hits = 0
@@ -155,40 +155,60 @@ class CacheHierarchy:
             'dram_access_rate': dram_accesses / len(accesses) if accesses else 0
         }
         
+    def _get_bytes_per_element(self, operator) -> int:
+        """Get bytes per element based on operator's system precision."""
+        # Try to get from operator's system context
+        bits = 'fp32'
+        if hasattr(operator, '_system') and hasattr(operator._system, 'base_system'):
+            bits = getattr(operator._system.base_system, 'bits', 'fp32')
+        _precision_bytes = {'fp32': 4, 'f32': 4, 'bf16': 2, 'fp16': 2, 'int8': 1}
+        return _precision_bytes.get(bits, 4)
+
     def analyze_operator_access_pattern(self, operator) -> List[MemoryAccess]:
         """Convert operator access pattern to memory accesses"""
         accesses = []
-        
+        bpe = self._get_bytes_per_element(operator)
+
         # Analyze based on operator type
         op_type = operator.__class__.__name__
-        
+
         if op_type == 'GEMM':
-            # GEMM has predictable access patterns
+            # Model cache-blocked GEMM (MKL/oneDNN uses L2-sized tiles)
             M, N, K = operator.get_gemms()[:3]
-            
-            # Use sampling approach for large matrices
-            # Scale samples with matrix size
-            total_accesses_a = M * K
-            total_accesses_b = K * N
-            
-            # Use sqrt scaling for balanced performance
-            num_samples_a = min(max(100, int(np.sqrt(total_accesses_a) * 5)), 10000)
-            num_samples_b = min(max(100, int(np.sqrt(total_accesses_b) * 5)), 10000)
-            
-            # Access pattern for A matrix (M x K) using random sampling
-            for _ in range(num_samples_a):
-                i = np.random.randint(0, M)
-                k = np.random.randint(0, K)
-                addr = i * K + k
-                accesses.append(MemoryAccess(addr * 4, 4, True))  # 4 bytes for FP32
-                    
-            # Access pattern for B matrix (K x N) - different base address
-            base_b = M * K * 4
-            for _ in range(num_samples_b):
-                k = np.random.randint(0, K)
-                j = np.random.randint(0, N)
-                addr = base_b + k * N + j
-                accesses.append(MemoryAccess(addr * 4, 4, True))
+
+            # Tile sizes typical of optimized BLAS (fit in L2 cache)
+            tile_m = min(M, 64)
+            tile_n = min(N, 256)
+            tile_k = min(K, 256)
+
+            # Cap total accesses for simulation performance
+            max_tile_iters = 500
+            tile_count = 0
+
+            base_b = M * K * bpe
+            for tm_start in range(0, M, tile_m):
+                for tn_start in range(0, N, tile_n):
+                    for tk_start in range(0, K, tile_k):
+                        tile_count += 1
+                        if tile_count > max_tile_iters:
+                            break
+                        actual_tm = min(tile_m, M - tm_start)
+                        actual_tk = min(tile_k, K - tk_start)
+                        actual_tn = min(tile_n, N - tn_start)
+
+                        # A tile: rows of A accessed sequentially
+                        for i in range(min(actual_tm, 8)):  # Sample rows
+                            addr = (tm_start + i) * K + tk_start
+                            accesses.append(MemoryAccess(addr * bpe, actual_tk * bpe, True))
+
+                        # B tile: rows of B accessed sequentially
+                        for k in range(min(actual_tk, 8)):  # Sample rows
+                            addr = base_b + (tk_start + k) * N + tn_start
+                            accesses.append(MemoryAccess(addr * bpe, actual_tn * bpe, True))
+                    if tile_count > max_tile_iters:
+                        break
+                if tile_count > max_tile_iters:
+                    break
                     
         elif op_type == 'Logit':
             # Attention patterns are more complex
@@ -219,8 +239,8 @@ class CacheHierarchy:
                     
                     # Sample within the D dimension
                     d_accesses = min(D, 64)
-                    accesses.append(MemoryAccess(k_addr * 4, d_accesses * 4, True, D))
-                    accesses.append(MemoryAccess(v_addr * 4, d_accesses * 4, True, D))
+                    accesses.append(MemoryAccess(k_addr * bpe, d_accesses * bpe, True, D))
+                    accesses.append(MemoryAccess(v_addr * bpe, d_accesses * bpe, True, D))
             else:
                 # Prefill: M=N=seq_len, quadratic scaling
                 total_accesses = B * H * M * N  # Total Q*K^T operations
@@ -243,8 +263,8 @@ class CacheHierarchy:
                     
                     # Simulate accessing part of the D dimension
                     d_accesses = min(D, 64)  # Access up to 64 elements
-                    accesses.append(MemoryAccess(q_addr * 4, d_accesses * 4, True, D))
-                    accesses.append(MemoryAccess(k_addr * 4, d_accesses * 4, True, D))
+                    accesses.append(MemoryAccess(q_addr * bpe, d_accesses * bpe, True, D))
+                    accesses.append(MemoryAccess(k_addr * bpe, d_accesses * bpe, True, D))
                 
         elif op_type == 'Attend':
             # Attend operation (processing attention scores)
@@ -267,8 +287,8 @@ class CacheHierarchy:
                     v_addr = k_addr + B * H * N * D  # V follows K in memory
                     
                     d_accesses = min(D, 64)
-                    accesses.append(MemoryAccess(k_addr * 4, d_accesses * 4, True, D))
-                    accesses.append(MemoryAccess(v_addr * 4, d_accesses * 4, True, D))
+                    accesses.append(MemoryAccess(k_addr * bpe, d_accesses * bpe, True, D))
+                    accesses.append(MemoryAccess(v_addr * bpe, d_accesses * bpe, True, D))
             else:
                 # Prefill: similar to Logit pattern
                 total_accesses = B * H * M * N
@@ -283,7 +303,7 @@ class CacheHierarchy:
                     
                     # Access attention scores
                     addr = ((b * H + h) * M + i) * N + j
-                    accesses.append(MemoryAccess(addr * 4, 4, True))
+                    accesses.append(MemoryAccess(addr * bpe, bpe, True))
                     
         elif op_type == 'FC':
             # Fully connected layer
@@ -309,7 +329,7 @@ class CacheHierarchy:
                     j = np.random.randint(0, N)
                     addr = M * K + k * N + j
                     
-                accesses.append(MemoryAccess(addr * 4, 4, True))
+                accesses.append(MemoryAccess(addr * bpe, bpe, True))
         else:
             # Default pattern for other operators
             # Estimate based on compute complexity

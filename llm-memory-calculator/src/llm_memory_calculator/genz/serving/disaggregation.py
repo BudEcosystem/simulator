@@ -42,34 +42,32 @@ class DisaggregationAnalyzer:
         """
         prefill_lat, decode_lat = self._get_latencies(input_tokens, output_tokens)
 
-        # Compute KV transfer overhead
-        kv_transfer_bytes = self._estimate_kv_bytes(input_tokens)
-        kv_transfer_time_ms = (kv_transfer_bytes / (kv_transfer_bw_gbps * 1e9)) * 1000
-
-        # Prefill throughput: instances * (1000 / prefill_latency)
+        # Compute throughput first (needed for M/M/1 queuing model)
         prefill_throughput_rps = (
             prefill_instances * (1000.0 / prefill_lat) if prefill_lat > 0 else 0
         )
-
-        # Decode throughput: instances * (1000 / (decode_latency * output_tokens))
         decode_time_per_req = decode_lat * output_tokens
         decode_throughput_rps = (
             decode_instances * (1000.0 / decode_time_per_req)
             if decode_time_per_req > 0
             else 0
         )
-
-        # System throughput is min of prefill and decode capacity
         system_throughput_rps = min(prefill_throughput_rps, decode_throughput_rps)
 
-        # Effective TTFT includes KV transfer
+        # Compute KV transfer with M/M/1 queuing contention
+        kv_transfer_bytes = self._estimate_kv_bytes(input_tokens, output_tokens)
+        serialization_time_s = kv_transfer_bytes / (kv_transfer_bw_gbps * 1e9)
+        serialization_time_ms = serialization_time_s * 1000
+        # Link utilization = arrival_rate * service_time (capped for stability)
+        effective_arrival_rate = system_throughput_rps if system_throughput_rps > 0 else 1.0
+        link_utilization = min(effective_arrival_rate * serialization_time_s, 0.95)
+        queuing_factor = 1.0 / (1.0 - link_utilization) if link_utilization < 1.0 else 20.0
+        propagation_latency_ms = 0.01  # 10 microseconds intra-rack
+        kv_transfer_time_ms = serialization_time_ms * queuing_factor + propagation_latency_ms
+
         effective_ttft_ms = prefill_lat + kv_transfer_time_ms
 
-        bottleneck = (
-            "prefill"
-            if prefill_throughput_rps < decode_throughput_rps
-            else "decode"
-        )
+        bottleneck = "prefill" if prefill_throughput_rps < decode_throughput_rps else "decode"
 
         return {
             "prefill_instances": prefill_instances,
@@ -94,6 +92,8 @@ class DisaggregationAnalyzer:
                 if decode_throughput_rps > 0
                 else 0
             ),
+            "link_utilization": link_utilization,
+            "queuing_factor": queuing_factor,
         }
 
     def find_optimal_ratio(
@@ -211,19 +211,17 @@ class DisaggregationAnalyzer:
     def _get_latencies(self, input_tokens: int, output_tokens: int):
         """Get prefill and per-token decode latency from GenZ."""
         try:
-            from llm_memory_calculator.genz import (
-                prefill_moddeling,
-                decode_moddeling,
-            )
+            from llm_memory_calculator.genz.serving import get_modeling_functions
+            prefill_fn, decode_fn = get_modeling_functions(self._hardware)
 
-            prefill = prefill_moddeling(
+            prefill = prefill_fn(
                 model=self._model,
                 batch_size=1,
                 input_tokens=input_tokens,
                 system_name=self._hardware,
                 bits=self._precision,
             )
-            decode = decode_moddeling(
+            decode = decode_fn(
                 model=self._model,
                 batch_size=1,
                 input_tokens=input_tokens,
@@ -236,7 +234,7 @@ class DisaggregationAnalyzer:
             warnings.warn(f"GenZ modeling failed: {e}. Using heuristics.")
             return input_tokens * 0.01, 0.5
 
-    def _estimate_kv_bytes(self, input_tokens: int) -> int:
+    def _estimate_kv_bytes(self, input_tokens: int, output_tokens: int = 0) -> int:
         """Estimate KV cache bytes for transfer."""
         try:
             from llm_memory_calculator.genz.Models import get_configs
@@ -247,7 +245,7 @@ class DisaggregationAnalyzer:
             layers = getattr(config, "num_decoder_layers", 32)
             # K + V, bf16 = 2 bytes per element
             bytes_per_token = 2 * num_kv * hdim * layers * 2
-            return bytes_per_token * input_tokens
+            return bytes_per_token * (input_tokens + output_tokens)
         except Exception:
             # Default 8B model estimate
-            return input_tokens * 131072
+            return (input_tokens + output_tokens) * 131072

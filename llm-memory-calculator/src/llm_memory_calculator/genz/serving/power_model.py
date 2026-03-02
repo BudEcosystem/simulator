@@ -6,7 +6,23 @@ host CPU, cooling, storage, and misc components.
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Any
 
-from .constants import PowerComponent, PowerState, NS_PER_S, NS_PER_MS
+from .constants import (
+    PowerComponent, PowerState, NS_PER_S, NS_PER_MS,
+    GPU_IDLE_FRACTION, GPU_ACTIVE_FRACTION, GPU_STANDBY_FRACTION,
+    SERVER_POWER_FRACTION_GPU, SERVER_POWER_FRACTION_CPU,
+    SERVER_POWER_FRACTION_DRAM, SERVER_POWER_FRACTION_NVLINK,
+    SERVER_POWER_FRACTION_NIC, SERVER_POWER_FRACTION_COOLING,
+    SERVER_POWER_FRACTION_SSD,
+    DRAM_ENERGY_PJ_PER_BIT_HBM2E, DRAM_ACTIVITY_FACTOR,
+    CPU_IDLE_FRACTION, CPU_ACTIVE_FRACTION, CPU_STANDBY_FRACTION,
+    DRAM_ENERGY_PJ_PER_BIT_DDR5,
+    SERVER_POWER_FRACTION_CPU_COMPUTE,
+    SERVER_POWER_FRACTION_CPU_DRAM,
+    SERVER_POWER_FRACTION_CPU_COOLING,
+    SERVER_POWER_FRACTION_CPU_NIC,
+    SERVER_POWER_FRACTION_CPU_SSD,
+    SERVER_POWER_FRACTION_CPU_MISC,
+)
 
 
 @dataclass
@@ -42,55 +58,117 @@ class PowerConfig:
         if tdp is None:
             tdp = hw_config.get('tdp_watts', 300)
 
+        # Derive total system power from GPU TDP using physics-based fractions
+        system_total = num_accel * tdp / SERVER_POWER_FRACTION_GPU
+
         components = {
             PowerComponent.ACCELERATOR: ComponentPowerConfig(
                 component=PowerComponent.ACCELERATOR,
-                idle_power_w=tdp * 0.30,
-                active_power_w=tdp,
-                standby_power_w=tdp * 0.50,
+                idle_power_w=tdp * GPU_IDLE_FRACTION,
+                active_power_w=tdp * GPU_ACTIVE_FRACTION,
+                standby_power_w=tdp * GPU_STANDBY_FRACTION,
                 count=num_accel,
+            ),
+            PowerComponent.HOST_CPU: ComponentPowerConfig(
+                component=PowerComponent.HOST_CPU,
+                idle_power_w=system_total * SERVER_POWER_FRACTION_CPU * 0.4,
+                active_power_w=system_total * SERVER_POWER_FRACTION_CPU,
+                count=1,
             ),
             PowerComponent.DRAM: ComponentPowerConfig(
                 component=PowerComponent.DRAM,
-                idle_power_w=5.0,
-                active_power_w=15.0,
-                energy_per_bit_pj=3.7,  # HBM2e typical
+                idle_power_w=system_total * SERVER_POWER_FRACTION_DRAM * 0.3,
+                active_power_w=system_total * SERVER_POWER_FRACTION_DRAM,
+                energy_per_bit_pj=DRAM_ENERGY_PJ_PER_BIT_HBM2E,
                 count=1,
             ),
             PowerComponent.INTERCONNECT: ComponentPowerConfig(
                 component=PowerComponent.INTERCONNECT,
-                idle_power_w=2.0,
-                active_power_w=10.0,
-                energy_per_bit_pj=5.0,  # NVLink typical
-                count=1,
-            ),
-            PowerComponent.HOST_CPU: ComponentPowerConfig(
-                component=PowerComponent.HOST_CPU,
-                idle_power_w=30.0,
-                active_power_w=80.0,
+                idle_power_w=system_total * SERVER_POWER_FRACTION_NVLINK * 0.2,
+                active_power_w=system_total * SERVER_POWER_FRACTION_NVLINK,
+                energy_per_bit_pj=5.0,
                 count=1,
             ),
             PowerComponent.COOLING: ComponentPowerConfig(
                 component=PowerComponent.COOLING,
-                idle_power_w=20.0,
-                active_power_w=50.0,
+                idle_power_w=system_total * SERVER_POWER_FRACTION_COOLING * 0.4,
+                active_power_w=system_total * SERVER_POWER_FRACTION_COOLING,
                 count=1,
             ),
             PowerComponent.STORAGE: ComponentPowerConfig(
                 component=PowerComponent.STORAGE,
-                idle_power_w=5.0,
-                active_power_w=10.0,
+                idle_power_w=system_total * SERVER_POWER_FRACTION_SSD * 0.5,
+                active_power_w=system_total * SERVER_POWER_FRACTION_SSD,
                 count=1,
             ),
             PowerComponent.MISC: ComponentPowerConfig(
                 component=PowerComponent.MISC,
-                idle_power_w=10.0,
-                active_power_w=15.0,
+                idle_power_w=system_total * SERVER_POWER_FRACTION_NIC * 0.3,
+                active_power_w=system_total * SERVER_POWER_FRACTION_NIC,
                 count=1,
             ),
         }
 
-        return cls(components=components, base_node_power_w=20.0)
+        return cls(components=components, base_node_power_w=0.0)
+
+    @classmethod
+    def from_cpu_config(cls, hw_config: dict, num_sockets: int = 1) -> 'PowerConfig':
+        """Create PowerConfig for a CPU-based system.
+
+        For CPU servers the CPU itself is the compute element (ACCELERATOR).
+        There is no separate HOST_CPU component — its budget is folded into MISC.
+        Uses DDR5 energy-per-bit and UPI/IF for interconnect.
+        """
+        tdp = hw_config.get('Power')
+        if tdp is None:
+            tdp = hw_config.get('cost', {}).get('tdp_watts', 300)
+
+        # Derive total system power from CPU TDP
+        system_total = num_sockets * tdp / SERVER_POWER_FRACTION_CPU_COMPUTE
+
+        components = {
+            PowerComponent.ACCELERATOR: ComponentPowerConfig(
+                component=PowerComponent.ACCELERATOR,
+                idle_power_w=tdp * CPU_IDLE_FRACTION,
+                active_power_w=tdp * CPU_ACTIVE_FRACTION,
+                standby_power_w=tdp * CPU_STANDBY_FRACTION,
+                count=num_sockets,
+            ),
+            PowerComponent.DRAM: ComponentPowerConfig(
+                component=PowerComponent.DRAM,
+                idle_power_w=system_total * SERVER_POWER_FRACTION_CPU_DRAM * 0.3,
+                active_power_w=system_total * SERVER_POWER_FRACTION_CPU_DRAM,
+                energy_per_bit_pj=DRAM_ENERGY_PJ_PER_BIT_DDR5,
+                count=1,
+            ),
+            PowerComponent.INTERCONNECT: ComponentPowerConfig(
+                component=PowerComponent.INTERCONNECT,
+                idle_power_w=system_total * SERVER_POWER_FRACTION_CPU_NIC * 0.2,
+                active_power_w=system_total * SERVER_POWER_FRACTION_CPU_NIC,
+                energy_per_bit_pj=8.0,  # UPI/Infinity Fabric pJ/bit
+                count=1,
+            ),
+            PowerComponent.COOLING: ComponentPowerConfig(
+                component=PowerComponent.COOLING,
+                idle_power_w=system_total * SERVER_POWER_FRACTION_CPU_COOLING * 0.4,
+                active_power_w=system_total * SERVER_POWER_FRACTION_CPU_COOLING,
+                count=1,
+            ),
+            PowerComponent.STORAGE: ComponentPowerConfig(
+                component=PowerComponent.STORAGE,
+                idle_power_w=system_total * SERVER_POWER_FRACTION_CPU_SSD * 0.5,
+                active_power_w=system_total * SERVER_POWER_FRACTION_CPU_SSD,
+                count=1,
+            ),
+            PowerComponent.MISC: ComponentPowerConfig(
+                component=PowerComponent.MISC,
+                idle_power_w=system_total * SERVER_POWER_FRACTION_CPU_MISC * 0.3,
+                active_power_w=system_total * SERVER_POWER_FRACTION_CPU_MISC,
+                count=1,
+            ),
+        }
+
+        return cls(components=components, base_node_power_w=0.0)
 
 
 class PowerModel:
@@ -145,7 +223,7 @@ class PowerModel:
         if not cfg:
             return 0.0
         data_bits = data_bytes * 8
-        energy_pj = data_bits * cfg.energy_per_bit_pj
+        energy_pj = data_bits * cfg.energy_per_bit_pj / DRAM_ACTIVITY_FACTOR
         energy_j = energy_pj * 1e-12
         self._energy_j[PowerComponent.DRAM] += energy_j
         return energy_j
@@ -170,6 +248,7 @@ class PowerModel:
         data_read_bytes: float = 0,
         data_comm_bytes: float = 0,
         num_accel: int = 1,
+        pue: float = 1.0,
     ) -> Dict[str, Any]:
         """Estimate power from high-level simulation results (analytical mode).
 
@@ -221,22 +300,28 @@ class PowerModel:
             total_energy += icn_duration_e
             result["interconnect_w"] = icn_power
 
-        # Other components at idle-ish
-        for comp in [
-            PowerComponent.HOST_CPU,
-            PowerComponent.COOLING,
-            PowerComponent.STORAGE,
-            PowerComponent.MISC,
-        ]:
+        # Other components with utilization-based power
+        for comp in [PowerComponent.HOST_CPU, PowerComponent.COOLING,
+                     PowerComponent.STORAGE, PowerComponent.MISC]:
             cfg = self._config.components.get(comp)
             if cfg:
-                comp_energy = cfg.idle_power_w * cfg.count * duration_s
+                if comp == PowerComponent.HOST_CPU:
+                    util = compute_util
+                elif comp == PowerComponent.COOLING:
+                    util = max(compute_util, mem_util, comm_util)
+                else:
+                    util = 0.1  # minimal background activity
+                comp_power = cfg.idle_power_w + (cfg.active_power_w - cfg.idle_power_w) * util
+                comp_energy = comp_power * cfg.count * duration_s
                 self._energy_j[comp] += comp_energy
                 total_energy += comp_energy
 
         # Base node power
         base_energy = self._config.base_node_power_w * duration_s
         total_energy += base_energy
+
+        # Apply Power Usage Effectiveness (facility overhead)
+        total_energy *= pue
 
         result["total_energy_j"] = total_energy
         result["avg_power_w"] = total_energy / duration_s if duration_s > 0 else 0.0
@@ -286,4 +371,36 @@ class PowerModel:
             )
         hw_config = HARDWARE_CONFIGS[name]
         power_config = PowerConfig.from_hardware_config(hw_config, num_accel)
+        return cls(power_config)
+
+    @classmethod
+    def from_cpu_hardware(cls, name: str, num_sockets: int = 1) -> 'PowerModel':
+        """Create PowerModel for a CPU hardware entry.
+
+        Looks up the hardware in HARDWARE_CONFIGS first, then falls back to
+        CPU_PRESETS.  Uses :meth:`PowerConfig.from_cpu_config` which models
+        the CPU as the accelerator with DDR5 memory and UPI interconnect.
+        """
+        from llm_memory_calculator.hardware.configs import HARDWARE_CONFIGS
+        if name in HARDWARE_CONFIGS:
+            hw_config = HARDWARE_CONFIGS[name]
+        else:
+            from llm_memory_calculator.genz.cpu.cpu_configs import CPU_PRESETS
+            preset_key = next(
+                (k for k in CPU_PRESETS if k.lower() == name.lower()), None,
+            )
+            if preset_key is None:
+                raise ValueError(
+                    f"Unknown CPU hardware: {name}. "
+                    f"Not found in HARDWARE_CONFIGS or CPU_PRESETS."
+                )
+            preset = CPU_PRESETS[preset_key]
+            # Synthesize a minimal hw_config dict from preset base_params
+            bp = preset['base_params']
+            cpu_cfg = preset.get('cpu_specific')
+            tdp = 300  # default
+            if cpu_cfg and hasattr(cpu_cfg, 'sockets'):
+                num_sockets = cpu_cfg.sockets
+            hw_config = {'Power': tdp, 'Memory_size': bp.get('off_chip_mem_size', 512 * 1024) / 1024}
+        power_config = PowerConfig.from_cpu_config(hw_config, num_sockets)
         return cls(power_config)

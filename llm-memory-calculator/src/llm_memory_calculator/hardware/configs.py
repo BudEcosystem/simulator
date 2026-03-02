@@ -146,9 +146,9 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
     'H100_GPU': {
         'name': 'H100_GPU',
-        'Flops': 989,
+        'Flops': 1979,
         'Memory_size': 80,
-        'Memory_BW': 3400,
+        'Memory_BW': 3350,
         'ICN': 450,
         'real_values': True,
         'type': 'gpu',
@@ -176,6 +176,58 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
             'runpod': 2.39,
             'vast_ai': 2.00,
             'purchase_price_usd': 30000,
+            'tdp_watts': 700,
+        },
+    },
+    'H100_PCIe_GPU': {
+        'name': 'H100_PCIe_GPU',
+        'Flops': 1513,
+        'Memory_size': 80,
+        'Memory_BW': 2000,
+        'ICN': 300,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'HOPPER',
+        'generation': 'Data Center GPU',
+        'compute_capability': '9.0',
+        'release_year': 2022,
+        'tensor_cores': 'gen4',
+        'rt_cores': None,
+        'memory_type': 'HBM3',
+        'interconnect': 'pcie5',
+        'interconnect_bandwidth_gbps': 128,
+        'pci_ids': ['2331'],
+        'aliases': ['H100 PCIe', 'H100-PCIE', 'H100-PCIe-80GB', 'NVIDIA H100 PCIe'],
+        'cost': {
+            'aws_on_demand': 3.50,
+            'purchase_price_usd': 25000,
+            'tdp_watts': 350,
+        },
+    },
+    'H200_GPU': {
+        'name': 'H200_GPU',
+        'Flops': 1979,
+        'Memory_size': 141,
+        'Memory_BW': 4800,
+        'ICN': 450,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'HOPPER',
+        'generation': 'Data Center GPU',
+        'compute_capability': '9.0',
+        'release_year': 2024,
+        'tensor_cores': 'gen4',
+        'rt_cores': None,
+        'memory_type': 'HBM3e',
+        'interconnect': 'nvlink',
+        'interconnect_bandwidth_gbps': 900,
+        'pci_ids': ['2335'],
+        'aliases': ['H200', 'H200-141GB', 'H200-SXM', 'NVIDIA H200'],
+        'cost': {
+            'aws_on_demand': 5.50,
+            'purchase_price_usd': 35000,
             'tdp_watts': 700,
         },
     },
@@ -255,6 +307,29 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
             'lambda_labs': 7.00,
             'coreweave': 7.50,
             'purchase_price_usd': 70000,
+            'tdp_watts': 1000,
+        },
+    },
+    'B200_GPU': {
+        'name': 'B200_GPU',
+        'Flops': 2250,
+        'Memory_size': 192,
+        'Memory_BW': 8000,
+        'ICN': 900,
+        'ICN_LL': 0.25,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'BLACKWELL',
+        'generation': 'Data Center GPU',
+        'compute_capability': '10.0',
+        'release_year': 2024,
+        'tensor_cores': 'gen5',
+        'rt_cores': None,
+        'memory_type': 'HBM3e',
+        'aliases': ['B200', 'B200-192GB', 'NVIDIA B200'],
+        'cost': {
+            'purchase_price_usd': 40000,
             'tdp_watts': 1000,
         },
     },
@@ -710,7 +785,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'Flops': 1307,
         'Memory_size': 192,
         'Memory_BW': 5300,
-        'ICN': 400,
+        'ICN': 896,
         'real_values': True,
         'type': 'gpu',
         'manufacturer': 'AMD',
@@ -1084,6 +1159,22 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
     # Merge specific CPU SKUs
     **CPU_CONFIGS,
 }
+
+def is_cpu_hardware(hardware_name: str) -> bool:
+    """Check if hardware name refers to a CPU (in HARDWARE_CONFIGS or CPU_PRESETS).
+
+    Checks the ``type`` field of HARDWARE_CONFIGS entries first, then falls
+    back to a case-insensitive lookup in ``CPU_PRESETS``.
+    """
+    if hardware_name in HARDWARE_CONFIGS:
+        return HARDWARE_CONFIGS[hardware_name].get('type') == 'cpu'
+    # Fall back to CPU_PRESETS for preset names not merged into HARDWARE_CONFIGS
+    try:
+        from llm_memory_calculator.genz.cpu.cpu_configs import CPU_PRESETS
+        return hardware_name.lower() in [k.lower() for k in CPU_PRESETS]
+    except ImportError:
+        return False
+
 
 def get_hardware_names() -> list:
     """Get list of all hardware names."""

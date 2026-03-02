@@ -17,14 +17,16 @@ class SLOTargets:
     ttft_target_ns: int = 500_000_000       # 500 ms
     tpot_target_ns: int = 100_000_000       # 100 ms
     e2e_target_ns: int = 30_000_000_000     # 30 s
+    itl_target_ns: int = 200_000_000        # 200 ms
 
     @classmethod
-    def from_ms(cls, ttft_ms: float, tpot_ms: float, e2e_ms: float) -> 'SLOTargets':
+    def from_ms(cls, ttft_ms: float, tpot_ms: float, e2e_ms: float, itl_ms: float = 200.0) -> 'SLOTargets':
         """Create targets from millisecond values."""
         return cls(
             ttft_target_ns=int(ttft_ms * NS_PER_MS),
             tpot_target_ns=int(tpot_ms * NS_PER_MS),
             e2e_target_ns=int(e2e_ms * NS_PER_MS),
+            itl_target_ns=int(itl_ms * NS_PER_MS),
         )
 
 
@@ -57,7 +59,8 @@ class SLOTracker:
         ttft_ok = request.ttft_ns <= self.targets.ttft_target_ns
         tpot_ok = request.tpot_ns <= self.targets.tpot_target_ns
         e2e_ok = request.e2e_ns <= self.targets.e2e_target_ns
-        if ttft_ok and tpot_ok and e2e_ok:
+        itl_ok = all(v <= self.targets.itl_target_ns for v in request.itl_ns) if request.itl_ns else True
+        if ttft_ok and tpot_ok and e2e_ok and itl_ok:
             self._slo_met_count += 1
 
     def ttft_violation_rate(self) -> float:
@@ -80,6 +83,13 @@ class SLOTracker:
             return 0.0
         violations = sum(1 for v in self._e2e_values if v > self.targets.e2e_target_ns)
         return violations / len(self._e2e_values)
+
+    def itl_violation_rate(self) -> float:
+        """Fraction of ALL inter-token latency values exceeding the ITL target."""
+        if not self._itl_values:
+            return 0.0
+        violations = sum(1 for v in self._itl_values if v > self.targets.itl_target_ns)
+        return violations / len(self._itl_values)
 
     def _percentiles(self, values: List[int]) -> Dict[str, float]:
         """Compute p50, p95, p99 percentiles from a list of values."""
@@ -134,6 +144,7 @@ class SLOTracker:
                 "percentiles_ns": self.e2e_percentiles(),
             },
             "itl": {
+                "violation_rate": self.itl_violation_rate(),
                 "percentiles_ns": self.itl_percentiles(),
             },
         }

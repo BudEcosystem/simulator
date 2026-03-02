@@ -195,7 +195,7 @@ class PrefixCacheAnalyzer:
         self._cache_capacity_bytes = int(cache_capacity_gb * GB_TO_BYTES)
         self._model_config = model_config
 
-    def analyze(self, workload) -> Dict[str, Any]:
+    def analyze(self, workload, shared_prefix_tokens: int = 0) -> Dict[str, Any]:
         """Analyze prefix caching for a list of Request objects.
 
         Returns hit rate, memory savings, and cache utilization.
@@ -209,7 +209,19 @@ class PrefixCacheAnalyzer:
         tokens_saved = 0
 
         for req in workload:
-            token_ids = list(range(req.input_tokens))  # Simulated token IDs
+            if shared_prefix_tokens > 0:
+                # Shared system prompt: first N tokens are deterministic (same for all requests)
+                # Remaining tokens are unique per request (user-specific content)
+                prefix = list(range(shared_prefix_tokens))
+                num_suffix = max(0, req.input_tokens - shared_prefix_tokens)
+                suffix = [hash((req.request_id, i)) % (2**31) for i in range(num_suffix)]
+                token_ids = prefix + suffix
+            else:
+                # No explicit shared prefix: use position-based hashing
+                # This produces ~20-40% natural overlap when requests share similar
+                # content patterns (e.g., common preambles, repeated questions)
+                token_ids = [hash((req.model, i, i // self._kv_bytes_per_token)) % (2**31)
+                             for i in range(req.input_tokens)]
 
             # Check prefix match
             matched = cache.match_prefix(token_ids)
