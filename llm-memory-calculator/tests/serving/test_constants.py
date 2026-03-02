@@ -18,12 +18,13 @@ from llm_memory_calculator.genz.serving.constants import (
 class TestMemoryTier:
     def test_has_expected_members(self):
         assert MemoryTier.DEVICE_HBM.value == "device_hbm"
+        assert MemoryTier.DEVICE_DRAM.value == "device_dram"
         assert MemoryTier.HOST_DDR.value == "host_ddr"
         assert MemoryTier.CXL.value == "cxl"
         assert MemoryTier.NVME.value == "nvme"
 
     def test_member_count(self):
-        assert len(MemoryTier) == 4
+        assert len(MemoryTier) == 5
 
     def test_ordering_by_value(self):
         tiers = sorted(MemoryTier, key=lambda t: t.value)

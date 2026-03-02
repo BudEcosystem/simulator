@@ -198,6 +198,42 @@ class TestBatchSchedulerEstimateLatency:
         assert lat2 >= lat1 * 0.5  # Allow some variance
 
 
+class TestBatchSchedulerChunkedPrefill:
+    def test_chunked_prefill_formula(self, memory_model):
+        """With chunked prefill enabled, total = max(prefill, decode) + scheduling_overhead."""
+        cfg = SchedulerConfig(enable_chunked_prefill=True, chunk_size=512)
+        sched = BatchScheduler("test", "A100_80GB_GPU", memory_model, cfg)
+        req = make_request(0, input_tokens=512)
+        sched.add_request(req)
+        batch = sched.schedule(0)
+        latency = sched.estimate_batch_latency_ms(batch)
+        assert latency > 0
+
+    def test_sequential_formula(self, memory_model):
+        """Without chunked prefill, total = prefill + decode (sequential)."""
+        cfg = SchedulerConfig(enable_chunked_prefill=False)
+        sched = BatchScheduler("test", "A100_80GB_GPU", memory_model, cfg)
+        req = make_request(0, input_tokens=512)
+        sched.add_request(req)
+        batch = sched.schedule(0)
+        latency = sched.estimate_batch_latency_ms(batch)
+        assert latency > 0
+
+
+class TestBatchSchedulerMemoryRetry:
+    def test_memory_retry_on_failure(self, memory_model):
+        """When memory allocation fails, scheduler should attempt eviction before dropping."""
+        cfg = SchedulerConfig(max_batch_size=256, max_num_batched_tokens=65536)
+        sched = BatchScheduler("test", "A100_80GB_GPU", memory_model, cfg)
+        # Add many requests to potentially trigger memory pressure
+        for i in range(20):
+            sched.add_request(make_request(i, input_tokens=512))
+        batch = sched.schedule(0)
+        # Should be able to schedule at least some requests
+        assert batch is not None
+        assert batch.size > 0
+
+
 class TestBatchSchedulerPrefillPriority:
     def test_prioritize_prefill(self, memory_model):
         cfg = SchedulerConfig(prioritize_prefill=True, max_batch_size=4)

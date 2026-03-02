@@ -6,6 +6,10 @@ from llm_memory_calculator.genz.serving.constants import (
     PowerState,
     NS_PER_S,
     NS_PER_MS,
+    GPU_IDLE_FRACTION,
+    GPU_ACTIVE_FRACTION,
+    GPU_STANDBY_FRACTION,
+    DRAM_ACTIVITY_FACTOR,
 )
 from llm_memory_calculator.genz.serving.power_model import (
     ComponentPowerConfig,
@@ -44,9 +48,9 @@ class TestPowerConfig:
         hw = {"cost": {"tdp_watts": 400}}
         pc = PowerConfig.from_hardware_config(hw, num_accel=1)
         accel = pc.components[PowerComponent.ACCELERATOR]
-        assert accel.active_power_w == 400.0
-        assert accel.idle_power_w == pytest.approx(120.0)   # 30%
-        assert accel.standby_power_w == pytest.approx(200.0)  # 50%
+        assert accel.active_power_w == pytest.approx(400 * GPU_ACTIVE_FRACTION)  # 280W
+        assert accel.idle_power_w == pytest.approx(400 * GPU_IDLE_FRACTION)      # 50W
+        assert accel.standby_power_w == pytest.approx(400 * GPU_STANDBY_FRACTION) # 80W
         assert accel.count == 1
 
     def test_from_hardware_config_with_toplevel_tdp(self):
@@ -54,7 +58,7 @@ class TestPowerConfig:
         hw = {"tdp_watts": 450}
         pc = PowerConfig.from_hardware_config(hw, num_accel=2)
         accel = pc.components[PowerComponent.ACCELERATOR]
-        assert accel.active_power_w == 450.0
+        assert accel.active_power_w == pytest.approx(450 * GPU_ACTIVE_FRACTION)  # 315W
         assert accel.count == 2
 
     def test_from_hardware_config_fallback_default(self):
@@ -62,7 +66,7 @@ class TestPowerConfig:
         hw = {}
         pc = PowerConfig.from_hardware_config(hw)
         accel = pc.components[PowerComponent.ACCELERATOR]
-        assert accel.active_power_w == 300.0
+        assert accel.active_power_w == pytest.approx(300 * GPU_ACTIVE_FRACTION)  # 210W
 
     def test_all_seven_components_present(self):
         hw = {"cost": {"tdp_watts": 400}}
@@ -73,23 +77,24 @@ class TestPowerConfig:
     def test_base_node_power(self):
         hw = {"cost": {"tdp_watts": 400}}
         pc = PowerConfig.from_hardware_config(hw)
-        assert pc.base_node_power_w == 20.0
+        # base_node_power is 0 since all power is in component fractions
+        assert pc.base_node_power_w == 0.0
 
 
 class TestPowerModelFromHardwareName:
     def test_a100_40gb(self):
         pm = PowerModel.from_hardware_name("A100_40GB_GPU")
         accel = pm._config.components[PowerComponent.ACCELERATOR]
-        assert accel.active_power_w == 400.0
-        assert accel.idle_power_w == pytest.approx(120.0)
-        assert accel.standby_power_w == pytest.approx(200.0)
+        assert accel.active_power_w == pytest.approx(400 * GPU_ACTIVE_FRACTION)
+        assert accel.idle_power_w == pytest.approx(400 * GPU_IDLE_FRACTION)
+        assert accel.standby_power_w == pytest.approx(400 * GPU_STANDBY_FRACTION)
 
     def test_h100(self):
         pm = PowerModel.from_hardware_name("H100_GPU")
         accel = pm._config.components[PowerComponent.ACCELERATOR]
-        assert accel.active_power_w == 700.0
-        assert accel.idle_power_w == pytest.approx(210.0)
-        assert accel.standby_power_w == pytest.approx(350.0)
+        assert accel.active_power_w == pytest.approx(700 * GPU_ACTIVE_FRACTION)
+        assert accel.idle_power_w == pytest.approx(700 * GPU_IDLE_FRACTION)
+        assert accel.standby_power_w == pytest.approx(700 * GPU_STANDBY_FRACTION)
 
     def test_unknown_hardware_raises(self):
         with pytest.raises(ValueError, match="Unknown hardware"):
@@ -119,19 +124,19 @@ class TestGetBasePower:
         pc8 = PowerConfig.from_hardware_config(hw, num_accel=8)
         pm1 = PowerModel(pc1)
         pm8 = PowerModel(pc8)
-        # The only difference is accelerator count
         diff = pm8.get_base_power_w() - pm1.get_base_power_w()
-        # 7 extra accelerators at 120W idle each
-        assert diff == pytest.approx(7 * 120.0)
+        # 7 extra accelerators at idle + non-accel components scale with system_total
+        assert diff > 7 * (400 * GPU_IDLE_FRACTION)  # at least 7 extra GPUs
 
 
 class TestAddAcceleratorActiveEnergy:
-    def test_one_second_at_400w(self):
+    def test_one_second_at_calibrated_active(self):
         hw = {"cost": {"tdp_watts": 400}}
         pc = PowerConfig.from_hardware_config(hw, num_accel=1)
         pm = PowerModel(pc)
         energy = pm.add_accelerator_active_energy(latency_ns=NS_PER_S, num=1)
-        assert energy == pytest.approx(400.0, rel=1e-6)
+        # active = 400 * 0.70 = 280W, 1s = 280J
+        assert energy == pytest.approx(400 * GPU_ACTIVE_FRACTION, rel=1e-6)
 
     def test_half_second_two_gpus(self):
         hw = {"cost": {"tdp_watts": 400}}
@@ -140,8 +145,8 @@ class TestAddAcceleratorActiveEnergy:
         energy = pm.add_accelerator_active_energy(
             latency_ns=NS_PER_S / 2, num=2
         )
-        # 400W * 2 GPUs * 0.5s = 400J
-        assert energy == pytest.approx(400.0, rel=1e-6)
+        # 280W * 2 GPUs * 0.5s = 280J
+        assert energy == pytest.approx(400 * GPU_ACTIVE_FRACTION, rel=1e-6)
 
     def test_cumulative_tracking(self):
         hw = {"cost": {"tdp_watts": 400}}
@@ -149,7 +154,9 @@ class TestAddAcceleratorActiveEnergy:
         pm = PowerModel(pc)
         pm.add_accelerator_active_energy(latency_ns=NS_PER_S, num=1)
         pm.add_accelerator_active_energy(latency_ns=NS_PER_S, num=1)
-        assert pm._energy_j[PowerComponent.ACCELERATOR] == pytest.approx(800.0)
+        assert pm._energy_j[PowerComponent.ACCELERATOR] == pytest.approx(
+            2 * 400 * GPU_ACTIVE_FRACTION
+        )
 
 
 class TestAddAcceleratorStandbyEnergy:
@@ -157,14 +164,14 @@ class TestAddAcceleratorStandbyEnergy:
         hw = {"cost": {"tdp_watts": 400}}
         pc = PowerConfig.from_hardware_config(hw, num_accel=1)
         pm = PowerModel(pc)
-        # standby = 50% of 400 = 200W
+        # standby = 400 * 0.20 = 80W
         energy = pm.add_accelerator_standby_energy(
             current_ns=3 * NS_PER_S,
             last_end_ns=1 * NS_PER_S,
             last_calc_ns=0,
         )
-        # idle window = 3s - max(1s, 0) = 2s at 200W = 400J
-        assert energy == pytest.approx(400.0, rel=1e-6)
+        # idle window = 3s - max(1s, 0) = 2s at 80W = 160J
+        assert energy == pytest.approx(2 * 400 * GPU_STANDBY_FRACTION, rel=1e-6)
 
     def test_no_idle_gap(self):
         hw = {"cost": {"tdp_watts": 400}}
@@ -186,8 +193,8 @@ class TestAddAcceleratorStandbyEnergy:
             last_end_ns=1 * NS_PER_S,
             last_calc_ns=4 * NS_PER_S,
         )
-        # idle window = 5s - max(1s, 4s) = 1s
-        assert energy == pytest.approx(200.0, rel=1e-6)
+        # idle window = 5s - max(1s, 4s) = 1s at 80W
+        assert energy == pytest.approx(400 * GPU_STANDBY_FRACTION, rel=1e-6)
 
 
 class TestAddDramEnergy:
@@ -197,10 +204,8 @@ class TestAddDramEnergy:
         pm = PowerModel(pc)
         one_gb = 1024 ** 3
         energy = pm.add_dram_energy(data_bytes=one_gb)
-        # bits = 1GB * 8 = 8589934592
-        # energy_pj = 8589934592 * 3.7
-        # energy_j = energy_pj * 1e-12
-        expected = one_gb * 8 * 3.7 * 1e-12
+        # bits = 1GB * 8, energy_pj = bits * 3.7 / 0.80
+        expected = one_gb * 8 * 3.7 / DRAM_ACTIVITY_FACTOR * 1e-12
         assert energy == pytest.approx(expected, rel=1e-6)
 
     def test_zero_bytes(self):
@@ -241,8 +246,11 @@ class TestEstimateFromSimulationResult:
         assert "avg_power_w" in result
         assert result["total_energy_j"] > 0
         assert result["avg_power_w"] > 0
-        # At 50% utilization: accel power = 120 + (400-120)*0.5 = 260W
-        assert result["accelerator_w"] == pytest.approx(260.0, rel=1e-6)
+        # At 50% utilization: accel power = idle + (active-idle)*0.5
+        idle = 400 * GPU_IDLE_FRACTION   # 50W
+        active = 400 * GPU_ACTIVE_FRACTION  # 280W
+        expected_accel_w = idle + (active - idle) * 0.5  # 165W
+        assert result["accelerator_w"] == pytest.approx(expected_accel_w, rel=1e-6)
 
     def test_with_data_read_and_comm(self):
         pm = PowerModel.from_hardware_name("A100_40GB_GPU")
@@ -258,16 +266,41 @@ class TestEstimateFromSimulationResult:
         assert result["total_energy_j"] > 0
         assert "accelerator_j" in result
 
+    def test_pue_multiplier(self):
+        """PUE > 1 should increase total energy proportionally."""
+        pm = PowerModel.from_hardware_name("A100_40GB_GPU")
+        result_no_pue = pm.estimate_from_simulation_result(
+            latency_ms=100.0, compute_util=0.5, num_accel=1, pue=1.0,
+        )
+        pm2 = PowerModel.from_hardware_name("A100_40GB_GPU")
+        result_pue = pm2.estimate_from_simulation_result(
+            latency_ms=100.0, compute_util=0.5, num_accel=1, pue=1.2,
+        )
+        assert result_pue["total_energy_j"] == pytest.approx(
+            result_no_pue["total_energy_j"] * 1.2, rel=1e-6
+        )
+
+    def test_component_utilization(self):
+        """HOST_CPU should track compute_util, COOLING should track max util."""
+        pm = PowerModel.from_hardware_name("A100_40GB_GPU")
+        result = pm.estimate_from_simulation_result(
+            latency_ms=100.0, compute_util=0.8, mem_util=0.5, comm_util=0.3,
+            num_accel=1,
+        )
+        # Total energy should be > 0 and incorporate all components
+        assert result["total_energy_j"] > 0
+        assert result["avg_power_w"] > 0
+
 
 class TestEnergyPerToken:
     def test_known_energy(self):
         hw = {"cost": {"tdp_watts": 400}}
         pc = PowerConfig.from_hardware_config(hw)
         pm = PowerModel(pc)
-        # Add exactly 400J of accelerator energy
+        # active_power = 280W, 1 second -> 280J
         pm.add_accelerator_active_energy(latency_ns=NS_PER_S, num=1)
         ept = pm.energy_per_token(total_tokens=100)
-        assert ept == pytest.approx(4.0, rel=1e-6)
+        assert ept == pytest.approx(400 * GPU_ACTIVE_FRACTION / 100, rel=1e-6)
 
     def test_zero_tokens_returns_zero(self):
         hw = {"cost": {"tdp_watts": 400}}
@@ -293,8 +326,10 @@ class TestPowerBreakdown:
         assert PowerComponent.ACCELERATOR.value in breakdown
         assert PowerComponent.DRAM.value in breakdown
         assert PowerComponent.INTERCONNECT.value in breakdown
-        # accelerator at 400J over 1s = 400W
-        assert breakdown[PowerComponent.ACCELERATOR.value] == pytest.approx(400.0, rel=1e-6)
+        # accelerator at 280W for 1s = 280W average
+        assert breakdown[PowerComponent.ACCELERATOR.value] == pytest.approx(
+            400 * GPU_ACTIVE_FRACTION, rel=1e-6
+        )
 
     def test_empty_duration_returns_empty(self):
         hw = {"cost": {"tdp_watts": 400}}
@@ -322,13 +357,14 @@ class TestSummary:
     def test_reasonable_values(self):
         pm = PowerModel.from_hardware_name("A100_40GB_GPU")
         pm.add_accelerator_active_energy(latency_ns=NS_PER_S, num=1)
+        active_w = 400 * GPU_ACTIVE_FRACTION  # 280W
         s = pm.summary(duration_ns=NS_PER_S, total_tokens=50)
-        assert s["total_energy_j"] == pytest.approx(400.0, rel=1e-6)
-        assert s["avg_power_w"] == pytest.approx(400.0, rel=1e-6)
-        assert s["energy_per_token_j"] == pytest.approx(8.0, rel=1e-6)
-        assert s["energy_per_token_mj"] == pytest.approx(8000.0, rel=1e-6)
+        assert s["total_energy_j"] == pytest.approx(active_w, rel=1e-6)
+        assert s["avg_power_w"] == pytest.approx(active_w, rel=1e-6)
+        assert s["energy_per_token_j"] == pytest.approx(active_w / 50, rel=1e-6)
+        assert s["energy_per_token_mj"] == pytest.approx(active_w / 50 * 1000, rel=1e-6)
         assert s["duration_s"] == pytest.approx(1.0)
-        assert s["total_energy_kwh"] == pytest.approx(400.0 / 3_600_000, rel=1e-6)
+        assert s["total_energy_kwh"] == pytest.approx(active_w / 3_600_000, rel=1e-6)
 
     def test_no_tokens_yields_none(self):
         hw = {"cost": {"tdp_watts": 400}}

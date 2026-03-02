@@ -193,18 +193,14 @@ class TestSensitivityAnalysis:
 
         # Should have entries for each tested parameter
         assert len(result["ranking"]) > 0
-        # Importance scores should sum to ~1
-        total_importance = sum(
-            result["sensitivity"][p]["importance"] for p in result["sensitivity"]
-        )
-        assert abs(total_importance - 1.0) < 0.01
+        assert result.get("method") == "morris_elementary_effects"
 
-        # Each parameter should have variance and range
+        # Each parameter should have Morris statistics
         for param, data in result["sensitivity"].items():
-            assert "variance" in data
-            assert "range" in data
-            assert "importance" in data
-            assert data["importance"] >= 0
+            assert "mu_star" in data
+            assert "mu" in data
+            assert "sigma" in data
+            assert data["mu_star"] >= 0
 
 
 class TestCustomSearchSpace:

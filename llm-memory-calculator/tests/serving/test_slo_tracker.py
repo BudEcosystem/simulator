@@ -48,12 +48,14 @@ class TestSLOTargets:
         assert t.ttft_target_ns == 500_000_000     # 500 ms
         assert t.tpot_target_ns == 100_000_000     # 100 ms
         assert t.e2e_target_ns == 30_000_000_000   # 30 s
+        assert t.itl_target_ns == 200_000_000
 
     def test_from_ms(self):
-        t = SLOTargets.from_ms(ttft_ms=250.0, tpot_ms=75.0, e2e_ms=10_000.0)
+        t = SLOTargets.from_ms(ttft_ms=250.0, tpot_ms=75.0, e2e_ms=10_000.0, itl_ms=150.0)
         assert t.ttft_target_ns == 250_000_000
         assert t.tpot_target_ns == 75_000_000
         assert t.e2e_target_ns == 10_000_000_000
+        assert t.itl_target_ns == 150_000_000
 
     def test_from_ms_fractional(self):
         t = SLOTargets.from_ms(ttft_ms=0.5, tpot_ms=0.1, e2e_ms=1.0)
@@ -335,6 +337,7 @@ class TestSummary:
             assert "violation_rate" in s[metric]
             assert "percentiles_ns" in s[metric]
         assert "percentiles_ns" in s["itl"]
+        assert "violation_rate" in s["itl"]
 
     def test_summary_values_consistent(self):
         targets = SLOTargets.from_ms(ttft_ms=500, tpot_ms=100, e2e_ms=30_000)
@@ -350,3 +353,55 @@ class TestSummary:
         assert s["ttft"]["violation_rate"] == 0.0
         assert s["tpot"]["violation_rate"] == 0.0
         assert s["e2e"]["violation_rate"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# ITL violation rate tests
+# ---------------------------------------------------------------------------
+
+class TestITLViolationRate:
+    """Test ITL violation rate tracking."""
+
+    def test_itl_violation_rate(self):
+        targets = SLOTargets.from_ms(ttft_ms=500, tpot_ms=100, e2e_ms=30_000, itl_ms=100)
+        tracker = SLOTracker(targets=targets)
+        # ITL values: 50ms (ok), 150ms (violation)
+        tracker.record_completed_request(_completed_request(
+            itl_ns=[50_000_000, 150_000_000],
+            tokens_generated=2,
+        ))
+        assert tracker.itl_violation_rate() == pytest.approx(0.5)
+
+    def test_itl_no_violations(self):
+        targets = SLOTargets.from_ms(ttft_ms=500, tpot_ms=100, e2e_ms=30_000, itl_ms=200)
+        tracker = SLOTracker(targets=targets)
+        tracker.record_completed_request(_completed_request(
+            itl_ns=[50_000_000, 100_000_000],
+            tokens_generated=2,
+        ))
+        assert tracker.itl_violation_rate() == 0.0
+
+    def test_itl_empty(self):
+        tracker = SLOTracker()
+        assert tracker.itl_violation_rate() == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Goodput with ITL tests
+# ---------------------------------------------------------------------------
+
+class TestGoodputWithITL:
+    """Test that goodput includes ITL check."""
+
+    def test_itl_violation_reduces_goodput(self):
+        targets = SLOTargets.from_ms(ttft_ms=500, tpot_ms=100, e2e_ms=30_000, itl_ms=100)
+        tracker = SLOTracker(targets=targets)
+        # TTFT, TPOT, E2E all pass, but ITL has a violation
+        tracker.record_completed_request(_completed_request(
+            ttft_ns=200_000_000,
+            tpot_ns=50_000_000,
+            e2e_ns=5_000_000_000,
+            itl_ns=[50_000_000, 150_000_000],  # 150ms > 100ms target
+            tokens_generated=2,
+        ))
+        assert tracker.goodput() == 0.0  # ITL violation means not meeting SLO

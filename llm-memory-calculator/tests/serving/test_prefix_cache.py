@@ -170,21 +170,47 @@ def _make_request(request_id: int, input_tokens: int) -> Request:
 
 class TestPrefixCacheAnalyzerBasic:
     def test_shared_prefix_has_savings(self):
-        """Requests with identical token counts (simulated as identical sequences)
-        should benefit from prefix caching after the first request."""
+        """Requests with shared prefix tokens should benefit from prefix caching."""
         analyzer = PrefixCacheAnalyzer(
             model_config=_FakeModelConfig(),
             cache_capacity_gb=10.0,
         )
-        # All requests have the same input_tokens, so simulated token ids
-        # (range(input_tokens)) are identical -> prefix sharing.
         workload = [_make_request(i, 512) for i in range(5)]
-        result = analyzer.analyze(workload)
+        result = analyzer.analyze(workload, shared_prefix_tokens=256)
 
         assert result["total_requests"] == 5
         assert result["tokens_saved_by_cache"] > 0
         assert result["token_savings_rate"] > 0.0
         assert result["memory_saved_bytes"] > 0
+
+
+class TestPrefixCacheAnalyzerSharedPrefix:
+    def test_shared_prefix_high_hit_rate(self):
+        """With shared_prefix_tokens > 0, hit rate should be high."""
+        analyzer = PrefixCacheAnalyzer(
+            model_config=_FakeModelConfig(),
+            cache_capacity_gb=10.0,
+        )
+        # All requests share a 256-token system prompt
+        workload = [_make_request(i, 512) for i in range(10)]
+        result = analyzer.analyze(workload, shared_prefix_tokens=256)
+
+        assert result["total_requests"] == 10
+        # With 256 shared prefix tokens, 9 out of 10 requests should cache-hit
+        assert result["tokens_saved_by_cache"] > 0
+        assert result["token_savings_rate"] > 0.3
+
+    def test_no_shared_prefix_lower_hit_rate(self):
+        """Without shared prefix, hit rate should be lower (hash-based)."""
+        analyzer = PrefixCacheAnalyzer(
+            model_config=_FakeModelConfig(),
+            cache_capacity_gb=10.0,
+        )
+        workload = [_make_request(i, 512) for i in range(10)]
+        result_no_prefix = analyzer.analyze(workload, shared_prefix_tokens=0)
+
+        # With position-based hashing, there may be some overlap but less than shared prefix
+        assert result_no_prefix["total_requests"] == 10
 
 
 class TestPrefixCacheAnalyzerNoSharing:

@@ -27,7 +27,7 @@ def patched_analyzer():
 
 class TestAnalyzeScaling:
     def test_analyze_scaling_linear(self, patched_analyzer):
-        """[1, 2, 4, 8] instances, verify linear scaling."""
+        """[1, 2, 4, 8] instances, verify sublinear scaling with efficiency."""
         result = patched_analyzer.analyze_scaling(
             instance_counts=[1, 2, 4, 8],
             input_tokens=512,
@@ -36,12 +36,30 @@ class TestAnalyzeScaling:
         scaling = result["scaling_results"]
         assert len(scaling) == 4
 
-        # Throughput at N instances should be N * single-instance throughput
-        base_tp = scaling[0]["throughput_rps"]
+        # Throughput should increase with instances, but sublinearly
+        for i in range(1, len(scaling)):
+            assert scaling[i]["throughput_rps"] > scaling[i-1]["throughput_rps"]
+
         for entry in scaling:
-            expected = base_tp * entry["instances"]
-            assert abs(entry["throughput_rps"] - expected) < 1e-6
-            assert entry["scaling_efficiency"] == 1.0
+            # Sublinear scaling: efficiency < 1.0 for n > 1
+            if entry["instances"] == 1:
+                assert entry["scaling_efficiency"] == pytest.approx(1.0)
+            else:
+                assert entry["scaling_efficiency"] < 1.0
+                assert entry["scaling_efficiency"] > 0.9  # reasonable range
+
+    def test_scaling_sublinear(self, patched_analyzer):
+        """Verify sublinear scaling: 8x instances should give < 8x throughput."""
+        result = patched_analyzer.analyze_scaling(
+            instance_counts=[1, 8],
+            input_tokens=512,
+            output_tokens=128,
+        )
+        scaling = result["scaling_results"]
+        tp_1 = scaling[0]["throughput_rps"]
+        tp_8 = scaling[1]["throughput_rps"]
+        assert tp_8 > tp_1  # More instances = more throughput
+        assert tp_8 < tp_1 * 8  # But not perfectly linear
 
     def test_scaling_result_structure(self, patched_analyzer):
         """Verify all expected keys in results."""

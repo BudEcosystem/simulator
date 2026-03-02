@@ -26,7 +26,7 @@ class TestWorkloadConfig:
         assert cfg.burst_amplitude == 3.0
         assert cfg.input_length_distribution["dist"] == "lognormal"
         assert cfg.input_length_distribution["mean"] == 512
-        assert cfg.output_length_distribution["dist"] == "lognormal"
+        assert cfg.output_length_distribution["dist"] == "exponential"
         assert cfg.output_length_distribution["mean"] == 128
 
 
@@ -264,14 +264,14 @@ class TestPresets:
         requests = gen.generate()
         assert len(requests) == 50
         assert gen.config.arrival_pattern == "poisson"
-        assert gen.config.input_length_distribution["mean"] == 256
+        assert gen.config.input_length_distribution["mean"] == 1024
 
     def test_preset_rag(self):
         gen = WorkloadGenerator.preset("rag", num_requests=50)
         requests = gen.generate()
         assert len(requests) == 50
         # RAG has longer inputs
-        assert gen.config.input_length_distribution["mean"] == 2048
+        assert gen.config.input_length_distribution["mean"] == 8000
         avg_input = np.mean([r.input_tokens for r in requests])
         avg_output = np.mean([r.max_output_tokens for r in requests])
         # RAG: long inputs, shorter outputs
@@ -286,6 +286,7 @@ class TestPresets:
     def test_preset_coding(self):
         gen = WorkloadGenerator.preset("coding", num_requests=50)
         assert gen.config.arrival_pattern == "bursty"
+        assert gen.config.input_length_distribution["mean"] == 1500
         requests = gen.generate()
         assert len(requests) == 50
 
@@ -323,3 +324,119 @@ class TestArrivalRateScaling:
             return np.mean(gaps)
 
         assert avg_inter_arrival(high_rate) < avg_inter_arrival(low_rate)
+
+
+# ---------------------------------------------------------------------------
+# New distributions
+# ---------------------------------------------------------------------------
+
+class TestNewDistributions:
+    """Test exponential, zipf, and bimodal distributions."""
+
+    def test_exponential_distribution(self):
+        cfg = WorkloadConfig(
+            num_requests=500,
+            input_length_distribution={
+                "dist": "exponential", "mean": 256, "std": 100, "min": 1, "max": 10000,
+            },
+        )
+        gen = WorkloadGenerator(cfg)
+        requests = gen.generate()
+        for r in requests:
+            assert 1 <= r.input_tokens <= 10000
+
+    def test_zipf_distribution(self):
+        cfg = WorkloadConfig(
+            num_requests=500,
+            input_length_distribution={
+                "dist": "zipf", "mean": 256, "std": 2.0, "min": 1, "max": 10000,
+            },
+        )
+        gen = WorkloadGenerator(cfg)
+        requests = gen.generate()
+        for r in requests:
+            assert 1 <= r.input_tokens <= 10000
+
+    def test_bimodal_distribution(self):
+        cfg = WorkloadConfig(
+            num_requests=500,
+            input_length_distribution={
+                "dist": "bimodal", "mean": 256, "std": 100, "min": 1, "max": 10000,
+            },
+        )
+        gen = WorkloadGenerator(cfg)
+        requests = gen.generate()
+        for r in requests:
+            assert 1 <= r.input_tokens <= 10000
+
+
+# ---------------------------------------------------------------------------
+# New arrival patterns
+# ---------------------------------------------------------------------------
+
+class TestNewArrivalPatterns:
+    """Test diurnal and weibull arrival patterns."""
+
+    def test_diurnal_arrival_pattern(self):
+        cfg = WorkloadConfig(
+            arrival_pattern="diurnal", num_requests=200,
+            diurnal_period_s=3600.0, diurnal_peak_to_valley=5.0,
+        )
+        gen = WorkloadGenerator(cfg)
+        requests = gen.generate()
+        assert len(requests) == 200
+        arrival_times = [r.arrival_time_ns for r in requests]
+        assert all(t >= 0 for t in arrival_times)
+        for i in range(1, len(arrival_times)):
+            assert arrival_times[i] >= arrival_times[i - 1]
+
+    def test_weibull_arrival_pattern(self):
+        cfg = WorkloadConfig(
+            arrival_pattern="weibull", num_requests=200,
+            weibull_shape=0.8,
+        )
+        gen = WorkloadGenerator(cfg)
+        requests = gen.generate()
+        assert len(requests) == 200
+        arrival_times = [r.arrival_time_ns for r in requests]
+        assert all(t >= 0 for t in arrival_times)
+        for i in range(1, len(arrival_times)):
+            assert arrival_times[i] >= arrival_times[i - 1]
+
+
+# ---------------------------------------------------------------------------
+# New presets
+# ---------------------------------------------------------------------------
+
+class TestNewPresets:
+    """Test new workload presets."""
+
+    def test_preset_general_chat(self):
+        gen = WorkloadGenerator.preset("general_chat", num_requests=50)
+        requests = gen.generate()
+        assert len(requests) == 50
+        assert gen.config.input_length_distribution["mean"] == 215
+
+    def test_preset_multi_turn_chat(self):
+        gen = WorkloadGenerator.preset("multi_turn_chat", num_requests=50)
+        requests = gen.generate()
+        assert len(requests) == 50
+        assert gen.config.input_length_distribution["mean"] == 1024
+        assert gen.config.output_length_distribution["mean"] == 415
+
+    def test_preset_inline_completion(self):
+        gen = WorkloadGenerator.preset("inline_completion", num_requests=50)
+        requests = gen.generate()
+        assert len(requests) == 50
+
+    def test_preset_long_context(self):
+        gen = WorkloadGenerator.preset("long_context", num_requests=50)
+        requests = gen.generate()
+        assert len(requests) == 50
+        assert gen.config.input_length_distribution["mean"] == 8000
+
+    def test_preset_summarization(self):
+        gen = WorkloadGenerator.preset("summarization", num_requests=50)
+        requests = gen.generate()
+        assert len(requests) == 50
+        assert gen.config.input_length_distribution["mean"] == 4096

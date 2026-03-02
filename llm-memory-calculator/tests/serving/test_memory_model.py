@@ -239,8 +239,9 @@ class TestEvictionLRU:
         mm.allocate_kv_blocks(req_mid, num_tokens=16)   # 1 block
         mm.allocate_kv_blocks(req_new, num_tokens=16)   # 1 block
 
-        evicted = mm.evict_blocks(MemoryTier.DEVICE_HBM, num_blocks=1)
-        assert evicted == 1
+        evicted_count, evicted_rids = mm.evict_blocks(MemoryTier.DEVICE_HBM, num_blocks=1)
+        assert evicted_count == 1
+        assert 1 in evicted_rids  # req_old (rid=1) should have been evicted
 
         # req_old (rid=1) should have been evicted
         snap = mm.memory_snapshot()
@@ -252,15 +253,17 @@ class TestEvictionLRU:
         for i in range(5):
             mm.allocate_kv_blocks(_fake_request(i), num_tokens=16)
 
-        evicted = mm.evict_blocks(MemoryTier.DEVICE_HBM, num_blocks=3)
-        assert evicted == 3
+        evicted_count, evicted_rids = mm.evict_blocks(MemoryTier.DEVICE_HBM, num_blocks=3)
+        assert evicted_count == 3
+        assert len(evicted_rids) == 3
         snap = mm.memory_snapshot()
         assert snap[MemoryTier.DEVICE_HBM.value]["used_bytes"] == 2 * mm.bytes_per_block
 
     def test_evict_unconfigured_tier(self):
         mm = _hbm_only_model()
-        evicted = mm.evict_blocks(MemoryTier.CXL, num_blocks=1)
-        assert evicted == 0
+        evicted_count, evicted_rids = mm.evict_blocks(MemoryTier.CXL, num_blocks=1)
+        assert evicted_count == 0
+        assert evicted_rids == []
 
 
 # ---------------------------------------------------------------------------

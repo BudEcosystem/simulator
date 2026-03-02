@@ -205,6 +205,41 @@ class TestKVTransferCost:
         assert result["kv_transfer_bytes"] > 0
 
 
+class TestKVBytesIncludesOutput:
+    def test_kv_bytes_includes_output_tokens(self):
+        """KV transfer bytes should account for both input and output tokens."""
+        with patch(
+            "llm_memory_calculator.genz.serving.disaggregation.DisaggregationAnalyzer._get_latencies",
+            return_value=(5.0, 0.5),
+        ):
+            analyzer = DisaggregationAnalyzer(MODEL, HARDWARE)
+            # _estimate_kv_bytes should include output_tokens
+            kv_input_only = analyzer._estimate_kv_bytes(512, 0)
+            kv_with_output = analyzer._estimate_kv_bytes(512, 128)
+            assert kv_with_output > kv_input_only
+
+
+class TestNetworkContention:
+    def test_queuing_factor_in_result(self):
+        """Result should include link_utilization and queuing_factor."""
+        with patch(
+            "llm_memory_calculator.genz.serving.disaggregation.DisaggregationAnalyzer._get_latencies",
+            return_value=(5.0, 0.5),
+        ), patch(
+            "llm_memory_calculator.genz.serving.disaggregation.DisaggregationAnalyzer._estimate_kv_bytes",
+            return_value=67108864,
+        ):
+            analyzer = DisaggregationAnalyzer(MODEL, HARDWARE)
+            result = analyzer.analyze(
+                prefill_instances=2, decode_instances=6,
+                kv_transfer_bw_gbps=100.0,
+            )
+            assert "link_utilization" in result
+            assert "queuing_factor" in result
+            assert result["queuing_factor"] >= 1.0
+            assert 0 <= result["link_utilization"] <= 0.95
+
+
 class TestRealModel:
     """Integration test using real GenZ modeling (may be slow)."""
 
