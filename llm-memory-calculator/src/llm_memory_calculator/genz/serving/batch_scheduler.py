@@ -271,7 +271,13 @@ class BatchScheduler:
         ) // max(batch.decode_count, 1)
         bs = batch.decode_count
 
-        cache_key = ("decode", bs, avg_context, self._hardware, self._precision,
+        # Bucket the context length in the CACHE KEY so consecutive decode steps
+        # (avg_context grows ~1 per generated token) reuse the cached GenZ result
+        # instead of recomputing every step -- the O(requests x output_tokens)
+        # cliff that made serving sims take minutes. The computation below still
+        # uses the exact avg_context; only the cache key is bucketed.
+        context_bucket = (int(avg_context) // 128) * 128
+        cache_key = ("decode", bs, context_bucket, self._hardware, self._precision,
                      self._tensor_parallel, self._pipeline_parallel)
         if cache_key in self._latency_cache:
             return self._latency_cache[cache_key]
