@@ -226,6 +226,9 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         layer_configs=layer_configs,
     )
 
+_CONFIG_STR_CACHE: dict = {}
+
+
 def get_configs(name: Union[str, dict, 'ModelConfig', SimpleNamespace]) -> ModelConfig:
     """Get model configuration from various input types.
 
@@ -251,17 +254,24 @@ def get_configs(name: Union[str, dict, 'ModelConfig', SimpleNamespace]) -> Model
         model_name = name.get('name', name.get('model', name.get('_name_or_path', 'custom')))
         return huggingface_config_to_model_config(name, model_name)
     elif isinstance(name, str):
+        # Cache str -> ModelConfig so repeated resolutions (e.g. once per decode
+        # step, or once per Pareto config) don't re-hit the slow HF config fetch.
+        cached = _CONFIG_STR_CACHE.get(name)
+        if cached is not None:
+            return cached
         # First try the static MODEL_DICT with lowercase
         name_lower = name.lower()
         if model := MODEL_DICT.get_model(name_lower):
-            model_config = model
-            return model_config
+            _CONFIG_STR_CACHE[name] = model
+            return model
 
         # If not found in MODEL_DICT, try loading from HuggingFace
         try:
             loader = HuggingFaceConfigLoader()
             hf_config = loader.fetch_model_config(name)
-            return huggingface_config_to_model_config(hf_config, name)
+            resolved = huggingface_config_to_model_config(hf_config, name)
+            _CONFIG_STR_CACHE[name] = resolved
+            return resolved
         except Exception as e:
             # If HuggingFace loading fails, show suggestions from MODEL_DICT
             model_list = MODEL_DICT.list_models()

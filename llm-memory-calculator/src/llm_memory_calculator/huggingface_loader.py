@@ -5,6 +5,7 @@ import warnings
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 import os
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeout
 
 try:
     from huggingface_hub import HfApi, hf_hub_download, ModelCard
@@ -13,6 +14,13 @@ except ImportError:
     raise ImportError(
         "Please install huggingface_hub: pip install huggingface_hub"
     )
+
+# Shared pool to run hf_hub_download under a hard wall-clock timeout. An
+# unauthenticated HF config fetch can hit rate-limit/retry backoff and hang for
+# minutes; the GenZ serving sim's fallback only triggers on an exception (not a
+# hang), so without this the whole simulation blocks. A timed-out download keeps
+# running here (cached on success) without blocking the caller.
+_HF_FETCH_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="hf-config-fetch")
 
 from .calculator import ModelMemoryCalculator
 from .types import MemoryReport
@@ -134,21 +142,30 @@ class HuggingFaceConfigLoader:
         
         last_error = None
         
+        download_timeout = float(os.environ.get("HF_CONFIG_FETCH_TIMEOUT_S", "20"))
         for filename in config_filenames:
             try:
-                # Download config file
-                config_path = hf_hub_download(
+                # Download config file under a hard timeout (see _HF_FETCH_POOL).
+                config_path = _HF_FETCH_POOL.submit(
+                    hf_hub_download,
                     repo_id=model_id_or_path,
                     filename=filename,
-                    token=self.token
-                )
-                
+                    token=self.token,
+                ).result(timeout=download_timeout)
+
                 # Load and parse config
                 with open(config_path, 'r') as f:
                     config = json.load(f)
-                    
+
                 return config
-                
+
+            except _FutureTimeout:
+                last_error = Exception(
+                    f"HF config fetch for {model_id_or_path}/{filename} timed out "
+                    f"after {download_timeout}s"
+                )
+                break  # repo unreachable/throttled; fall back to a default config
+
             except RepositoryNotFoundError:
                 raise  # Re-raise immediately for repo not found
                 

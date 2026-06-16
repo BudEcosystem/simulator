@@ -7,7 +7,9 @@ import dataclasses
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple
 import heapq
+import os
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 
 from .constants import (
     MemoryTier, NS_PER_MS, NS_PER_S, GB_TO_BYTES,
@@ -19,6 +21,12 @@ from .memory_model import MemoryModel, MemoryTierConfig
 from .power_model import PowerModel
 from .workload import WorkloadConfig, WorkloadGenerator
 from .batch_scheduler import SchedulerConfig, BatchScheduler
+
+# Bound model-config resolution (which may make several unauthenticated HF calls
+# that hit rate-limit/retry backoff) so a serving sim never hangs; on timeout we
+# fall back to a default config. Timed-out resolutions keep running here (cached
+# on success) without blocking the caller.
+_CONFIG_RESOLVE_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="model-config-resolve")
 
 
 # Event types for the simulation event queue
@@ -374,10 +382,11 @@ class ServingSimulator:
         return result
 
     def _get_model_config(self):
-        """Get model config from GenZ registry."""
+        """Get model config from GenZ registry (bounded by a hard timeout)."""
         try:
             from llm_memory_calculator.genz.Models import get_configs
-            return get_configs(self._model)
+            timeout = float(os.environ.get("MODEL_CONFIG_RESOLVE_TIMEOUT_S", "12"))
+            return _CONFIG_RESOLVE_POOL.submit(get_configs, self._model).result(timeout=timeout)
         except Exception:
             # Fallback to a default config for unknown models
             from types import SimpleNamespace
