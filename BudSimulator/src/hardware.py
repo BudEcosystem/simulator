@@ -39,15 +39,36 @@ class BudHardware(HardwareManager):
         """
         # Initialize parent HardwareManager (provides read functionality)
         super().__init__(db_path)
-        
+
         # Initialize database connection for write operations
         self.db = DatabaseConnection(db_path)
-        
+
         # Initialize hardware schema
         self._initialize_hardware_schema()
-        
+
         # Load initial data
         self._ensure_system_configs_in_db()
+
+        # The parent HardwareManager only attaches its read-overlay DB (self._db,
+        # used by get_all_hardware/_refresh_cache) when a truthy db_path is passed;
+        # BudHardware() is constructed with db_path=None, but its write DB above
+        # defaults to data/prepopulated.db. Without this, get_all_hardware returns
+        # only the 73 static HARDWARE_CONFIGS and SILENTLY DROPS the DB-only hardware
+        # (A100_GPU, H100_SXM_GPU, Gaudi2, Cerebras, Groq_LPU, Graphcore_IPU, EPYC/
+        # Graviton CPUs, ... -- 92 rows in the DB). Attach the manager's read DB to
+        # the same resolved path so every hardware the DB knows about is recommendable.
+        if self._db is None:
+            try:
+                from llm_memory_calculator.hardware.db_connection import (
+                    ReadOnlyDatabaseConnection,
+                )
+
+                resolved_path = getattr(self.db, "db_path", None) or db_path
+                if resolved_path:
+                    self._db = ReadOnlyDatabaseConnection(str(resolved_path))
+                    self._cache_valid = False
+            except Exception as exc:  # pragma: no cover - best effort
+                logger.warning(f"Could not attach read DB overlay: {exc}")
     
     def _initialize_hardware_schema(self):
         """Initialize hardware database schema."""
