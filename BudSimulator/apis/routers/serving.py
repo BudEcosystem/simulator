@@ -252,6 +252,21 @@ class BatchAnalysisResponse(BaseModel):
 async def simulate_serving(req: ServingSimulationRequest):
     """Full serving simulation with workload generation, scheduling, and SLO tracking."""
     try:
+        # Validate hardware up-front. GenZ otherwise swallows the internal
+        # ValueError for an unknown accelerator and silently falls back to a
+        # generic 80GB profile, returning plausible-but-fabricated, hardware-
+        # independent numbers (e.g. "TOTALLY_FAKE_GPU" -> HTTP 200). Reject it.
+        from llm_memory_calculator.hardware.configs import HARDWARE_CONFIGS
+        try:
+            from llm_memory_calculator.hardware.configs import is_cpu_hardware
+            _is_cpu = bool(is_cpu_hardware(req.hardware))
+        except Exception:
+            _is_cpu = False
+        if req.hardware not in HARDWARE_CONFIGS and not _is_cpu:
+            raise HTTPException(
+                status_code=404, detail=f"Unknown hardware: {req.hardware}"
+            )
+
         from llm_memory_calculator.genz.serving import (
             ServingSimulator, WorkloadConfig, SchedulerConfig, SLOTargets,
         )
