@@ -61,7 +61,11 @@ def cpu_aware_prefill_moddeling(model='BERT', batch_size=1, input_tokens=4096,
         # Convert string CPU preset to CPUSystem if needed
         if isinstance(system_name, str) and is_cpu_system(system_name):
             from llm_memory_calculator.genz.cpu import create_cpu_system
-            system_name = create_cpu_system(system_name)
+            # Pass `bits` so the CPU system's precision matches the request. Without it the preset
+            # default (bf16) was always used and the weight-byte stream never scaled with precision,
+            # so int8/fp32 CPU decode were byte-identical to bf16 (the "quantized scales by byte
+            # ratio" invariant was violated). create_cpu_system already honors a `bits` kwarg.
+            system_name = create_cpu_system(system_name, bits=bits)
             
         if debug:
             print(f"CPU system detected. Using CPU-enhanced operators.")
@@ -142,7 +146,11 @@ def cpu_aware_decode_moddeling(model='BERT', batch_size=1, input_tokens=4096,
         # Convert string CPU preset to CPUSystem if needed
         if isinstance(system_name, str) and is_cpu_system(system_name):
             from llm_memory_calculator.genz.cpu import create_cpu_system
-            system_name = create_cpu_system(system_name)
+            # Pass `bits` so the CPU system's precision matches the request. Without it the preset
+            # default (bf16) was always used and the weight-byte stream never scaled with precision,
+            # so int8/fp32 CPU decode were byte-identical to bf16 (the "quantized scales by byte
+            # ratio" invariant was violated). create_cpu_system already honors a `bits` kwarg.
+            system_name = create_cpu_system(system_name, bits=bits)
             
         if debug:
             print(f"CPU system detected. Using CPU-enhanced operators.")

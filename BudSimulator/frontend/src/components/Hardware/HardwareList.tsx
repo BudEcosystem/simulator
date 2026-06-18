@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Filter, ChevronDown, AlertCircle } from 'lucide-react';
+import { Search, Filter, ChevronDown, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { Hardware, HardwareFilters as HardwareFiltersType, PaginationState } from '../../types/hardware';
 import { HardwareCard } from './HardwareCard';
 import { HardwareFilters } from './HardwareFilters';
-import { Pagination } from '../Common/Pagination';
 import { PriceDisclaimer } from '../Common/PriceDisclaimer';
 import { hardwareAPI, buildHardwareParams } from '../../services/hardwareAPI';
 
@@ -31,6 +30,7 @@ export const HardwareList: React.FC<HardwareListProps> = ({ onHardwareSelect }) 
     limit: 12,
     total: 0,
   });
+  const [hasNextPage, setHasNextPage] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
   // Debounced search
@@ -53,17 +53,17 @@ export const HardwareList: React.FC<HardwareListProps> = ({ onHardwareSelect }) 
         offset: (pagination.page - 1) * pagination.limit
       });
 
-      const data = await hardwareAPI.list(params);
+      // Use the /filter endpoint: the plain list endpoint ignores sort_by,
+      // sort_order, min_flops/max_flops (and search), whereas /filter honors
+      // them and returns the same HardwareResponse[] shape.
+      const data = await hardwareAPI.filter(params);
       setHardware(data);
-      
-      // Note: In a real implementation, the API should return total count
-      // For now, we'll estimate based on the returned data
-      setPagination(prev => ({ 
-        ...prev, 
-        total: data.length < pagination.limit ? 
-          (pagination.page - 1) * pagination.limit + data.length :
-          pagination.page * pagination.limit + 1 // Estimate there's at least one more page
-      }));
+
+      // The filter endpoint does not return a total count, so drive pagination
+      // from the actual page contents: a full page implies there may be a next
+      // page, a short/empty page means we are on the last page. Never fabricate
+      // a total page count.
+      setHasNextPage(data.length === pagination.limit);
     } catch (error) {
       console.error('Error fetching hardware:', error);
       setError('Failed to load hardware. Please try again.');
@@ -213,13 +213,31 @@ export const HardwareList: React.FC<HardwareListProps> = ({ onHardwareSelect }) 
                   ))}
                 </div>
 
-                {/* Pagination */}
-                <Pagination
-                  currentPage={pagination.page}
-                  totalPages={Math.ceil(pagination.total / pagination.limit)}
-                  onPageChange={handlePageChange}
-                  className="mt-8"
-                />
+                {/* Pagination - the filter endpoint returns no total count, so we
+                    drive Prev/Next purely from whether a full page was returned. */}
+                {(pagination.page > 1 || hasNextPage) && (
+                  <div className="flex items-center justify-center space-x-2 mt-8">
+                    <button
+                      onClick={() => handlePageChange(pagination.page - 1)}
+                      disabled={pagination.page === 1}
+                      className="flex items-center px-3 py-2 text-sm font-medium text-gray-400 bg-gray-800 border border-gray-700 rounded-md hover:bg-gray-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      Previous
+                    </button>
+                    <span className="px-3 py-2 text-sm font-medium text-gray-400">
+                      Page {pagination.page}
+                    </span>
+                    <button
+                      onClick={() => handlePageChange(pagination.page + 1)}
+                      disabled={!hasNextPage}
+                      className="flex items-center px-3 py-2 text-sm font-medium text-gray-400 bg-gray-800 border border-gray-700 rounded-md hover:bg-gray-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </button>
+                  </div>
+                )}
               </>
             ) : (
               <div className="text-center py-12">

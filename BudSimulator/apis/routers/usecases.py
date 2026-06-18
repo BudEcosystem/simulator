@@ -14,12 +14,17 @@ from src.usecases import BudUsecases
 from src.bud_models import ModelMemoryCalculator
 from src.hardware import BudHardware
 from src.db.model_manager import ModelManager
+from llm_memory_calculator import UniversalParameterCounter
 
 router = APIRouter(prefix="/api/usecases", tags=["usecases"])
 
 # Initialize managers
 usecase_manager = BudUsecases()
 memory_calculator = ModelMemoryCalculator()
+# H3: parameter counting uses UniversalParameterCounter.count_parameters — ModelMemoryCalculator has no
+# `calculate_parameters` method, so the prior calls silently fell into the bare-except → params=0,
+# which disabled the >14B CPU-exclusion rule below.
+param_counter = UniversalParameterCounter()
 hardware_manager = BudHardware()
 model_manager = ModelManager()
 
@@ -708,7 +713,7 @@ def _get_hardware_recommendations(required_memory_gb: float, model_config: Dict[
     if model_params == 0:
         # Try to calculate parameters from config if not available in model_data
         try:
-            model_params = memory_calculator.calculate_parameters(model_config)
+            model_params = param_counter.count_parameters(model_config)
         except Exception:
             model_params = 0
     
@@ -818,7 +823,7 @@ def _get_models_by_category(categories: List[str]) -> Dict[str, List[Dict[str, A
                                 if config:
                                     # Use ModelMemoryCalculator to get accurate parameter count
                                     try:
-                                        param_count = memory_calculator.calculate_parameters(config)
+                                        param_count = param_counter.count_parameters(config)
                                         model_data['parameter_count'] = param_count
                                     except Exception:
                                         model_data['parameter_count'] = 0

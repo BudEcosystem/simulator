@@ -19,6 +19,28 @@ _REAL_HARDWARE_SPECS = {
     "B200_GPU": HardwareSpec(2250, 8000, 192, 64, 50000, 900, 2.1, 1, 1000, 40000),
 }
 
+# R2-BE3: a single monotone physical-feasibility ceiling on compute density per watt
+# (TFLOPS/W). The B200 anchor is the best perf/watt achieved in the table
+# (2250 TFLOPS / 1000 W = 2.25 TFLOPS/W); a swept design exceeding it is physically
+# implausible and rejected (marked infeasible) rather than awarded a free power objective.
+# Derived from _REAL_HARDWARE_SPECS["B200_GPU"], not invented.
+_MAX_TFLOPS_PER_WATT = (
+    _REAL_HARDWARE_SPECS["B200_GPU"].flops_tflops
+    / _REAL_HARDWARE_SPECS["B200_GPU"].tdp_watts
+)
+
+
+def _is_perf_per_watt_infeasible(hw: HardwareSpec) -> bool:
+    """True if a swept HardwareSpec exceeds the B200 perf/watt ceiling.
+
+    A design claiming more TFLOPS per watt than the best real anchor (B200) is
+    physically implausible; such candidates are marked infeasible rather than
+    rewarded with a free power objective.
+    """
+    if hw.tdp_watts <= 0:
+        return True
+    return (hw.flops_tflops / hw.tdp_watts) > _MAX_TFLOPS_PER_WATT
+
 
 class HardwareExplorer:
     """Discover ideal hardware specs via multi-objective search.
@@ -253,16 +275,23 @@ class HardwareExplorer:
         Returns:
             List of EvalResult from evaluating candidate hardware designs.
         """
+        # NARROW pymoo-availability probe, not a broad try/except around the whole NSGA-II run.
+        # Previously `except ImportError` wrapped _run_pymoo_hw including the GenZ evaluation, so an
+        # ImportError raised deep inside evaluation would be MISATTRIBUTED as "pymoo not installed" and
+        # silently route to the inferior grid — masking a real bug. We probe with a top-level
+        # `import pymoo`: if pymoo is genuinely absent it falls back here; if present, _run_pymoo_hw
+        # runs and any DEEP ImportError (e.g. a missing GenZ dep) propagates instead of being masked.
         try:
-            return self._run_pymoo_hw(
-                search_space, objectives, n_gen, pop_size,
-                input_tokens, output_tokens, batch_size,
-            )
+            import pymoo  # noqa: F401  (availability probe; the real submodule imports are inside _run_pymoo_hw)
         except ImportError:
             warnings.warn("pymoo not installed, using grid sample")
             return self._run_grid_hw(
                 search_space, input_tokens, output_tokens, batch_size,
             )
+        return self._run_pymoo_hw(
+            search_space, objectives, n_gen, pop_size,
+            input_tokens, output_tokens, batch_size,
+        )
 
     def _run_pymoo_hw(self, search_space, objectives, n_gen, pop_size,
                       input_tokens, output_tokens, batch_size):
@@ -303,17 +332,27 @@ class HardwareExplorer:
                 )
 
             def _evaluate(self, x, out, *args, **kwargs):
+                # R2-BE3: tdp_watts (x[7]) and estimated_cost_usd (x[8]) are SWEPT, so the
+                # cost/power objectives actually vary across the search instead of being pinned
+                # to the dataclass defaults (700/25000).
                 hw = HardwareSpec(
                     flops_tflops=x[0], offchip_mem_bw_gbps=x[1],
                     off_chip_mem_size_gb=x[2], on_chip_mem_size_mb=x[3],
                     onchip_mem_bw_gbps=x[4], interchip_link_bw_gbps=x[5],
-                    frequency_ghz=x[6],
+                    frequency_ghz=x[6], tdp_watts=x[7], estimated_cost_usd=x[8],
                 )
                 result = evaluator.evaluate_hardware(
                     hw, model=model,
                     input_tokens=input_tokens, output_tokens=output_tokens,
                     batch_size=batch_size,
                 )
+                # R2-BE3: reject physically implausible designs (perf/W above the B200 anchor).
+                if _is_perf_per_watt_infeasible(hw):
+                    result.feasible = False
+                # Surface the swept cost/power so best_per_objective['cost'/'power'] vary.
+                if result.config is not None:
+                    result.config.setdefault("estimated_cost_usd", hw.estimated_cost_usd)
+                    result.config.setdefault("tdp_watts", hw.tdp_watts)
                 all_results.append(result)
 
                 obj_vals = []
@@ -352,18 +391,28 @@ class HardwareExplorer:
             List of EvalResult from grid evaluation.
         """
         results = []
+        # R2-BE3: sweep tdp/cost in the fallback too, so the cost/power objectives vary even
+        # without pymoo (they would otherwise pin to the dataclass defaults).
         for flops in np.linspace(*search_space.flops_range, 5):
-            for bw in np.linspace(*search_space.mem_bw_range, 5):
-                hw = HardwareSpec(
-                    flops_tflops=flops, offchip_mem_bw_gbps=bw,
-                    off_chip_mem_size_gb=80.0,
-                )
-                result = self._evaluator.evaluate_hardware(
-                    hw, model=self._model,
-                    input_tokens=input_tokens, output_tokens=output_tokens,
-                    batch_size=batch_size,
-                )
-                results.append(result)
+            for bw in np.linspace(*search_space.mem_bw_range, 3):
+                for tdp in np.linspace(*search_space.tdp_range, 3):
+                    for cost in np.linspace(*search_space.cost_range, 3):
+                        hw = HardwareSpec(
+                            flops_tflops=float(flops), offchip_mem_bw_gbps=float(bw),
+                            off_chip_mem_size_gb=80.0,
+                            tdp_watts=float(tdp), estimated_cost_usd=float(cost),
+                        )
+                        result = self._evaluator.evaluate_hardware(
+                            hw, model=self._model,
+                            input_tokens=input_tokens, output_tokens=output_tokens,
+                            batch_size=batch_size,
+                        )
+                        if _is_perf_per_watt_infeasible(hw):
+                            result.feasible = False
+                        if result.config is not None:
+                            result.config.setdefault("estimated_cost_usd", hw.estimated_cost_usd)
+                            result.config.setdefault("tdp_watts", hw.tdp_watts)
+                        results.append(result)
         return results
 
     def _compute_pareto(self, results, objectives):
@@ -402,9 +451,15 @@ class HardwareExplorer:
         Returns:
             Dict with throughput, latency, memory, power, and feasibility fields.
         """
+        # R2-BE3: surface the swept cost/power as top-level fields (previously only the
+        # constant default lived in config), so callers/tests can read them directly.
+        cost = None
+        if r.config is not None:
+            cost = r.config.get("estimated_cost_usd")
         return {
             "config": r.config, "throughput_rps": r.throughput_rps,
             "ttft_ms": r.ttft_ms, "tpot_ms": r.tpot_ms,
             "memory_gb": r.memory_gb, "power_w": r.power_w,
+            "estimated_cost_usd": cost,
             "feasible": r.feasible,
         }

@@ -843,6 +843,23 @@ OPTIMIZER_STATE_BYTES: Dict[str, float] = {
 }
 
 
+def _optimizer_bytes_per_param(optimizer: str) -> float:
+    """Per-parameter optimizer-state bytes from the SINGLE sourced table.
+
+    TR4 (solutions_round2.md §3): the GenZ training path used to index the local OPTIMIZER_STATE_BYTES
+    dict, which disagrees with the sourced ``training.optimizers.OPTIMIZER_CONFIGS`` used by the API
+    path (e.g. sgd 0 vs 4, adafactor 4 vs 1, galore 2-flat vs rank-aware). This routes the GenZ path
+    onto OPTIMIZER_CONFIGS (the well-sourced table: adamw=8, sgd=4 momentum, adafactor=1 factorized,
+    8-bit=2) so both paths read ONE table. Optimizers not yet modeled in OPTIMIZER_CONFIGS fall back to
+    the local table (preserving their values) rather than guessing.
+    """
+    try:
+        from llm_memory_calculator.training.optimizers import get_optimizer_config
+        return get_optimizer_config(optimizer).total_bytes_per_param
+    except Exception:
+        return OPTIMIZER_STATE_BYTES.get(optimizer.lower(), 8)
+
+
 # ========================================
 # Accurate FLOPs Calculation (Phase 1 Improvements)
 # ========================================
@@ -4253,8 +4270,8 @@ def _calculate_training_memory(
 
     gradient_memory_gb = gradient_bytes / 1e9
 
-    # Optimizer state memory (using unified mapping)
-    optimizer_bytes = OPTIMIZER_STATE_BYTES.get(optimizer.lower(), 8)
+    # Optimizer state memory (TR4: single sourced optimizer table — see _optimizer_bytes_per_param)
+    optimizer_bytes = _optimizer_bytes_per_param(optimizer)
 
     optimizer_state_bytes = trainable_params * optimizer_bytes
     if zero_stage >= 1:
@@ -4317,8 +4334,8 @@ def _calculate_training_memory(
             # Critic model has:
             # - Weights (same as policy in precision_bytes)
             # - Gradients (FP32) - only for trainable parameters
-            # - Optimizer states (using unified mapping)
-            optimizer_bytes_per_param = OPTIMIZER_STATE_BYTES.get(optimizer.lower(), 8)
+            # - Optimizer states (TR4: single sourced optimizer table)
+            optimizer_bytes_per_param = _optimizer_bytes_per_param(optimizer)
 
             critic_weight_bytes = total_params * precision_bytes
             # Gradients are only for trainable params (consistent with policy model)

@@ -209,19 +209,16 @@ class PrefixCacheAnalyzer:
         tokens_saved = 0
 
         for req in workload:
-            if shared_prefix_tokens > 0:
-                # Shared system prompt: first N tokens are deterministic (same for all requests)
-                # Remaining tokens are unique per request (user-specific content)
-                prefix = list(range(shared_prefix_tokens))
-                num_suffix = max(0, req.input_tokens - shared_prefix_tokens)
-                suffix = [hash((req.request_id, i)) % (2**31) for i in range(num_suffix)]
-                token_ids = prefix + suffix
-            else:
-                # No explicit shared prefix: use position-based hashing
-                # This produces ~20-40% natural overlap when requests share similar
-                # content patterns (e.g., common preambles, repeated questions)
-                token_ids = [hash((req.model, i, i // self._kv_bytes_per_token)) % (2**31)
-                             for i in range(req.input_tokens)]
+            # SV5 (solutions_round2.md §4): always use the request_id-salted construction.
+            # The deleted position-only branch hashed on (model, position) only, so every
+            # same-model request received an identical token stream -> ~99% fabricated hit-rate.
+            # Now independent prompts share ONLY the caller-supplied `shared_prefix_tokens`
+            # (default 0 -> ~0% overlap). The first N tokens are the deterministic shared
+            # system prompt; the remaining tokens are unique per request (request_id salt).
+            prefix = list(range(shared_prefix_tokens)) if shared_prefix_tokens > 0 else []
+            num_suffix = max(0, req.input_tokens - shared_prefix_tokens)
+            suffix = [hash((req.request_id, i)) % (2 ** 31) for i in range(num_suffix)]
+            token_ids = prefix + suffix
 
             # Check prefix match
             matched = cache.match_prefix(token_ids)

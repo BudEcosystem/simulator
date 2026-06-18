@@ -20,10 +20,10 @@ def mha_flash_attention_prefill(model_config:ModelConfig, parallelism_config:Par
     QKV =           [["QKV", (per_node_H*Dq + 2*per_node_Hkv*Dq), input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
 
     ## [Batch/dp, Seq, Dq, Head/tp] * [Batch/dp, Seq/sp, Dq, Head/tp] = [Batch/dp, Seq, Seq/sp, Head/tp]
-    logit =         [["Logit",per_node_H, input_sequence_length, input_sequence_length//sp, Dq, per_node_Hkv, ResidencyInfo.C_onchip, OpType.Logit]]
+    logit =         [["Logit",per_node_H, input_sequence_length, input_sequence_length//sp, Dq, per_node_Hkv, ResidencyInfo.C_onchip, OpType.Logit_Causal_PREFILL]]
 
     ## [Batch/dp, Seq, Seq/sp, Head/tp] * [Batch/dp, Seq/sp, Dq, Head/tp] = [Batch/dp, Seq, Dq, Head/tp]
-    attend =        [["Attend",per_node_H, input_sequence_length, input_sequence_length//sp, Dq, per_node_Hkv, ResidencyInfo.A_onchip, OpType.Attend]]
+    attend =        [["Attend",per_node_H, input_sequence_length, input_sequence_length//sp, Dq, per_node_Hkv, ResidencyInfo.A_onchip, OpType.Attend_Causal_PREFILL]]
 
     ## [Batch/dp, Seq, Dq, Head/tp] * [Dq, Head/tp,  Dmodel] = [Batch/dp, Seq, Dmodel]
     output =        [["Out Proj", D, input_sequence_length//sp, (per_node_H) * Dq, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
@@ -51,8 +51,8 @@ def mha_flash_attention_prefill_local(model_config:ModelConfig, parallelism_conf
     kv_len = min(sw, input_sequence_length)
 
     QKV =           [["QKV", (per_node_H*Dq + 2*per_node_Hkv*Dq), input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
-    logit =         [["Logit",per_node_H, input_sequence_length, kv_len//sp, Dq, per_node_Hkv, ResidencyInfo.C_onchip, OpType.Logit]]
-    attend =        [["Attend",per_node_H, input_sequence_length, kv_len//sp, Dq, per_node_Hkv, ResidencyInfo.A_onchip, OpType.Attend]]
+    logit =         [["Logit",per_node_H, input_sequence_length, kv_len//sp, Dq, per_node_Hkv, ResidencyInfo.C_onchip, OpType.Logit_Causal_PREFILL]]
+    attend =        [["Attend",per_node_H, input_sequence_length, kv_len//sp, Dq, per_node_Hkv, ResidencyInfo.A_onchip, OpType.Attend_Causal_PREFILL]]
     output =        [["Out Proj", D, input_sequence_length//sp, (per_node_H) * Dq, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
 
     if tp > 1:
@@ -156,10 +156,10 @@ def mha_flash_attention_chunked(model_config:ModelConfig, parallelism_config:Par
     query =      [["QKV", (per_node_H*Dq + 2*per_node_Hkv*Dq), chunk_size, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
     layers += query
 
-    ## Prefill LA layers
+    ## Prefill LA layers (causal: chunk of kv_size[1] queries attends causally to kv_size[0]+kv_size[1] keys)
     for kv_size in prefill_kv_sizes:
-        layers +=    [["Logit Pre",per_node_H, kv_size[1], kv_size[0]+kv_size[1], Dq, per_node_Hkv, ResidencyInfo.C_onchip, OpType.Logit]]
-        layers +=    [["Attend Pre",per_node_H, kv_size[1], kv_size[0]+kv_size[1], Dq, per_node_Hkv, ResidencyInfo.A_onchip, OpType.Attend]]
+        layers +=    [["Logit Pre",per_node_H, kv_size[1], kv_size[0]+kv_size[1], Dq, per_node_Hkv, ResidencyInfo.C_onchip, OpType.Logit_Causal_PREFILL]]
+        layers +=    [["Attend Pre",per_node_H, kv_size[1], kv_size[0]+kv_size[1], Dq, per_node_Hkv, ResidencyInfo.A_onchip, OpType.Attend_Causal_PREFILL]]
 
     ## Decode LA layers
     for kv_size in decode_kv_sizes:
@@ -252,10 +252,10 @@ def mla_attention_prefill(model_config:ModelConfig, parallelism_config:Paralleli
 
     # Logit: Q * K^T
     Dq = qk_nope_head_dim + qk_rope_head_dim
-    layers += [["Logit", per_node_H, input_sequence_length, input_sequence_length//sp, Dq, 1, ResidencyInfo.C_onchip, OpType.Logit]]
+    layers += [["Logit", per_node_H, input_sequence_length, input_sequence_length//sp, Dq, 1, ResidencyInfo.C_onchip, OpType.Logit_Causal_PREFILL]]
 
     # Attend: softmax(QK^T) * V
-    layers += [["Attend", per_node_H, input_sequence_length, input_sequence_length//sp, v_head_dim, 1, ResidencyInfo.A_onchip, OpType.Attend]]
+    layers += [["Attend", per_node_H, input_sequence_length, input_sequence_length//sp, v_head_dim, 1, ResidencyInfo.A_onchip, OpType.Attend_Causal_PREFILL]]
 
     # Output projection: [B, S, H*v_head_dim] -> [B, S, D]
     layers += [["Out Proj", D, input_sequence_length//sp, per_node_H * v_head_dim, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]

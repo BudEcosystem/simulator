@@ -24,6 +24,13 @@ class OpType(IntEnum):
     GEMM_LORA_B = 20
     ADD = 21
 
+    # Causal-masked attention COMPUTE for prefill (M4b). Same Logit/Attend operator class, tensors and
+    # memory as Logit/Attend (op_type_dicts maps 22->'Logit', 23->'Attend'); ONLY get_num_ops is scaled
+    # by the triangular causal fraction f=1-(M-1)/(2*max(N,M)). Emitted only by causal-decoder prefill
+    # sites in attention.py (bidirectional/encoder attention keeps plain Logit/Attend = full square).
+    Logit_Causal_PREFILL = 22
+    Attend_Causal_PREFILL = 23
+
     # Training-specific op types (backward pass)
     BACKWARD_GEMM = 30
     BACKWARD_FC = 31

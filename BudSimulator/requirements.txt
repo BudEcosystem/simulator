@@ -36,3 +36,15 @@ transformers>=4.35.0
 torch>=2.0.0
 accelerate>=0.24.0
 huggingface-hub>=0.19.0
+
+# --- Core deps the code imports that were previously missing (a fresh install would crash) ---
+scipy>=1.10.0          # validation/calibration: scipy.optimize / scipy.stats (module-level imports)
+PyYAML>=6.0            # Scale-Sim / ASTRA-Sim + training config readers (module-level `import yaml`)
+packaging>=23.0        # version parsing across the engine
+pymoo>=0.6.0           # NSGA-II hardware/config design-space search (else silent coarse-grid fallback)
+slowapi>=0.1.9         # API rate limiting (apis/main.py; degrades gracefully if absent)
+openai>=1.0.0          # optional LLM provider for model auto-config (src/bud_ai.py); used when LLM_PROVIDER=openai
+
+# --- Optional extras (not required to run; install on demand) ---
+# openevolve            # LLM-driven algorithm evolution in BudEvolve (heavy; code falls back gracefully)
+# bud_models            # external Bud model-registry integration (private package)

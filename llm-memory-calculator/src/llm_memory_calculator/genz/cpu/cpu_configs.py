@@ -62,7 +62,6 @@ CPU_PRESETS = {
             # Vendor
             vendor='intel',
             microarchitecture='icelake',
-            framework_overhead_ms=1250.0
         )
     },
     
@@ -114,7 +113,6 @@ CPU_PRESETS = {
             
             vendor='amd',
             microarchitecture='zen3',
-            framework_overhead_ms=1250.0
         )
     },
     
@@ -156,7 +154,6 @@ CPU_PRESETS = {
             
             vendor='arm', 
             microarchitecture='neoverse-v1',
-            framework_overhead_ms=1250.0
         )
     },
     
@@ -231,7 +228,6 @@ CPU_PRESETS = {
             # Vendor information
             vendor='intel',
             microarchitecture='sapphire_rapids',
-            framework_overhead_ms=1038.0
         )
     },
     'intel_xeon_8592_plus': {
@@ -296,7 +292,6 @@ CPU_PRESETS = {
         microarchitecture = 'emeraldrapids',
 
         # Calibration
-        framework_overhead_ms=1250.0 # Default based on initial diagnosis
     )
 },
     
@@ -384,7 +379,6 @@ CPU_PRESETS = {
             microarchitecture='granite_rapids',
 
             # Calibration
-            framework_overhead_ms=1250.0 # Default based on initial diagnosis
         )
     }
 }

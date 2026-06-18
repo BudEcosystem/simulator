@@ -146,7 +146,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
     'H100_GPU': {
         'name': 'H100_GPU',
-        'Flops': 1979,
+        'Flops': 989.5,  # dense bf16 tensor TFLOPS (NVIDIA H100 SXM datasheet). 1979 = 2:4 sparse, not achievable by dense LLM GEMMs.
         'Memory_size': 80,
         'Memory_BW': 3350,
         'ICN': 450,
@@ -181,7 +181,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
     'H100_PCIe_GPU': {
         'name': 'H100_PCIe_GPU',
-        'Flops': 1513,
+        'Flops': 756,  # dense bf16 tensor TFLOPS (NVIDIA H100 PCIe datasheet). 1513 = 2:4 sparse.
         'Memory_size': 80,
         'Memory_BW': 2000,
         'ICN': 300,
@@ -207,7 +207,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
     'H200_GPU': {
         'name': 'H200_GPU',
-        'Flops': 1979,
+        'Flops': 989.5,  # dense bf16 tensor TFLOPS (H200 = H100 compute die, same dense peak). 1979 = 2:4 sparse.
         'Memory_size': 141,
         'Memory_BW': 4800,
         'ICN': 450,
@@ -233,7 +233,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
     'GH200_GPU': {
         'name': 'GH200_GPU',
-        'Flops': 1979,
+        'Flops': 989.5,  # dense bf16 tensor TFLOPS (GH200 = H100 GPU die). 1979 = 2:4 sparse.
         'Memory_size': 144,
         'Memory_BW': 4900,
         'ICN': 450,
@@ -308,6 +308,48 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
             'coreweave': 7.50,
             'purchase_price_usd': 70000,
             'tdp_watts': 1000,
+        },
+    },
+    'GB10': {
+        'name': 'GB10',
+        # Blackwell GPU in the GB10 Grace-Blackwell Superchip (DGX Spark / Project DIGITS).
+        # ~1 PFLOP FP4 (sparse) → ~500 FP8 → ~250 BF16 TFLOPS dense-tensor.
+        'Flops': 250,  # BF16 TFLOPS (~500 FP8, ~1000 FP4). Single Blackwell GPU.
+        'Memory_size': 128,  # GB, LPDDR5X UNIFIED (coherent CPU+GPU); ~119 GiB usable to the OS.
+        'Memory_BW': 273,  # GB/s — LPDDR5X unified bandwidth (the dominant decode bottleneck).
+        'ICN': 100,  # NVLink-C2C CPU<->GPU / ConnectX clustering; unused at TP=1 (single GPU).
+        'ICN_LL': 0.25,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'BLACKWELL',
+        'generation': 'Grace Blackwell Superchip',
+        'compute_capability': '12.1',  # sm_121
+        'release_year': 2025,
+        'tensor_cores': 'gen5',
+        'rt_cores': 'gen4',
+        'memory_type': 'LPDDR5X',
+        'unified_memory': True,
+        'aliases': ['GB10', 'DGX Spark', 'GB10 Grace Blackwell', 'NVIDIA GB10', 'Project DIGITS'],
+        'cost': {
+            'purchase_price_usd': 3999,
+            'tdp_watts': 170,
+        },
+        # MEASURED inference calibration (real llama.cpp on GB10, qwen2.5 0.5B/3B q4, 14-point grid
+        # of batch B∈{1,2,4,8} × context T∈{0.5k,4k,12k}). Read internally by get_inference_system →
+        # the roofline is scaled by these efficiencies and the additive per-step/per-stream overheads
+        # the analytic model omits. Decode RMS ~6.6%, prefill ~10%; refit via the inference
+        # calibration harness with more model sizes. ONLY GB10 carries this block → every other
+        # device is byte-identical (verified). eta_mem = effective decode BW (~66% of the 273 spec,
+        # shared-LPDDR5X penalty); eta_compute = small-prefill MFU (~8%); t_launch = per-kernel launch
+        # latency (ms); c_stream = per-layer per-extra-stream runtime overhead (sampling/scheduling).
+        'inference_calibration': {
+            # decode (memory-bound): eta_mem≈66% of peak BW (shared LPDDR5X) + ~4.6us/kernel launch
+            # + ~0.016ms/layer per extra concurrent stream (sampling/scheduling). RMS ~6.6%.
+            'decode':  {'eta_mem': 0.659, 't_launch_ms': 0.00456, 'c_stream_ms_per_layer': 0.0158},
+            # prefill (compute-bound, small-model launch-heavy): eta_compute≈10% MFU on small GEMMs,
+            # eta_mem≈0.74, ~0.21ms/GEMM-op launch floor. RMS ~5%. (No per-stream term: single pass.)
+            'prefill': {'eta_compute': 0.096, 'eta_mem': 0.741, 't_launch_ms': 0.206},
         },
     },
     'B200_GPU': {
@@ -503,6 +545,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'Memory_size': 24,
         'Memory_BW': 600,
         'ICN': 64,
+        'tdp_watts': 150,  # NVIDIA A10 datasheet: 150W max power
         'real_values': True,
         'type': 'gpu',
         'manufacturer': 'NVIDIA',
@@ -524,6 +567,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'Memory_size': 24,
         'Memory_BW': 933,
         'ICN': 64,
+        'tdp_watts': 165,  # NVIDIA A30 datasheet: 165W max power
         'real_values': True,
         'type': 'gpu',
         'manufacturer': 'NVIDIA',
@@ -545,6 +589,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'Memory_size': 48,
         'Memory_BW': 696,
         'ICN': 64,
+        'tdp_watts': 300,  # NVIDIA A40 datasheet: 300W max power
         'real_values': True,
         'type': 'gpu',
         'manufacturer': 'NVIDIA',
@@ -566,6 +611,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'Memory_size': 48,
         'Memory_BW': 768,
         'ICN': 64,
+        'tdp_watts': 300,  # NVIDIA RTX A6000 datasheet: 300W max power
         'real_values': True,
         'type': 'gpu',
         'manufacturer': 'NVIDIA',
@@ -708,6 +754,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'DCN_bandwidth': 50,   # DCN: ~50 GB/s cross-pod
         'ICI_latency': 3e-6,   # ICI latency: ~3µs
         'DCN_latency': 200e-6, # DCN latency: ~200µs
+        'tdp_watts': 300,  # TPU v6e (Trillium) published per-chip TDP (300W; vs H100 700W)
         'real_values': True,
         'type': 'asic',
         'manufacturer': 'Google',
@@ -728,6 +775,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'DCN_bandwidth': 25,   # DCN: ~25 GB/s cross-pod
         'ICI_latency': 5e-6,   # ICI latency: ~5µs
         'DCN_latency': 300e-6, # DCN latency: ~300µs
+        'tdp_watts': 170,  # TPU v5e (cost-optimized) published per-chip power ~170W
         'real_values': True,
         'type': 'asic',
         'manufacturer': 'Google',
@@ -748,6 +796,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'DCN_bandwidth': 50,   # DCN: ~50 GB/s cross-pod
         'ICI_latency': 4e-6,   # ICI latency: ~4µs
         'DCN_latency': 250e-6, # DCN latency: ~250µs
+        'tdp_watts': 450,  # TPU v5p (performance-optimized) published per-chip TDP 450W (TSMC N5)
         'real_values': True,
         'type': 'asic',
         'manufacturer': 'Google',
@@ -768,6 +817,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'DCN_bandwidth': 25,   # DCN: ~25 GB/s cross-pod (InfiniBand-class)
         'ICI_latency': 5e-6,   # ICI latency: ~5µs (very low)
         'DCN_latency': 300e-6, # DCN latency: ~300µs (cross-datacenter)
+        'tdp_watts': 192,  # TPU v4 per-chip power, Jouppi et al. ISCA 2023 (192W measured; 250W spec)
         'real_values': True,
         'type': 'asic',
         'manufacturer': 'Google',
@@ -834,6 +884,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'Memory_size': 128,
         'Memory_BW': 3276,
         'ICN': 300,
+        'tdp_watts': 600,  # Intel Data Center GPU Max 1550 product spec: 600W TDP
         'real_values': True,
         'type': 'gpu',
         'manufacturer': 'Intel',
@@ -851,6 +902,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'Memory_size': 48,
         'Memory_BW': 1640,
         'ICN': 200,
+        'tdp_watts': 300,  # Intel Data Center GPU Max 1100 product spec: 300W PCIe TDP
         'real_values': True,
         'type': 'gpu',
         'manufacturer': 'Intel',
@@ -868,6 +920,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'Memory_size': 16,
         'Memory_BW': 560,
         'ICN': 50,
+        'tdp_watts': 225,  # Intel Arc A770 total board power: 225W
         'real_values': True,
         'type': 'gpu',
         'manufacturer': 'Intel',
@@ -888,6 +941,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'Memory_size': 128,
         'Memory_BW': 3675,
         'ICN': 300,
+        'tdp_watts': 900,  # Intel Gaudi 3 HL-325L OAM product brief: 900W TDP (air-cooled)
         'real_values': True,
         'type': 'accelerator',
         'manufacturer': 'Intel',
@@ -899,9 +953,13 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
     
     # Intel CPUs
     'SapphireRapids_CPU': {
-        'Flops': 33,
+        # R2-CPU3: reconcile to the sourced per-socket datasheet values (Xeon Platinum 8480+,
+        # cpu_specs.py XEON_PLATINUM_8480PLUS): 56c x 2.0GHz x 16 x 2-socket AVX-512 FP32 = 57.3 TFLOPS;
+        # per-socket DRAM = 8ch x DDR5-4800 (38.4 GB/s/ch) = 307.2 GB/s. The eta_mem DDR band (0.65)
+        # derates this for decode realism. Was 33 / 180 (an under-valued disjoint source).
+        'Flops': 57.3,
         'Memory_size': 300,
-        'Memory_BW': 180,
+        'Memory_BW': 307.2,
         'ICN': 100,
         'Power': 434,
         'real_values': False,
@@ -913,9 +971,12 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'aliases': ['Sapphire Rapids', 'Xeon Sapphire Rapids', 'Intel Sapphire Rapids', 'Xeon Platinum 8480+']
     },
     'EmeraldRapids_CPU': {
-        'Flops': 47,
+        # R2-CPU3: reconcile to the sourced per-socket datasheet values (Xeon Platinum 8580,
+        # cpu_specs.py XEON_PLATINUM_8580): 56c x 2.0GHz x 16 x 2-socket x 1.05 IPC = 61.4 TFLOPS;
+        # per-socket DRAM = 8ch x DDR5-5600 (44.8 GB/s/ch) = 358.4 GB/s. Was 47 / 350.
+        'Flops': 61.4,
         'Memory_size': 300,
-        'Memory_BW': 350,
+        'Memory_BW': 358.4,
         'ICN': 125,
         'Power': 289,
         'real_values': False,

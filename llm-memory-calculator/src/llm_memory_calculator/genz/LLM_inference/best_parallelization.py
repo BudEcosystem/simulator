@@ -27,6 +27,10 @@ def factors(n):
                 for i in range(1, int(n**0.5)+1) if n % i == 0) for x in tup]
 
 def get_various_parallization(model='llama2_7b', total_nodes=8):
+    # NOTE: this helper is reached ONLY via direct import / ``platform_size.py`` / docs — it is NOT on the
+    # v2 API path (production parallelism search goes through ``_generate_parallelism_strategies`` /
+    # ``hardware_optimizer``, which already require ``tp*pp==num_nodes``). The rule here is consolidated
+    # onto that same full-cluster-utilization contract so the two no longer disagree.
     model_config = get_configs(model)
 
     if total_nodes == 1:
@@ -40,11 +44,19 @@ def get_various_parallization(model='llama2_7b', total_nodes=8):
     TP_parallelism = np.sort(factors(H))[::-1]
     PP_parallelism = np.sort(factors(num_layers))[::-1]
 
-    parallelism_combinations = set()
+    # MoE models can spend the remaining cluster on expert parallelism, so a (TP, PP) split is valid as
+    # long as TP*PP*EP == total_nodes for some integer EP >= 1 (i.e. TP*PP divides total_nodes). Dense
+    # models have no EP, so the split must use the whole cluster directly: TP*PP == total_nodes.
+    is_moe = getattr(model_config, 'num_experts', 1) and model_config.num_experts > 1
 
+    parallelism_combinations = set()
     for TP, PP in itertools.product(TP_parallelism, PP_parallelism):
-        if TP * PP < total_nodes and TP*PP >= total_nodes//2:
-            parallelism_combinations.add((TP, PP))
+        tp_pp = int(TP) * int(PP)
+        if is_moe:
+            if tp_pp <= total_nodes and total_nodes % tp_pp == 0:  # EP = total_nodes // tp_pp
+                parallelism_combinations.add((int(TP), int(PP)))
+        elif tp_pp == total_nodes:
+            parallelism_combinations.add((int(TP), int(PP)))
     return parallelism_combinations
 
 def get_best_parallization_strategy(

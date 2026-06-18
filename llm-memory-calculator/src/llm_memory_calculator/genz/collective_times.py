@@ -186,8 +186,13 @@ def compute_scale_aware_overhead(
 # ========================================
 # Phase 8: Hardware-Specific Communication Efficiency Tables
 # ========================================
-# Based on real measurements from NCCL benchmarks and vendor data
-
+# H5 (DEAD CODE — NOT WIRED IN): `COMM_EFFICIENCY_TABLES` / `get_comm_efficiency` below, and
+# `get_hierarchical_AR_time` further down, have NO callers (verified). The live AllReduce/AllGather/
+# ReduceScatter paths use hardcoded message-size `bw_efficiency` buckets + the inline hierarchical
+# split, NOT these per-hardware tables. So "Phase 8 hardware-calibrated comm efficiency" is currently
+# inert — an MI300X and an H100 get identical bucket efficiencies. Retained (not deleted) only to avoid
+# a large churn; to actually use it, wire `get_comm_efficiency()` into get_AR_time/get_AG_time/
+# get_reduce_scatter_time in place of the hardcoded buckets. Do not assume these tables affect results.
 COMM_EFFICIENCY_TABLES = {
     # NVIDIA H100 with NVLink 4.0
     'H100_NVLink': {
@@ -365,7 +370,6 @@ def get_AR_time(data, numNodes, system, use_realistic_overhead: bool = True,
         - NCCL 2.4 double binary trees: https://developer.nvidia.com/blog/massively-scale-deep-learning-training-nccl-2-4/
         - Hierarchical ring: https://arxiv.org/html/2507.04786v1
     """
-    import math
 
     if data == 0 or numNodes == 1:
         return 0
@@ -381,7 +385,10 @@ def get_AR_time(data, numNodes, system, use_realistic_overhead: bool = True,
     else:
         # Default to system parameters
         intra_node_bw = system.interchip_link_bw
-        inter_node_bw = system.interchip_link_bw * 0.4  # Inter-node typically 40% of NVLink
+        # H6: inter-node fabric is IB-class, ~0.11× the intra-node NVLink per-GPU BW (DGX H100:
+        # 8×400 Gb IB ≈ 50 GB/s/GPU vs NVLink4 ≈ 450 GB/s/GPU). The prior 0.4 over-stated inter-node
+        # bandwidth ~3.6×. Systems with a `network_config` use their real per-tier BW above instead.
+        inter_node_bw = system.interchip_link_bw * 0.11
         intra_node_latency = system.interchip_link_latency
         inter_node_latency = system.interchip_link_latency * 10  # 10x higher for IB
 
@@ -401,7 +408,7 @@ def get_AR_time(data, numNodes, system, use_realistic_overhead: bool = True,
         use_tree = False  # Ring is better for large messages (full BW)
 
     # Calculate number of nodes (multi-GPU servers)
-    num_nodes = max(1, numNodes // gpus_per_node)
+    num_nodes = max(1, math.ceil(numNodes / gpus_per_node))  # M9: ceil — 12 GPUs span 2 nodes, not 1
     gpus_in_last_node = numNodes % gpus_per_node or gpus_per_node
 
     if num_nodes == 1:
@@ -467,7 +474,10 @@ def get_AR_time(data, numNodes, system, use_realistic_overhead: bool = True,
             num_gpus=numNodes,
             message_size=data,
             collective_type='allreduce',
-            concurrent_ops=2,  # Assume 2 concurrent collectives (TP + DP overlap)
+            # M8: don't assume implicit DP overlap — a lone TP collective has no concurrent traffic.
+            # Assuming 2 concurrent ops inflated the congestion term and double-derated alongside the
+            # message-size bw_efficiency already applied to the bandwidth terms above.
+            concurrent_ops=1,
         )
 
         return ideal_time * overhead_factor
@@ -508,7 +518,7 @@ def get_AG_time(data, numNodes, system, use_realistic_overhead: bool = True,
             gpus_per_node = network_config['npus_count'][0]
     else:
         intra_node_bw = system.interchip_link_bw
-        inter_node_bw = system.interchip_link_bw * 0.4
+        inter_node_bw = system.interchip_link_bw * 0.11  # H6: IB-class ~0.11× NVLink (see get_AR_time)
         intra_node_latency = system.interchip_link_latency
         inter_node_latency = system.interchip_link_latency * 10
 
@@ -523,7 +533,7 @@ def get_AG_time(data, numNodes, system, use_realistic_overhead: bool = True,
         bw_efficiency = 0.85
         base_latency_us = 5
 
-    num_nodes = max(1, numNodes // gpus_per_node)
+    num_nodes = max(1, math.ceil(numNodes / gpus_per_node))  # M9: ceil — 12 GPUs span 2 nodes, not 1
 
     if num_nodes == 1:
         # Intra-node AllGather
@@ -545,7 +555,6 @@ def get_AG_time(data, numNodes, system, use_realistic_overhead: bool = True,
         )
 
         # Step 2: Intra-node broadcast (tree-based for efficiency)
-        import math
         broadcast_steps = math.ceil(math.log2(gpus_per_node))
         intra_broadcast_time = (
             broadcast_steps * intra_node_latency +
@@ -901,7 +910,6 @@ def get_reduce_scatter_time(data, numNodes, system, use_realistic_overhead: bool
         Ring RS Time = Start Latency + (N-1)*Tlink + (N-1)*(M/N)/BW
         Similar to AllGather but with reduction at each step.
     """
-    import math
 
     if data == 0 or numNodes == 1:
         return 0
@@ -916,7 +924,10 @@ def get_reduce_scatter_time(data, numNodes, system, use_realistic_overhead: bool
             gpus_per_node = network_config['npus_count'][0]
     else:
         intra_node_bw = system.interchip_link_bw
-        inter_node_bw = system.interchip_link_bw * 0.4  # Inter-node typically 40% of NVLink
+        # H6: inter-node fabric is IB-class, ~0.11× the intra-node NVLink per-GPU BW (DGX H100:
+        # 8×400 Gb IB ≈ 50 GB/s/GPU vs NVLink4 ≈ 450 GB/s/GPU). The prior 0.4 over-stated inter-node
+        # bandwidth ~3.6×. Systems with a `network_config` use their real per-tier BW above instead.
+        inter_node_bw = system.interchip_link_bw * 0.11
         intra_node_latency = system.interchip_link_latency
         inter_node_latency = system.interchip_link_latency * 10  # 10x higher for IB
 
@@ -932,7 +943,7 @@ def get_reduce_scatter_time(data, numNodes, system, use_realistic_overhead: bool
         base_latency_us = 5
 
     # Calculate number of physical nodes
-    num_nodes = max(1, numNodes // gpus_per_node)
+    num_nodes = max(1, math.ceil(numNodes / gpus_per_node))  # M9: ceil — 12 GPUs span 2 nodes, not 1
 
     if num_nodes == 1:
         # Pure intra-node ReduceScatter (NVLink)
@@ -1133,7 +1144,6 @@ def get_hierarchical_AR_time(
     # Step 3: Intra-node broadcast (distribute result)
     if gpus_per_node > 1 and tp_ranks <= gpus_per_node:
         # Broadcast within node (log2(N) steps for tree broadcast)
-        import math
         broadcast_steps = math.ceil(math.log2(gpus_per_node))
         broadcast_time = (
             intra_lat * broadcast_steps +
@@ -1161,7 +1171,6 @@ def get_broadcast_time(data, numNodes, system):
         return 0
 
     # Tree-based broadcast: log2(N) steps, each step sends full message
-    import math
     num_steps = math.ceil(math.log2(numNodes))
     broadcast_time = (5e-6 + num_steps * system.interchip_link_latency +
                       num_steps * data / system.interchip_link_bw) * 1000

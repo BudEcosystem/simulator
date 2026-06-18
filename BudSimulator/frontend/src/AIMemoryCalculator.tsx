@@ -1664,7 +1664,7 @@ const AIMemoryCalculator = () => {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Parameters</span>
-                      <span className="text-white">{(results.parameter_count / 1e9).toFixed(1)}B</span>
+                      <span className="text-white">{results.parameter_count ? `${(results.parameter_count / 1e9).toFixed(1)}B` : '—'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Precision</span>
@@ -1793,8 +1793,8 @@ const AIMemoryCalculator = () => {
                               {hw.price_approx !== undefined && hw.price_approx !== null && (
                                 <div className="mt-2 pt-2 border-t border-gray-700/50">
                                   <div className="flex items-center text-sm">
-                                    <span className="text-gray-500">Approx price:</span>
-                                    <span className="font-medium ml-1 text-blue-400">~${hw.price_approx.toFixed(2)} USD/hr</span>
+                                    <span className="text-gray-500">Relative price index:</span>
+                                    <span className="font-medium ml-1 text-blue-400">{hw.price_approx.toFixed(2)} *</span>
                                   </div>
                                 </div>
                               )}
@@ -1910,8 +1910,8 @@ const AIMemoryCalculator = () => {
                               {hw.price_approx !== undefined && hw.price_approx !== null && (
                                 <div className="mt-2 pt-2 border-t border-gray-700/50">
                                   <div className="flex items-center text-sm">
-                                    <span className="text-gray-500">Approx price:</span>
-                                    <span className="font-medium ml-1 text-blue-400">~${hw.price_approx.toFixed(2)} USD/hr</span>
+                                    <span className="text-gray-500">Relative price index:</span>
+                                    <span className="font-medium ml-1 text-blue-400">{hw.price_approx.toFixed(2)} *</span>
                                   </div>
                                 </div>
                               )}
@@ -2089,7 +2089,7 @@ const AIMemoryCalculator = () => {
                           {item.results?.model_type}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                          {(item.results?.parameter_count / 1e9).toFixed(1)}B
+                          {item.results?.parameter_count ? `${(item.results.parameter_count / 1e9).toFixed(1)}B` : '—'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-white">{item.results?.total_memory_gb?.toFixed(1)} GB</div>

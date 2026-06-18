@@ -23,7 +23,7 @@ from llm_memory_calculator.genz.parallelism import ParallelismConfig
 
 
 # ---------------------------------------------------------------------------
-# 1. GH200 Flops should match H100 Flops (both 1979 dense BF16 TFLOPS)
+# 1. GH200 Flops should match H100 Flops (both 989.5 dense BF16 TFLOPS)
 # ---------------------------------------------------------------------------
 def test_gh200_flops_matches_h100():
     """GH200 (Grace Hopper Superchip) uses the same H100 GPU die.
@@ -36,7 +36,9 @@ def test_gh200_flops_matches_h100():
     assert gh200_flops == h100_flops, (
         f"GH200 Flops ({gh200_flops}) should equal H100 Flops ({h100_flops})"
     )
-    assert gh200_flops == 1979, f"Expected 1979 dense BF16 TFLOPS, got {gh200_flops}"
+    # Accuracy remediation (F1): dense bf16 per-chip is 989.5 TFLOPS. The prior 1979 was the 2:4
+    # SPARSE figure, which is not achievable by dense LLM GEMMs (it made H100 prefill imply ~160% MFU).
+    assert gh200_flops == 989.5, f"Expected 989.5 dense BF16 TFLOPS, got {gh200_flops}"
 
 
 # ---------------------------------------------------------------------------
@@ -68,8 +70,8 @@ def test_h200_config_exists():
     assert h200['Memory_BW'] == 4800, (
         f"H200 Memory_BW should be 4800 GB/s, got {h200['Memory_BW']}"
     )
-    assert h200['Flops'] == 1979, (
-        f"H200 Flops should be 1979 BF16 dense TFLOPS, got {h200['Flops']}"
+    assert h200['Flops'] == 989.5, (  # F1: dense bf16 (H200 = H100 die); 1979 was the 2:4 sparse figure
+        f"H200 Flops should be 989.5 BF16 dense TFLOPS, got {h200['Flops']}"
     )
 
 
@@ -106,8 +108,8 @@ def test_h100_pcie_config_exists():
     assert 'H100_PCIe_GPU' in HARDWARE_CONFIGS, "H100_PCIe_GPU missing from HARDWARE_CONFIGS"
 
     h100_pcie = HARDWARE_CONFIGS['H100_PCIe_GPU']
-    assert h100_pcie['Flops'] == 1513, (
-        f"H100 PCIe Flops should be 1513 BF16 dense TFLOPS, got {h100_pcie['Flops']}"
+    assert h100_pcie['Flops'] == 756, (  # F1: dense bf16 (NVIDIA H100 PCIe datasheet); 1513 was 2:4 sparse
+        f"H100 PCIe Flops should be 756 BF16 dense TFLOPS, got {h100_pcie['Flops']}"
     )
     assert h100_pcie['Memory_BW'] == 2000, (
         f"H100 PCIe Memory_BW should be 2000 GB/s, got {h100_pcie['Memory_BW']}"
@@ -182,33 +184,34 @@ def test_int4_compute_multiplier():
 # 9. FP8 precision should produce a hardware compatibility warning
 # ---------------------------------------------------------------------------
 def test_fp8_hardware_warning():
-    """Creating a System with FP8 precision should emit a warning about
-    hardware compatibility (requires Hopper/CDNA3+).
+    """FP8 hardware-compatibility warning is ARCHITECTURE-GATED (accuracy remediation L1).
 
-    Bug fix: FP8 previously silently succeeded without informing the user
-    of potential hardware incompatibility.
+    The warning moved from System.__init__ (which has no architecture and fired unconditionally — noise
+    even on FP8-capable H100) to get_inference_system, where the device arch is known. So:
+      - A bare System(bits='fp8') must NOT warn (no arch context).
+      - get_inference_system on a NON-FP8 arch (A100/Ampere) with fp8 MUST warn.
+      - get_inference_system on an FP8-capable arch (H100/Hopper) must NOT warn.
     """
+    from llm_memory_calculator.genz.LLM_inference.utils import get_inference_system
+
     unit = Unit()
-    with warnings.catch_warnings(record=True) as caught_warnings:
+    with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        _sys = System(
-            unit,
-            frequency=1000,
-            flops=100,
-            off_chip_mem_size=80 * 1024,
-            compute_efficiency=1.0,
-            memory_efficiency=1.0,
-            bits='fp8',
-        )
-        assert len(caught_warnings) >= 1, "Expected at least one warning for FP8 precision"
-        fp8_warnings = [
-            w for w in caught_warnings
-            if 'fp8' in str(w.message).lower()
-        ]
-        assert len(fp8_warnings) >= 1, (
-            f"Expected a warning mentioning FP8, but got: "
-            f"{[str(w.message) for w in caught_warnings]}"
-        )
+        System(unit, frequency=1000, flops=100, off_chip_mem_size=80 * 1024, bits='fp8')
+        assert not [w for w in caught if 'fp8' in str(w.message).lower()], \
+            "Bare System(fp8) should NOT warn — it has no architecture to judge FP8 support"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        get_inference_system(system_name='A100_80GB_GPU', bits='fp8', phase='decode')
+        assert [w for w in caught if 'fp8' in str(w.message).lower()], \
+            "Ampere (A100) lacks FP8 tensor cores — get_inference_system(fp8) should warn"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        get_inference_system(system_name='H100_GPU', bits='fp8', phase='decode')
+        assert not [w for w in caught if 'fp8' in str(w.message).lower()], \
+            "Hopper (H100) supports FP8 — get_inference_system(fp8) should NOT warn"
 
 
 # ---------------------------------------------------------------------------

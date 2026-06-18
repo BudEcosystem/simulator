@@ -93,6 +93,19 @@ async def startup_event():
     """Initialize hardware registry and apply runtime patches on startup."""
     HardwareRegistry.initialize()
 
+    # F2/C5: point the GenZ engine's hardware resolver (the module-level default HardwareManager used by
+    # get_inference_system -> get_hardware_config) at the SAME DB the catalog serves, so every listed
+    # device is simulatable — not just the ~73 static configs (18 GPU/accelerator devices used to 404).
+    # Static configs still win for overlapping keys (F1 dense FLOPS are immune to DB drift).
+    try:
+        from llm_memory_calculator.hardware import set_hardware_db_path
+        _hw_db = Path(__file__).parent.parent / 'data' / 'prepopulated.db'
+        if _hw_db.exists():
+            set_hardware_db_path(str(_hw_db))
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Could not point engine at hardware DB: {e}")
+
     # Patch MODEL_DICT at startup instead of at import time
     try:
         from .routers.models import apply_model_dict_patch

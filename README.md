@@ -75,9 +75,40 @@ A comprehensive ecosystem for simulating and analyzing Large Language Model (LLM
 - **FastAPI Backend** (Port 8000) — 40+ REST API endpoints with OpenAPI documentation
 
 ### Testing & Validation
-- **879+ tests** across 59 test files — inference, training, serving, CPU, BudEvolve, API
+- **900+ tests** across 60+ test files — inference, training, serving, CPU, BudEvolve, API
 - **Validated against benchmarks** — MLPerf Training, DeepSpeed ZeRO, Megatron-LM, vendor specs
 - **Accuracy** — memory ±10%, throughput ±15%, training time ±20%
+- **Calibrated, no magic numbers** — every efficiency constant (MFU/MBU bands, CPU STREAM efficiency,
+  optimizer-state bytes, per-device TDP) is sourced from a datasheet, ISA spec, published benchmark, or
+  measured microbenchmark; physical-limit invariants (MFU/MBU ≤ 1) hold across all simulatable devices
+
+---
+
+## Quick Start
+
+One command sets everything up (Python venv + core engine + backend deps + frontend + database), another
+starts both servers. Portable and idempotent — no hardcoded paths.
+
+```bash
+./setup.sh          # create .venv, install the engine (editable) + backend reqs + frontend, init DB,
+                    #   and verify all core imports. Options: --no-frontend, --python python3.12
+./start.sh          # start FastAPI backend (:8000) + React frontend (:3000), health-check based,
+                    #   clean Ctrl+C shutdown. Options: --backend-only, --backend-port, --frontend-port
+```
+
+Then open the API docs at `http://localhost:8000/docs` and the UI at `http://localhost:3000`.
+
+<details>
+<summary>Manual setup</summary>
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e llm-memory-calculator/          # core performance-modeling engine
+pip install -r BudSimulator/requirements.txt   # backend + all dependencies
+cd BudSimulator && python run_api.py           # backend on :8000
+cd BudSimulator/frontend && npm install && npm start   # frontend on :3000
+```
+</details>
 
 ---
 

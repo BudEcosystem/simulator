@@ -92,14 +92,14 @@ export const HardwareCard: React.FC<HardwareCardProps> = ({ hardware, onSelect }
             </div>
           )}
           
-          {/* Add price indicator if available */}
+          {/* Add price indicator if available (dimensionless relative index, not dollars) */}
           {hardware.price_approx !== undefined && hardware.price_approx !== null && (
             <div className="flex items-center text-sm mt-2">
               <DollarSign className="w-4 h-4 mr-2 text-blue-500" />
-              <span className="text-gray-400">Relative Price:</span>
+              <span className="text-gray-400">Relative price index:</span>
               <div className="flex items-center ml-auto">
                 <span className="font-semibold text-blue-400">
-                  ${hardware.price_approx.toFixed(2)}
+                  {hardware.price_approx.toFixed(2)}
                 </span>
                 <span className="text-xs text-gray-500 ml-1">*</span>
               </div>

@@ -34,9 +34,9 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     ##################################################################################################
 
     system = get_inference_system(system_name = system_name, bits = bits, ceff=system_eff , meff=system_eff,
-                                network_config=network_config, 
-                                collective_strategy=collective_strategy, 
-                                parallelism_heirarchy=parallelism_heirarchy )
+                                network_config=network_config,
+                                collective_strategy=collective_strategy,
+                                parallelism_heirarchy=parallelism_heirarchy, phase='decode' )
 
     ##################################################################################################
     ### Model Characterization Calculation
@@ -112,25 +112,26 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
         initial_summary = get_summary_table(initial_df, unit, model_characterstics=model_characterstics)
         initial_latency = initial_summary[f'Latency ({unit.unit_time})'].values[0]
         
-        # Model final decode step with grown KV cache (only if output is significant)
-        if output_tokens > 10:
-            model_decode_final = create_full_decode_model(name=model,
-                                                        input_sequence_length=input_tokens + output_tokens,
-                                                        output_gen_tokens=1,
-                                                        tensor_parallel=tensor_parallel,
-                                                        pipeline_parallel=pipeline_parallel,
-                                                        expert_parallel=expert_parallel)
-            
-            final_df = get_model_df(model_decode_final, system, unit, ub*Bb,
-                                  intermediate_on_chip=True, beam_merge=(Bb > 1), beam_size=Bb, model_characterstics=model_characterstics)
-            final_summary = get_summary_table(final_df, unit, model_characterstics=model_characterstics)
-            final_latency = final_summary[f'Latency ({unit.unit_time})'].values[0]
-            
-            # 50/50 average for expected value over uniform KV cache growth
-            decode_latency = (initial_latency + final_latency) / 2.0
-        else:
-            # For short outputs, just add small growth factor
-            decode_latency = initial_latency * (1.0 + 0.1 * output_tokens / 10)
+        # Model the final decode step with the grown KV cache (context = input + output_tokens) and take
+        # the 50/50 average — the expected per-token latency over uniform KV growth. M2 fix: this now
+        # applies for ALL output_tokens > 1. The previous `output_tokens > 10` gate fell back to a fixed
+        # `initial*(1 + 0.1*output_tokens/10)` bump that ignored the actual context length (a 5-token
+        # generation got +5% regardless of whether the prompt was 128 or 128k). The two-point average is
+        # grounded in the real KV-cache growth; the extra model build for short outputs is cheap.
+        model_decode_final = create_full_decode_model(name=model,
+                                                    input_sequence_length=input_tokens + output_tokens,
+                                                    output_gen_tokens=1,
+                                                    tensor_parallel=tensor_parallel,
+                                                    pipeline_parallel=pipeline_parallel,
+                                                    expert_parallel=expert_parallel)
+
+        final_df = get_model_df(model_decode_final, system, unit, ub*Bb,
+                              intermediate_on_chip=True, beam_merge=(Bb > 1), beam_size=Bb, model_characterstics=model_characterstics)
+        final_summary = get_summary_table(final_df, unit, model_characterstics=model_characterstics)
+        final_latency = final_summary[f'Latency ({unit.unit_time})'].values[0]
+
+        # 50/50 average for expected value over uniform KV cache growth
+        decode_latency = (initial_latency + final_latency) / 2.0
         
         # Use the initial model and summary for debugging output
         model_df = initial_df
@@ -160,14 +161,24 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     ### Final Latency and Thrpt Calculation
     ##################################################################################################
 
+    # Per-hardware inference calibration (default no-op): add the fixed per-step kernel-launch cost
+    # (N_ops · t_launch) and the per-stream runtime overhead (c_stream · layers · (B-1)) that the
+    # throughput roofline omits. Guarded so the default path (both constants 0) is byte-identical.
+    if system.kernel_launch_latency_ms or system.per_stream_overhead_ms:
+        n_ops = count_repeat_aware_ops(model_df)
+        _repeats = [model_df.loc[i, 'Dimension'] for i in range(len(model_df))
+                    if model_df.loc[i, 'Op Type'] == 'Repeat']
+        n_layers = max(_repeats) if _repeats else 1
+        decode_latency += (system.kernel_launch_latency_ms * n_ops
+                           + system.per_stream_overhead_ms * n_layers * max(0, batch_size - 1))
+
     ## 1000x because the latency is in milli seconds. thrpt is in Token/s
-    if pipeline_parallel > 1:
-        # Pipeline parallel adds bubble overhead
-        stage_latency = decode_latency / pipeline_parallel
-        total_latency = decode_latency + (pipeline_parallel - 1) * stage_latency
-        thrpt = 1000 * batch_size / total_latency
-    else:
-        thrpt = 1000 * batch_size / decode_latency  # Requests per second
+    # M1: steady-state pipelined throughput is gated by the per-token work, which is CONSERVED across
+    # pipeline stages (inter-stage comm is already in decode_latency). Pipeline parallelism raises
+    # memory capacity and adds fill/drain BUBBLE LATENCY, but does not reduce steady-state token
+    # throughput. The prior formula divided throughput by the one-shot fill/drain latency
+    # (~(2 - 1/PP)×), under-counting PP throughput ~1.5-2×. Fill/drain belongs to first-token latency.
+    thrpt = 1000 * batch_size / decode_latency  # Requests per second (steady-state, PP-independent)
     # For decode, each request generates one token per iteration
     tokens_per_sec = thrpt  # Since decode generates 1 token per request per iteration
 

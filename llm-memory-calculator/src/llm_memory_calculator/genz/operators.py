@@ -3,6 +3,25 @@ from llm_memory_calculator.genz.operator_base import Operator
 import ast
 from llm_memory_calculator.genz.Models import OpType, CollectiveType
 
+
+def _causal_fraction(M, N):
+    """Fraction of the M×N attention score/AV grid actually computed under causal masking.
+
+    A causal LM prefills M query tokens (the last M positions) attending to N logical keys (N>=M).
+    Attended (query,key) pairs = M*N - M*(M-1)/2, so the computed fraction is f = 1 - (M-1)/(2N).
+    Closed-form (no tuned constants). For M==N this is (S+1)/(2S) -> 0.5 as S grows; for M==1 (decode)
+    it is exactly 1.0 (a single query attends to all keys — no triangle).
+
+    `n_logical = max(N, M)` neutralizes the sequence-parallel trap: a prefill op can carry the full
+    logical M=S queries but a *sharded* N=S/sp < M, which would otherwise drive f negative. The final
+    clamp to (0, 1] is a hard guard against any pathological input.
+    """
+    if M <= 1:
+        return 1.0
+    n_logical = max(int(N), int(M))
+    f = 1.0 - (M - 1) / (2.0 * n_logical)
+    return min(1.0, max(float(np.finfo(float).tiny), f))
+
 class FC(Operator):
     def __init__(self, dim, density):
         self.name = dim[0]
@@ -160,7 +179,10 @@ class Logit(Operator):
 
     def get_num_ops(self):
         B, H, M, N, D, Hkv = self.dim[:self.get_effective_dim_len()]
-        return  np.prod([B, H, M, N, D])
+        base = np.prod([B, H, M, N, D])
+        if self.dim[-1] == OpType.Logit_Causal_PREFILL:
+            base = base * _causal_fraction(M, N)
+        return base
 
 class Attend(Operator):
     def __init__(self, dim, density):
@@ -188,7 +210,10 @@ class Attend(Operator):
 
     def get_num_ops(self):
         B, H, M, N, D, Hkv = self.dim[:self.get_effective_dim_len()]
-        return np.prod([B, H, M, N, D])
+        base = np.prod([B, H, M, N, D])
+        if self.dim[-1] == OpType.Attend_Causal_PREFILL:
+            base = base * _causal_fraction(M, N)
+        return base
 
 class DWCONV(Operator):
     def __init__(self, dim, density):

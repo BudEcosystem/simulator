@@ -23,6 +23,39 @@ class MemoryTierConfig:
     latency_ns: float = 0.0
 
 
+def estimate_weight_bytes(model_config, precision: str = "bf16", tensor_parallel: int = 1) -> int:
+    """Single-source model weight size in bytes (GQA-aware), sharded by tensor_parallel.
+
+    Mirrors ``ServingSimulator._estimate_weight_bytes`` so the cluster/disagg ``B_eff`` budget
+    (weights + KV share the device tier) uses the SAME weight figure as the simulator — no
+    second source of truth and no magic constant. Parameter count:
+      attn = (Q+O full-head) + (K+V kv-head) per layer; ffn = 3*hidden*intermediate per layer;
+      embed = vocab*hidden. Bytes/param from precision (bf16/fp16=2, int8/fp8=1, else 4).
+    """
+    hidden = getattr(model_config, "hidden_size", 4096)
+    layers = getattr(model_config, "num_decoder_layers", 32)
+    intermediate = getattr(model_config, "intermediate_size", 11008)
+    vocab = getattr(model_config, "vocab_size", 32000)
+    n_heads = getattr(model_config, "num_attention_heads", 32)
+    head_dim = getattr(model_config, "head_dim", None)
+    if head_dim is None:
+        head_dim = hidden // n_heads
+    num_kv_heads = getattr(model_config, "num_key_value_heads", n_heads)
+
+    attn_params = (
+        2 * hidden * n_heads * head_dim +        # Q and O projections (full heads)
+        2 * hidden * num_kv_heads * head_dim     # K and V projections (kv heads)
+    ) * layers
+    ffn_params = 3 * hidden * intermediate * layers
+    embed_params = vocab * hidden
+    total_params = attn_params + ffn_params + embed_params
+
+    precision_bytes = 2 if precision in ("bf16", "fp16") else (
+        1 if precision in ("int8", "fp8") else 4
+    )
+    return total_params * precision_bytes // max(tensor_parallel, 1)
+
+
 class MemoryModel:
     """Multi-tier memory model for KV cache management in LLM serving.
 
@@ -95,6 +128,20 @@ class MemoryModel:
     def primary_tier(self) -> MemoryTier:
         """Return the first (highest-priority) configured memory tier."""
         return next(iter(self._tier_state))
+
+    @property
+    def primary_capacity_bytes(self) -> int:
+        """Total bytes of the primary (highest-priority) tier (weights + KV share it)."""
+        return self._tier_state[self.primary_tier]["capacity"]
+
+    @property
+    def total_capacity_bytes(self) -> int:
+        """Sum of every configured tier's capacity (HBM + DRAM + HOST_DDR + CXL + NVME).
+
+        SV1/SV2: a request whose KV footprint exceeds this combined budget can never be
+        admitted on any tier, so the scheduler fails it instead of re-queuing forever.
+        """
+        return sum(state["capacity"] for state in self._tier_state.values())
 
     def load_weights(self, weight_bytes: int, tier: MemoryTier = None) -> None:
         """Load model weights into a memory tier.

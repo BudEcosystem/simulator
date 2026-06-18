@@ -96,6 +96,8 @@ class TrainingMemoryEstimate:
     deepspeed_stage: Optional[str] = None
     tensor_parallel: int = 1
     data_parallel: int = 1
+    pipeline_parallel: int = 1
+    expert_parallel: int = 1
     framework_overhead_percent: float = 10.0
 
     def to_dict(self) -> Dict[str, Any]:
@@ -118,6 +120,8 @@ class TrainingMemoryEstimate:
             "deepspeed_stage": self.deepspeed_stage,
             "tensor_parallel": self.tensor_parallel,
             "data_parallel": self.data_parallel,
+            "pipeline_parallel": self.pipeline_parallel,
+            "expert_parallel": self.expert_parallel,
         }
 
     def fits_in_memory(self, available_memory_gb: float) -> bool:

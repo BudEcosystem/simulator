@@ -53,6 +53,8 @@ class TrainingEstimateRequest(BaseModel):
     deepspeed_stage: Optional[str] = Field(None, description="DeepSpeed ZeRO stage: zero2, zero3")
     tensor_parallel: int = Field(1, ge=1, description="Tensor parallelism degree")
     data_parallel: int = Field(1, ge=1, description="Data parallelism degree")
+    pipeline_parallel: int = Field(1, ge=1, description="Pipeline parallelism degree (shards layers)")
+    expert_parallel: int = Field(1, ge=1, description="Expert parallelism degree (shards MoE experts)")
     framework_overhead_percent: float = Field(10.0, ge=0, description="Framework overhead percentage")
 
     @field_validator('method')
@@ -241,8 +243,30 @@ class HardwareListResponse(BaseModel):
 
 # ==================== API Endpoints ====================
 
+def _genz_config_to_hf_dict(gc) -> Dict[str, Any]:
+    """Map a GenZ ModelConfig (registry) to the HF-style config dict the training calculator consumes.
+    GenZ uses `num_decoder_layers` for the layer count; other fields share HF names."""
+    return {
+        'hidden_size': gc.hidden_size,
+        'num_hidden_layers': gc.num_decoder_layers,
+        'num_attention_heads': gc.num_attention_heads,
+        'num_key_value_heads': getattr(gc, 'num_key_value_heads', gc.num_attention_heads),
+        'intermediate_size': gc.intermediate_size,
+        'vocab_size': gc.vocab_size,
+        'hidden_act': getattr(gc, 'hidden_act', 'silu'),
+        'head_dim': getattr(gc, 'head_dim', None),
+        'max_position_embeddings': getattr(gc, 'max_model_len', 4096),
+        'num_experts': getattr(gc, 'num_experts', 1) if getattr(gc, 'is_moe', False) else 1,
+        'num_experts_per_tok': getattr(gc, 'expert_top_k', 1) if getattr(gc, 'is_moe', False) else 1,
+        'tie_word_embeddings': False,
+    }
+
+
 def _get_model_config(model_id: str) -> Dict[str, Any]:
-    """Load model configuration from HuggingFace or cache."""
+    """Load model configuration. Tries HuggingFace first (exact configs for real HF ids), then falls
+    back to the GenZ model registry — the SAME identifier space serving/decode use — so names like
+    'llama2_7b' resolve here too (M7). Upstream HF auth/network failures map to 502, genuine
+    not-found to 404 (not the previous blanket 404 that mislabeled a gated-repo 401)."""
     if not TRAINING_MODULE_AVAILABLE:
         raise HTTPException(
             status_code=501,
@@ -252,10 +276,28 @@ def _get_model_config(model_id: str) -> Dict[str, Any]:
     try:
         loader = HuggingFaceConfigLoader()
         return loader.get_model_config(model_id)
-    except Exception as e:
+    except Exception as hf_err:
+        # Fall back to the GenZ registry (resolves short names like 'llama2_7b', 'mixtral_8x7b').
+        try:
+            from llm_memory_calculator.genz.Models import get_configs
+            return _genz_config_to_hf_dict(get_configs(model_id))
+        except Exception:
+            pass
+        msg = str(hf_err)
+        lower = msg.lower()
+        if any(t in msg for t in ('401', '403')) or 'gated' in lower or 'authenticat' in lower:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Upstream HuggingFace access error for '{model_id}' (gated/auth): {msg}"
+            )
+        if any(t in lower for t in ('connection', 'timeout', 'resolve', 'temporarily')):
+            raise HTTPException(
+                status_code=502,
+                detail=f"Could not reach HuggingFace for '{model_id}': {msg}"
+            )
         raise HTTPException(
             status_code=404,
-            detail=f"Could not load model config for {model_id}: {str(e)}"
+            detail=f"Model '{model_id}' not found on HuggingFace or in the GenZ registry: {msg}"
         )
 
 
@@ -292,6 +334,8 @@ async def estimate_training(request: TrainingEstimateRequest) -> TrainingEstimat
         deepspeed_stage=request.deepspeed_stage,
         tensor_parallel=request.tensor_parallel,
         data_parallel=request.data_parallel,
+        pipeline_parallel=request.pipeline_parallel,
+        expert_parallel=request.expert_parallel,
         framework_overhead_percent=request.framework_overhead_percent,
     )
 

@@ -106,14 +106,17 @@ class NumericOptimizer:
 
         Falls back to grid search if pymoo is not installed.
         """
+        # Narrow pymoo-availability probe (not a broad try/except around the whole NSGA-II run, which
+        # would misattribute a DEEP ImportError as "pymoo absent" and silently fall back to grid).
         try:
-            return self._run_pymoo_nsga2(
-                search_space, objectives, constraints,
-                n_generations, pop_size, input_tokens, output_tokens,
-            )
+            import pymoo  # noqa: F401  (probe; real submodule imports are inside _run_pymoo_nsga2)
         except ImportError:
             warnings.warn("pymoo not installed, falling back to grid search")
             return self._run_grid_search(search_space, input_tokens, output_tokens)
+        return self._run_pymoo_nsga2(
+            search_space, objectives, constraints,
+            n_generations, pop_size, input_tokens, output_tokens,
+        )
 
     def _run_pymoo_nsga2(
         self, search_space, objectives, constraints,

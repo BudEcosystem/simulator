@@ -1,0 +1,9 @@
+{
+  "decode_tpot_ms": {
+    "llama2_7b|H100_GPU": 4.675573,
+    "llama2_7b|A100_80GB_GPU": 8.160742,
+    "llama3_8b|H100_GPU": 4.999119,
+    "llama2_7b|GB10": 75.150455
+  },
+  "param_counts": {}
+}

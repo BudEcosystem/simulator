@@ -21,7 +21,8 @@ class System(object):
         # Standard precision
         'fp16': 1,
         'bf16': 1,
-        'tf32': 1,        # TensorFloat-32 (A100+)
+        'tf32': 2,        # TensorFloat-32: HALF the bf16/fp16 tensor-core rate (A100: 156 vs 312 TFLOPS,
+                          # NVIDIA datasheet). Compute multiplier is relative TIME, so tf32 takes 2× bf16.
         'f32': 2,
         'fp32': 2,
 
@@ -72,7 +73,7 @@ class System(object):
                 onchip_mem_bw=18000, on_chip_mem_size=float('Inf'),
                 offchip_mem_bw=900, off_chip_mem_size=float('Inf'),
                 external_mem_bw=0,
-                frequency=940, bits='bf16',
+                frequency=940, bits='bf16', kv_bits=None,
                 compute_efficiency=1, memory_efficiency=1, comm_efficiency=1,
                 interchip_link_bw = 25, num_nodes = 1, interchip_link_latency=1.9,
                 compute_engine='GenZ',    # GenZ or Scale-sim
@@ -81,6 +82,14 @@ class System(object):
                 parallelism_heirarchy = "TP{1}_EP{1}_PP{1}",
                 network_config = None,
                 gear_params = None,
+                # --- Optional per-hardware INFERENCE calibration overheads (default 0 = no-op). ---
+                # Real systems pay a fixed per-kernel launch latency and a per-stream runtime cost
+                # (sampling/scheduling/KV-mgmt) that the throughput roofline (max(compute,memory))
+                # omits. These are sourced from the hardware config's `inference_calibration` block
+                # and added at the MODEL level (in llm_decode/llm_prefill), not per-op. Default 0.0
+                # keeps every existing device byte-identical.
+                kernel_launch_latency_ms = 0.0,
+                per_stream_overhead_ms = 0.0,
                 ):
 
         if unit is None:
@@ -103,6 +112,9 @@ class System(object):
         self.compute_efficiency = compute_efficiency
         self.memory_efficiency = memory_efficiency
         self.comm_efficiency = comm_efficiency
+        # Inference calibration overheads (ms); 0.0 = no-op (default for all uncalibrated hardware).
+        self.kernel_launch_latency_ms = kernel_launch_latency_ms
+        self.per_stream_overhead_ms = per_stream_overhead_ms
         self.mxu_shape = mxu_shape
 
         self.compute_engine = compute_engine
@@ -113,16 +125,12 @@ class System(object):
         self.num_nodes = num_nodes
         self.topology = topology
         self.bits = bits
-
-        # Validate FP8 hardware compatibility
-        # FP8 requires Hopper (H100) or newer architecture
-        if self.bits in ('fp8', 'fp8_e4m3', 'fp8_e5m2', 'mixed_fp8', 'mixed_fp8_bf16'):
-            import warnings
-            warnings.warn(
-                f"FP8 precision selected. FP8 requires NVIDIA Hopper (H100+) or AMD CDNA3 (MI300+) architecture. "
-                f"On unsupported hardware, actual throughput may differ from estimates.",
-                stacklevel=2,
-            )
+        # L5: precision of the KV cache. Defaults to the weight precision (byte-identical) but can be set
+        # independently — weight-only quant (int4/int8 AWQ/GPTQ) keeps the KV cache in fp16/bf16.
+        self.kv_bits = kv_bits if kv_bits is not None else bits
+        # L1: the FP8-hardware-compatibility warning was moved to get_inference_system, where the
+        # device architecture is known. Warning unconditionally here fired even on FP8-capable parts
+        # (H100/Ada/Blackwell/MI300), which is noise. System() has no architecture, so it cannot decide.
 
         self.parallelism_heirarchy = parallelism_heirarchy   ## TP{1}_EP{1}_PP{1}
         self.network_config = network_config
@@ -204,4 +212,9 @@ class System(object):
                                 + (self.gear_s/100) * self.mem_multiplier[self.bits]
                                 + ((np.prod(operators[:-2])/np.prod(operators)) * (operators[-2]*self.gear_r + operators[-1]*self.gear_r) * self.mem_multiplier[self.bits])
                     )
+            # L5: KV-cache tensors (K/V) use kv_bits, which may differ from the weight precision.
+            # Weight-only quant (AWQ/GPTQ/bnb int4/int8) keeps the KV cache in fp16/bf16, so long-context
+            # decode must not assume the KV cache is quantized too. kv_bits defaults to bits (byte-identical).
+            if data == 'k' or data == 'v':
+                return self.mem_multiplier[self.kv_bits]
             return self.mem_multiplier[self.bits]

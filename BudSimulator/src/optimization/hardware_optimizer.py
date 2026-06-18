@@ -35,6 +35,23 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
+def _utilization_from_breakdown(decode_results) -> float:
+    """H9: real compute utilization derived from the GenZ runtime breakdown, replacing the prior flat
+    0.7 placeholder. Utilization = compute / (compute + communication), using the NON-overlapping
+    per-layer sub-fields (QKVO/LA/FFN/Mamba = compute; AR/A2A/Send_Recv = collective). A single-GPU
+    config (no collectives) → ~1.0; multi-GPU configs drop as communication overhead grows. Returns
+    0.0 only when the breakdown is unavailable (the result then carries no utilization signal)."""
+    rb = decode_results.get('Runtime_breakdown') if isinstance(decode_results, dict) else None
+    if rb is None or not hasattr(rb, 'to_dict'):
+        return 0.0
+    bd = rb.to_dict()
+    g = lambda k: float(bd.get(k, 0) or 0)
+    compute = g('QKVO_layers') + g('LA_layers') + g('FFN_layers') + g('Mamba_time')
+    comm = g('AR_time') + g('A2A_time') + g('Send_Recv_time')
+    total = compute + comm
+    return (compute / total) if total > 0 else 0.0
+
+
 @dataclass
 class OptimizationResult:
     """Result of hardware optimization for a configuration"""
@@ -341,8 +358,8 @@ def evaluate_with_genz(
     # Calculate e2e latency (in seconds)
     e2e = ttft + (usecase['output_tokens_max'] * tpot)
     
-    # Extract utilization - GenZ doesn't provide this directly, so use a reasonable default
-    compute_util = 0.7  # Default 70% utilization
+    # H9: real compute-vs-communication utilization from the GenZ runtime breakdown (was a flat 0.7).
+    compute_util = _utilization_from_breakdown(decode_results)
     
     return {
         'ttft': ttft,
@@ -389,10 +406,16 @@ def rank_by_cost_effectiveness(
 # Helper functions
 
 def _get_hardware_types() -> List[str]:
-    """Get list of available hardware types"""
-    # Return hardware types available in GenZ
+    """Get list of available hardware types.
+
+    R2-OP1 fix: these MUST be names that get_hardware_config resolves. The prior list used
+    'A100_40GB'/'A100_80GB'/'H100_80GB' which resolve to False (the resolver needs the '_GPU' suffix),
+    so the optimizer silently returned None for A100/H100 — the two most common GPUs — and could only
+    ever recommend MI300X/TPU. Use canonical resolvable names.
+    """
     return [
-        "A100_40GB", "A100_80GB", "H100_80GB", "MI300X", "TPUv4", "TPUv5e"
+        "A100_40GB_GPU", "A100_80GB_GPU", "H100_GPU", "H200_GPU",
+        "MI300X", "B200_GPU", "TPUv4", "TPUv5e",
     ]
 
 
@@ -569,8 +592,8 @@ def evaluate_with_genz_direct(
     # Calculate e2e latency (in seconds)
     e2e = ttft + (usecase['output_tokens_max'] * tpot)
     
-    # Extract utilization - GenZ doesn't provide this directly, so use a reasonable default
-    compute_util = 0.7  # Default 70% utilization
+    # H9: real compute-vs-communication utilization from the GenZ runtime breakdown (was a flat 0.7).
+    compute_util = _utilization_from_breakdown(decode_results)
     
     logger.debug(f"Extracted metrics - TTFT: {ttft:.3f}s, TPOT: {tpot:.6f}s, E2E: {e2e:.3f}s")
     

@@ -4,6 +4,7 @@ import warnings
 
 from .constants import NS_PER_MS, NS_PER_S, GB_TO_BYTES
 from .workload import WorkloadConfig
+from .batch_scheduler import SchedulerConfig
 
 
 class DisaggregationAnalyzer:
@@ -17,6 +18,46 @@ class DisaggregationAnalyzer:
         self._model = model
         self._hardware = hardware
         self._precision = precision
+        self.last_b_eff: int = 1  # SV6 diagnostic
+
+    def _build_b_eff(self, context: int, tensor_parallel: int = 1,
+                     max_batch_size: Optional[int] = None) -> int:
+        """SV6: memory-budget-bounded steady-state concurrency per instance.
+
+        Same derivation as ``ClusterAnalyzer._build_b_eff``:
+        ``floor((primary_capacity - weight_bytes) / (bytes_per_token_kv * context))`` capped by
+        ``max_batch_size``; returns 1 when a MemoryModel cannot be built. Applied IDENTICALLY to
+        the prefill and decode pools, so it cancels in the bottleneck/utilization inequalities.
+        """
+        if max_batch_size is None:
+            max_batch_size = SchedulerConfig().max_batch_size
+        try:
+            from llm_memory_calculator.genz.Models import get_configs
+            from .memory_model import MemoryModel, MemoryTierConfig, estimate_weight_bytes
+            from .constants import MemoryTier
+            from llm_memory_calculator.hardware import get_hardware_config
+
+            model_config = get_configs(self._model)
+            hw = get_hardware_config(self._hardware) or {}
+            mem_gb = hw.get("Memory_size")
+            if not mem_gb:
+                return 1
+            primary_capacity = int(mem_gb * GB_TO_BYTES)
+            mm = MemoryModel(
+                model_config=model_config,
+                tier_configs=[MemoryTierConfig(MemoryTier.DEVICE_HBM, primary_capacity, 0.0)],
+                tensor_parallel=tensor_parallel,
+            )
+            weight_bytes = estimate_weight_bytes(model_config, self._precision, tensor_parallel)
+            footprint = mm.bytes_per_token_kv * max(context, 1)
+            if footprint <= 0:
+                return 1
+            avail = primary_capacity - weight_bytes
+            if avail <= 0:
+                return 1
+            return max(1, min(max_batch_size, avail // footprint))
+        except Exception:
+            return 1
 
     def analyze(
         self,
@@ -42,13 +83,20 @@ class DisaggregationAnalyzer:
         """
         prefill_lat, decode_lat = self._get_latencies(input_tokens, output_tokens)
 
+        # SV6: each instance serves B_eff requests concurrently (continuous batching), not one
+        # serial request. The SAME B_eff applies to the prefill and decode pools (both bound by
+        # the per-instance memory budget over the same context), so it scales system throughput
+        # but CANCELS in the bottleneck ratio and the utilization fractions below.
+        b_eff = self._build_b_eff(input_tokens + output_tokens, tensor_parallel=1)
+        self.last_b_eff = b_eff
+
         # Compute throughput first (needed for M/M/1 queuing model)
         prefill_throughput_rps = (
-            prefill_instances * (1000.0 / prefill_lat) if prefill_lat > 0 else 0
+            b_eff * prefill_instances * (1000.0 / prefill_lat) if prefill_lat > 0 else 0
         )
         decode_time_per_req = decode_lat * output_tokens
         decode_throughput_rps = (
-            decode_instances * (1000.0 / decode_time_per_req)
+            b_eff * decode_instances * (1000.0 / decode_time_per_req)
             if decode_time_per_req > 0
             else 0
         )
@@ -156,9 +204,12 @@ class DisaggregationAnalyzer:
         """
         prefill_lat, decode_lat = self._get_latencies(input_tokens, output_tokens)
 
+        # SV6: colocated instances also serve B_eff requests concurrently (continuous batching).
+        b_eff = self._build_b_eff(input_tokens + output_tokens, tensor_parallel=1)
+        self.last_b_eff = b_eff
         time_per_request = prefill_lat + decode_lat * output_tokens
         colocated_throughput = (
-            total_instances * (1000.0 / time_per_request)
+            b_eff * total_instances * (1000.0 / time_per_request)
             if time_per_request > 0
             else 0
         )
@@ -230,22 +281,27 @@ class DisaggregationAnalyzer:
                 bits=self._precision,
             )
             return prefill.Latency, decode.Latency
-        except Exception as e:
-            warnings.warn(f"GenZ modeling failed: {e}. Using heuristics.")
-            return input_tokens * 0.01, 0.5
+        except Exception:
+            # SV6 / ROOT-B: fail honestly. The fabricated (input_tokens*0.01, 0.5) heuristic
+            # silently produced physics-free latencies; re-raise so the failure is visible.
+            raise
 
     def _estimate_kv_bytes(self, input_tokens: int, output_tokens: int = 0) -> int:
-        """Estimate KV cache bytes for transfer."""
-        try:
-            from llm_memory_calculator.genz.Models import get_configs
+        """Estimate KV cache bytes for transfer using the canonical per-token KV formula."""
+        from llm_memory_calculator.genz.Models import get_configs
 
-            config = get_configs(self._model)
-            num_kv = getattr(config, "num_key_value_heads", 8)
-            hdim = getattr(config, "head_dim", 128)
-            layers = getattr(config, "num_decoder_layers", 32)
-            # K + V, bf16 = 2 bytes per element
-            bytes_per_token = 2 * num_kv * hdim * layers * 2
-            return bytes_per_token * (input_tokens + output_tokens)
-        except Exception:
-            # Default 8B model estimate
-            return (input_tokens + output_tokens) * 131072
+        # No magic fallback: if the model config cannot be resolved we cannot derive the
+        # per-token KV footprint honestly, so let the exception propagate (ROOT-B).
+        config = get_configs(self._model)
+        num_kv = getattr(config, "num_key_value_heads", None)
+        if num_kv is None:
+            num_kv = getattr(config, "num_attention_heads", 32)
+        hdim = getattr(config, "head_dim", None)
+        if hdim is None:
+            hidden = getattr(config, "hidden_size", 4096)
+            n_heads = getattr(config, "num_attention_heads", 32)
+            hdim = hidden // n_heads
+        layers = getattr(config, "num_decoder_layers", 32)
+        # K + V, bf16 = 2 bytes per element (canonical bytes_per_token_kv, TP=1 for transfer).
+        bytes_per_token = 2 * num_kv * hdim * layers * 2
+        return bytes_per_token * (input_tokens + output_tokens)

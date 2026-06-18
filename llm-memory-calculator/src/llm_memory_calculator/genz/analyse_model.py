@@ -24,6 +24,24 @@ def get_mamba_index(df:pd.DataFrame):
     return ret
 
 
+def count_repeat_aware_ops(df:pd.DataFrame) -> int:
+    """Repeat-aware count of real operators (kernels) in a model_df, applying the SAME
+    Repeat/EndRepeat × 'Dimension' multiplier walk as get_summary_table. The compressed df has one
+    template of the per-layer ops wrapped in Repeat(num_layers); this expands it. Used to size the
+    fixed per-kernel launch latency (N_ops · t_launch) in the inference calibration."""
+    multiplier = 1
+    total_ops = 0
+    for i in range(len(df)):
+        op = df.loc[i, 'Op Type']
+        if op == 'Repeat':
+            multiplier *= df.loc[i, 'Dimension']
+        elif op == 'EndRepeat':
+            multiplier /= df.loc[i, 'Dimension']
+        else:
+            total_ops += multiplier
+    return int(round(total_ops))
+
+
 def get_summary_table(df:pd.DataFrame, unit = Unit(), model_characterstics:bool=False):
 
     attn_idx = get_attn_index(df)

@@ -98,7 +98,10 @@ class ISASelector:
         if 'sve2' in self.cpu_config.isa_support:
             configs[ISAType.SVE2] = ISAConfig(
                 name=ISAType.SVE2,
-                vector_width={'fp32': 16, 'fp16': 32, 'int8': 64},  # 512-bit SVE2
+                # bf16 is a 2-byte type (same packing as fp16): a 512-bit SVE2 register holds 32
+                # bf16 elements, processed by the ARMv8.6-A BF16 ext (BFDOT/BFMMLA). Omitting bf16
+                # made vector_width.get('bf16',1)==1 -> scalar rate for ARM bf16 GEMM.
+                vector_width={'fp32': 16, 'fp16': 32, 'bf16': 32, 'int8': 64},  # 512-bit SVE2
                 throughput={
                     'fma': 2.0,
                     'add': 2.0,
@@ -106,7 +109,7 @@ class ISASelector:
                     'load': 2.0,
                     'store': 1.0
                 },
-                supported_types=['fp32', 'fp16', 'int32', 'int8'],
+                supported_types=['fp32', 'fp16', 'bf16', 'int32', 'int8'],
                 latency={'fma': 4, 'add': 3, 'mul': 3},
                 alignment_required=64
             )
@@ -121,6 +124,7 @@ class ISASelector:
                 vector_width={
                     'fp32': 4 * scale,   # 256-bit: 8 FP32 elements
                     'fp16': 8 * scale,   # 256-bit: 16 FP16 elements
+                    'bf16': 8 * scale,   # bf16 = 2 bytes, same packing as fp16 (ARMv8.6 BFDOT/BFMMLA)
                     'int8': 16 * scale,  # 256-bit: 32 INT8 elements
                 },
                 throughput={
@@ -130,7 +134,7 @@ class ISASelector:
                     'load': 2.0,
                     'store': 1.0
                 },
-                supported_types=['fp32', 'fp16', 'int32', 'int8'],
+                supported_types=['fp32', 'fp16', 'bf16', 'int32', 'int8'],
                 latency={'fma': 4, 'add': 3, 'mul': 3},
                 alignment_required=sve_bits // 8  # 32 bytes for 256-bit
             )
@@ -138,7 +142,9 @@ class ISASelector:
         if 'neon' in self.cpu_config.isa_support:
             configs[ISAType.NEON] = ISAConfig(
                 name=ISAType.NEON,
-                vector_width={'fp32': 4, 'fp16': 8, 'int8': 16},  # 128-bit vectors
+                # bf16 = 2 bytes: a 128-bit NEON register holds 8 bf16 (ARMv8.6 BFDOT/BFMMLA),
+                # same packing as fp16. Without this entry bf16 ran at scalar width (1).
+                vector_width={'fp32': 4, 'fp16': 8, 'bf16': 8, 'int8': 16},  # 128-bit vectors
                 throughput={
                     'fma': 2.0,
                     'add': 2.0,
@@ -146,7 +152,7 @@ class ISASelector:
                     'load': 1.0,
                     'store': 1.0
                 },
-                supported_types=['fp32', 'fp16', 'int32', 'int8'],
+                supported_types=['fp32', 'fp16', 'bf16', 'int32', 'int8'],
                 latency={'fma': 4, 'add': 3, 'mul': 3},
                 alignment_required=16
             )
@@ -154,7 +160,7 @@ class ISASelector:
         # Always have scalar as fallback
         configs[ISAType.SCALAR] = ISAConfig(
             name=ISAType.SCALAR,
-            vector_width={'fp32': 1, 'fp16': 1, 'int8': 1},
+            vector_width={'fp32': 1, 'fp16': 1, 'bf16': 1, 'int8': 1},
             throughput={
                 'fma': 1.0,
                 'add': 1.0,
@@ -162,7 +168,7 @@ class ISASelector:
                 'load': 1.0,
                 'store': 1.0
             },
-            supported_types=['fp32', 'fp16', 'int32', 'int8'],
+            supported_types=['fp32', 'fp16', 'bf16', 'int32', 'int8'],
             latency={'fma': 4, 'add': 3, 'mul': 3},
             alignment_required=1
         )
@@ -199,11 +205,16 @@ class ISASelector:
             # 1. Lower memory bandwidth requirements
             # 2. Less frequency reduction
             # 3. Better cache line utilization
-            if ISAType.AVX2 in self.isa_configs and data_type in ['fp32', 'fp16', 'bf16']:
+            # int8 is included: x86 decode handles int8 via AVX2 VPMADDUBSW / AVX512-VNNI. Omitting it
+            # let int8 decode fall through to SCALAR (eff 0.4), inflating compute ~17x so the op became
+            # compute-bound instead of the (correct) memory-bound roofline — int8 decode was ~17x
+            # SLOWER than bf16 instead of ~2x faster (half the weight bytes).
+            _decode_vec_types = ['fp32', 'fp16', 'bf16', 'int8']
+            if ISAType.AVX2 in self.isa_configs and data_type in _decode_vec_types:
                 return ISAType.AVX2, 0.8  # High efficiency for decode
-                
+
             # AVX512 can be good for wide vectors (large N/K)
-            if ISAType.AVX512 in self.isa_configs and data_type in ['fp32', 'fp16', 'bf16']:
+            if ISAType.AVX512 in self.isa_configs and data_type in _decode_vec_types:
                 if N * K > 4096:  # Large KV cache
                     return ISAType.AVX512, 0.75
                 else:
@@ -231,19 +242,30 @@ class ISASelector:
                 constraints = amx_config.special_constraints
                 
                 # How well do dimensions map to tiles?
+                # R2-CPU1: the AMX K-tile is data-type-specific (BF16 K=32, INT8 K=64;
+                # Intel ISA Extensions Manual). The dict only defines tile_k_bf16/tile_k_int8 —
+                # the old bare constraints['tile_k'] raised KeyError on every AMX chip. Use the
+                # same data-type-keyed lookup the sibling helpers already use.
+                tile_k = constraints['tile_k_int8'] if data_type == 'int8' else constraints['tile_k_bf16']
                 tile_efficiency = 1.0
                 if M % constraints['tile_m'] != 0:
                     tile_efficiency *= 0.9
                 if N % constraints['tile_n'] != 0:
                     tile_efficiency *= 0.9
-                if K % constraints['tile_k'] != 0:
+                if K % tile_k != 0:
                     tile_efficiency *= 0.9
                 
                 if tile_efficiency > 0.7:
                     return ISAType.AMX, tile_efficiency
                     
-            # Otherwise try AVX-512
-            if ISAType.AVX512 in self.isa_configs and data_type in ['fp32', 'fp16']:
+            # Otherwise try AVX-512.
+            # bf16 belongs here: AVX-512 processes bf16 GEMM at the full 512-bit vector width (32
+            # bf16 elements/register) — either via AVX512-BF16 VDPBF16PS (Cooper Lake / Sapphire
+            # Rapids+, Intel ISA Extensions Manual ref. #319433, ch. "BF16") or via 512-bit
+            # load+upconvert on plain AVX-512F. Omitting 'bf16' here let bf16 prefill fall through to
+            # AVX2 (256-bit, 16 bf16/register) on any AVX-512 chip that lacks AMX or whose tile
+            # dims don't fit AMX — half the vector width at ~half the rate.
+            if ISAType.AVX512 in self.isa_configs and data_type in ['fp32', 'fp16', 'bf16']:
                 # Check if problem size is large enough
                 if M * N * K > 1000:  # Arbitrary threshold
                     return ISAType.AVX512, 0.85

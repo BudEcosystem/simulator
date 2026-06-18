@@ -61,10 +61,12 @@ from .config_optimizer import SearchSpace, OptimizationConstraints, ConfigResult
 from .disaggregation import DisaggregationAnalyzer
 from .cluster import ClusterAnalyzer
 from .simulator import ServingSimulationResult, ServingSimulator
+from .utilization import roofline_utilization
 
 __all__ = [
     # Routing helper
     "get_modeling_functions",
+    "roofline_utilization",
     # Constants & Enums
     "MemoryTier",
     "EvictionPolicy",

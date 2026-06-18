@@ -1021,27 +1021,32 @@ class TestSequenceParallelNoDblDiv:
 # =============================================================================
 
 class TestHopperFlopsConvention:
-    """All Hopper-class GPUs should use BF16 dense TFLOPS (not TF32)."""
+    """All Hopper-class GPUs should use BF16 DENSE TFLOPS (per-chip), not the 2:4-sparse figure.
+
+    Accuracy remediation (F1): the prior 1979/1513 values were the SPARSE peaks mislabeled as dense.
+    Dense bf16 is the achievable rate for LLM GEMMs (NVIDIA H100 datasheet: 989.5 dense / 1979 sparse;
+    H100 PCIe: 756 dense / 1513 sparse). Using sparse made H100 prefill imply ~160% MFU (impossible).
+    """
 
     def test_h100_bf16_dense(self):
-        """H100 SXM should report 1979 BF16 dense TFLOPS."""
+        """H100 SXM should report 989.5 BF16 dense TFLOPS (1979 was the 2:4 sparse figure)."""
         from llm_memory_calculator.hardware.configs import HARDWARE_CONFIGS
-        assert HARDWARE_CONFIGS['H100_GPU']['Flops'] == 1979
+        assert HARDWARE_CONFIGS['H100_GPU']['Flops'] == 989.5
 
     def test_h200_bf16_dense(self):
-        """H200 should report 1979 BF16 dense TFLOPS (same die as H100 SXM)."""
+        """H200 should report 989.5 BF16 dense TFLOPS (same die as H100 SXM)."""
         from llm_memory_calculator.hardware.configs import HARDWARE_CONFIGS
-        assert HARDWARE_CONFIGS['H200_GPU']['Flops'] == 1979
+        assert HARDWARE_CONFIGS['H200_GPU']['Flops'] == 989.5
 
     def test_gh200_bf16_dense(self):
-        """GH200 should report 1979 BF16 dense TFLOPS."""
+        """GH200 should report 989.5 BF16 dense TFLOPS (H100 GPU die)."""
         from llm_memory_calculator.hardware.configs import HARDWARE_CONFIGS
-        assert HARDWARE_CONFIGS['GH200_GPU']['Flops'] == 1979
+        assert HARDWARE_CONFIGS['GH200_GPU']['Flops'] == 989.5
 
     def test_h100_pcie_bf16_dense(self):
-        """H100 PCIe should report 1513 BF16 dense TFLOPS."""
+        """H100 PCIe should report 756 BF16 dense TFLOPS (1513 was the 2:4 sparse figure)."""
         from llm_memory_calculator.hardware.configs import HARDWARE_CONFIGS
-        assert HARDWARE_CONFIGS['H100_PCIe_GPU']['Flops'] == 1513
+        assert HARDWARE_CONFIGS['H100_PCIe_GPU']['Flops'] == 756
 
     def test_b200_bf16_consistent(self):
         """B200 BF16 dense TFLOPS should be 2250 (already correct)."""

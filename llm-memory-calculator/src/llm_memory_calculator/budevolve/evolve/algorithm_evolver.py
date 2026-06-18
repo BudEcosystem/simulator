@@ -618,19 +618,38 @@ class AlgorithmEvolver:
             best_program = result.get("best_program", base_code)
             best_score = result.get("best_score", 0.0)
 
+        # improvement_pct fix: best_score is a combined_score from the bridge, so comparing it
+        # against baseline.throughput_rps (a raw rps) mixed two different scales. Score the
+        # baseline algorithm through the SAME bridge to obtain a comparable combined_score.
+        baseline_combined = self._baseline_combined_score(bridge, base_code)
+        improvement = (
+            (best_score - baseline_combined) / max(baseline_combined, 1e-9) * 100
+        )
+
         return {
             "best_code": best_program,
             "best_score": best_score,
             "baseline_throughput": baseline.throughput_rps,
+            "baseline_combined": baseline_combined,
             "baseline_metrics": baseline_metrics,
-            "improvement_pct": (
-                (best_score - baseline.throughput_rps)
-                / max(baseline.throughput_rps, 1e-9) * 100
-            ),
+            "improvement_pct": improvement,
             "iterations_run": iterations,
             "backend": "openevolve",
             "output_dir": output_dir,
         }
+
+    def _baseline_combined_score(self, bridge: BudSimEvalBridge, base_code: str) -> float:
+        """Score the baseline algorithm through the bridge (same scale as best_score)."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(base_code)
+            base_path = f.name
+        try:
+            return bridge.evaluate(base_path).get("combined_score", 0.0)
+        finally:
+            try:
+                os.unlink(base_path)
+            except OSError:
+                pass
 
     def _write_evaluator_file(self, path: str, bridge: BudSimEvalBridge):
         """Write a standalone evaluator.py for OpenEvolve.

@@ -3,7 +3,7 @@ Models router for FastAPI application.
 """
 
 from typing import Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from fastapi.responses import JSONResponse
 import logging
 import json
@@ -134,7 +134,7 @@ async def validate_model(request: ValidateModelRequest):
             if "MODEL_GATED:" in error_msg or "gated" in error_msg.lower() or "403" in error_msg:
                 return ValidateModelResponse(
                     valid=False,
-                    error="This model is gated and requires authentication. Please provide the config.json manually.",
+                    error="This model is gated (requires authentication) or does not exist on HuggingFace. If it is a gated model you have access to, provide the config.json manually.",
                     error_code="MODEL_GATED",
                     model_id=request.model_url,
                     requires_config=True,
@@ -225,7 +225,7 @@ async def get_model_config(model_id: str, request: Request):
                     raise HTTPException(
                         status_code=403, 
                         detail={
-                            "error": "This model is gated and requires authentication. Please provide the config.json manually.",
+                            "error": "This model is gated (requires authentication) or does not exist on HuggingFace. If it is a gated model you have access to, provide the config.json manually.",
                             "error_code": "MODEL_GATED",
                             "model_id": model_id
                         }
@@ -310,7 +310,7 @@ async def calculate_memory(request: CalculateMemoryRequest):
                 raise HTTPException(
                     status_code=403,
                     detail={
-                        "error": "This model is gated and requires authentication. Please provide the config.json manually.",
+                        "error": "This model is gated (requires authentication) or does not exist on HuggingFace. If it is a gated model you have access to, provide the config.json manually.",
                         "error_code": "MODEL_GATED",
                         "model_id": request.model_id
                     }
@@ -439,7 +439,7 @@ async def analyze_model(request: AnalyzeModelRequest):
                 raise HTTPException(
                     status_code=403,
                     detail={
-                        "error": "This model is gated and requires authentication. Please provide the config.json manually.",
+                        "error": "This model is gated (requires authentication) or does not exist on HuggingFace. If it is a gated model you have access to, provide the config.json manually.",
                         "error_code": "MODEL_GATED",
                         "model_id": request.model_id
                     }
@@ -712,7 +712,7 @@ async def submit_model_config(request: ConfigSubmitRequest):
 
 
 @router.get("/popular", response_model=PopularModelsResponse)
-async def get_popular_models(request: Request, limit: int = 10):
+async def get_popular_models(request: Request, limit: int = Query(10, ge=1, le=100)):
     """
     Get a list of popular models.
     

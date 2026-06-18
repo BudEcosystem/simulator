@@ -53,8 +53,25 @@ class BatchScheduler:
         self._running: List[Request] = []  # In decode phase (between iterations)
         self._batch_counter = 0
 
-        # Latency cache to avoid redundant GenZ calls
-        self._latency_cache: Dict[Tuple, float] = {}
+        # Latency cache to avoid redundant GenZ calls. Each entry is the full per-phase
+        # signal tuple (latency_ms, is_offload, mfu, mbu) so SV3/SV4 reuse the engine's
+        # offload flag and roofline utilization, not just the latency number.
+        self._latency_cache: Dict[Tuple, Tuple[float, bool, float, float]] = {}
+
+        # Cached GenZ modeling functions (resolved once); also an injection point for tests.
+        self._modeling_fns: Optional[Tuple] = None
+
+        # SV3 / SV4 per-batch signals exposed to the simulator loop:
+        #   last_batch_offloaded — True if either phase's GenZ result had is_offload=True
+        #   last_batch_mfu/mbu   — real roofline utilization for the batch's dominant phase
+        # (computed via the shared roofline_utilization helper on the cached GenZ result).
+        self.last_batch_offloaded: bool = False
+        self.last_batch_mfu: float = 0.0
+        self.last_batch_mbu: float = 0.0
+
+        # Requests that exceed the TOTAL multi-tier memory budget (SV1/SV2): set_failed and
+        # drained by the simulator so they are counted as failed, never re-queued forever.
+        self._failed: List[Request] = []
 
     @property
     def pending_count(self) -> int:
@@ -97,6 +114,32 @@ class BatchScheduler:
 
         remaining_pending = []
         for req in self._pending:
+            # SV1/SV2: a request whose KV footprint exceeds the TOTAL capacity of ALL tiers
+            # combined can never be admitted on any tier (allocate_kv_blocks already walks the
+            # full HBM->DRAM->HOST_DDR->CXL->NVME hierarchy). This is a PERMANENT property of the
+            # request, independent of the current batch fill, so it is checked FIRST — before the
+            # max_batch_size / max_num_batched_tokens guards below. (Previously this sat after those
+            # guards, so a prompt longer than max_num_batched_tokens tripped the token guard every
+            # iteration and was re-queued forever, never reaching the admission check.) The
+            # evict->QUEUED retry path below is for requests that DO fit but are momentarily blocked.
+            total_cap = getattr(self._memory_model, 'total_capacity_bytes', None)
+            if total_cap is not None:
+                num_blocks = (req.input_tokens + self._memory_model._block_size - 1) // self._memory_model._block_size
+                required_bytes = num_blocks * self._memory_model.bytes_per_block
+                if required_bytes > total_cap:
+                    req.set_failed(current_time_ns)
+                    self._failed.append(req)
+                    continue  # dropped: NOT appended to remaining_pending
+
+            # Second permanent-failure mode: a prompt longer than the per-iteration token budget can
+            # never fill a batch unless chunked prefill is enabled. Without chunking it would be
+            # re-queued forever (neither completed nor failed). Fail it honestly instead of hanging.
+            if (not self._config.enable_chunked_prefill
+                    and req.input_tokens > self._config.max_num_batched_tokens):
+                req.set_failed(current_time_ns)
+                self._failed.append(req)
+                continue
+
             if len(prefill_requests) + len(decode_requests) >= self._config.max_batch_size:
                 remaining_pending.append(req)
                 continue
@@ -199,6 +242,23 @@ class BatchScheduler:
 
         return completed
 
+    def drain_failed(self) -> List[Request]:
+        """Return and clear requests failed by admission control (SV1/SV2).
+
+        The simulator drains these each loop iteration to count them as
+        ``total_requests_failed`` without ever appending them to ``raw_requests``.
+        """
+        failed = self._failed
+        self._failed = []
+        return failed
+
+    def _get_modeling_fns(self) -> Tuple:
+        """Resolve (and cache) the GenZ prefill/decode modeling functions for this hardware."""
+        if self._modeling_fns is None:
+            from llm_memory_calculator.genz.serving import get_modeling_functions
+            self._modeling_fns = get_modeling_functions(self._hardware)
+        return self._modeling_fns
+
     def estimate_batch_latency_ms(self, batch: Batch) -> float:
         """Estimate batch latency using GenZ analytical engine.
 
@@ -208,6 +268,11 @@ class BatchScheduler:
         """
         prefill_latency_ms = 0.0
         decode_latency_ms = 0.0
+
+        # SV3/SV4: reset per-batch signals, then OR/MAX in each phase's contribution.
+        self.last_batch_offloaded = False
+        self.last_batch_mfu = 0.0
+        self.last_batch_mbu = 0.0
 
         if batch.prefill_count > 0:
             prefill_latency_ms = self._estimate_prefill_latency(batch)
@@ -230,20 +295,37 @@ class BatchScheduler:
                 return prefill_latency_ms + decode_latency_ms
         return prefill_latency_ms + decode_latency_ms
 
+    def _record_phase_signals(self, is_offload: bool, mfu: float, mbu: float) -> None:
+        """Fold a single phase's SV3/SV4 signals into the per-batch aggregates.
+
+        ``offloaded`` is the OR across phases; ``mfu``/``mbu`` are the MAX (the dominant phase
+        sets the batch's roofline draw, used by the power model in the sim loop)."""
+        self.last_batch_offloaded = self.last_batch_offloaded or bool(is_offload)
+        self.last_batch_mfu = max(self.last_batch_mfu, mfu)
+        self.last_batch_mbu = max(self.last_batch_mbu, mbu)
+
     def _estimate_prefill_latency(self, batch: Batch) -> float:
-        """Estimate prefill latency via GenZ prefill_moddeling()."""
+        """Estimate prefill latency via GenZ prefill_moddeling().
+
+        Captures (SV3) ``result.is_offload`` and (SV4) the real roofline MFU/MBU so the
+        scheduler can surface them; caches the full signal tuple per (phase, bs, tokens, hw...).
+        """
         total_prefill_tokens = sum(r.input_tokens for r in batch.prefill_requests)
         avg_input = total_prefill_tokens // batch.prefill_count if batch.prefill_count > 0 else 0
         bs = batch.prefill_count
 
         cache_key = ("prefill", bs, avg_input, self._hardware, self._precision,
                      self._tensor_parallel, self._pipeline_parallel)
-        if cache_key in self._latency_cache:
-            return self._latency_cache[cache_key]
+        cached = self._latency_cache.get(cache_key)
+        if cached is not None:
+            latency, is_offload, mfu, mbu = cached
+            self._record_phase_signals(is_offload, mfu, mbu)
+            return latency
 
+        is_offload = False
+        mfu = mbu = 0.0
         try:
-            from llm_memory_calculator.genz.serving import get_modeling_functions
-            prefill_fn, _ = get_modeling_functions(self._hardware)
+            prefill_fn, _ = self._get_modeling_fns()
             result = prefill_fn(
                 model=self._model,
                 batch_size=bs,
@@ -254,12 +336,15 @@ class BatchScheduler:
                 pipeline_parallel=self._pipeline_parallel,
             )
             latency = result.Latency  # in milliseconds
+            is_offload = bool(getattr(result, 'is_offload', False))
+            mfu, mbu = self._roofline(result)
         except Exception as e:
             warnings.warn(f"GenZ prefill modeling failed: {e}. Using heuristic estimate.")
-            # Heuristic fallback: ~0.01ms per token per batch item
+            # Heuristic fallback for unresolvable models (e.g. mocked "test"): ~0.01ms/token/item.
             latency = avg_input * 0.01 * bs / max(self._tensor_parallel, 1)
 
-        self._latency_cache[cache_key] = latency
+        self._latency_cache[cache_key] = (latency, is_offload, mfu, mbu)
+        self._record_phase_signals(is_offload, mfu, mbu)
         return latency
 
     def _estimate_decode_latency(self, batch: Batch) -> float:
@@ -279,12 +364,16 @@ class BatchScheduler:
         context_bucket = (int(avg_context) // 128) * 128
         cache_key = ("decode", bs, context_bucket, self._hardware, self._precision,
                      self._tensor_parallel, self._pipeline_parallel)
-        if cache_key in self._latency_cache:
-            return self._latency_cache[cache_key]
+        cached = self._latency_cache.get(cache_key)
+        if cached is not None:
+            latency, is_offload, mfu, mbu = cached
+            self._record_phase_signals(is_offload, mfu, mbu)
+            return latency
 
+        is_offload = False
+        mfu = mbu = 0.0
         try:
-            from llm_memory_calculator.genz.serving import get_modeling_functions
-            _, decode_fn = get_modeling_functions(self._hardware)
+            _, decode_fn = self._get_modeling_fns()
             result = decode_fn(
                 model=self._model,
                 batch_size=bs,
@@ -296,10 +385,27 @@ class BatchScheduler:
                 pipeline_parallel=self._pipeline_parallel,
             )
             latency = result.Latency  # in milliseconds
+            is_offload = bool(getattr(result, 'is_offload', False))
+            mfu, mbu = self._roofline(result)
         except Exception as e:
             warnings.warn(f"GenZ decode modeling failed: {e}. Using heuristic estimate.")
-            # Heuristic fallback: ~0.5ms per token for decode
+            # Heuristic fallback for unresolvable models: ~0.5ms per token for decode.
             latency = 0.5 * bs / max(self._tensor_parallel, 1)
 
-        self._latency_cache[cache_key] = latency
+        self._latency_cache[cache_key] = (latency, is_offload, mfu, mbu)
+        self._record_phase_signals(is_offload, mfu, mbu)
         return latency
+
+    def _roofline(self, result) -> Tuple[float, float]:
+        """SV4: real per-device (mfu, mbu) for ``result`` on this hardware via the shared helper.
+
+        num_devices=1: GenZ's ``summary_table`` is ALREADY per-device (it shards FLOPs/bytes across
+        TP, and latency is the sharded per-device time) — verified: summary MACs x tp is constant
+        across tp. So MFU = per-device-work / (per-device-peak x time); dividing the peak by tp*pp a
+        second time would understate utilization by tp*pp. Returns (0, 0) when the helper cannot
+        derive them (e.g. a mocked result with no summary_table) so the power model degrades to idle."""
+        from llm_memory_calculator.genz.serving import roofline_utilization
+        try:
+            return roofline_utilization(result, self._hardware, num_devices=1)
+        except Exception:
+            return 0.0, 0.0

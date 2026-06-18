@@ -40,6 +40,10 @@ class ServingSimulationResult:
     total_duration_ms: float = 0.0
     total_requests_completed: int = 0
     total_requests_failed: int = 0
+    # SV3: surfaced from the engine's is_offload signal (silent before — the scheduler
+    # discarded it). offloaded is True if any batch ran with KV/weights spilled off-chip.
+    offloaded: bool = False
+    offload_steps: int = 0
     overall_throughput_rps: float = 0.0
     overall_token_throughput_tps: float = 0.0
     slo_summary: Dict[str, Any] = field(default_factory=dict)
@@ -243,6 +247,8 @@ class ServingSimulator:
             heapq.heappush(event_queue, (req.arrival_time_ns, _EVENT_ARRIVAL, req))
 
         completed_requests: List[Request] = []
+        failed_requests: List[Request] = []  # SV1/SV2: oversized requests dropped by admission
+        offload_steps = 0                     # SV3: batches that ran with off-chip spill
         current_time_ns = 0
         last_batch_end_ns = 0
         last_power_calc_ns = 0
@@ -281,13 +287,17 @@ class ServingSimulator:
                 if power_model and batch:
                     batch_latency_ns = current_time_ns - last_batch_end_ns
                     if batch_latency_ns > 0:
-                        # Use estimate_from_simulation_result for multi-component tracking
+                        # SV4: power is interpolated between idle and active by the REAL roofline
+                        # utilization the engine already computed for this batch (compute_util=MFU,
+                        # mem_util=MBU), not a batch-slot-occupancy proxy. These vary correctly with
+                        # batch size and phase (prefill -> high MFU; decode -> low MFU, high MBU).
                         batch_latency_ms = batch_latency_ns / NS_PER_MS
-                        batch_util = len(batch.requests) / max(scheduler._config.max_batch_size, 1)
+                        compute_util = getattr(batch, "_mfu", 0.0)
+                        mem_util = getattr(batch, "_mbu", 0.0)
                         power_model.estimate_from_simulation_result(
                             latency_ms=batch_latency_ms,
-                            compute_util=min(batch_util, 1.0),
-                            mem_util=min(batch_util * 0.8, 1.0),
+                            compute_util=min(max(compute_util, 0.0), 1.0),
+                            mem_util=min(max(mem_util, 0.0), 1.0),
                             num_accel=self._tensor_parallel,
                         )
                     # Track idle time since last batch
@@ -302,9 +312,21 @@ class ServingSimulator:
             # Try scheduling a new batch if nothing in flight
             if not batch_in_flight:
                 batch = scheduler.schedule(current_time_ns)
+                # SV1/SV2: drain any requests admission control failed this iteration. They are
+                # counted as failed and never re-queued (never appended to raw_requests/completed).
+                for fr in scheduler.drain_failed():
+                    failed_requests.append(fr)
                 if batch is not None:
                     batch_in_flight = True
                     latency_ms = scheduler.estimate_batch_latency_ms(batch)
+                    # SV3/SV4: capture the engine signals computed for THIS batch and stash them
+                    # on the batch so the power model (fired at batch completion) reads the real
+                    # roofline utilization, and so offload steps are counted.
+                    batch._offloaded = scheduler.last_batch_offloaded
+                    batch._mfu = scheduler.last_batch_mfu
+                    batch._mbu = scheduler.last_batch_mbu
+                    if batch._offloaded:
+                        offload_steps += 1
                     completion_time = current_time_ns + int(latency_ms * NS_PER_MS)
                     heapq.heappush(event_queue, (completion_time, _EVENT_BATCH_COMPLETE, batch))
 
@@ -336,6 +358,10 @@ class ServingSimulator:
 
                 next_sample_ns += time_series_interval_ns
 
+        # SV1/SV2: drain any requests still failed at loop exit (e.g. failed on the final schedule).
+        for fr in scheduler.drain_failed():
+            failed_requests.append(fr)
+
         # Compute final results
         if current_time_ns > 0:
             duration_s = current_time_ns / NS_PER_S
@@ -343,6 +369,11 @@ class ServingSimulator:
             result.total_requests_completed = len(completed_requests)
             result.overall_throughput_rps = len(completed_requests) / duration_s if duration_s > 0 else 0
             result.overall_token_throughput_tps = total_tokens_generated / duration_s if duration_s > 0 else 0
+
+        # SV1/SV2 + SV3 accounting.
+        result.total_requests_failed = len(failed_requests)
+        result.offloaded = offload_steps > 0
+        result.offload_steps = offload_steps
 
         result.slo_summary = slo_tracker.summary()
 
@@ -435,32 +466,6 @@ class ServingSimulator:
         )]
 
     def _estimate_weight_bytes(self, model_config) -> int:
-        """Estimate model weight size in bytes."""
-        hidden = getattr(model_config, "hidden_size", 4096)
-        layers = getattr(model_config, "num_decoder_layers", 32)
-        intermediate = getattr(model_config, "intermediate_size", 11008)
-        vocab = getattr(model_config, "vocab_size", 32000)
-        n_heads = getattr(model_config, "num_attention_heads", 32)
-        head_dim = getattr(model_config, "head_dim", None)
-        if head_dim is None:
-            head_dim = hidden // n_heads
-
-        # Approximate parameter count
-        # Attention: Q, K, V, O projections per layer (GQA-aware)
-        num_kv_heads = getattr(model_config, 'num_key_value_heads', n_heads)
-        # Q and O projections use full n_heads; K and V use num_kv_heads
-        attn_params = (
-            2 * hidden * n_heads * head_dim +        # Q and O projections
-            2 * hidden * num_kv_heads * head_dim      # K and V projections
-        ) * layers
-        # FFN: gate + up + down per layer
-        ffn_params = 3 * hidden * intermediate * layers
-        # Embeddings
-        embed_params = vocab * hidden
-        total_params = attn_params + ffn_params + embed_params
-
-        # 2 bytes per parameter for bf16
-        precision_bytes = 2 if self._precision in ("bf16", "fp16") else (
-            1 if self._precision in ("int8", "fp8") else 4
-        )
-        return total_params * precision_bytes // self._tensor_parallel
+        """Estimate model weight size in bytes (single-source helper in memory_model)."""
+        from .memory_model import estimate_weight_bytes
+        return estimate_weight_bytes(model_config, self._precision, self._tensor_parallel)

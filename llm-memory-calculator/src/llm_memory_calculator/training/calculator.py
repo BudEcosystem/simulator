@@ -20,7 +20,10 @@ from .types import (
     DeepSpeedStage,
     TrainingMemoryEstimate,
 )
-from .optimizers import OPTIMIZER_CONFIGS, get_optimizer_config, ADAMW_BASELINE_BYTES, OPTIMIZER_ALIASES
+from .optimizers import (
+    OPTIMIZER_CONFIGS, get_optimizer_config, ADAMW_BASELINE_BYTES, OPTIMIZER_ALIASES,
+    OptimizerCategory,
+)
 
 
 class TrainingMemoryCalculator:
@@ -96,6 +99,8 @@ class TrainingMemoryCalculator:
         deepspeed_stage: Optional[str] = None,
         tensor_parallel: int = 1,
         data_parallel: int = 1,
+        pipeline_parallel: int = 1,
+        expert_parallel: int = 1,
         framework_overhead_percent: float = 10.0,
         flash_attention: bool = True,
     ) -> TrainingMemoryEstimate:
@@ -132,26 +137,33 @@ class TrainingMemoryCalculator:
             config, method, lora_rank, freeze_layers, total_params
         )
 
-        # Calculate weight memory (divided by TP)
+        # Calculate weight memory (divided by the full model-parallel degree TP*PP*EP)
         weight_memory = self._calculate_weight_memory(
             config, precision, tensor_parallel, deepspeed_stage, data_parallel,
-            method, trainable_params=trainable_params
+            method, trainable_params=trainable_params,
+            pipeline_parallel=pipeline_parallel, expert_parallel=expert_parallel,
         )
 
-        # Calculate gradient memory
+        # Calculate gradient memory (sharded with the resident trainable params)
         gradient_memory = self._calculate_gradient_memory(
-            trainable_params, deepspeed_stage, data_parallel
+            trainable_params, deepspeed_stage, data_parallel,
+            method=method, tensor_parallel=tensor_parallel,
+            pipeline_parallel=pipeline_parallel, expert_parallel=expert_parallel,
         )
 
-        # Calculate optimizer memory
+        # Calculate optimizer memory (rank-aware for low-rank optimizers; sharded like gradients)
         optimizer_memory = self._calculate_optimizer_memory(
-            trainable_params, optimizer, deepspeed_stage, data_parallel
+            trainable_params, optimizer, deepspeed_stage, data_parallel,
+            method=method, tensor_parallel=tensor_parallel,
+            pipeline_parallel=pipeline_parallel, expert_parallel=expert_parallel,
+            lora_rank=lora_rank,
         )
 
-        # Calculate activation memory
+        # Calculate activation memory (sharded by TP intra-layer AND by PP across stages)
         activation_memory = self._calculate_activation_memory(
             config, batch_size, seq_length, precision,
-            gradient_checkpointing, tensor_parallel, flash_attention
+            gradient_checkpointing, tensor_parallel, flash_attention,
+            pipeline_parallel=pipeline_parallel,
         )
 
         # Peak-of-phases model: memory phases don't fully overlap.
@@ -182,6 +194,8 @@ class TrainingMemoryCalculator:
             deepspeed_stage=deepspeed_stage,
             tensor_parallel=tensor_parallel,
             data_parallel=data_parallel,
+            pipeline_parallel=pipeline_parallel,
+            expert_parallel=expert_parallel,
             framework_overhead_percent=framework_overhead_percent,
         )
 
@@ -304,6 +318,8 @@ class TrainingMemoryCalculator:
         data_parallel: int,
         method: str = "lora",
         trainable_params: int = 0,
+        pipeline_parallel: int = 1,
+        expert_parallel: int = 1,
     ) -> float:
         """Calculate weight memory in GB.
 
@@ -311,6 +327,8 @@ class TrainingMemoryCalculator:
             trainable_params: Number of trainable parameters. Used to compute
                 fp32 master copy size for LoRA-family methods (only adapter
                 params need a master copy, not the frozen base model).
+            pipeline_parallel: Pipeline parallel degree (shards layers across stages).
+            expert_parallel: Expert parallel degree (shards MoE experts).
         """
         total_params = self._get_total_params(config)
 
@@ -340,8 +358,12 @@ class TrainingMemoryCalculator:
                 master_copy_memory = (master_params * 4) / 1e9
                 weight_memory += master_copy_memory
 
-        # Divide by tensor parallelism
-        weight_memory /= tensor_parallel
+        # TR1: divide by the FULL model-parallel degree. Each of the TP*PP*EP ranks holds 1/(TP*PP*EP)
+        # of the weight tensor (Megatron-LM 3D parallelism: TP shards within a layer, PP shards layers
+        # across stages, EP shards MoE experts) — matches the GenZ training_modeling reference. The old
+        # code divided by tensor_parallel only, over-stating per-GPU weights by PP*EP (e.g. a 70B
+        # TP8.PP8 reported ~impossible per-GPU memory). Defaults TP=PP=EP=1 are byte-identical.
+        weight_memory /= (tensor_parallel * pipeline_parallel * expert_parallel)
 
         # ZeRO-3 shards weights across DP ranks
         if deepspeed_stage == 'zero3':
@@ -349,19 +371,42 @@ class TrainingMemoryCalculator:
 
         return weight_memory
 
+    @staticmethod
+    def _trainable_model_parallel_shard(method: str, tensor_parallel: int,
+                                        pipeline_parallel: int, expert_parallel: int) -> int:
+        """The model-parallel degree that shards the TRAINABLE params (and hence their gradients +
+        optimizer states). Full fine-tuning shards trainable params with the weights across the full
+        TP*PP*EP degree. LoRA-family adapters are tiny and TP/EP-replicated (PEFT default) but live on
+        the layers, so they are sharded only by pipeline_parallel. Default (all 1) -> no division."""
+        if method.lower() in ('full',):
+            return max(1, tensor_parallel * pipeline_parallel * expert_parallel)
+        # LoRA/DoRA/PiSSA/freeze/qlora: adapters per-layer, replicated across TP/EP
+        return max(1, pipeline_parallel)
+
     def _calculate_gradient_memory(
         self,
         trainable_params: int,
         deepspeed_stage: Optional[str],
         data_parallel: int,
+        method: str = "lora",
+        tensor_parallel: int = 1,
+        pipeline_parallel: int = 1,
+        expert_parallel: int = 1,
     ) -> float:
         """
         Calculate gradient memory in GB.
 
-        Gradients are typically stored in fp32 for numerical stability.
+        Gradients are typically stored in fp32 for numerical stability. They scale with the trainable
+        params RESIDENT on this device, so they shard with the same model-parallel degree as those
+        params (TR1) before any ZeRO sharding across DP.
         """
         # Gradients in fp32 (4 bytes per param)
         gradient_memory = (trainable_params * 4) / 1e9
+
+        # TR1: shard with the resident trainable params (full-FT: TP*PP*EP; LoRA: PP). Default 1.
+        gradient_memory /= self._trainable_model_parallel_shard(
+            method, tensor_parallel, pipeline_parallel, expert_parallel
+        )
 
         # ZeRO-2 and ZeRO-3 shard gradients across DP ranks
         if deepspeed_stage in ('zero2', 'zero3'):
@@ -375,6 +420,11 @@ class TrainingMemoryCalculator:
         optimizer: str,
         deepspeed_stage: Optional[str],
         data_parallel: int,
+        method: str = "lora",
+        tensor_parallel: int = 1,
+        pipeline_parallel: int = 1,
+        expert_parallel: int = 1,
+        lora_rank: int = 16,
     ) -> float:
         """
         Calculate optimizer state memory in GB.
@@ -382,7 +432,7 @@ class TrainingMemoryCalculator:
         AdamW: 2 states (momentum + variance) in fp32
         SGD: 1 state (momentum) in fp32
         8-bit optimizers: reduced precision states
-        GaLore/Apollo: low-rank approximation
+        GaLore/Apollo: low-rank approximation (scales with rank — TR2)
         """
         optimizer = optimizer.lower()
 
@@ -392,12 +442,23 @@ class TrainingMemoryCalculator:
         # Use OPTIMIZER_CONFIGS for precise bytes_per_param
         if resolved in OPTIMIZER_CONFIGS:
             opt_config = OPTIMIZER_CONFIGS[resolved]
-            bytes_per_param = opt_config.total_bytes_per_param
+            # TR2: low-rank optimizers (GaLore/APOLLO) project gradients to a low-rank subspace, so
+            # their state memory scales with the projection rank, not the full param count. The rich
+            # OptimizerConfig.calculate_memory_gb applies that rank/default_rank scaling; the old code
+            # bypassed it by reading total_bytes_per_param directly, making rank 16 == rank 256. At the
+            # default rank=16 this is byte-identical (factor 1.0). Non-low-rank optimizers unchanged.
+            if opt_config.category == OptimizerCategory.LOW_RANK:
+                optimizer_memory = opt_config.calculate_memory_gb(trainable_params, rank=lora_rank)
+            else:
+                optimizer_memory = (trainable_params * opt_config.total_bytes_per_param) / 1e9
         else:
             # Unknown optimizer: assume AdamW-like (8 bytes/param)
-            bytes_per_param = ADAMW_BASELINE_BYTES
+            optimizer_memory = (trainable_params * ADAMW_BASELINE_BYTES) / 1e9
 
-        optimizer_memory = (trainable_params * bytes_per_param) / 1e9
+        # TR1: shard with the resident trainable params (full-FT: TP*PP*EP; LoRA: PP). Default 1.
+        optimizer_memory /= self._trainable_model_parallel_shard(
+            method, tensor_parallel, pipeline_parallel, expert_parallel
+        )
 
         # ZeRO-1, ZeRO-2, and ZeRO-3 shard optimizer states
         if deepspeed_stage in ('zero1', 'zero2', 'zero3'):
@@ -416,6 +477,7 @@ class TrainingMemoryCalculator:
         flash_attention: bool = True,
         sequence_parallel: bool = False,
         context_parallel: int = 1,
+        pipeline_parallel: int = 1,
     ) -> float:
         """
         Calculate activation memory in GB using config-aware Megatron-LM formula.
@@ -480,6 +542,15 @@ class TrainingMemoryCalculator:
             effective_layers = L
 
         total_bytes = per_layer_bytes * effective_layers
+
+        # Pipeline parallelism: each stage holds only L/PP layers. Under the standard 1F1B schedule
+        # with ~PP in-flight microbatches each of size (batch/PP), the bottleneck stage's peak
+        # activation is ~(per-layer act at the microbatch size) × (L/PP layers) × PP in-flight ≈
+        # (full-batch activation) / PP. So per-GPU activation shards by PP. (Without this, per-GPU
+        # memory was over-stated for PP>1 and disagreed with the cluster selector, which already
+        # shards activation by tp*pp.)
+        if pipeline_parallel > 1:
+            total_bytes /= pipeline_parallel
 
         # Context parallelism splits the sequence across CP ranks,
         # reducing activation memory proportionally

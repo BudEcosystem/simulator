@@ -36,6 +36,45 @@ class ComponentPowerConfig:
     count: int = 1
 
 
+# ---------------------------------------------------------------------------
+# Per-device-class default TDP (watts), used ONLY when a device carries no
+# datasheet TDP in any of its config fields (cost.tdp_watts / tdp_watts / Power).
+# Each value is a representative datasheet TDP for that device class so that two
+# distinct devices never collapse to one flat number. Keyed on
+# (hardware ``type``, memory technology family).
+#
+# Sources (all vendor datasheets / published per-chip power):
+#   HBM data-center accelerators (asic/accelerator): 350W
+#     - AWS Trainium1 / Inferentia2 are 7nm HBM ASICs in the same class as
+#       Google TPU v4 (192W, Jouppi et al. ISCA 2023) and below Gaudi2/3; AWS
+#       does not publish a per-chip TDP, so we use the class-representative
+#       350W (Trn1.32xl ~ 16 chips within the published instance envelope; well
+#       under the ~500-700W Trainium2/3 figures, SemiAnalysis 2024).
+#   HBM data-center GPU: 400W (NVIDIA A100 PCIe datasheet 300W .. SXM 400W).
+#   GDDR data-center / pro GPU: 230W (NVIDIA A30 165W .. A40/A6000 300W class).
+#   Other / unknown: 300W (final fallback, preserves legacy default).
+# ---------------------------------------------------------------------------
+_DEFAULT_TDP_HBM_ACCEL_W: float = 350.0   # AWS Trainium1/Inferentia2-class HBM ASIC
+_DEFAULT_TDP_HBM_GPU_W: float = 400.0     # NVIDIA A100-class HBM GPU
+_DEFAULT_TDP_GDDR_GPU_W: float = 230.0    # GDDR data-center/pro GPU class
+_DEFAULT_TDP_GENERIC_W: float = 300.0     # legacy generic fallback
+
+
+def _derive_class_tdp(hw_config: dict) -> float:
+    """Derive a defensible per-device-class TDP (watts) for a device that lacks
+    a datasheet TDP field. Never returns a single flat number for distinct
+    device classes -- GPUs, HBM ASICs, and GDDR cards each get a class-specific
+    datasheet-representative value. See module constants for sourcing."""
+    hw_type = str(hw_config.get('type', '')).lower()
+    mem_type = str(hw_config.get('memory_type', '')).lower()
+    is_hbm = mem_type.startswith('hbm')
+    if hw_type in ('asic', 'accelerator'):
+        return _DEFAULT_TDP_HBM_ACCEL_W
+    if hw_type == 'gpu':
+        return _DEFAULT_TDP_HBM_GPU_W if is_hbm else _DEFAULT_TDP_GDDR_GPU_W
+    return _DEFAULT_TDP_GENERIC_W
+
+
 @dataclass
 class PowerConfig:
     """Power configuration for an entire hardware node."""
@@ -44,19 +83,29 @@ class PowerConfig:
 
     @classmethod
     def from_hardware_config(cls, hw_config: dict, num_accel: int = 1) -> 'PowerConfig':
-        """Create PowerConfig from HARDWARE_CONFIGS entry.
+        """Create PowerConfig from a unified hardware-source entry.
 
-        Derives power breakdown from TDP:
-        - Active = TDP
-        - Idle = 30% of TDP
-        - Standby = 50% of TDP
+        Power state breakdown is derived from the device TDP via the calibrated
+        GPU fractions (idle/active/standby) in ``constants.py``.
 
-        Handles TDP stored under ``config['cost']['tdp_watts']`` (data-center GPUs)
-        or directly at ``config['tdp_watts']`` (consumer GPUs).
+        TDP resolution (R2-SV4/M14 fix): the device TDP is a DATASHEET figure
+        resolved, in priority order, from
+          1. ``config['cost']['tdp_watts']`` (data-center GPU format),
+          2. ``config['tdp_watts']``        (consumer/static GPU format),
+          3. ``config['Power']``            (DB / CPU-spec format).
+        A device that carries none of these (e.g. a DB-only or undocumented
+        accelerator) no longer collapses to a single flat 300W: its TDP is
+        derived from its device class via :func:`_derive_class_tdp`, so an
+        A100-class HBM GPU, a GDDR card, and an HBM ASIC report distinct power.
+        Only a genuinely empty/typeless config hits the generic 300W fallback.
         """
         tdp = hw_config.get('cost', {}).get('tdp_watts')
         if tdp is None:
-            tdp = hw_config.get('tdp_watts', 300)
+            tdp = hw_config.get('tdp_watts')
+        if tdp is None:
+            tdp = hw_config.get('Power')
+        if tdp is None:
+            tdp = _derive_class_tdp(hw_config)
 
         # Derive total system power from GPU TDP using physics-based fractions
         system_total = num_accel * tdp / SERVER_POWER_FRACTION_GPU
@@ -362,14 +411,23 @@ class PowerModel:
 
     @classmethod
     def from_hardware_name(cls, name: str, num_accel: int = 1) -> 'PowerModel':
-        """Create PowerModel from a hardware config name in HARDWARE_CONFIGS."""
+        """Create PowerModel from a hardware name. F2/C5: resolve via the unified hardware source
+        (static configs + DB) so every catalog device works, not only the ~73 static configs. Falls
+        back to the static dict if the manager is unavailable."""
         from llm_memory_calculator.hardware.configs import HARDWARE_CONFIGS
-        if name not in HARDWARE_CONFIGS:
+        hw_config = None
+        try:
+            from llm_memory_calculator.hardware import get_hardware_config
+            hw_config = get_hardware_config(name) or None
+        except Exception:
+            hw_config = None
+        if hw_config is None:
+            hw_config = HARDWARE_CONFIGS.get(name)
+        if hw_config is None:
             raise ValueError(
                 f"Unknown hardware: {name}. "
                 f"Available: {list(HARDWARE_CONFIGS.keys())[:10]}..."
             )
-        hw_config = HARDWARE_CONFIGS[name]
         power_config = PowerConfig.from_hardware_config(hw_config, num_accel)
         return cls(power_config)
 

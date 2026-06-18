@@ -6,6 +6,7 @@ to hardware configurations from both static configs and optional database.
 """
 
 import logging
+import os
 from typing import Dict, List, Optional, Any, Union, Tuple
 from pathlib import Path
 from functools import lru_cache
@@ -39,7 +40,12 @@ class HardwareManager:
         # Load static configs
         self._static_configs = HARDWARE_CONFIGS.copy()
         
-        # Optional database connection
+        # Optional database connection. C5/F2: when no explicit path is given, fall back to an env var
+        # (BUDSIM_HARDWARE_DB / LLMMC_HARDWARE_DB) so the module-level default manager — used by the GenZ
+        # engine's get_hardware_config — can resolve ALL catalog devices (not just the ~73 static ones),
+        # making every listed device simulatable. Absent the env var, behaviour is unchanged (static-only).
+        if not db_path:
+            db_path = os.environ.get('BUDSIM_HARDWARE_DB') or os.environ.get('LLMMC_HARDWARE_DB')
         self._db = None
         if db_path:
             try:
@@ -73,14 +79,26 @@ class HardwareManager:
             for alias in config.get('aliases', []):
                 self._alias_map[alias.lower()] = hw_name
 
-        # Then, overlay database hardware if available
+        # Then, overlay database hardware if available.
+        # F4 (single source of truth) — STATIC-WINS for any device that has a static config: the static
+        # spec was reconciled to DENSE bf16 (F1) and must be IMMUNE to DB drift, otherwise a stale/sparse
+        # DB value (e.g. RTX4090 661 vs static 330, H100 1979 vs 989.5) would silently override the
+        # corrected value (the verified inversion trap). So for a static device the static spec wins for
+        # every overlapping key, while the DB still CONTRIBUTES any key the static config omits
+        # (description/url/source/cost/power). For a DB-ONLY device the DB provides everything — which is
+        # what makes the previously-unsimulatable catalog devices resolvable (C5).
         if self._db:
             try:
                 db_hardware = self._db.query_hardware()
                 for hw in db_hardware:
                     hw_name = hw['name']
-                    # Database hardware overwrites static if names match
-                    self._hardware_cache[hw_name] = hw
+                    base = self._hardware_cache.get(hw_name)
+                    if base is None:
+                        # DB-only device: DB provides the full config (now simulatable).
+                        self._hardware_cache[hw_name] = dict(hw)
+                    else:
+                        # Static device: static (F1-corrected) wins; DB only adds non-overlapping keys.
+                        self._hardware_cache[hw_name] = {**hw, **base}
                     # Add aliases from database hardware
                     for alias in hw.get('aliases', []):
                         self._alias_map[alias.lower()] = hw_name

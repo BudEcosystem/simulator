@@ -1,19 +1,38 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, Zap, HardDrive, Activity, Cpu, DollarSign, Globe, Building, ExternalLink, AlertCircle, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { HardwareDetail as HardwareDetailType, ModelCompatibility } from '../../types/hardware';
 import { hardwareAPI } from '../../services/hardwareAPI';
 import { SpecificationTooltip } from '../Common/SpecificationTooltip';
+import { API_BASE } from '../../config/api';
 
 interface HardwareDetailProps {
   hardwareName: string;
   onBack: () => void;
 }
 
+// Representative models / sequence lengths used to build the compatibility
+// matrix. Memory figures are NOT hardcoded - they are fetched on demand from
+// POST /api/models/calculate so the numbers reflect the real estimator.
+const COMPATIBILITY_MODELS: { model_id: string; model_name: string }[] = [
+  { model_id: 'meta-llama/Llama-2-7b-hf', model_name: 'Llama 2 7B' },
+  { model_id: 'mistralai/Mistral-7B-v0.1', model_name: 'Mistral 7B' },
+];
+
+const COMPATIBILITY_SEQ_LENGTHS: { key: keyof ModelCompatibility['compatibility']; seq_length: number }[] = [
+  { key: 'seq2k', seq_length: 2048 },
+  { key: 'seq4k', seq_length: 4096 },
+  { key: 'seq8k', seq_length: 8192 },
+  { key: 'seq16k', seq_length: 16384 },
+];
+
 export const HardwareDetail: React.FC<HardwareDetailProps> = ({ hardwareName, onBack }) => {
   const [hardware, setHardware] = useState<HardwareDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'pricing' | 'compatibility'>('overview');
+  const [compatibility, setCompatibility] = useState<ModelCompatibility[]>([]);
+  const [compatLoading, setCompatLoading] = useState(false);
+  const [compatError, setCompatError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchHardwareDetails();
@@ -56,40 +75,88 @@ export const HardwareDetail: React.FC<HardwareDetailProps> = ({ hardwareName, on
     }
   };
 
-  const getCompatibilityStatus = (memoryGB: number, hardwareMemory: number) => {
+  const getCompatibilityStatus = (
+    memoryGB: number,
+    hardwareMemory: number
+  ): { status: 'green' | 'yellow' | 'red'; label: string } => {
     const ratio = memoryGB / hardwareMemory;
     if (ratio <= 0.8) return { status: 'green', label: 'Optimal' };
     if (ratio <= 1.0) return { status: 'yellow', label: 'Tight' };
     return { status: 'red', label: 'Insufficient' };
   };
 
-  // Mock model compatibility data - in real implementation, this would come from API
-  const mockCompatibility: ModelCompatibility[] = [
-    {
-      model_id: 'meta-llama/Llama-2-7b-hf',
-      model_name: 'Llama 2 7B',
-      parameters: 7000000000,
-      compatibility: {
-        seq2k: { memory_gb: 14.2, status: 'green' },
-        seq4k: { memory_gb: 16.8, status: 'green' },
-        seq8k: { memory_gb: 22.1, status: 'yellow' },
-        seq16k: { memory_gb: 32.7, status: 'red' }
-      },
-      overallStatus: 'optimal'
-    },
-    {
-      model_id: 'mistralai/Mistral-7B-v0.1',
-      model_name: 'Mistral 7B',
-      parameters: 7200000000,
-      compatibility: {
-        seq2k: { memory_gb: 13.8, status: 'green' },
-        seq4k: { memory_gb: 16.2, status: 'green' },
-        seq8k: { memory_gb: 21.4, status: 'yellow' },
-        seq16k: { memory_gb: 31.8, status: 'red' }
-      },
-      overallStatus: 'optimal'
+  // Fetch real per-(model, seq-length) memory requirements from the backend
+  // estimator instead of showing hardcoded numbers. Runs when the user opens
+  // the compatibility tab for a given hardware.
+  const fetchCompatibility = useCallback(async () => {
+    if (!hardware) return;
+    setCompatLoading(true);
+    setCompatError(null);
+
+    try {
+      const results = await Promise.all(
+        COMPATIBILITY_MODELS.map(async ({ model_id, model_name }) => {
+          const cells = await Promise.all(
+            COMPATIBILITY_SEQ_LENGTHS.map(async ({ key, seq_length }) => {
+              const response = await fetch(`${API_BASE}/models/calculate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model_id, precision: 'bf16', seq_length }),
+              });
+              if (!response.ok) {
+                throw new Error(`Failed to calculate memory for ${model_id}`);
+              }
+              const data = await response.json();
+              const memoryGB: number = data.total_memory_gb;
+              return {
+                key,
+                requirement: {
+                  memory_gb: memoryGB,
+                  status: getCompatibilityStatus(memoryGB, hardware.memory_size).status,
+                },
+                parameter_count: data.parameter_count as number,
+              };
+            })
+          );
+
+          const compatibilityMap = cells.reduce((acc, cell) => {
+            acc[cell.key] = cell.requirement;
+            return acc;
+          }, {} as ModelCompatibility['compatibility']);
+
+          // Overall status is the worst-case across the evaluated sequence lengths.
+          const statuses = cells.map((c) => c.requirement.status);
+          const overallStatus: ModelCompatibility['overallStatus'] = statuses.includes('red')
+            ? 'incompatible'
+            : statuses.includes('yellow')
+            ? 'partial'
+            : 'optimal';
+
+          return {
+            model_id,
+            model_name,
+            parameters: cells[0]?.parameter_count ?? 0,
+            compatibility: compatibilityMap,
+            overallStatus,
+          } as ModelCompatibility;
+        })
+      );
+
+      setCompatibility(results);
+    } catch (err) {
+      console.error('Error fetching model compatibility:', err);
+      setCompatError('Failed to compute model compatibility. Please try again.');
+    } finally {
+      setCompatLoading(false);
     }
-  ];
+  }, [hardware]);
+
+  // Lazily compute compatibility the first time the tab is opened.
+  useEffect(() => {
+    if (activeTab === 'compatibility' && hardware && compatibility.length === 0 && !compatLoading && !compatError) {
+      fetchCompatibility();
+    }
+  }, [activeTab, hardware, compatibility.length, compatLoading, compatError, fetchCompatibility]);
 
   if (loading) {
     return (
@@ -450,9 +517,35 @@ export const HardwareDetail: React.FC<HardwareDetailProps> = ({ hardwareName, on
             <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-800">
               <h2 className="text-xl font-semibold mb-6 text-white">Model Compatibility Matrix</h2>
               <p className="text-gray-400 mb-6">
-                Memory requirements for popular AI models at different sequence lengths (batch size: 10)
+                Memory requirements (bf16, batch size: 1) for representative AI models at different
+                sequence lengths, computed on demand from the memory estimator.
               </p>
-              
+
+              {compatLoading ? (
+                <div className="text-center py-12">
+                  <Loader2 className="w-10 h-10 animate-spin text-purple-500 mx-auto mb-4" />
+                  <p className="text-gray-400">Computing model compatibility...</p>
+                </div>
+              ) : compatError ? (
+                <div className="text-center py-12">
+                  <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                  <p className="text-gray-400 mb-4">{compatError}</p>
+                  <button
+                    onClick={fetchCompatibility}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              ) : compatibility.length === 0 ? (
+                <div className="text-center py-12">
+                  <CheckCircle className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+                  <p className="text-gray-400">
+                    Model compatibility is computed on demand. Select a model in the calculator for
+                    detailed memory requirements.
+                  </p>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -467,7 +560,7 @@ export const HardwareDetail: React.FC<HardwareDetailProps> = ({ hardwareName, on
                     </tr>
                   </thead>
                   <tbody>
-                    {mockCompatibility.map((model, index) => (
+                    {compatibility.map((model, index) => (
                       <tr key={index} className="border-b border-gray-800 hover:bg-gray-800/30">
                         <td className="py-4 px-4">
                           <div>
@@ -476,9 +569,15 @@ export const HardwareDetail: React.FC<HardwareDetailProps> = ({ hardwareName, on
                           </div>
                         </td>
                         <td className="text-center py-4 px-4 text-gray-300">
-                          {(model.parameters / 1e9).toFixed(1)}B
+                          {model.parameters ? `${(model.parameters / 1e9).toFixed(1)}B` : '—'}
                         </td>
-                        {Object.entries(model.compatibility).map(([key, req]) => {
+                        {COMPATIBILITY_SEQ_LENGTHS.map(({ key }) => {
+                          const req = model.compatibility[key];
+                          if (!req) {
+                            return (
+                              <td key={key} className="text-center py-4 px-4 text-gray-500">—</td>
+                            );
+                          }
                           const compat = getCompatibilityStatus(req.memory_gb, hardware.memory_size);
                           return (
                             <td key={key} className="text-center py-4 px-4">
@@ -509,21 +608,24 @@ export const HardwareDetail: React.FC<HardwareDetailProps> = ({ hardwareName, on
                   </tbody>
                 </table>
               </div>
-              
-              <div className="mt-6 flex items-center space-x-6 text-sm">
-                <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  <span className="text-gray-400">Optimal (&lt;80% memory)</span>
+              )}
+
+              {compatibility.length > 0 && !compatLoading && !compatError && (
+                <div className="mt-6 flex items-center space-x-6 text-sm">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span className="text-gray-400">Optimal (&lt;80% memory)</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                    <span className="text-gray-400">Tight (80-100% memory)</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <span className="text-gray-400">Insufficient (&gt;100% memory)</span>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                  <span className="text-gray-400">Tight (80-100% memory)</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                  <span className="text-gray-400">Insufficient (&gt;100% memory)</span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         )}

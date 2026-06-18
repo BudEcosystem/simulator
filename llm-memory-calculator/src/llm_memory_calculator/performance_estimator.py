@@ -33,6 +33,42 @@ try:
 except ImportError:
     HAS_CPU_SUPPORT = False
 
+# Hardware-name resolution for the public estimators (H1 fix).
+try:
+    from .hardware import get_hardware_config as _get_hw_config
+except Exception:  # pragma: no cover
+    _get_hw_config = None
+
+# Default device used when system_name is not supplied (A100 80GB).
+_DEFAULT_SYSTEM = {'Flops': 312, 'Memory_size': 80, 'Memory_BW': 2039, 'ICN': 600, 'real_values': True}
+
+
+def _coerce_system_name(system_name):
+    """Normalize `system_name` for the public estimators.
+
+    H1: accept a hardware NAME (str) — the natural input and what the underlying
+    prefill/decode_moddeling already accept — by resolving it to its config dict via
+    get_hardware_config. None -> default A100 dict; dict / System / CPUSystem pass through unchanged.
+    An unknown name raises a clear ValueError instead of a cryptic `'str' has no attribute 'get'`.
+    """
+    if system_name is None:
+        return dict(_DEFAULT_SYSTEM)
+    if isinstance(system_name, str):
+        cfg = _get_hw_config(system_name) if _get_hw_config is not None else None
+        if cfg:
+            return cfg
+        raise ValueError(
+            f"Unknown hardware name '{system_name}'. Pass a known hardware name "
+            f"(see get_all_hardware()) or an explicit config dict."
+        )
+    return system_name
+
+
+def _is_cpu_system(system_name) -> bool:
+    """True only for a dict carrying type=='cpu'. Guards the prior `system_name.get('type')` which
+    crashed on str/System inputs (H1)."""
+    return bool(HAS_CPU_SUPPORT and isinstance(system_name, dict) and system_name.get('type') == 'cpu')
+
 
 def estimate_prefill_performance(
     model: str = 'llama2_7b',
@@ -87,17 +123,10 @@ def estimate_prefill_performance(
         )
     
     # Default to A100 80GB configuration if not specified
-    if system_name is None:
-        system_name = {
-            'Flops': 312,
-            'Memory_size': 80,
-            'Memory_BW': 2039,
-            'ICN': 600,
-            'real_values': True
-        }
+    system_name = _coerce_system_name(system_name)
     
     # Check if this is a CPU system based on 'type' field
-    if HAS_CPU_SUPPORT and system_name.get('type') == 'cpu':
+    if _is_cpu_system(system_name):
         try:
             # Use CPU-aware prefill modeling
             result = cpu_aware_prefill_moddeling(
@@ -209,17 +238,10 @@ def estimate_decode_performance(
         )
     
     # Default to A100 80GB configuration if not specified
-    if system_name is None:
-        system_name = {
-            'Flops': 312,
-            'Memory_size': 80,
-            'Memory_BW': 2039,
-            'ICN': 600,
-            'real_values': True
-        }
+    system_name = _coerce_system_name(system_name)
     
     # Check if this is a CPU system based on 'type' field
-    if HAS_CPU_SUPPORT and system_name.get('type') == 'cpu':
+    if _is_cpu_system(system_name):
         try:
             # Use CPU-aware decode modeling
             result = cpu_aware_decode_moddeling(
@@ -438,14 +460,7 @@ def estimate_chunked_performance(
             "Internal GenZ not available. This indicates a package installation issue."
         )
     
-    if system_name is None:
-        system_name = {
-            'Flops': 312,
-            'Memory_size': 80,
-            'Memory_BW': 2039,
-            'ICN': 600,
-            'real_values': True
-        }
+    system_name = _coerce_system_name(system_name)
     
     try:
         result = chunked_moddeling(

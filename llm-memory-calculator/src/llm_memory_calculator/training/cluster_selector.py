@@ -127,6 +127,7 @@ class TrainingClusterSelector:
                     memory_per_gpu=memory_per_gpu,
                     num_gpus=num_gpus,
                     hw_config=hw_config,
+                    estimate=estimate,
                 )
 
                 if not fit_result.fits:
@@ -216,6 +217,7 @@ class TrainingClusterSelector:
             memory_per_gpu=memory_per_gpu,
             num_gpus=num_gpus,
             hw_config=hw_config,
+            estimate=estimate,
         )
 
         # Calculate minimum GPUs needed
@@ -223,6 +225,7 @@ class TrainingClusterSelector:
             min_gpus = self._calculate_min_gpus(
                 total_memory_gb=total_memory_gb,
                 memory_per_gpu=memory_per_gpu,
+                estimate=estimate,
             )
             fit_result.min_gpus_required = min_gpus
 
@@ -232,6 +235,32 @@ class TrainingClusterSelector:
 
         return fit_result
 
+    @staticmethod
+    def _per_gpu_footprint(estimate: Dict[str, Any], total_memory_gb: float,
+                           tp: int, pp: int, dp: int) -> float:
+        """Per-GPU memory (GB) for a (tp, pp, dp) candidate, computed from the SINGLE source of truth —
+        the component breakdown the memory estimate already carries.
+
+        TR3 (solutions_round2.md §3): the old model was ``total_memory_gb/(tp*pp*dp)`` times a magic
+        ``0.7`` (and ``min_gpus * 0.6``) — two unsourced fudge factors that (a) divided EVERYTHING by
+        ``dp`` (so plain DDP falsely "fit" because it pretended data-parallel shards weights) and (b)
+        hand-approximated ZeRO-2. The physically-correct model: TP*PP shards weights/activations/
+        resident-trainable; data-parallel REPLICATES them unless ZeRO shards the gradients (stage>=2)
+        and optimizer states (stage>=1) across the dp ranks. No fudge factor. When the component
+        breakdown is absent (minimal estimates), fall back to the naive division but WITHOUT the 0.7."""
+        mp = max(1, tp * pp)
+        w = estimate.get('weight_memory_gb')
+        g = estimate.get('gradient_memory_gb')
+        o = estimate.get('optimizer_memory_gb')
+        a = estimate.get('activation_memory_gb')
+        if any(v is None for v in (w, g, o, a)):
+            return total_memory_gb / (mp * max(1, dp))  # legacy fallback, fudge removed
+        zero = str(estimate.get('deepspeed_stage') or '').lower()
+        per = (w + a) / mp                                    # weights + activations: model-parallel only
+        per += (g / mp) / (dp if zero in ('zero2', 'zero3') else 1)          # gradients: +DP under ZeRO-2/3
+        per += (o / mp) / (dp if zero in ('zero1', 'zero2', 'zero3') else 1)  # optimizer: +DP under ZeRO-1/2/3
+        return per
+
     def _find_best_parallelism(
         self,
         total_memory_gb: float,
@@ -239,10 +268,15 @@ class TrainingClusterSelector:
         memory_per_gpu: float,
         num_gpus: int,
         hw_config: Dict[str, Any],
+        estimate: Optional[Dict[str, Any]] = None,
     ) -> ClusterFitResult:
         """Find optimal parallelism strategy for given configuration."""
-        # Safety margin (90% of GPU memory)
+        estimate = estimate or {}
+        # Safety margin (90% of GPU memory) — documented fragmentation/CUDA-context headroom (retained).
         available_memory = memory_per_gpu * 0.9
+        # M12: track the minimum achievable per-GPU footprint so the not-fit result can report a real
+        # number (the per-GPU memory the most-sharded strategy would still need) instead of 0.0.
+        best_per_device = float('inf')
 
         # Try different parallelism strategies
         for tp in [1, 2, 4, 8]:
@@ -257,18 +291,11 @@ class TrainingClusterSelector:
                 if dp == 0:
                     continue
 
-                # Calculate memory per GPU with this parallelism
-                # Weight memory divided by TP
-                # Optimizer/gradient memory divided by DP (ZeRO-2 assumed)
-                # Activation memory divided by TP
+                # TR3: per-GPU footprint from the component breakdown (DP replicates unless ZeRO),
+                # not total/(tp*pp*dp) * 0.7. Single source of truth with the memory estimate.
+                memory_per_device = self._per_gpu_footprint(estimate, total_memory_gb, tp, pp, dp)
 
-                # Simplified memory model
-                memory_per_device = total_memory_gb / (tp * pp * dp)
-
-                # With ZeRO-2, optimizer states are sharded
-                # This reduces memory by ~40% on average
-                if dp > 1:
-                    memory_per_device *= 0.7
+                best_per_device = min(best_per_device, memory_per_device)
 
                 if memory_per_device <= available_memory:
                     utilization = (memory_per_device / memory_per_gpu) * 100
@@ -280,9 +307,13 @@ class TrainingClusterSelector:
                         parallelism={"tp": tp, "pp": pp, "dp": dp},
                     )
 
-        # No valid configuration found
+        # No valid configuration found. M12: report the minimal per-GPU footprint the best (most-sharded)
+        # strategy would need — a real number matching the prose `reason`, not the default 0.0.
+        min_per_device = best_per_device if best_per_device != float('inf') else total_memory_gb / max(num_gpus, 1)
         return ClusterFitResult(
             fits=False,
+            memory_per_gpu_gb=min_per_device,
+            utilization_percent=(min_per_device / memory_per_gpu * 100) if memory_per_gpu else 0.0,
             reason=f"Insufficient memory: {total_memory_gb:.1f}GB required, {memory_per_gpu * num_gpus:.1f}GB available across {num_gpus} GPUs",
         )
 
@@ -290,23 +321,34 @@ class TrainingClusterSelector:
         self,
         total_memory_gb: float,
         memory_per_gpu: float,
+        estimate: Optional[Dict[str, Any]] = None,
     ) -> int:
-        """Calculate minimum GPUs needed for training."""
+        """Smallest power-of-two GPU count whose best parallelism fits.
+
+        TR3: the old code multiplied the naive count by a magic ``0.6`` to "approximate ZeRO-2", which
+        let configs claim to fit on too few GPUs. Now it asks the SAME physically-correct
+        ``_per_gpu_footprint`` (DP replicates unless ZeRO shards) used by ``_find_best_parallelism``
+        whether each candidate count fits — no fudge factor. Falls back to the no-fudge naive division
+        when the component breakdown is absent."""
+        estimate = estimate or {}
         available_memory = memory_per_gpu * 0.9
+        if available_memory <= 0:
+            return 64
 
-        # Start with simple calculation
-        min_gpus = int(total_memory_gb / available_memory) + 1
-
-        # Consider ZeRO-2 effect (optimizer states sharded)
-        # With ZeRO-2, we can fit more with fewer GPUs
-        if min_gpus >= 2:
-            # ZeRO-2 reduces optimizer memory by DP factor
-            # Approximate: need ~60% of naive calculation
-            min_gpus = max(2, int(min_gpus * 0.6))
-
-        # Round to power of 2 for efficient parallelism
         for gpus in [1, 2, 4, 8, 16, 32, 64]:
-            if gpus >= min_gpus:
+            # Best achievable per-GPU footprint at this count = the most-sharded valid (tp,pp,dp).
+            best = float('inf')
+            for tp in [1, 2, 4, 8]:
+                if tp > gpus:
+                    continue
+                for pp in [1, 2, 4]:
+                    if tp * pp > gpus:
+                        continue
+                    dp = gpus // (tp * pp)
+                    if dp == 0:
+                        continue
+                    best = min(best, self._per_gpu_footprint(estimate, total_memory_gb, tp, pp, dp))
+            if best <= available_memory:
                 return gpus
 
         return 64

@@ -28,9 +28,9 @@ def prefill_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     ### System Declaration
     ##################################################################################################
 
-    system = get_inference_system(system_name = system_name, bits = bits, 
+    system = get_inference_system(system_name = system_name, bits = bits,
                                 ceff=system_eff, meff=system_eff, network_config=network_config,
-                                collective_strategy=collective_strategy, parallelism_heirarchy=parallelism_heirarchy)
+                                collective_strategy=collective_strategy, parallelism_heirarchy=parallelism_heirarchy, phase='prefill')
     ##################################################################################################
     ### Model Characterization Calculation
     ##################################################################################################
@@ -95,15 +95,17 @@ def prefill_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     ### Final Latency and Thrpt Calculation
     ##################################################################################################
 
+    # Per-hardware inference calibration (default no-op): add the fixed per-step kernel-launch cost
+    # (N_ops · t_launch) the throughput roofline omits. Prefill is a single forward pass over the
+    # prompt, so there is no per-stream (c_stream) term. Guarded → default path byte-identical.
+    if system.kernel_launch_latency_ms:
+        prefill_latency += system.kernel_launch_latency_ms * count_repeat_aware_ops(model_df)
+
     ## 1000x because the latency is in milli seconds. thrpt is in Token/s
-    if pipeline_parallel > 1:
-        # Pipeline parallel adds bubble overhead
-        # Total latency = full pipeline latency + (PP-1) * stage latency
-        stage_latency = prefill_latency / pipeline_parallel
-        total_latency = prefill_latency + (pipeline_parallel - 1) * stage_latency
-        thrpt = 1000 * batch_size / total_latency
-    else:
-        thrpt = 1000 * batch_size / prefill_latency  # Requests per second
+    # M1: steady-state pipelined throughput is gated by conserved per-token work (inter-stage comm is
+    # already in prefill_latency), not the one-shot fill/drain latency. PP adds bubble LATENCY and
+    # memory capacity but does not reduce steady-state throughput; the prior /(2 - 1/PP) under-counted it.
+    thrpt = 1000 * batch_size / prefill_latency  # Requests per second (steady-state, PP-independent)
     tokens_per_sec = thrpt * input_tokens  # Tokens per second
 
     attn_time = summary_table[f'Attn Latency ({unit.unit_time})'].values[0]

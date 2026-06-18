@@ -172,8 +172,15 @@ class BudSimEvaluator:
             power = _estimate_power_w(config.hardware)
             num_devices = config.tensor_parallel * config.pipeline_parallel
 
+            # R2-BE5: GenZ's decode ModdelingOutput sets Throughput == Throughput_tokens_per_sec
+            # (decode emits exactly one token per request per iteration, see llm_decode.py). Reporting
+            # decode.Throughput as throughput_rps therefore mislabels DECODE-TOKEN throughput as
+            # REQUEST throughput. A request emits `output_tokens` decode tokens, so the true request
+            # rate is token_tps / output_tokens. Fixed at the evaluator boundary; the engine is untouched.
+            request_rps = token_tps / max(output_tokens, 1)
+
             return EvalResult(
-                throughput_rps=decode.Throughput,
+                throughput_rps=request_rps,
                 token_throughput_tps=token_tps,
                 ttft_ms=prefill.Latency,
                 tpot_ms=decode.Latency,
@@ -254,9 +261,11 @@ class BudSimEvaluator:
             memory_gb = _extract_memory_gb(prefill.summary_table, self._unit)
             token_tps = decode.Throughput_tokens_per_sec
             power = hw_spec.tdp_watts * 0.75  # Inference utilization factor
+            # R2-BE5: see evaluate_config -- decode.Throughput is token/s, not request/s.
+            request_rps = token_tps / max(output_tokens, 1)
 
             return EvalResult(
-                throughput_rps=decode.Throughput,
+                throughput_rps=request_rps,
                 token_throughput_tps=token_tps,
                 ttft_ms=prefill.Latency,
                 tpot_ms=decode.Latency,

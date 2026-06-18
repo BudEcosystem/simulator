@@ -6,6 +6,25 @@ from typing import Dict, Any, List, Optional
 router = APIRouter(prefix="/api/v2", tags=["serving"])
 
 
+def _require_known_hardware(hardware: str) -> None:
+    """Raise HTTP 404 for an unknown accelerator.
+
+    R2-OP-A: the optimize/config|pareto|sensitivity endpoints previously had no up-front hardware guard,
+    so an unknown device returned HTTP 200 with empty/fabricated results (the ConfigOptimizer would swallow
+    every GenZ failure). This reuses the exact Round-1 resolver the simulate/serving and power/estimate
+    endpoints already use: a hardware name is valid iff it resolves through the unified source
+    (get_hardware_config: static configs + DB) OR is a recognized CPU preset.
+    """
+    from llm_memory_calculator.hardware import get_hardware_config
+    try:
+        from llm_memory_calculator.hardware.configs import is_cpu_hardware
+        _is_cpu = bool(is_cpu_hardware(hardware))
+    except Exception:
+        _is_cpu = False
+    if not get_hardware_config(hardware) and not _is_cpu:
+        raise HTTPException(status_code=404, detail=f"Unknown hardware: {hardware}")
+
+
 # === Pydantic Schemas ===
 
 class MemoryTierRequest(BaseModel):
@@ -58,8 +77,12 @@ async def analyze_memory_tiers(req: MemoryTierRequest):
         model_config = get_configs(req.model)
 
         from llm_memory_calculator.hardware.configs import is_cpu_hardware
-        if req.hardware in HARDWARE_CONFIGS:
-            hw = HARDWARE_CONFIGS[req.hardware]
+        from llm_memory_calculator.hardware import get_hardware_config
+        # F2/C5: resolve via the unified source (static + DB), not just static configs, so all catalog
+        # devices are recognized (the 18 DB-only GPUs used to be rejected here).
+        _hwcfg = get_hardware_config(req.hardware)
+        if _hwcfg:
+            hw = _hwcfg
         else:
             # Try CPU_PRESETS for memory specs
             try:
@@ -133,7 +156,9 @@ async def estimate_power(req: PowerEstimateRequest):
         from llm_memory_calculator.hardware.configs import HARDWARE_CONFIGS
 
         from llm_memory_calculator.hardware.configs import is_cpu_hardware
-        if req.hardware not in HARDWARE_CONFIGS and not is_cpu_hardware(req.hardware):
+        from llm_memory_calculator.hardware import get_hardware_config
+        # F2/C5: validate against the unified source (static + DB) so all catalog devices are accepted.
+        if not get_hardware_config(req.hardware) and not is_cpu_hardware(req.hardware):
             raise HTTPException(status_code=404, detail=f"Unknown hardware: {req.hardware}")
 
         if is_cpu_hardware(req.hardware):
@@ -158,14 +183,29 @@ async def estimate_power(req: PowerEstimateRequest):
             prefill_latency_ms = prefill_result.Latency
             decode_latency_ms = decode_result.Latency * req.output_tokens
             total_latency_ms = prefill_latency_ms + decode_latency_ms
-            compute_util = min(0.95, getattr(prefill_result, 'compute_utilization', 0.5))
-            mem_util = min(0.95, getattr(decode_result, 'memory_utilization', 0.5))
-        except Exception:
-            compute_util = min(0.95, 0.3 + 0.05 * req.batch_size)
-            mem_util = min(0.95, 0.4 + 0.03 * req.batch_size)
-            prefill_latency_ms = req.input_tokens * 0.01 * req.batch_size / req.tensor_parallel
-            decode_latency_ms = req.output_tokens * 0.5 / req.tensor_parallel
-            total_latency_ms = prefill_latency_ms + decode_latency_ms
+            # SV4: build the real roofline MFU/MBU from the engine's model_df. The previous
+            # getattr(prefill_result, 'compute_utilization', 0.5) read an attribute that does NOT exist on
+            # ModdelingOutput -> always 0.5 -> batch-invariant power. roofline_utilization derives
+            # (mfu, mbu) from the engine's own FLOPs/bytes/latency against the unified device peaks, so
+            # power now varies with batch size and phase (prefill -> compute-bound; decode -> bw-bound).
+            # num_devices=1: the engine's summary_table is already per-device (FLOPs/bytes sharded
+            # across TP, latency is the per-device sharded time), so MFU/MBU are per-device utilization.
+            # Dividing the peak by tensor_parallel again would understate them by tp.
+            from llm_memory_calculator.genz.serving import roofline_utilization
+            compute_util = min(0.95, roofline_utilization(
+                prefill_result, req.hardware, num_devices=1)[0])
+            mem_util = min(0.95, roofline_utilization(
+                decode_result, req.hardware, num_devices=1)[1])
+        except HTTPException:
+            raise
+        except Exception as e:
+            # H2: fail honestly. The previous fallback fabricated plausible latencies/power for a model
+            # that could not be modeled (e.g. a nonexistent model id), returning HTTP 200 with invented
+            # numbers indistinguishable from a real estimate. Surface the modeling failure instead.
+            raise HTTPException(
+                status_code=400,
+                detail=f"Power estimate failed: could not model '{req.model}' on '{req.hardware}' ({e})",
+            )
 
         # Communication utilization for tensor parallel
         import math
@@ -222,6 +262,11 @@ class ServingSimulationResponse(BaseModel):
     hardware: str
     total_duration_ms: float
     total_requests_completed: int
+    # SV1/SV2 + SV3: surface honest admission/failure accounting and KV-offload status so a client can
+    # tell when requests were dropped (KV exceeds all tiers) or the instance was thrashing (offloaded).
+    total_requests_failed: int = 0
+    offloaded: bool = False
+    offload_steps: int = 0
     overall_throughput_rps: float
     overall_token_throughput_tps: float
     slo_summary: Dict[str, Any]
@@ -262,7 +307,9 @@ async def simulate_serving(req: ServingSimulationRequest):
             _is_cpu = bool(is_cpu_hardware(req.hardware))
         except Exception:
             _is_cpu = False
-        if req.hardware not in HARDWARE_CONFIGS and not _is_cpu:
+        from llm_memory_calculator.hardware import get_hardware_config as _ghc
+        # F2/C5: unified source (static + DB) so all catalog devices are accepted.
+        if not _ghc(req.hardware) and not _is_cpu:
             raise HTTPException(
                 status_code=404, detail=f"Unknown hardware: {req.hardware}"
             )
@@ -279,15 +326,20 @@ async def simulate_serving(req: ServingSimulationRequest):
         workload = WorkloadConfig(
             arrival_rate_rps=req.arrival_rate_rps, arrival_pattern=req.arrival_pattern,
             num_requests=req.num_requests,
+            # M6: bound min<=mean<=max by construction. The prior fixed min (32/8) exceeded max=mean*4
+            # for small means, and np.clip(samples, min, max) with min>max silently collapses EVERY
+            # sampled length to max — a degenerate workload far below the stated min.
             input_length_distribution={
                 "dist": "lognormal", "mean": req.input_length_mean,
-                "std": max(req.input_length_mean // 3, 1), "min": 32,
-                "max": req.input_length_mean * 4,
+                "std": max(req.input_length_mean // 3, 1),
+                "min": min(32, req.input_length_mean),
+                "max": max(req.input_length_mean * 4, req.input_length_mean),
             },
             output_length_distribution={
                 "dist": "lognormal", "mean": req.output_length_mean,
-                "std": max(req.output_length_mean // 3, 1), "min": 8,
-                "max": req.output_length_mean * 4,
+                "std": max(req.output_length_mean // 3, 1),
+                "min": min(8, req.output_length_mean),
+                "max": max(req.output_length_mean * 4, req.output_length_mean),
             },
             random_seed=req.random_seed,
         )
@@ -311,6 +363,9 @@ async def simulate_serving(req: ServingSimulationRequest):
             model=req.model, hardware=req.hardware,
             total_duration_ms=result.total_duration_ms,
             total_requests_completed=result.total_requests_completed,
+            total_requests_failed=getattr(result, 'total_requests_failed', 0),
+            offloaded=getattr(result, 'offloaded', False),
+            offload_steps=getattr(result, 'offload_steps', 0),
             overall_throughput_rps=result.overall_throughput_rps,
             overall_token_throughput_tps=result.overall_token_throughput_tps,
             slo_summary=result.slo_summary, power_summary=result.power_summary,
@@ -392,6 +447,7 @@ class SensitivityRequest(BaseModel):
 async def optimize_config(req: OptimizeConfigRequest):
     """Find optimal serving configuration for a single objective."""
     try:
+        _require_known_hardware(req.hardware)  # R2-OP-A: 404 on unknown hw, not 200 + empty/fabricated
         from llm_memory_calculator.genz.serving import ConfigOptimizer, OptimizationConstraints
         optimizer = ConfigOptimizer(req.model, req.hardware, num_devices=req.num_devices)
         constraints = OptimizationConstraints(
@@ -402,6 +458,8 @@ async def optimize_config(req: OptimizeConfigRequest):
             target=req.target, constraints=constraints, budget=req.budget,
             input_tokens=req.input_tokens, output_tokens=req.output_tokens,
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -410,12 +468,15 @@ async def optimize_config(req: OptimizeConfigRequest):
 async def pareto_optimize(req: ParetoRequest):
     """Multi-objective Pareto frontier optimization."""
     try:
+        _require_known_hardware(req.hardware)  # R2-OP-A: 404 on unknown hw, not 200 + empty/fabricated
         from llm_memory_calculator.genz.serving import ConfigOptimizer
         optimizer = ConfigOptimizer(req.model, req.hardware, num_devices=req.num_devices)
         return optimizer.pareto_optimize(
             objectives=req.objectives, budget=req.budget,
             input_tokens=req.input_tokens, output_tokens=req.output_tokens,
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -424,11 +485,14 @@ async def pareto_optimize(req: ParetoRequest):
 async def analyze_sensitivity(req: SensitivityRequest):
     """Parameter sensitivity analysis."""
     try:
+        _require_known_hardware(req.hardware)  # R2-OP-A: 404 on unknown hw, not 200 + empty/fabricated
         from llm_memory_calculator.genz.serving import ConfigOptimizer
         optimizer = ConfigOptimizer(req.model, req.hardware, num_devices=req.num_devices)
         return optimizer.analyze_sensitivity(
             target=req.target, input_tokens=req.input_tokens, output_tokens=req.output_tokens,
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

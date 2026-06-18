@@ -155,17 +155,20 @@ class TestParetoDominance:
             output_tokens=64,
         )
         front = result["pareto_front"]
+        out = 64  # output_tokens used in the pareto_optimize call below
         # No point on the Pareto front should dominate another
         # For throughput: higher is better. For latency: lower is better (negated internally).
+        # C1: the optimizer's latency objective is now END-TO-END (prefill + tpot * output_tokens), so the
+        # dominance recomputation here must use the same E2E latency, not prefill + a single decode step.
         for i, pi in enumerate(front):
             for j, pj in enumerate(front):
                 if i == j:
                     continue
                 # pi dominates pj if pi >= pj in all and > in at least one
-                # Throughput: higher better; Latency (total): lower better
+                # Throughput: higher better; Latency (E2E): lower better
                 ti, tj = pi["throughput_rps"], pj["throughput_rps"]
-                li = pi["prefill_latency_ms"] + pi["decode_latency_ms"]
-                lj = pj["prefill_latency_ms"] + pj["decode_latency_ms"]
+                li = pi["prefill_latency_ms"] + pi["tpot_ms"] * out
+                lj = pj["prefill_latency_ms"] + pj["tpot_ms"] * out
                 # Check that pi does NOT dominate pj
                 throughput_geq = ti >= tj
                 latency_leq = li <= lj  # lower latency is better

@@ -47,9 +47,9 @@ class CPUConfig:
     # Vendor specific
     vendor: str  # 'intel', 'amd', 'arm'
     microarchitecture: str  # 'icelake', 'zen3', 'neoverse-n1'
-
-    # Calibration factors
-    framework_overhead_ms: float = 0.0
+    # R2-CPU2: the former hand-tuned ~1250/1038 ms "framework overhead" calibration field was removed.
+    # It was assigned in every preset but never read in any timing path (a dead, unsourced latency
+    # floor); deleting it prevents a future calibration from silently re-wiring a magic offset.
 
 
 class CPUSystem:
@@ -83,12 +83,32 @@ class CPUSystem:
         if 'avx512' in self.cpu_config.isa_support:
             self.peak_fp32_tflops = total_cores * 16 * 2 * self.cpu_config.base_frequency / 1e12
         
-        # Memory bandwidth is NUMA-aware
-        self.peak_memory_bandwidth = (
-            self.cpu_config.dram_bandwidth_per_channel * 
-            self.cpu_config.memory_channels_per_socket * 
-            self.cpu_config.sockets
+        # Memory bandwidth (R2-CPU3): expose the two access-pattern-relevant aggregations from one
+        # datasheet source (per-channel JEDEC rate x channel count). per_socket is what a single
+        # batch=1 decode stream sees (weights resident in one NUMA node under first-touch); aggregate
+        # is what multi-socket prefill/batched work spans. peak_memory_bandwidth stays the aggregate
+        # for backward compatibility (prefill + existing callers).
+        self.per_socket_mem_bw = (
+            self.cpu_config.dram_bandwidth_per_channel *
+            self.cpu_config.memory_channels_per_socket
         )
+        self.aggregate_mem_bw = self.per_socket_mem_bw * self.cpu_config.sockets
+        self.peak_memory_bandwidth = self.aggregate_mem_bw
+
+        # Sustained DRAM-streaming efficiency (fraction of peak actually achieved). Single-sourced
+        # from the SAME vendor-aware CPU band the GPU/static roofline uses (utils._default_eta_mem_cpu)
+        # so the cpu_aware path and the static-config path apply the IDENTICAL derate and converge.
+        # x86 server parts (Intel/AMD) sustain the published STREAM band (~0.80, Dell/AMD STREAM TRIAD
+        # 0.80-0.86 of peak); ARM CPUs keep their DDR/LPDDR memory-tech band. Server CPUs still sustain
+        # a lower fraction of peak than HBM accelerators.
+        try:
+            from llm_memory_calculator.genz.LLM_inference.utils import _default_eta_mem_cpu
+            self.dram_efficiency = _default_eta_mem_cpu({
+                'manufacturer': getattr(self.cpu_config, 'vendor', ''),
+                'memory_type': None,
+            })
+        except Exception:
+            self.dram_efficiency = 0.65
         
     def _get_max_vector_width(self):
         """Get maximum vector width (FP32 elements) based on ISA support"""

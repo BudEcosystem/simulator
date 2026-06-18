@@ -270,6 +270,15 @@ HARDWARE_CONFIGS = {
         'ICN': 896,
         'real_values': True
     },
+    # GB10 Grace-Blackwell Superchip (DGX Spark): single Blackwell GPU, 128 GB LPDDR5X UNIFIED
+    # memory at 273 GB/s. ~1 PFLOP FP4 → ~250 BF16 TFLOPS. Decode is memory-bandwidth-bound.
+    'GB10': {
+        'Flops': 250,
+        'Memory_size': 128,
+        'Memory_BW': 273,
+        'ICN': 100,
+        'real_values': True
+    },
     'TPUv4': {
         'Flops': 275,
         'Memory_size': 32,

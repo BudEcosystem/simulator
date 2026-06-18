@@ -798,15 +798,14 @@ class BudUsecases:
         if usecase_data['output_tokens_min'] > usecase_data['output_tokens_max']:
             raise ValueError("output_tokens_min cannot be greater than output_tokens_max")
         
-        # Validate SLOs if provided
-        if 'ttft_min' in usecase_data and 'ttft_max' in usecase_data:
-            if usecase_data['ttft_min'] > usecase_data['ttft_max']:
-                raise ValueError("ttft_min cannot be greater than ttft_max")
-        
-        if 'e2e_min' in usecase_data and 'e2e_max' in usecase_data:
-            if usecase_data['e2e_min'] > usecase_data['e2e_max']:
-                raise ValueError("e2e_min cannot be greater than e2e_max")
-        
-        if 'inter_token_min' in usecase_data and 'inter_token_max' in usecase_data:
-            if usecase_data['inter_token_min'] > usecase_data['inter_token_max']:
-                raise ValueError("inter_token_min cannot be greater than inter_token_max") 
+        # Validate SLOs only when BOTH bounds are actually provided (non-None). The SLO fields are
+        # optional; the API passes them as explicit None keys, so a plain `in` check let `None > None`
+        # crash with a 500 (H4). Guard on the values being present.
+        def _check_range(lo_key, hi_key, label):
+            lo, hi = usecase_data.get(lo_key), usecase_data.get(hi_key)
+            if lo is not None and hi is not None and lo > hi:
+                raise ValueError(f"{lo_key} cannot be greater than {hi_key}")
+
+        _check_range('ttft_min', 'ttft_max', 'ttft')
+        _check_range('e2e_min', 'e2e_max', 'e2e')
+        _check_range('inter_token_min', 'inter_token_max', 'inter_token')

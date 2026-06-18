@@ -3,8 +3,9 @@ import math
 from typing import Dict, Any, List, Optional
 import warnings
 
-from .constants import NS_PER_MS, NS_PER_S
+from .constants import NS_PER_MS, NS_PER_S, GB_TO_BYTES
 from .workload import WorkloadConfig
+from .batch_scheduler import SchedulerConfig
 
 
 class ClusterAnalyzer:
@@ -19,6 +20,52 @@ class ClusterAnalyzer:
         self._model = model
         self._hardware = hardware
         self._precision = precision
+        # SV6 diagnostics: the memory-budget-bounded steady-state concurrency and the weight
+        # figure it was derived from (exposed for tests / introspection).
+        self.last_b_eff: int = 1
+        self.last_weight_bytes: int = 0
+
+    def _build_b_eff(self, context: int, tensor_parallel: int = 1,
+                     max_batch_size: Optional[int] = None) -> int:
+        """SV6: steady-state continuous-batching concurrency the memory budget pins.
+
+        ``B_eff = floor((primary_tier_capacity - weight_bytes) / (bytes_per_token_kv * context))``,
+        capped by ``SchedulerConfig.max_batch_size``. ``bytes_per_token_kv`` is the canonical
+        ``MemoryModel`` formula; ``weight_bytes`` the single-source estimator. Returns 1 (the old
+        serial behaviour) when a MemoryModel cannot be built (unknown model / mocked config), so
+        no magic number is ever substituted and mocked tests are preserved.
+        """
+        if max_batch_size is None:
+            max_batch_size = SchedulerConfig().max_batch_size
+        try:
+            from llm_memory_calculator.genz.Models import get_configs
+            from .memory_model import MemoryModel, MemoryTierConfig, estimate_weight_bytes
+            from .constants import MemoryTier
+            from llm_memory_calculator.hardware import get_hardware_config
+
+            model_config = get_configs(self._model)
+            hw = get_hardware_config(self._hardware) or {}
+            mem_gb = hw.get("Memory_size")
+            if not mem_gb:
+                return 1  # honest: no device capacity -> cannot derive a budget, stay serial
+            primary_capacity = int(mem_gb * GB_TO_BYTES)
+
+            mm = MemoryModel(
+                model_config=model_config,
+                tier_configs=[MemoryTierConfig(MemoryTier.DEVICE_HBM, primary_capacity, 0.0)],
+                tensor_parallel=tensor_parallel,
+            )
+            weight_bytes = estimate_weight_bytes(model_config, self._precision, tensor_parallel)
+            self.last_weight_bytes = weight_bytes
+            footprint = mm.bytes_per_token_kv * max(context, 1)
+            if footprint <= 0:
+                return 1
+            avail = primary_capacity - weight_bytes
+            if avail <= 0:
+                return 1  # weights alone fill the tier -> at most one in-flight request
+            return max(1, min(max_batch_size, avail // footprint))
+        except Exception:
+            return 1
 
     def analyze_scaling(
         self,
@@ -35,8 +82,12 @@ class ClusterAnalyzer:
         """
         prefill_lat, decode_lat = self._get_latencies(input_tokens, output_tokens)
         time_per_request = prefill_lat + decode_lat * output_tokens
+        # SV6: an instance serves B_eff requests concurrently (continuous batching), not 1
+        # serial request. B_eff is pinned by the memory budget over the representative context.
+        b_eff = self._build_b_eff(input_tokens + output_tokens, tensor_parallel=1)
+        self.last_b_eff = b_eff
         single_instance_tps = (
-            1000.0 / time_per_request if time_per_request > 0 else 0
+            b_eff * 1000.0 / time_per_request if time_per_request > 0 else 0
         )
 
         results = []
@@ -131,12 +182,16 @@ class ClusterAnalyzer:
                     prefill_lat = prefill.Latency
                     decode_lat = decode.Latency
                 except Exception:
-                    prefill_lat = input_tokens * 0.01 / tp
-                    decode_lat = 0.5 / tp
+                    # SV6 / ROOT-B: no magic fallback. If the engine cannot model this config,
+                    # skip it honestly rather than fabricating input_tokens*0.01 / 0.5 latencies.
+                    continue
 
+                # SV6: each instance serves B_eff requests concurrently; the budget shrinks with
+                # tp (weights /tp, but kv/token also /tp), evaluated over this config's context.
+                b_eff = self._build_b_eff(input_tokens + output_tokens, tensor_parallel=tp)
                 time_per_request = prefill_lat + decode_lat * output_tokens
                 instance_throughput = (
-                    1000.0 / time_per_request if time_per_request > 0 else 0
+                    b_eff * 1000.0 / time_per_request if time_per_request > 0 else 0
                 )
                 total_throughput = instance_throughput * num_instances
 
@@ -192,4 +247,6 @@ class ClusterAnalyzer:
             )
             return prefill.Latency, decode.Latency
         except Exception:
-            return input_tokens * 0.01, 0.5
+            # SV6 / ROOT-B: fail honestly. The fabricated (input_tokens*0.01, 0.5) heuristic
+            # silently substituted physics-free numbers; re-raise so the caller sees the failure.
+            raise

@@ -164,10 +164,34 @@ class CacheHierarchy:
         _precision_bytes = {'fp32': 4, 'f32': 4, 'bf16': 2, 'fp16': 2, 'int8': 1}
         return _precision_bytes.get(bits, 4)
 
+    @staticmethod
+    def _deterministic_seed(operator) -> int:
+        """A stable per-operator seed derived only from integer shape dims (no string hashing, so it is
+        reproducible across processes regardless of PYTHONHASHSEED). R2-CPU2: the access-pattern sampler
+        below uses an RNG; seeding it makes the informational cache hit-rate columns — and therefore the
+        bandwidth roofline that consumes them — deterministic instead of jittering per call."""
+        dims = []
+        try:
+            d = getattr(operator, 'dim', None)
+            if d is not None:
+                dims = [int(x) for x in d[:6]]
+        except Exception:
+            dims = []
+        if not dims:
+            try:
+                dims = [int(x) for x in operator.get_gemms()[:3]]
+            except Exception:
+                dims = []
+        seed = 2166136261  # FNV offset basis — stable integer combiner over the shape dims
+        for v in dims:
+            seed = (seed * 16777619 + (int(v) & 0xFFFFFFFF)) & 0xFFFFFFFF
+        return seed
+
     def analyze_operator_access_pattern(self, operator) -> List[MemoryAccess]:
         """Convert operator access pattern to memory accesses"""
         accesses = []
         bpe = self._get_bytes_per_element(operator)
+        rng = np.random.default_rng(self._deterministic_seed(operator))
 
         # Analyze based on operator type
         op_type = operator.__class__.__name__
@@ -229,9 +253,9 @@ class CacheHierarchy:
                 
                 # Model decode KV cache access pattern
                 for _ in range(min(num_samples, 50000)):
-                    b = np.random.randint(0, B)
-                    h = np.random.randint(0, H)
-                    n = np.random.randint(0, N)  # Position in KV cache
+                    b = rng.integers(0, B)
+                    h = rng.integers(0, H)
+                    n = rng.integers(0, N)  # Position in KV cache
                     
                     # Access K[b,h,n,:] and V[b,h,n,:]
                     k_addr = ((b * H + h) * N + n) * D
@@ -252,10 +276,10 @@ class CacheHierarchy:
                 
                 # Q x K^T access pattern using random sampling
                 for _ in range(num_samples):
-                    b = np.random.randint(0, B)
-                    h = np.random.randint(0, H)
-                    i = np.random.randint(0, M)
-                    j = np.random.randint(0, N)
+                    b = rng.integers(0, B)
+                    h = rng.integers(0, H)
+                    i = rng.integers(0, M)
+                    j = rng.integers(0, N)
                     
                     # Access Q[b,h,i,:] and K[b,h,j,:]
                     q_addr = ((b * H + h) * M + i) * D
@@ -278,9 +302,9 @@ class CacheHierarchy:
                 num_samples = max(100, int(total_kv_accesses * sample_rate))
                 
                 for _ in range(min(num_samples, 10000)):
-                    b = np.random.randint(0, B)
-                    h = np.random.randint(0, H)
-                    n = np.random.randint(0, N)  # KV position
+                    b = rng.integers(0, B)
+                    h = rng.integers(0, H)
+                    n = rng.integers(0, N)  # KV position
                     
                     # Access K and V cache
                     k_addr = ((b * H + h) * N + n) * D
@@ -296,10 +320,10 @@ class CacheHierarchy:
                 num_samples = max(100, int(total_accesses * sample_rate))
                 
                 for _ in range(min(num_samples, 10000)):
-                    b = np.random.randint(0, B)
-                    h = np.random.randint(0, H)
-                    i = np.random.randint(0, M)
-                    j = np.random.randint(0, N)
+                    b = rng.integers(0, B)
+                    h = rng.integers(0, H)
+                    i = rng.integers(0, M)
+                    j = rng.integers(0, N)
                     
                     # Access attention scores
                     addr = ((b * H + h) * M + i) * N + j
@@ -318,15 +342,15 @@ class CacheHierarchy:
             
             for _ in range(min(num_samples, 5000)):
                 # Randomly sample input access
-                if np.random.random() < 0.5:
+                if rng.random() < 0.5:
                     # Input matrix access
-                    i = np.random.randint(0, M)
-                    k = np.random.randint(0, K)
+                    i = rng.integers(0, M)
+                    k = rng.integers(0, K)
                     addr = i * K + k
                 else:
                     # Weight matrix access
-                    k = np.random.randint(0, K)
-                    j = np.random.randint(0, N)
+                    k = rng.integers(0, K)
+                    j = rng.integers(0, N)
                     addr = M * K + k * N + j
                     
                 accesses.append(MemoryAccess(addr * bpe, bpe, True))

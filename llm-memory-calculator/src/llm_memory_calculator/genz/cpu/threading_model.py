@@ -29,26 +29,18 @@ class ThreadingModel:
         is_decode = self._is_decode_operation(operator)
         
         if is_decode:
-            # Decode operations: much smaller parallelism for M=1 workloads
-            # M=1 means very small per-thread work → limit threads aggressively
-            batch_size = getattr(operator, 'dim', [1])[0] if hasattr(operator, 'dim') else 1
-            kv_size = getattr(operator, 'dim', [1, 1, 1, 128])[3] if hasattr(operator, 'dim') else 128
-            
-            # For decode, threads should scale with batch size primarily 
-            # Each batch element can be processed independently
-            
-            # Base threads: scale with batch size but cap for efficiency
-            # Rule: ~1 thread per 4 batch elements, but min 4 threads, max 32 threads
-            optimal_threads = max(4, min(32, int(batch_size / 4)))
-            
-            # For very large batches, use more parallelism
-            if batch_size >= 64:
-                optimal_threads = min(48, int(batch_size / 2))
-            
-            # Use physical cores only (no SMT) for better efficiency with decode
-            num_threads = optimal_threads
-            threads_per_core = 1
-            
+            # R2-CPU4 (decode parallelism): LLM decode is a memory-bandwidth-bound GEMV. Although the
+            # query dimension is M=1, each weight matmul parallelizes across its (large) OUTPUT
+            # dimension N (4096-32000 for a 7B model), so the work distributes cleanly over all cores
+            # and must saturate every memory controller. The prior cap to 4 threads (justified by
+            # "M=1 -> tiny per-thread work") starved the GEMV and made an artificial compute estimate
+            # ~15x larger than the physical memory roofline dominate -> 7B decode at ~1 tok/s. Use all
+            # cores + SMT (the memory-bound configuration) so the roofline is correctly memory-bound.
+            num_threads = (self.cpu_config.cores_per_socket *
+                           self.cpu_config.sockets *
+                           self.cpu_config.threads_per_core)
+            threads_per_core = self.cpu_config.threads_per_core
+
         elif compute_intensity > 10:  # Compute bound (prefill)
             # Use all physical cores
             num_threads = (self.cpu_config.cores_per_socket * 

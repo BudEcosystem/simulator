@@ -57,6 +57,18 @@ dependencies = [
     "seaborn",
     "plotnine",
     "Jinja2",
+    # scipy: validation/calibration (calibration_engine, accuracy_metrics, inference_calibration import
+    # scipy.optimize.differential_evolution / scipy.stats at MODULE level — a missing scipy crashes import).
+    "scipy>=1.10.0",
+    # PyYAML: Scale-Sim / ASTRA-Sim time models + training auto_config/llamafactory read YAML configs.
+    "PyYAML>=6.0",
+    # R2-BE4: pymoo powers the NSGA-II multi-objective hardware DSE in
+    # budevolve/numeric/hardware_explorer.py. It was previously only in the
+    # optional [evolve] extra, so a plain install left it absent and the
+    # explorer silently fell back to a coarse grid search (degenerate Pareto
+    # front). Promote it to a core dependency so NSGA-II runs by default; the
+    # grid fallback is retained for environments where pymoo is unavailable.
+    "pymoo>=0.6.0",
 ]
 
 [project.optional-dependencies]

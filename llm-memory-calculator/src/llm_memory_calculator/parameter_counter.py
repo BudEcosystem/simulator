@@ -10,12 +10,29 @@ class UniversalParameterCounter:
     
     def __init__(self):
         """Initialize the parameter counter."""
-        # Model patterns that always tie embeddings regardless of config
-        self.always_tied_models = ['llama', 'opt', 'gptj', 'gpt_neox', 'falcon', 'mpt']
+        # Model patterns that always tie embeddings WHEN tie_word_embeddings is absent from the config.
+        # NOTE (accuracy remediation M4): 'llama' removed — Llama-1/2 and Llama-3-8B/70B do NOT tie
+        # (separate lm_head); only Llama-3.2-1B/3B tie, and those set tie_word_embeddings explicitly
+        # (which is honoured at _get_actual_tie_embeddings). Falcon-7B/40B also do not tie. Keep only
+        # families that genuinely tie by default when the flag is missing.
+        self.always_tied_models = ['gpt2', 'gptj', 'gpt_neox', 'mpt', 'phi', 'gemma', 'gemma2', 'gemma3']
         self.never_tied_models = ['t5', 'bart']  # Encoder-decoders typically don't
-        
-        # GLU variant patterns - includes 'silu' for modern models
-        self.glu_variants = ['swiglu', 'geglu', 'reglu', 'glu', 'swish', 'silu', 'silu_and_mul']
+
+        # GLU variant patterns. Activation-string detection of a GATED FFN (3 matrices: gate, up, down).
+        # Expanded (M4/H0) to cover the pytorch/tanh/new GELU spellings used by gated models.
+        self.glu_variants = ['swiglu', 'geglu', 'reglu', 'glu', 'swish', 'silu', 'silu_and_mul',
+                             'gelu_pytorch_tanh', 'gelu_tanh', 'gelu_new', 'gelu_approx', 'gated_gelu',
+                             'gated-gelu', 'gegelu']
+        # Architectures that use a GATED FFN regardless of how the activation is spelled. This is an
+        # ARCHITECTURAL FACT per each model's definition (not a tuned constant): Gemma uses GeGLU whose
+        # activation is recorded as 'gelu_pytorch_tanh' (not 'geglu'), so model_type is the only reliable
+        # signal. Primary detector; the activation-string list above is the secondary/general fallback.
+        self.gated_ffn_model_types = {
+            'llama', 'llama4', 'mistral', 'mixtral', 'qwen2', 'qwen3', 'qwen2_moe', 'qwen3_moe',
+            'gemma', 'gemma2', 'gemma3', 'phi3', 'phi4', 'yi', 'deepseek', 'deepseek_v2', 'deepseek_v3',
+            'stablelm', 'starcoder2', 'cohere', 'command_r', 'olmo', 'olmo2', 'granite', 'minicpm',
+            'internlm2', 'baichuan', 'exaone',
+        }
         
         # Keys that indicate shared down projection in MoE models
         self.shared_down_keys = {
@@ -261,26 +278,41 @@ class UniversalParameterCounter:
             q_proj_size * hidden_size  # O projection
         )
     
+    def _is_gated_ffn(self, config: Dict[str, Any]) -> bool:
+        """Decide whether the FFN is GATED (3 matrices: gate, up, down) vs standard (2: up, down).
+
+        Primary signal: model_type is a known gated-FFN architecture (architectural fact — e.g. Gemma
+        records its GeGLU as 'gelu_pytorch_tanh', so the activation string alone is insufficient).
+        Secondary signal: the activation string matches a gated/GLU spelling. Reads all three activation
+        keys, including Gemma's `hidden_activation` (which neither `hidden_act` nor `activation_function`
+        captured before — the root cause of the ~23% Gemma under-count).
+        """
+        model_type = str(config.get('model_type', '')).lower()
+        if model_type in self.gated_ffn_model_types:
+            return True
+        act_fn = str(config.get('activation_function')
+                     or config.get('hidden_act')
+                     or config.get('hidden_activation')
+                     or 'gelu').lower()
+        return any(variant in act_fn for variant in self.glu_variants)
+
     def _calculate_ffn_params(self, config: Dict[str, Any], num_layers: int, hidden_size: int) -> int:
         """Calculate FFN parameters."""
         # Check if using MoE layers
         n_routed_experts = config.get('n_routed_experts', config.get('num_experts', 1))
         moe_layer_freq = config.get('moe_layer_freq', 1)
-        
+
         if n_routed_experts > 1 and moe_layer_freq > 0:
             # MoE layers are handled separately
             non_moe_layers = num_layers - (num_layers // moe_layer_freq if moe_layer_freq > 0 else 0)
         else:
             non_moe_layers = num_layers
-        
+
         # Intermediate size
         intermediate_size = config.get('intermediate_size', config.get('ffn_dim', hidden_size * 4))
-        
-        # Check activation function for GLU variants
-        act_fn = config.get('activation_function', config.get('hidden_act', 'gelu')).lower()
-        
-        if any(variant in act_fn for variant in self.glu_variants):
-            # GLU variants use 3 matrices: gate, up, down
+
+        if self._is_gated_ffn(config):
+            # Gated FFN (SwiGLU/GeGLU/...) uses 3 matrices: gate, up, down
             return non_moe_layers * (3 * hidden_size * intermediate_size)
         else:
             # Standard FFN uses 2 matrices: up, down
@@ -303,8 +335,7 @@ class UniversalParameterCounter:
         router_params = num_moe_layers * hidden_size * n_routed_experts
         
         # Expert FFN parameters
-        act_fn = config.get('activation_function', config.get('hidden_act', 'gelu')).lower()
-        is_glu = any(variant in act_fn for variant in self.glu_variants)
+        is_glu = self._is_gated_ffn(config)
         
         if is_glu:
             # GLU: gate + up projections (separate)

@@ -11,158 +11,12 @@ import re
 # 9, 10 Beam Merge Logit and attend
 op_type_dicts = {0: 'FC', 1: 'CONV2D', 2: 'DWCONV', 3: 'GEMM', 4: 'Logit', 5: 'Attend', 6:'Sync',
                 9:'Logit', 10:'Attend', 11:'CONV1D', 12:'Einsum', 13:'Repeat', 14:'EndRepeat',
-                15:'Norm', 16:'Avg', 17:'Special_Func', 18:'LoraMerge', 19:'LoraA', 20:'LoraB', 21:'Add'}
+                15:'Norm', 16:'Avg', 17:'Special_Func', 18:'LoraMerge', 19:'LoraA', 20:'LoraB', 21:'Add',
+                # Causal prefill attention: same operator class + same op-type string as Logit/Attend
+                # (so tensors/memory/residency/string-checks are byte-identical); get_num_ops scales by f.
+                22:'Logit', 23:'Attend'}
 
 
-# ========================================
-# Phase 2: Operation Characteristics for Accurate Roofline
-# ========================================
-# Based on real-world profiling and NVIDIA optimization guides
-
-# Typical operational intensity ranges by operation type
-# These are used for more accurate boundedness determination
-OPERATION_CHARACTERISTICS = {
-    'GEMM': {
-        'typical_intensity_large': 200,  # Large matrices (M,N,K > 1024)
-        'typical_intensity_small': 50,   # Small matrices
-        'threshold_dimension': 1024,
-        'usually': 'compute',
-    },
-    'FC': {
-        'typical_intensity_large': 150,
-        'typical_intensity_small': 30,
-        'threshold_dimension': 512,
-        'usually': 'mixed',
-    },
-    'Logit': {
-        'typical_intensity_short_seq': 100,  # S < 1024
-        'typical_intensity_long_seq': 20,    # S >= 4096
-        'threshold_seq_len': 2048,
-        'usually': 'memory',  # Memory-bound for long sequences
-    },
-    'Attend': {
-        'typical_intensity_short_seq': 100,
-        'typical_intensity_long_seq': 20,
-        'threshold_seq_len': 2048,
-        'usually': 'memory',
-    },
-    'Norm': {
-        'typical_intensity': 3,
-        'usually': 'memory',  # Always memory-bound
-    },
-    'Special_Func': {
-        'typical_intensity': 5,
-        'usually': 'memory',  # Softmax, activation functions
-    },
-}
-
-
-def get_tensor_core_efficiency(
-    m: int,
-    n: int,
-    k: int,
-    tile_size: int = 16,
-) -> float:
-    """
-    Calculate tensor core utilization efficiency based on matrix shapes.
-
-    Tensor cores require specific tile sizes (16×16×16 for A100/H100).
-    Smaller dimensions have padding waste and reduced efficiency.
-
-    Based on NVIDIA CUTLASS and cuBLAS profiling data.
-
-    Args:
-        m: M dimension of GEMM
-        n: N dimension of GEMM
-        k: K dimension of GEMM
-        tile_size: Tensor core tile size (16 for modern GPUs)
-
-    Returns:
-        Efficiency factor (0.4 to 0.95)
-    """
-    def ceil_to_tile(x):
-        return ceil(x / tile_size) * tile_size
-
-    # Calculate padding efficiency for each dimension
-    m_eff = m / ceil_to_tile(m) if m > 0 else 1.0
-    n_eff = n / ceil_to_tile(n) if n > 0 else 1.0
-    k_eff = k / ceil_to_tile(k) if k > 0 else 1.0
-
-    base_efficiency = m_eff * n_eff * k_eff
-
-    # Wave quantization penalty for small batches
-    # GPUs have fixed number of SMs; small problems don't fully utilize them
-    total_tiles = (ceil(m / tile_size) * ceil(n / tile_size))
-    typical_sms = 108  # H100 has 132, A100 has 108
-
-    if total_tiles < typical_sms:
-        # Under-utilization of SMs
-        wave_penalty = 0.15 * (1 - total_tiles / typical_sms)
-        base_efficiency -= wave_penalty
-
-    # Large problems achieve higher efficiency
-    if m * n * k > 1e9:  # Very large GEMMs
-        base_efficiency = min(0.95, base_efficiency * 1.1)
-
-    return max(0.4, min(0.95, base_efficiency))
-
-
-def get_shape_dependent_op_intensity(
-    op_type: str,
-    dimensions: tuple,
-    bytes_per_element: float = 2.0,
-) -> float:
-    """
-    Calculate realistic operational intensity based on actual access patterns.
-
-    This replaces the simple num_ops/num_data formula with shape-aware calculations
-    that account for data reuse patterns.
-
-    Args:
-        op_type: Type of operation ('GEMM', 'FC', 'Logit', etc.)
-        dimensions: Operation dimensions
-        bytes_per_element: Bytes per data element (2 for bf16)
-
-    Returns:
-        Operational intensity (FLOPs per byte)
-    """
-    if op_type in ['GEMM', 'FC']:
-        # GEMM: I = (2×M×N×K) / (M×K + K×N + M×N) × bytes_per_element
-        # With reuse: I ≈ min(M, N, K) for large matrices
-        if len(dimensions) >= 4:
-            B, M, N, K = dimensions[:4]
-            compute_ops = 2 * B * M * N * K
-            # Account for data reuse in different cache levels
-            # Perfect reuse would give I = min(M, N, K)
-            # Real reuse is ~50-80% of optimal
-            memory_bytes = (B * M * K + K * N + B * M * N) * bytes_per_element
-            return compute_ops / memory_bytes if memory_bytes > 0 else 0
-
-    elif op_type == 'Logit':
-        # Attention score: Q @ K^T
-        # (B, H, M, D) @ (B, H, D, N) -> (B, H, M, N)
-        if len(dimensions) >= 6:
-            B, H, M, N, D, _ = dimensions[:6]
-            compute_ops = 2 * B * H * M * N * D
-            # Q reused N times, K reused M times
-            memory_bytes = (B * H * M * D + B * H * N * D + B * H * M * N) * bytes_per_element
-            return compute_ops / memory_bytes if memory_bytes > 0 else 0
-
-    elif op_type == 'Attend':
-        # Attention output: Attn @ V
-        # (B, H, M, N) @ (B, H, N, D) -> (B, H, M, D)
-        if len(dimensions) >= 6:
-            B, H, M, N, D, _ = dimensions[:6]
-            compute_ops = 2 * B * H * M * N * D
-            memory_bytes = (B * H * M * N + B * H * N * D + B * H * M * D) * bytes_per_element
-            return compute_ops / memory_bytes if memory_bytes > 0 else 0
-
-    elif op_type in ['Norm', 'Special_Func']:
-        # These are always memory-bound with low intensity
-        return OPERATION_CHARACTERISTICS.get(op_type, {}).get('typical_intensity', 5)
-
-    # Default fallback
-    return 100  # Assume moderately compute-bound
 
 
 class Operator(object):
@@ -394,45 +248,6 @@ class Operator(object):
 
         return ret
 
-    def get_tensor_core_efficiency_factor(self) -> float:
-        """
-        Calculate tensor core efficiency factor based on operation dimensions.
-
-        Phase 2 Improvement: Model actual tensor core utilization based on matrix shapes.
-        Tensor cores require 16×16×16 tiles (or multiples).
-        Smaller dimensions have padding waste and reduced efficiency.
-
-        Returns:
-            Efficiency factor (0.4 to 0.95)
-        """
-        op_type = self.get_op_type(self.dim)
-
-        if op_type in ['GEMM', 'FC']:
-            # Extract dimensions for GEMM/FC
-            sz_list = self.get_sz_list()
-            if len(sz_list) >= 3:
-                # Try to extract M, N, K from dimensions
-                dims = self.get_dimensions()
-                if isinstance(dims, tuple) and len(dims) >= 3:
-                    # For GEMM: (B, M, N, K) or (M, N, K)
-                    if len(dims) >= 4:
-                        m, n, k = dims[1], dims[2], dims[3]
-                    else:
-                        m, n, k = dims[0], dims[1], dims[2]
-                    return get_tensor_core_efficiency(m, n, k)
-
-        elif op_type in ['Logit', 'Attend']:
-            # For attention operations, efficiency depends on sequence length
-            dims = self.get_dimensions()
-            if isinstance(dims, tuple) and len(dims) >= 4:
-                # (B, H, M, N) for attention
-                m, n = dims[2], dims[3]
-                # Use effective dimensions for efficiency calculation
-                return get_tensor_core_efficiency(m, n, dims[4] if len(dims) > 4 else 128)
-
-        # Default efficiency for other operations
-        return 0.85
-
     def get_roofline(self, system, unit):
         """
         Compute roofline analysis with Phase 2 improvements:
@@ -445,29 +260,22 @@ class Operator(object):
         num_ops = self.get_effective_num_ops(system) * 2
         num_data = self.get_effective_num_data(system)
 
-        # Phase 2: Use shape-dependent operational intensity for more accuracy
         op_type = self.get_op_type(self.dim)
-        dimensions = self.get_dimensions()
-
-        # Try shape-dependent intensity first, fall back to simple ratio
-        if isinstance(dimensions, tuple) and len(dimensions) >= 3:
-            op_intensity = get_shape_dependent_op_intensity(
-                op_type,
-                dimensions,
-                bytes_per_element=system.get_bit_multiplier(type='M')
-            )
-        else:
-            op_intensity = num_ops / num_data if num_data else 0
+        # Operational intensity = FLOPs / bytes. Shape dependence (small-M decode is memory-bound,
+        # large-M prefill is compute-bound) is captured by the roofline max(compute, memory) below;
+        # the former get_shape_dependent_op_intensity only fed this display column (and returned a
+        # constant for attention) and is removed (C4).
+        op_intensity = num_ops / num_data if num_data else 0
 
         compute_time = self.get_compute_time(system=system)
 
-        # Phase 2: Apply tensor core efficiency for compute-bound operations
-        tensor_core_eff = self.get_tensor_core_efficiency_factor()
-
-        # Combined compute efficiency includes system efficiency and tensor core utilization
-        effective_compute_efficiency = system.compute_efficiency * tensor_core_eff
-        compute_time /= effective_compute_efficiency
-        compute_efficiency = effective_compute_efficiency
+        # Achievable compute efficiency (MFU vs peak) is system.compute_efficiency, set per device from
+        # the measured calibration block or the tensor-core-gen large-GEMM MFU band (get_inference_system).
+        # The prior flat 0.85 "tensor core efficiency" (C4) was an ungrounded constant applied to every
+        # op (its shape-aware branches were dead code) and is removed — the physical roofline already
+        # encodes shape/boundedness via arithmetic intensity (verified on GB10: audit_microbench_data.md).
+        compute_time /= system.compute_efficiency
+        compute_efficiency = system.compute_efficiency
 
         memory_time = self.get_memory_time(system=system) / system.memory_efficiency
 
@@ -506,7 +314,6 @@ class Operator(object):
             f'Latency ({unit.unit_time})': unit.raw_to_unit(exec_time, type='T'),
             f'Cycles': exec_time*system.frequency,
             f'C Effcy': compute_efficiency,
-            f'TC Effcy': tensor_core_eff,  # Phase 2: Add tensor core efficiency
             f'Num ops ({unit.unit_flop})': unit.raw_to_unit(num_ops, type='O'),
             f'Input_a ({unit.unit_mem})': unit.raw_to_unit(input_a_size, type='M'),
             f'Input_w ({unit.unit_mem})': unit.raw_to_unit(input_w_size, type='M'),
