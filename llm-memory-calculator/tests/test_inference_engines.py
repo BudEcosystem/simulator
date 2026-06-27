@@ -184,6 +184,51 @@ class TestMoEActivation:
         assert abs(a1 - a2) < 1.0, "num_experts/expert_top_k aliases must give the same result"
 
 
+class TestMultimodalActivation:
+    """A vision/audio LLM nests its DECODER dims under `text_config`; the ORT arena's dominant prefill
+    term is the decoder's all-layers working set, so the layer must read text_config — not mis-read the
+    multimodal wrapper as a tiny default decoder (which would massively under-count the activation)."""
+
+    def test_reads_decoder_dims_from_text_config(self):
+        eng = _ort()
+        mm = {
+            "model_type": "llava",
+            "vision_config": {"hidden_size": 1024, "num_hidden_layers": 24},
+            "text_config": {
+                "num_hidden_layers": 32, "hidden_size": 4096, "vocab_size": 32000,
+                "intermediate_size": 11008,
+            },
+        }
+        decoder_only = {
+            "num_hidden_layers": 32, "hidden_size": 4096, "vocab_size": 32000,
+            "intermediate_size": 11008,
+        }
+        a_mm = eng.activation_bytes(mm, 1, 4000, 2, 0.0)
+        a_dec = eng.activation_bytes(decoder_only, 1, 4000, 2, 0.0)
+        assert a_mm == a_dec, "must use the text_config decoder dims, not the multimodal wrapper"
+        # NOT the tiny default (12 layers / 768 hidden) it would read from the bare wrapper.
+        bare = eng.activation_bytes({"model_type": "llava"}, 1, 4000, 2, 0.0)
+        assert a_mm > bare * 5, "multimodal decoder activation must reflect the real (large) decoder"
+
+    def test_multimodal_moe_reads_experts_from_text_config(self):
+        """A multimodal MoE (experts nested in text_config) still counts the active experts."""
+        eng = _ort()
+        mm_moe = {
+            "model_type": "multimodal",
+            "vision_config": {"hidden_size": 1024},
+            "text_config": {
+                "num_hidden_layers": 32, "hidden_size": 4096, "vocab_size": 32000,
+                "num_local_experts": 8, "num_experts_per_tok": 2, "moe_intermediate_size": 14336,
+            },
+        }
+        mm_dense = {
+            "model_type": "multimodal",
+            "vision_config": {"hidden_size": 1024},
+            "text_config": {"num_hidden_layers": 32, "hidden_size": 4096, "vocab_size": 32000},
+        }
+        assert eng.activation_bytes(mm_moe, 1, 4000, 2, 0.0) > eng.activation_bytes(mm_dense, 1, 4000, 2, 0.0)
+
+
 class TestChunkedPrefillDoesNotReduceMemory:
     """MEASURED on an 8B GB10 prefill: genai `search.chunk_size` off/4096/512 ALL held ~31 GB — the
     non-freeing BFC arena grows to the full-prompt high-water mark regardless of the chunk (each chunk's

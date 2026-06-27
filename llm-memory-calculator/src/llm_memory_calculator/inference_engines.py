@@ -88,31 +88,38 @@ class OnnxRuntimeEngine(InferenceEngine):
     LAYER_WORK = 6
 
     def activation_bytes(self, config, batch_size, seq_length, dtype_bytes, base_activation_bytes):
-        hidden = config.get("hidden_size", config.get("d_model", 768))
-        layers = config.get("num_hidden_layers", config.get("n_layers", 12))
-        vocab = config.get("vocab_size", 32000)
+        # Multimodal (vision/audio LLM): the DECODER dims live under `text_config`; the ORT arena's
+        # dominant prefill term is still the decoder's all-layers working set. Read the decoder dims from
+        # text_config when present (else the top level) so a multimodal config isn't mis-read as a tiny
+        # default decoder. (The vision/audio encoder is a separate, much smaller one-shot graph; the base
+        # floor below covers it.) Field lookups fall back to the top level for keys not nested.
+        core = config.get("text_config")
+        if not isinstance(core, dict):
+            core = config
+
+        def field(*names, default=None):
+            for n in names:
+                if core.get(n) is not None:
+                    return core[n]
+                if config.get(n) is not None:
+                    return config[n]
+            return default
+
+        hidden = field("hidden_size", "d_model", default=768)
+        layers = field("num_hidden_layers", "n_layers", default=12)
+        vocab = field("vocab_size", default=32000)
         per_token = layers * hidden * self.LAYER_WORK + vocab
         # MoE (sparse experts): the non-freeing arena also holds the k ACTIVE experts' MLP intermediates
         # per layer per token — the weights hold ALL N experts, but only k run per token, so the
         # activation scales with k (not N). Without this a sparse MoE prefill is under-counted vs a dense
         # model of the same hidden size. Field aliases match the base config_normalizer.
-        n_experts = (
-            config.get("num_local_experts")
-            or config.get("num_experts")
-            or config.get("n_routed_experts")
-            or 0
-        )
+        n_experts = field("num_local_experts", "num_experts", "n_routed_experts", default=0) or 0
         if n_experts and int(n_experts) > 1:
             k = int(
-                config.get("num_experts_per_tok")
-                or config.get("num_experts_per_token")
-                or config.get("expert_top_k")
-                or 2
+                field("num_experts_per_tok", "num_experts_per_token", "expert_top_k", default=2)
             )
             moe_inter = int(
-                config.get("moe_intermediate_size")
-                or config.get("intermediate_size")
-                or hidden * 4
+                field("moe_intermediate_size", "intermediate_size", default=hidden * 4)
             )
             per_token += layers * k * moe_inter
         # NOTE: genai's `search.chunk_size` (prefill chunking) does NOT reduce this peak — MEASURED on an
