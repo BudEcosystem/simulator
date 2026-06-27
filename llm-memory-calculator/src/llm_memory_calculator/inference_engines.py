@@ -92,6 +92,33 @@ class OnnxRuntimeEngine(InferenceEngine):
         layers = config.get("num_hidden_layers", config.get("n_layers", 12))
         vocab = config.get("vocab_size", 32000)
         per_token = layers * hidden * self.LAYER_WORK + vocab
+        # MoE (sparse experts): the non-freeing arena also holds the k ACTIVE experts' MLP intermediates
+        # per layer per token — the weights hold ALL N experts, but only k run per token, so the
+        # activation scales with k (not N). Without this a sparse MoE prefill is under-counted vs a dense
+        # model of the same hidden size. Field aliases match the base config_normalizer.
+        n_experts = (
+            config.get("num_local_experts")
+            or config.get("num_experts")
+            or config.get("n_routed_experts")
+            or 0
+        )
+        if n_experts and int(n_experts) > 1:
+            k = int(
+                config.get("num_experts_per_tok")
+                or config.get("num_experts_per_token")
+                or config.get("expert_top_k")
+                or 2
+            )
+            moe_inter = int(
+                config.get("moe_intermediate_size")
+                or config.get("intermediate_size")
+                or hidden * 4
+            )
+            per_token += layers * k * moe_inter
+        # NOTE: genai's `search.chunk_size` (prefill chunking) does NOT reduce this peak — MEASURED on an
+        # 8B GB10 prefill, chunk off/4096/512 all held ~31 GB, because the non-freeing BFC arena grows to
+        # the full-prompt high-water mark (each chunk's attention still spans the growing KV). So the
+        # activation scales with the WHOLE prompt, never the chunk. Admission must not under-count it.
         ort = batch_size * seq_length * per_token * dtype_bytes
         # The non-freeing arena can never need LESS than the layer-freeing peak.
         return max(float(ort), float(base_activation_bytes))

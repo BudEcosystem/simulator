@@ -138,3 +138,61 @@ class TestEstimateMemoryForEngine:
             weight_precision="int4", runtime_precision="fp16")
         # ORT activation must be much larger than the llama.cpp (base) activation at long context.
         assert em_ort.activation_bytes > em_llama.activation_bytes * 5
+
+
+# Mixtral-8x7B: a real sparse-MoE (8 experts, top-2 routing, MoE intermediate 14336).
+MIXTRAL_8X7B = {
+    "model_type": "mixtral",
+    "num_hidden_layers": 32,
+    "hidden_size": 4096,
+    "num_attention_heads": 32,
+    "num_key_value_heads": 8,
+    "intermediate_size": 14336,
+    "num_local_experts": 8,
+    "num_experts_per_tok": 2,
+    "vocab_size": 32000,
+}
+
+
+class TestMoEActivation:
+    def test_moe_adds_active_experts_above_a_dense_baseline(self):
+        """ORT's non-freeing arena holds the k ACTIVE experts' MLP intermediates per layer — so a sparse
+        MoE's activation must EXCEED a dense model of the same hidden/layers (which has no experts)."""
+        eng = _ort()
+        dense = {k: v for k, v in MIXTRAL_8X7B.items()
+                 if k not in ("num_local_experts", "num_experts_per_tok")}
+        a_moe = eng.activation_bytes(MIXTRAL_8X7B, 1, 4000, 2, 0.0)
+        a_dense = eng.activation_bytes(dense, 1, 4000, 2, 0.0)
+        assert a_moe > a_dense, "MoE must add the active-expert activation"
+
+    def test_moe_scales_with_k_not_n(self):
+        """Activation depends on k ACTIVE experts, not N total (weights hold N, the arena holds k)."""
+        eng = _ort()
+        a_k2 = eng.activation_bytes(MIXTRAL_8X7B, 1, 4000, 2, 0.0)
+        a_k4 = eng.activation_bytes({**MIXTRAL_8X7B, "num_experts_per_tok": 4}, 1, 4000, 2, 0.0)
+        a_n16 = eng.activation_bytes({**MIXTRAL_8X7B, "num_local_experts": 16}, 1, 4000, 2, 0.0)
+        assert a_k4 > a_k2, "more active experts ⇒ more activation"
+        assert a_n16 == a_k2, "more TOTAL experts (same k) ⇒ SAME activation (arena holds only k)"
+
+    def test_moe_expert_key_variants_normalize(self):
+        eng = _ort()
+        a1 = eng.activation_bytes(MIXTRAL_8X7B, 1, 4000, 2, 0.0)
+        v2 = {**MIXTRAL_8X7B}
+        v2["num_experts"] = v2.pop("num_local_experts")
+        v2["expert_top_k"] = v2.pop("num_experts_per_tok")
+        a2 = eng.activation_bytes(v2, 1, 4000, 2, 0.0)
+        assert abs(a1 - a2) < 1.0, "num_experts/expert_top_k aliases must give the same result"
+
+
+class TestChunkedPrefillDoesNotReduceMemory:
+    """MEASURED on an 8B GB10 prefill: genai `search.chunk_size` off/4096/512 ALL held ~31 GB — the
+    non-freeing BFC arena grows to the full-prompt high-water mark regardless of the chunk (each chunk's
+    attention still spans the growing KV). So the activation estimate must NOT shrink with a chunk — a
+    chunk-reduced estimate would under-count and OOM admission. This guards against re-introducing it."""
+
+    def test_activation_is_full_seq_independent_of_any_chunk_notion(self):
+        eng = _ort()
+        # The signature takes NO chunk_size: the activation is always the whole-prompt peak.
+        a20 = eng.activation_bytes(LLAMA3_8B, 1, 20000, 2, 0.0)
+        a4 = eng.activation_bytes(LLAMA3_8B, 1, 4000, 2, 0.0)
+        assert a20 / a4 > 4.9, "20K activation must be ~5× the 4K (full-seq linear, never chunk-bounded)"
