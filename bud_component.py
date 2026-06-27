@@ -97,7 +97,32 @@ def gguf_to_hf_config(path):
     if head_dim_k:
         cfg["head_dim"] = int(head_dim_k)
     weight_bytes = os.path.getsize(path)
-    return cfg, weight_bytes
+    precision = _precision_from_gguf_file_type(val("general.file_type"))
+    return cfg, weight_bytes, precision
+
+
+# GGUF general.file_type (LLAMA_FTYPE) -> the perf-relevant weight precision. The on-disk byte sum is
+# the EXACT memory weight; this only sets the GenZ perf `bits` (decode is memory-bound, so the per-weight
+# byte size drives TPOT). Map to the nearest of {fp32, fp16, int8, int4}; unknown -> int4 (the dominant
+# served case). Q5/Q6/Q8 round UP to int8 so we never UNDER-predict decode time (the unsafe SLO direction).
+_GGUF_FTYPE_PRECISION = {
+    0: "fp32",   # ALL_F32
+    1: "fp16",   # MOSTLY_F16
+    7: "int8",   # MOSTLY_Q8_0
+    8: "int8",   # MOSTLY_Q5_0
+    9: "int8",   # MOSTLY_Q5_1
+    16: "int8",  # MOSTLY_Q5_K_S
+    17: "int8",  # MOSTLY_Q5_K_M
+    18: "int8",  # MOSTLY_Q6_K
+}
+
+
+def _precision_from_gguf_file_type(file_type):
+    """Map a GGUF general.file_type enum to a weight precision for the perf model. None/unknown -> int4."""
+    try:
+        return _GGUF_FTYPE_PRECISION.get(int(file_type), "int4")
+    except (TypeError, ValueError):
+        return "int4"
 
 
 def _precision_from_name(name):
@@ -173,8 +198,12 @@ def main():
     # ---- resolve the model config + actual weight bytes -------------------------------------
     weight_bytes_override = None
     if args.gguf:
-        cfg, weight_bytes_override = gguf_to_hf_config(args.gguf)
+        cfg, weight_bytes_override, gguf_precision = gguf_to_hf_config(args.gguf)
         model_spec = cfg
+        # Use the GGUF's ACTUAL quant (from general.file_type) for the perf bits — an f16 GGUF must not
+        # be modelled as int4 (which under-predicts decode time ~2x). Weights are the exact on-disk sum.
+        if args.weight_precision is None:
+            args.weight_precision = gguf_precision
     elif args.onnx_dir:
         cfg, weight_bytes_override = onnx_dir_to_hf_config(args.onnx_dir)
         model_spec = cfg
