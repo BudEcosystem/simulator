@@ -20,8 +20,9 @@ import json
 import os
 import sys
 
-from llm_memory_calculator import calculate_memory, get_hardware_config
+from llm_memory_calculator import get_hardware_config
 from llm_memory_calculator import estimate_end_to_end_performance
+from llm_memory_calculator.inference_engines import estimate_memory_for_engine
 from llm_memory_calculator.genz.Models.default_models import MODEL_DICT
 from llm_memory_calculator.genz.Models.get_language_model import (
     huggingface_config_to_model_config,
@@ -99,10 +100,63 @@ def gguf_to_hf_config(path):
     return cfg, weight_bytes
 
 
+def _precision_from_name(name):
+    """Map an ONNX model dir/name to a weight quant tag (int4/int8/fp16) by whole-segment match — so
+    a real quant subfolder like 'cuda-int4-rtn-block-32' hits but an incidental substring does not."""
+    import re
+    segs = set(s for s in re.split(r"[^a-z0-9]+", name.lower()) if s)
+    if {"int4", "uint4", "q4", "awq", "gptq"} & segs:
+        return "int4"
+    if {"int8", "q8"} & segs:
+        return "int8"
+    return "fp16"  # fp16/bf16/fp32 and unknown → the runtime f16 budget
+
+
+def onnx_dir_to_hf_config(path):
+    """Read an ONNX-GenAI model directory (genai_config.json) and map its decoder shape to an HF-style
+    config dict — ALL ONNX-architecture knowledge lives here in the simulator, not in the Rust caller.
+    Returns (config_dict, weight_bytes_on_disk = summed directory files, dominated by model.onnx.data).
+    `intermediate_size` is usually ABSENT in genai_config; it is left unset so the GenZ loader derives a
+    model-type-aware default (the exact weights come from the on-disk byte sum, not this field)."""
+    gc_path = os.path.join(path, "genai_config.json")
+    gc = json.load(open(gc_path))
+    m = gc.get("model", {})
+    d = m.get("decoder", {})
+    n_layers = d.get("num_hidden_layers")
+    hidden = d.get("hidden_size")
+    n_heads = d.get("num_attention_heads")
+    if not (n_layers and hidden and n_heads):
+        raise ValueError(f"genai_config missing decoder shape (layers/hidden/heads): {gc_path}")
+    n_kv = d.get("num_key_value_heads", n_heads)
+    head_dim = d.get("head_size") or (hidden // n_heads)
+    vocab = m.get("vocab_size") or d.get("vocab_size") or 32000
+    cfg = {
+        "name": os.path.basename(path.rstrip("/")),
+        "model_type": str(m.get("type", "llama")),
+        "num_hidden_layers": int(n_layers),
+        "hidden_size": int(hidden),
+        "num_attention_heads": int(n_heads),
+        "num_key_value_heads": int(n_kv),
+        "head_dim": int(head_dim),
+        "vocab_size": int(vocab),
+        "max_position_embeddings": int(m.get("context_length", 8192)),
+    }
+    inter = d.get("intermediate_size") or m.get("intermediate_size")
+    if inter:
+        cfg["intermediate_size"] = int(inter)
+    weight_bytes = sum(
+        os.path.getsize(os.path.join(path, f))
+        for f in os.listdir(path)
+        if os.path.isfile(os.path.join(path, f))
+    )
+    return cfg, weight_bytes
+
+
 def main():
     ap = argparse.ArgumentParser()
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--gguf", help="path to a local .gguf model")
+    src.add_argument("--onnx-dir", help="path to a local ONNX-GenAI model directory")
     src.add_argument("--hf-id", help="HuggingFace model id (fetches config)")
     src.add_argument("--config", help="inline HF-style config JSON")
     ap.add_argument("--hardware", default="GB10")
@@ -110,7 +164,8 @@ def main():
     ap.add_argument("--seq", type=int, default=4096, help="context tokens per request (prompt+output)")
     ap.add_argument("--input-tokens", type=int, default=None, help="prompt tokens for SLO (default seq*3/4)")
     ap.add_argument("--output-tokens", type=int, default=None, help="output tokens for SLO (default seq/4)")
-    ap.add_argument("--weight-precision", default="int4", help="weight quant: fp16/int8/int4 (GGUF q4≈int4)")
+    ap.add_argument("--weight-precision", default=None,
+                    help="weight quant: fp16/int8/int4 (GGUF q4≈int4). Default: derived per source.")
     args = ap.parse_args()
 
     out = {"hardware": args.hardware, "batch": args.batch, "seq": args.seq}
@@ -120,6 +175,14 @@ def main():
     if args.gguf:
         cfg, weight_bytes_override = gguf_to_hf_config(args.gguf)
         model_spec = cfg
+    elif args.onnx_dir:
+        cfg, weight_bytes_override = onnx_dir_to_hf_config(args.onnx_dir)
+        model_spec = cfg
+        # Derive the weight quant from the ONNX dir name (the precision heuristic lives HERE in the
+        # simulator, never in the Rust caller) when not explicitly given. Only affects the perf `bits`
+        # (weights come from the exact on-disk byte sum, independent of this).
+        if args.weight_precision is None:
+            args.weight_precision = _precision_from_name(args.onnx_dir)
     elif args.config:
         cfg = json.loads(args.config)
         model_spec = cfg
@@ -127,28 +190,36 @@ def main():
         cfg = args.hf_id
         model_spec = args.hf_id
 
+    # Per-source default weight precision when not derived above / explicitly given.
+    if args.weight_precision is None:
+        args.weight_precision = "int4" if args.gguf else "fp16"
+
     hw = get_hardware_config(args.hardware)
 
-    # ---- MEMORY (arch-aware): weights at quant, KV+activations at the runtime f16 ------------
-    # Weights: prefer the real on-disk size (exact for a GGUF); else the analytic quant estimate.
-    rep_w = calculate_memory(model_spec, batch_size=args.batch, seq_length=args.seq,
-                             precision=args.weight_precision)
-    rep_rt = calculate_memory(model_spec, batch_size=args.batch, seq_length=args.seq,
-                              precision=RUNTIME_KV_PRECISION)
-    weights = float(weight_bytes_override) if weight_bytes_override else rep_w.weight_memory_bytes
-    kv = rep_rt.kv_cache_bytes
-    activations = rep_rt.activation_memory_bytes
-    total_runtime = weights + kv + activations + CUDA_RUNTIME_RESERVE
+    # ---- MEMORY (arch- AND runtime-aware) via the inference-engine LAYER -----------------------
+    # The serving runtime sets the activation model: ONNX models run on ONNX Runtime (one non-freeing
+    # arena → all-layers prefill working set); GGUF runs on llama.cpp (layer-freeing == the base). The
+    # layer (llm_memory_calculator.inference_engines) overrides ONLY the runtime-specific activation on
+    # top of the calibrated base — weights (exact on-disk for a GGUF/ONNX dir) + KV are runtime-agnostic.
+    engine_name = "onnxruntime" if args.onnx_dir else ("llamacpp" if args.gguf else None)
+    em = estimate_memory_for_engine(
+        model_spec, engine_name,
+        batch_size=args.batch, seq_length=args.seq,
+        weight_precision=args.weight_precision, runtime_precision=RUNTIME_KV_PRECISION,
+        weight_bytes_override=weight_bytes_override,
+    )
+    total_runtime = em.total_bytes + CUDA_RUNTIME_RESERVE
     out["memory"] = {
-        "attention_type": rep_rt.attention_type,
-        "parameter_count": int(rep_rt.parameter_count),
-        "weights_bytes": float(weights),
-        "kv_cache_bytes": float(kv),
-        "activations_bytes": float(activations),
+        "attention_type": em.attention_type,
+        "engine": em.engine,
+        "parameter_count": int(em.parameter_count),
+        "weights_bytes": float(em.weights_bytes),
+        "kv_cache_bytes": float(em.kv_cache_bytes),
+        "activations_bytes": float(em.activation_bytes),
         "cuda_reserve_bytes": float(CUDA_RUNTIME_RESERVE),
         "total_runtime_bytes": float(total_runtime),
         "total_runtime_gb": total_runtime / 1e9,
-        "kv_bytes_per_token": kv / max(1, args.batch * args.seq),
+        "kv_bytes_per_token": em.kv_cache_bytes / max(1, args.batch * args.seq),
     }
 
     # ---- SLOs (perf): register the config under a name so GenZ's perf path accepts it ---------
