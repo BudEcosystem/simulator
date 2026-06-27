@@ -49,3 +49,30 @@ class TestOnnxDirPrecision:
         # A word that merely CONTAINS 'int8'/'f16' as a substring must NOT match (segment-exact).
         assert bc._precision_from_name("/m/checkpoint8") == "fp16"  # not int8
         assert bc._precision_from_name("/m/a3f16b9c") == "fp16"  # default, not a quant match
+
+
+class TestUnknownHardwareFailsClosed:
+    """A typo'd / unsupported --hardware must FAIL-CLOSED (exit !=0 + an error JSON), never produce a
+    memory-only result with a silently-missing SLO. bud-gaia keeps no fallback, so this is where an
+    unrecognized hardware becomes a refused-and-disclosed route instead of a serve-blind."""
+
+    def test_unknown_hardware_exits_nonzero_with_error(self):
+        import json
+        import subprocess
+        import sys
+
+        # A real GGUF isn't needed: the hardware gate is hit before any heavy work. Use a dummy --gguf
+        # path; the hardware check must fire first. (If no gguf, argparse still parses; the hw gate runs.)
+        proc = subprocess.run(
+            [sys.executable, bc.__file__,
+             "--config", "{}", "--hardware", "TOTALLY_FAKE_GPU_9000"],
+            capture_output=True, text=True, timeout=120,
+        )
+        assert proc.returncode != 0, "unknown hardware must fail-closed (non-zero exit)"
+        # The stdout JSON must name the offending hardware so the disclosure is actionable.
+        payload = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else "{}"
+        try:
+            err = json.loads(payload)
+            assert "error" in err and "TOTALLY_FAKE_GPU_9000" in err["error"]
+        except json.JSONDecodeError:
+            assert "TOTALLY_FAKE_GPU_9000" in proc.stdout

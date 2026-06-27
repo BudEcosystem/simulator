@@ -224,6 +224,19 @@ def main():
         args.weight_precision = "int4" if args.gguf else "fp16"
 
     hw = get_hardware_config(args.hardware)
+    if hw is False or hw is None:
+        # Fail-closed (NO silent fallback): an unrecognized hardware would otherwise return a memory-only
+        # result with NO latency SLO, silently hiding a typo'd $BUD_SIMULATOR_HARDWARE behind a serve-
+        # without-SLO. The simulator is the single source of truth for hardware-dependent perf, so make
+        # the misconfig LOUD — bud-gaia then refuses the route + discloses why (rather than serving blind).
+        json.dump(
+            {
+                "error": f"unknown hardware '{args.hardware}': not in the simulator hardware database",
+                "hint": "set BUD_SIMULATOR_HARDWARE to a supported device (e.g. GB10, H100, A100)",
+            },
+            sys.stdout,
+        )
+        sys.exit(2)
 
     # ---- MEMORY (arch- AND runtime-aware) via the inference-engine LAYER -----------------------
     # The serving runtime sets the activation model: ONNX models run on ONNX Runtime (one non-freeing
