@@ -191,6 +191,11 @@ def main():
                          "batch, powers of 2 up to this max) so the orchestrator can pick the max batch "
                          "that fits a memory+SLO budget. The runtime's activation model bounds it "
                          "(ONNX arena ∝ batch; llama.cpp KV ∝ batch).")
+    ap.add_argument("--prefix-cached-tokens", type=int, default=0,
+                    help="tokens of the prompt whose KV is already cached (prefix/system-prompt reuse). "
+                         "Emits `ttft_ms_prefix_cached`: prefill only the uncached suffix + the (tiny) "
+                         "KV-load cost — so the SLO credits KV reuse. On GB10 a KV load is ~260x cheaper "
+                         "than recompute, so a long cached system prompt contributes ~0 to TTFT.")
     ap.add_argument("--seq", type=int, default=4096, help="context tokens per request (prompt+output)")
     ap.add_argument("--input-tokens", type=int, default=None, help="prompt tokens for SLO (default seq*3/4)")
     ap.add_argument("--output-tokens", type=int, default=None, help="output tokens for SLO (default seq/4)")
@@ -285,13 +290,14 @@ def main():
     except Exception as e:  # SLOs are best-effort; memory still returned
         out["slo_error"] = f"perf-name: {type(e).__name__}: {e}"
 
-    def _perf_point(b):
-        """TTFT/TPOT/throughput at batch ``b`` (hardware-calibrated INSIDE GenZ); ``None`` on failure."""
+    def _perf_point(b, in_override=None):
+        """TTFT/TPOT/throughput at batch ``b`` (hardware-calibrated INSIDE GenZ); ``None`` on failure.
+        ``in_override`` recomputes TTFT for a shorter prefill (prefix-cache reuse)."""
         if perf_name is None:
             return None
         try:
             p = estimate_end_to_end_performance(
-                model=perf_name, batch_size=b, input_tokens=in_tok,
+                model=perf_name, batch_size=b, input_tokens=(in_override or in_tok),
                 output_tokens=out_tok, system_name=hw, bits=perf_bits)
             tp = p.get("average_tpot") or 0.0
             tf = p.get("ttft") or 0.0
@@ -309,6 +315,20 @@ def main():
     if sp is not None:
         out["slo"] = {**sp, "input_tokens": in_tok, "output_tokens": out_tok,
                       "calibration_source": "genz_internal"}
+        # Prefix/system-prompt KV reuse: TTFT only prefills the UNCACHED suffix + the (tiny) cost of
+        # loading the cached KV from memory. On GB10 a KV load is ~260x cheaper than recompute, so a long
+        # cached prefix contributes ~0 to TTFT — the SLO must credit this so the gate admits a cached
+        # request that a cold one couldn't meet. load_ms = cached_tokens · KV_bytes/token / mem_bandwidth.
+        cached = max(0, min(args.prefix_cached_tokens, in_tok - 1))
+        if cached > 0:
+            suffix = _perf_point(args.batch, in_override=max(1, in_tok - cached))
+            mem_bw_gbps = float(hw.get("Memory_BW") or 0) if isinstance(hw, dict) else 0.0
+            kv_per_tok = out["memory"]["kv_bytes_per_token"]
+            load_ms = (cached * kv_per_tok / (mem_bw_gbps * 1e9) * 1000.0) if mem_bw_gbps > 0 else 0.0
+            if suffix is not None:
+                out["slo"]["prefix_cached_tokens"] = cached
+                out["slo"]["ttft_ms_prefix_cached"] = suffix["ttft_ms"] + load_ms
+                out["slo"]["prefix_kv_load_ms"] = load_ms
     elif "slo_error" not in out:
         out["slo_error"] = "perf estimate unavailable"
 

@@ -92,6 +92,43 @@ class TestBatchSweep:
         assert "memory" in d  # the normal single-batch result is unchanged
 
 
+class TestPrefixCacheCredit:
+    """`--prefix-cached-tokens` credits KV reuse to the SLO: TTFT prefills only the uncached suffix +
+    the (tiny) KV-load cost, so a system-prompt-cached request can meet a tighter TTFT than a cold one."""
+
+    _CFG = TestBatchSweep._CFG
+
+    def _run(self, *extra):
+        import json
+        import subprocess
+        import sys
+        proc = subprocess.run(
+            [sys.executable, bc.__file__, "--config", self._CFG, "--hardware", "GB10",
+             "--seq", "8192", *extra],
+            capture_output=True, text=True, timeout=180,
+        )
+        assert proc.returncode == 0, proc.stderr[-600:]
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+
+    def test_cached_prefix_cuts_ttft_with_negligible_load(self):
+        full = self._run()
+        cached = self._run("--prefix-cached-tokens", "4000")
+        s = cached["slo"]
+        assert s["prefix_cached_tokens"] == 4000
+        # Caching 4000 of the ~6144 prompt tokens cuts TTFT well below the cold prefill.
+        assert s["ttft_ms_prefix_cached"] < s["ttft_ms"] * 0.7, (s["ttft_ms_prefix_cached"], s["ttft_ms"])
+        # The KV load is ~free on GB10 (273 GB/s): ~0.48 us/token ⇒ < 50 ms for 4000 tokens.
+        assert s["prefix_kv_load_ms"] < 50, s["prefix_kv_load_ms"]
+        # No flag ⇒ no cached field (cold path unchanged).
+        assert "ttft_ms_prefix_cached" not in full["slo"]
+
+    def test_cache_clamped_below_prompt_length(self):
+        # Asking to cache more than the prompt must not zero/negative the suffix prefill.
+        s = self._run("--prefix-cached-tokens", "999999")["slo"]
+        assert s["prefix_cached_tokens"] < s["input_tokens"]
+        assert s["ttft_ms_prefix_cached"] > 0
+
+
 class TestUnknownHardwareFailsClosed:
     """A typo'd / unsupported --hardware must FAIL-CLOSED (exit !=0 + an error JSON), never produce a
     memory-only result with a silently-missing SLO. bud-gaia keeps no fallback, so this is where an
