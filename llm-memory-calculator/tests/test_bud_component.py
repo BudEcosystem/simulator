@@ -51,6 +51,47 @@ class TestOnnxDirPrecision:
         assert bc._precision_from_name("/m/a3f16b9c") == "fp16"  # default, not a quant match
 
 
+class TestBatchSweep:
+    """`--sweep-batch-max` emits the per-batch memory+SLO curve the orchestrator picks from (max batch
+    that fits a live memory budget AND meets a TTFT/TPOT SLO). KV ∝ batch; ONNX arena activation also
+    ∝ batch, so the curve's memory ceiling is what bounds the dynamic batch size."""
+
+    _CFG = ('{"model_type":"llama","num_hidden_layers":32,"hidden_size":4096,'
+            '"num_attention_heads":32,"num_key_value_heads":8,"intermediate_size":14336,'
+            '"vocab_size":128256}')
+
+    def _run(self, *extra):
+        import json
+        import subprocess
+        import sys
+        proc = subprocess.run(
+            [sys.executable, bc.__file__, "--config", self._CFG, "--hardware", "GB10",
+             "--seq", "4096", *extra],
+            capture_output=True, text=True, timeout=180,
+        )
+        assert proc.returncode == 0, proc.stderr[-600:]
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+
+    def test_sweep_curve_is_monotone_and_kv_linear_in_batch(self):
+        d = self._run("--sweep-batch-max", "8")
+        sweep = d["batch_sweep"]
+        assert [p["batch"] for p in sweep] == [1, 2, 4, 8]
+        gb = [p["total_runtime_gb"] for p in sweep]
+        kv = [p["kv_cache_bytes"] for p in sweep]
+        assert gb == sorted(gb) and gb[-1] > gb[0], gb  # memory grows with batch
+        assert abs(kv[3] / kv[0] - 8.0) < 0.01, "KV must scale ~linearly with batch (8× at batch 8)"
+        # Throughput rises with batch; TPOT is non-decreasing (the bandwidth knee).
+        thr = [p["throughput_tok_s"] for p in sweep]
+        tpot = [p["tpot_ms"] for p in sweep]
+        assert thr[-1] > thr[0], thr
+        assert tpot[-1] >= tpot[0], tpot
+
+    def test_no_sweep_key_without_the_flag(self):
+        d = self._run()
+        assert "batch_sweep" not in d
+        assert "memory" in d  # the normal single-batch result is unchanged
+
+
 class TestUnknownHardwareFailsClosed:
     """A typo'd / unsupported --hardware must FAIL-CLOSED (exit !=0 + an error JSON), never produce a
     memory-only result with a silently-missing SLO. bud-gaia keeps no fallback, so this is where an

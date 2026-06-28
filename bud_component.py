@@ -186,6 +186,11 @@ def main():
     src.add_argument("--config", help="inline HF-style config JSON")
     ap.add_argument("--hardware", default="GB10")
     ap.add_argument("--batch", type=int, default=1, help="concurrent requests (batch size)")
+    ap.add_argument("--sweep-batch-max", type=int, default=None,
+                    help="if set, also emit a `batch_sweep` curve (memory + TTFT/TPOT/throughput per "
+                         "batch, powers of 2 up to this max) so the orchestrator can pick the max batch "
+                         "that fits a memory+SLO budget. The runtime's activation model bounds it "
+                         "(ONNX arena ∝ batch; llama.cpp KV ∝ batch).")
     ap.add_argument("--seq", type=int, default=4096, help="context tokens per request (prompt+output)")
     ap.add_argument("--input-tokens", type=int, default=None, help="prompt tokens for SLO (default seq*3/4)")
     ap.add_argument("--output-tokens", type=int, default=None, help="output tokens for SLO (default seq/4)")
@@ -267,6 +272,9 @@ def main():
     # ---- SLOs (perf): register the config under a name so GenZ's perf path accepts it ---------
     in_tok = args.input_tokens if args.input_tokens is not None else max(1, args.seq * 3 // 4)
     out_tok = args.output_tokens if args.output_tokens is not None else max(1, args.seq // 4)
+    # Resolve the perf model name once (register a dict config under a name GenZ's perf path accepts).
+    perf_name = None
+    perf_bits = "int8" if args.weight_precision in ("int4", "int8") else "bf16"
     try:
         if isinstance(model_spec, dict):
             mc = huggingface_config_to_model_config(model_spec, model_spec.get("name", "bud_custom"))
@@ -274,29 +282,67 @@ def main():
             perf_name = mc.model
         else:
             perf_name = model_spec
-        perf_bits = "int8" if args.weight_precision in ("int4", "int8") else "bf16"
-        perf = estimate_end_to_end_performance(
-            model=perf_name, batch_size=args.batch, input_tokens=in_tok,
-            output_tokens=out_tok, system_name=hw, bits=perf_bits)
-        # TTFT/TPOT are already hardware-calibrated INSIDE GenZ (the hardware config's
-        # `inference_calibration` block) — no post-processing here. Other hardware passes through
-        # GenZ's raw roofline unchanged.
-        tpot = perf.get("average_tpot") or 0.0
-        ttft = perf.get("ttft") or 0.0
-        total_latency = ttft + out_tok * tpot
-        throughput = (1000.0 / tpot * args.batch) if tpot else None
-        out["slo"] = {
-            "ttft_ms": ttft,
-            "tpot_ms": tpot,
-            "decode_tok_s": (1000.0 / tpot) if tpot else None,
-            "total_latency_ms": total_latency,
-            "throughput_tok_s": throughput,
-            "input_tokens": in_tok,
-            "output_tokens": out_tok,
-            "calibration_source": "genz_internal",
-        }
     except Exception as e:  # SLOs are best-effort; memory still returned
-        out["slo_error"] = f"{type(e).__name__}: {e}"
+        out["slo_error"] = f"perf-name: {type(e).__name__}: {e}"
+
+    def _perf_point(b):
+        """TTFT/TPOT/throughput at batch ``b`` (hardware-calibrated INSIDE GenZ); ``None`` on failure."""
+        if perf_name is None:
+            return None
+        try:
+            p = estimate_end_to_end_performance(
+                model=perf_name, batch_size=b, input_tokens=in_tok,
+                output_tokens=out_tok, system_name=hw, bits=perf_bits)
+            tp = p.get("average_tpot") or 0.0
+            tf = p.get("ttft") or 0.0
+            return {
+                "ttft_ms": tf,
+                "tpot_ms": tp,
+                "decode_tok_s": (1000.0 / tp) if tp else None,
+                "total_latency_ms": tf + out_tok * tp,
+                "throughput_tok_s": (1000.0 / tp * b) if tp else None,
+            }
+        except Exception:
+            return None
+
+    sp = _perf_point(args.batch)
+    if sp is not None:
+        out["slo"] = {**sp, "input_tokens": in_tok, "output_tokens": out_tok,
+                      "calibration_source": "genz_internal"}
+    elif "slo_error" not in out:
+        out["slo_error"] = "perf estimate unavailable"
+
+    # ---- BATCH SWEEP (optional): the memory + SLO curve per batch so the ORCHESTRATOR (not the
+    # simulator) picks the max batch that fits a live memory budget AND meets a TTFT/TPOT SLO. KV scales
+    # ∝ batch on both runtimes; the ONNX non-freeing arena activation ALSO scales ∝ batch (so ONNX hits a
+    # much lower memory ceiling than llama.cpp's layer-freeing graph). Powers of two up to the max.
+    if args.sweep_batch_max and args.sweep_batch_max >= 1:
+        batches, b = [], 1
+        while b < args.sweep_batch_max:
+            batches.append(b)
+            b *= 2
+        batches.append(args.sweep_batch_max)
+        sweep = []
+        for bb in sorted(set(batches)):
+            em_b = estimate_memory_for_engine(
+                model_spec, engine_name, batch_size=bb, seq_length=args.seq,
+                weight_precision=args.weight_precision, runtime_precision=RUNTIME_KV_PRECISION,
+                weight_bytes_override=weight_bytes_override)
+            tot_b = em_b.total_bytes + CUDA_RUNTIME_RESERVE
+            pt = {
+                "batch": bb,
+                "total_runtime_bytes": float(tot_b),
+                "total_runtime_gb": tot_b / 1e9,
+                "kv_cache_bytes": float(em_b.kv_cache_bytes),
+                "activations_bytes": float(em_b.activation_bytes),
+            }
+            pp = _perf_point(bb)
+            if pp is not None:
+                pt["ttft_ms"] = pp["ttft_ms"]
+                pt["tpot_ms"] = pp["tpot_ms"]
+                pt["throughput_tok_s"] = pp["throughput_tok_s"]
+            sweep.append(pt)
+        out["batch_sweep"] = sweep
 
     json.dump(out, sys.stdout)
     sys.stdout.write("\n")
