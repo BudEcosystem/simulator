@@ -96,6 +96,45 @@ def gguf_to_hf_config(path):
     }
     if head_dim_k:
         cfg["head_dim"] = int(head_dim_k)
+
+    # CHAOS-#5: MoE — surface the expert geometry so GenZ models the ACTIVE-expert decode cost, not a
+    # dense single expert (which under-predicts TPOT ~1.5-1.7x, so the strict SLO gate would admit
+    # requests that miss the declared TPOT). is_moe iff expert_count > 1 (matches the runtime,
+    # llama-model.cpp:1016). Modeling MoE RAISES TPOT — the SAFE (conservative) direction.
+    n_expert = a("expert_count")
+    if n_expert and int(n_expert) > 1:
+        cfg["num_experts"] = int(n_expert)
+        cfg["n_routed_experts"] = int(n_expert)  # GenZ config_normalizer keys is_moe on this
+        n_expert_used = a("expert_used_count")
+        if n_expert_used:
+            cfg["num_experts_per_tok"] = int(n_expert_used)
+        n_ff_exp = a("expert_feed_forward_length")
+        if n_ff_exp:
+            cfg["moe_intermediate_size"] = int(n_ff_exp)
+
+    # CHAOS-#10: MLA (DeepSeek-V2/V3) — GATE compact-MLA modeling on attention.key_length_mla, the EXACT
+    # field the runtime's llama_hparams::is_mla() keys on (llama-hparams.cpp:216-220). A LEGACY DeepSeek
+    # GGUF carries kv_lora_rank but NOT key_length_mla → the fork DECOMPRESSES the cache to full MHA, so
+    # gating on kv_lora_rank (the naive fix) would model the compact cache → under-count KV ~71x → OOM.
+    # Only when key_length_mla is present do we surface the MLA fields so GenZ models the compact cache
+    # (matching the runtime); otherwise the model stays MHA — today's behaviour, conservative. (Inert
+    # unless a DeepSeek-MLA GGUF is present; NEEDS real-DeepSeek validation before relying on it.)
+    klen_mla = a("attention.key_length_mla")
+    if klen_mla is not None:
+        kv_lora = a("attention.kv_lora_rank")
+        q_lora = a("attention.q_lora_rank")
+        rope_dim = a("rope.dimension_count")
+        vlen_mla = a("attention.value_length_mla")
+        if kv_lora:
+            cfg["kv_lora_rank"] = int(kv_lora)
+        if q_lora:
+            cfg["q_lora_rank"] = int(q_lora)
+        if rope_dim:
+            cfg["qk_rope_head_dim"] = int(rope_dim)
+            cfg["qk_nope_head_dim"] = max(int(klen_mla) - int(rope_dim), 0)  # MLA key dim = nope + rope
+        if vlen_mla:
+            cfg["v_head_dim"] = int(vlen_mla)
+
     weight_bytes = os.path.getsize(path)
     precision = _precision_from_gguf_file_type(val("general.file_type"))
     return cfg, weight_bytes, precision
