@@ -185,6 +185,8 @@ def main():
     src.add_argument("--hf-id", help="HuggingFace model id (fetches config)")
     src.add_argument("--config", help="inline HF-style config JSON")
     ap.add_argument("--hardware", default="GB10")
+    ap.add_argument("--tensor-parallel", type=int, default=1,
+                    help="tensor-parallel degree (e.g. per-socket ranks on a multi-socket CPU)")
     ap.add_argument("--batch", type=int, default=1, help="concurrent requests (batch size)")
     ap.add_argument("--sweep-batch-max", type=int, default=None,
                     help="if set, also emit a `batch_sweep` curve (memory + TTFT/TPOT/throughput per "
@@ -298,7 +300,8 @@ def main():
         try:
             p = estimate_end_to_end_performance(
                 model=perf_name, batch_size=b, input_tokens=(in_override or in_tok),
-                output_tokens=out_tok, system_name=hw, bits=perf_bits)
+                output_tokens=out_tok, system_name=hw, bits=perf_bits,
+                tensor_parallel=args.tensor_parallel)
             tp = p.get("average_tpot") or 0.0
             tf = p.get("ttft") or 0.0
             return {

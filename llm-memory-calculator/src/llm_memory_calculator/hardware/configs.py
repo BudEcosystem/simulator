@@ -1000,6 +1000,36 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'url': 'https://www.intel.com/content/www/us/en/newsroom/news/intel-advances-ai-everywhere.html',
         'description': 'Expected to offer significant enhancements in core count, memory bandwidth, and AI acceleration.'
     },
+    # Measured deployment part (Granite Rapids-AP). Memory_BW is the SOURCED datasheet peak:
+    # 8 channels x DDR5-6400 (6.4 GT/s x 8 B) = 409.6 GB/s per socket. The two variants below make the
+    # socket count EXPLICIT so TP=1 (1 socket) and TP=2 (2 sockets) are each verifiable against a
+    # matching real vLLM run. Flops inherits the family FP32 projection (compute/TTFT path uncalibrated).
+    # (If the DIMMs are actually MRDIMM-8800, peak scales to ~563/1126 GB/s; the fitted decode eta scales
+    # inversely so predictions are unchanged — only the eta/BW split relabels.)
+    'Xeon6767P_CPU': {                 # full 2-socket node (matches vLLM TP=2)
+        'Flops': 86,
+        'Memory_size': 512,
+        'Memory_BW': 819,              # 2 sockets x 409.6 GB/s (DDR5-6400, 8ch/socket)
+        'ICN': 175,
+        'Power': 700,
+        'real_values': True,
+        'type': 'cpu',
+        'manufacturer': 'Intel',
+        'name': 'Intel Xeon 6767P (Granite Rapids-AP), 2-socket',
+        'aliases': ['Xeon 6767P', 'Xeon 6767P 2S', '6767P', 'Granite Rapids 6767P']
+    },
+    'Xeon6767P_1socket_CPU': {         # single socket (matches vLLM TP=1 baseline)
+        'Flops': 43,
+        'Memory_size': 256,
+        'Memory_BW': 409.6,            # 1 socket x 8ch DDR5-6400
+        'ICN': 175,
+        'Power': 350,
+        'real_values': True,
+        'type': 'cpu',
+        'manufacturer': 'Intel',
+        'name': 'Intel Xeon 6767P (Granite Rapids-AP), 1-socket',
+        'aliases': ['Xeon 6767P 1S', '6767P 1socket']
+    },
     'SierraForest_CPU': {
         'Flops': 47,
         'Memory_size': 300,
