@@ -8,6 +8,10 @@ Ground-truth vLLM measurements backing the CPU decode calibration (see
 vLLM 0.24.0+cpu, `--dtype bfloat16` (AMX). No GPU.
 
 ## Contents
+- **`cpu_best_config_per_workload.csv`** — the single best-throughput vLLM config per workload
+  (input/output × concurrency) with the exact serve flags. TP=2 wins nearly everywhere; the lone
+  exception is 8192/2048 @ conc50 (fp8 KV cache edges throughput, but note its 53 s TTFT).
+- **`cpu_calibration_summary.csv`** — readable TP=1-vs-TP=2 pivot (out tok/s, speedup, TPOT, TTFT).
 - `qwen3-8b_measured.csv`, `qwen3-4b_measured.csv` — consolidated per-cell metrics
   (output tok/s, total tok/s, mean TTFT, mean/p99 TPOT, duration).
 - `qwen3-8b/*.json`, `qwen3-4b/*.json` — raw per-cell output of `vllm bench serve`
