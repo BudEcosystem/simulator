@@ -8,9 +8,14 @@ Ground-truth vLLM measurements backing the CPU decode calibration (see
 vLLM 0.24.0+cpu, `--dtype bfloat16` (AMX). No GPU.
 
 ## Contents
-- **`cpu_best_config_per_workload.csv`** — the single best-throughput vLLM config per workload
-  (input/output × concurrency) with the exact serve flags. TP=2 wins nearly everywhere; the lone
-  exception is 8192/2048 @ conc50 (fp8 KV cache edges throughput, but note its 53 s TTFT).
+- **`cpu_best_config_per_workload.csv`** — the recommended config per workload (input/output ×
+  concurrency): **`c1_tp2_numa` = `-tp 2` (both sockets)** for every cell, with measured output tok/s,
+  TPOT, TTFT and the speedup vs the 1-socket default. (Chosen among the clean TP=1/TP=2 configs; the
+  exotic fp8-KV / chunked variants are deliberately not recommended here.)
+- **`cpu_best_config_per_workload_target_1.6x.csv`** — **PROJECTED** target at **+60% throughput**.
+  This is NOT measured. The concrete enabling lever is **W8A8 INT8 weight quantization on AMX**
+  (the untested path we flagged as ~1.5–2×); numbers are the measured TP=2 row × 1.6 (TPOT/TTFT ÷ 1.6).
+  Use as a goal to validate once an INT8 checkpoint is benchmarked.
 - **`cpu_calibration_summary.csv`** — readable TP=1-vs-TP=2 pivot (out tok/s, speedup, TPOT, TTFT).
 - `qwen3-8b_measured.csv`, `qwen3-4b_measured.csv` — consolidated per-cell metrics
   (output tok/s, total tok/s, mean TTFT, mean/p99 TPOT, duration).
