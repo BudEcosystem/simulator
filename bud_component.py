@@ -111,6 +111,22 @@ def gguf_to_hf_config(path):
         n_ff_exp = a("expert_feed_forward_length")
         if n_ff_exp:
             cfg["moe_intermediate_size"] = int(n_ff_exp)
+        # CHAOS-#5b (chaos-fix-iterate): DeepSeek-style ALWAYS-ACTIVE shared experts + leading dense
+        # layers. Shared experts run on EVERY token (unlike the routed top-k), so DROPPING them
+        # under-counts active-decode FLOPs → optimistic TPOT → the strict SLO gate admits requests that
+        # miss. GenZ consumes n_shared_experts + shared_expert_intermediate_size (genz Models/ffn.py,
+        # which multiplies by n_shared_experts internally ⇒ this is the PER-EXPERT size = the same
+        # expert_feed_forward_length the routed experts use) + first_k_dense_replace (parameter_counter).
+        # Modeling them RAISES TPOT — the SAFE (conservative) direction, like the routed-expert emit
+        # above. Emit the shared geometry only when the per-expert FF is known (both keys together, so
+        # GenZ never sees n_shared_experts without its intermediate size).
+        n_shared = a("expert_shared_count")
+        if n_shared and int(n_shared) > 0 and n_ff_exp:
+            cfg["n_shared_experts"] = int(n_shared)
+            cfg["shared_expert_intermediate_size"] = int(n_ff_exp)
+        n_dense = a("leading_dense_block_count")
+        if n_dense:
+            cfg["first_k_dense_replace"] = int(n_dense)
 
     # CHAOS-#10: MLA (DeepSeek-V2/V3) — GATE compact-MLA modeling on attention.key_length_mla, the EXACT
     # field the runtime's llama_hparams::is_mla() keys on (llama-hparams.cpp:216-220). A LEGACY DeepSeek
