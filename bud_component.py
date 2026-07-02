@@ -228,12 +228,17 @@ def onnx_dir_to_hf_config(path):
     inter = d.get("intermediate_size") or m.get("intermediate_size")
     if inter:
         cfg["intermediate_size"] = int(inter)
-    # CHAOS-#5/#10 for ONNX (chaos-fix-iterate #9/#10, review-corrected): surface MoE geometry so a MoE
-    # model served via ONNX-GenAI (e.g. Phi-3.5-MoE) is NOT modeled as a dense single expert (optimistic
-    # TPOT), symmetric with the GGUF path. genai_config.json does NOT carry expert geometry — the brutal
-    # review found reading it was DEAD CODE — so read the sibling HF `config.json` that the ONNX-GenAI
-    # model_builder saves alongside (the canonical source). Gated on config.json presence + is_moe, so a
-    # dense ONNX model (no config.json / no experts) is unaffected. Modeling MoE RAISES TPOT — SAFE.
+    # CHAOS-#5/#10 for ONNX (chaos-fix-iterate #9/#10, 2nd-review-corrected): a MoE model served via
+    # ONNX-GenAI (Phi-3.5-MoE, GPT-OSS, Qwen3-MoE, Mixtral, …) must NOT be modeled as a dense single
+    # expert (optimistic TPOT → the SLO gate admits requests that then MISS). Two facts the 2nd brutal
+    # review established: (1) genai_config.json carries NO expert geometry, and (2) the ONNX-GenAI
+    # model_builder does NOT write the HF config.json into the model dir (only pre-packaged HF-ONNX repos
+    # and the Qwen3.5 builder do) — so an on-box-built ONNX MoE has NO config.json and reading it is dead.
+    # BUT genai_config's `model.type` ALWAYS names the architecture, so we can DETECT MoE even when we
+    # cannot SIZE it. Policy: read the expert geometry from a sibling config.json when present; if the
+    # arch is MoE but its geometry is unavailable, FAIL CLOSED (raise) rather than emit a dense/optimistic
+    # estimate — the "single source of truth, never a guessed number" invariant (the model is REFUSED,
+    # not admitted-then-missed). To model such a model accurately, place its source HF config.json here.
     hf = {}
     hf_path = os.path.join(path, "config.json")
     if os.path.exists(hf_path):
@@ -242,6 +247,13 @@ def onnx_dir_to_hf_config(path):
         except Exception:
             hf = {}
     hf = hf.get("text_config", hf)  # unwrap multimodal wrappers
+    # Backfill the dense intermediate_size from config.json when genai_config lacked it (review LOW).
+    if "intermediate_size" not in cfg and hf.get("intermediate_size"):
+        cfg["intermediate_size"] = int(hf["intermediate_size"])
+    model_type = str(m.get("type", "")).lower()
+    is_moe_arch = ("moe" in model_type) or (
+        model_type in ("gptoss", "gpt_oss", "mixtral", "dbrx", "jamba", "jetmoe", "granitemoe")
+    )
     n_expert = hf.get("num_local_experts") or hf.get("num_experts") or hf.get("n_routed_experts")
     if n_expert and int(n_expert) > 1:
         cfg["num_experts"] = int(n_expert)
@@ -261,6 +273,13 @@ def onnx_dir_to_hf_config(path):
         fkd = hf.get("first_k_dense_replace")
         if fkd is not None:
             cfg["first_k_dense_replace"] = int(fkd)
+    elif is_moe_arch:
+        raise ValueError(
+            f"ONNX model '{cfg['name']}' is a MoE architecture (model.type='{model_type}') but its expert "
+            f"geometry is unavailable — genai_config.json carries none and there is no sibling config.json "
+            f"in {path}. Modeling it dense would under-predict TPOT and admit requests that miss the SLO, "
+            f"so it is REFUSED (fail-closed). Place the source HF config.json in the model dir to size it."
+        )
     # NOTE: MLA for ONNX is deliberately NOT surfaced here. The GGUF path gates MLA on `key_length_mla`
     # (the runtime's is_mla() key) specifically to AVOID the legacy-DeepSeek trap where keying on
     # kv_lora_rank models the compact cache for a GGUF the fork actually decompresses to full MHA
