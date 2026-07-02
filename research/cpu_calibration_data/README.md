@@ -12,10 +12,9 @@ vLLM 0.24.0+cpu, `--dtype bfloat16` (AMX). No GPU.
   concurrency): **`c1_tp2_numa` = `-tp 2` (both sockets)** for every cell, with measured output tok/s,
   TPOT, TTFT and the speedup vs the 1-socket default. (Chosen among the clean TP=1/TP=2 configs; the
   exotic fp8-KV / chunked variants are deliberately not recommended here.)
-- **`cpu_best_config_per_workload_target_1.6x.csv`** — **PROJECTED** target at **+60% throughput**.
-  This is NOT measured. The concrete enabling lever is **W8A8 INT8 weight quantization on AMX**
-  (the untested path we flagged as ~1.5–2×); numbers are the measured TP=2 row × 1.6 (TPOT/TTFT ÷ 1.6).
-  Use as a goal to validate once an INT8 checkpoint is benchmarked.
+- **`cpu_best_config_per_workload_target_1.6x.csv`** — **target** at **+60% throughput** (measured
+  TP=2 row × 1.6, TPOT/TTFT ÷ 1.6). NOT measured — a performance goal for further optimization; the
+  config column stays the same TP=2 config. No specific mechanism is assumed.
 - **`cpu_calibration_summary.csv`** — readable TP=1-vs-TP=2 pivot (out tok/s, speedup, TPOT, TTFT).
 - `qwen3-8b_measured.csv`, `qwen3-4b_measured.csv` — consolidated per-cell metrics
   (output tok/s, total tok/s, mean TTFT, mean/p99 TPOT, duration).
