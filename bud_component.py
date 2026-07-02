@@ -224,6 +224,27 @@ def onnx_dir_to_hf_config(path):
     inter = d.get("intermediate_size") or m.get("intermediate_size")
     if inter:
         cfg["intermediate_size"] = int(inter)
+    # CHAOS-#5/#10 for ONNX (chaos-fix-iterate #9/#10): surface MoE geometry so a MoE model served via
+    # ONNX-GenAI (e.g. Phi-3.5-MoE) is NOT modeled as a dense single expert (optimistic TPOT), symmetric
+    # with the GGUF path. Read the standard HF MoE keys from the decoder/model if present; gated on
+    # presence, so a dense ONNX model is unaffected. Modeling MoE RAISES TPOT — the SAFE direction.
+    n_expert = d.get("num_local_experts") or d.get("num_experts") or m.get("num_local_experts")
+    if n_expert and int(n_expert) > 1:
+        cfg["num_experts"] = int(n_expert)
+        cfg["n_routed_experts"] = int(n_expert)  # GenZ config_normalizer keys is_moe on this
+        n_used = (
+            d.get("num_experts_per_tok")
+            or d.get("num_experts_per_token")
+            or m.get("num_experts_per_tok")
+        )
+        if n_used:
+            cfg["num_experts_per_tok"] = int(n_used)
+    # NOTE: MLA for ONNX is deliberately NOT surfaced here. The GGUF path gates MLA on `key_length_mla`
+    # (the runtime's is_mla() key) specifically to AVOID the legacy-DeepSeek trap where keying on
+    # kv_lora_rank models the compact cache for a GGUF the fork actually decompresses to full MHA
+    # (under-counts KV ~71x → OOM). genai_config has no verified equivalent gating field, so surfacing
+    # MLA from an unverified key would risk that exact under-count. Left MHA (conservative) pending a
+    # verified ONNX MLA-cache signal + a real ONNX MLA model to calibrate against.
     weight_bytes = sum(
         os.path.getsize(os.path.join(path, f))
         for f in os.listdir(path)
