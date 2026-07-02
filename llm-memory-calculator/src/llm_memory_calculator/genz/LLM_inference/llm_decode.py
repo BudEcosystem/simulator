@@ -11,6 +11,47 @@ from math import ceil
 
 unit = Unit()
 
+# CPU decode memory-bandwidth floor (category calibration, generalizable).
+# Decode is weight-streaming bound: every token reads the resident matmul weights (+ batch KV) from
+# DRAM, so TPOT cannot beat resident_bytes/(eta*BW). The operator roofline sums per-op memory time but
+# lands optimistic on CPU, so we clamp decode latency to this floor. `eta` is the sustained DECODE
+# memory efficiency RELATIVE TO THE MODEL'S OWN resident-byte accounting (summary_table weights+KV),
+# fit from one measured device per category, then reused across that category (ISA class x vendor).
+# It is lower than the STREAM band (~0.80) because (a) GEMV weight-streaming interleaved with compute
+# sustains less than pure STREAM and (b) it absorbs the residual roofline optimism, self-consistently.
+# A measured per-device block (system.decode_mem_efficiency) overrides it.
+# One category constant: sustained decode memory efficiency vs the model's own resident-byte
+# accounting (weights + KV), against the device's SOURCED datasheet peak bandwidth. Joint-fit from a
+# measured x86-AMX device (Intel Xeon 6767P / Qwen3-8B, DDR5-6400) across BOTH socket counts:
+#   1 socket  (409.6 GB/s): 11.0 GiB / (eta * BW) = 102 ms  -> eta = 0.257
+#   2 sockets (819  GB/s): 11.0 GiB / (eta * BW) =  60 ms  -> eta = 0.219
+#   joint (geomean)                                          -> eta = 0.237
+# ~0.3 of the STREAM band (~0.80): GEMV weight-streaming interleaved with compute sustains less. Because
+# it is defined against the SOURCED peak BW (not a projected number), it is a true efficiency that
+# transfers across the (ISA x vendor) category. The residual TP=1(+8%)/TP=2(-8%) split is the NUMA
+# scaling loss (real 2-socket is ~1.7x, not 2x) -- a separate interconnect term, not this constant.
+# NOTE: a separate higher eta for KV-streaming was tried and OVER-corrected, so one blended constant
+# generalizes better. A measured per-device block (system.decode_mem_efficiency) overrides it.
+_ETA_MEM_DECODE_CPU_X86 = 0.237
+_X86_CPU_VENDORS = ('intel', 'amd')
+
+# NUMA / tensor-parallel interconnect latency for CPU decode. Megatron TP does 2 all-reduces per layer
+# (post-attention, post-FFN). GenZ's collective models the all-reduce DATA VOLUME (a few KB/token ->
+# negligible), but on CPU the cost is dominated by the per-all-reduce LATENCY of many small blocking
+# gloo/UPI reductions, which GenZ omits. Adding it makes 2-socket decode scale ~1.7x (measured), not the
+# ideal 2x. Category constant (x86 2-socket UPI + gloo), fit so Xeon 6767P batch-1 TP=2 decode = 60 ms:
+# 55.4 ms floor + 2*36 all-reduces * L = 60 ms  ->  L ~= 0.064 ms/all-reduce.
+_CPU_TP_ALLREDUCE_LAT_MS = 0.064
+
+
+def _cpu_decode_mem_efficiency(system, system_name):
+    """Sustained decode memory efficiency for a CPU, or None if not a CPU.
+    Per-device override (system.decode_mem_efficiency) beats the category default."""
+    is_cpu = isinstance(system_name, dict) and str(system_name.get('type', '')).lower() == 'cpu'
+    if not is_cpu:
+        return None
+    return float(getattr(system, 'decode_mem_efficiency', None) or _ETA_MEM_DECODE_CPU_X86)
+
 def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     output_tokens = 0,   Bb = 4 ,           ## Only for Decode
     system_name = 'A100_40GB_GPU', system_eff = 1, bits='bf16', debug= False, model_profilling = False,
@@ -171,6 +212,27 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
         n_layers = max(_repeats) if _repeats else 1
         decode_latency += (system.kernel_launch_latency_ms * n_ops
                            + system.per_stream_overhead_ms * n_layers * max(0, batch_size - 1))
+
+    # CPU decode memory-bandwidth floor: a token cannot be produced faster than the resident weights
+    # (+ batch KV) can stream from DRAM. The operator roofline under-counts this traffic on CPU, so
+    # clamp to the physical floor  (weight+KV bytes / tensor_parallel) / (eta_decode * offchip_BW).
+    # Generalizable: uses the device's own bytes + bandwidth with a category efficiency (see
+    # _cpu_decode_mem_efficiency). No-op on GPU / when the model already predicts above the floor.
+    _eta_dec = _cpu_decode_mem_efficiency(system, system_name)
+    if _eta_dec and not is_offloaded:
+        # summary_table weights+KV are ALREADY per-rank (GenZ shards at tensor_parallel), streamed at the
+        # per-rank (per-socket) bandwidth -> do NOT divide by tensor_parallel again.
+        _bytes = total_memory_req * 1024 * 1024  # MiB -> bytes, per rank
+        _floor_ms = _bytes / (_eta_dec * system.offchip_mem_bw) * 1000.0
+        if _floor_ms > decode_latency:
+            decode_latency = _floor_ms
+        # NUMA/TP all-reduce latency (see _CPU_TP_ALLREDUCE_LAT_MS): 2 reductions/layer, added on top of
+        # the memory floor because comm and weight-streaming are sequential phases of a decode step.
+        if tensor_parallel > 1:
+            _reps = [model_df.loc[i, 'Dimension'] for i in range(len(model_df))
+                     if model_df.loc[i, 'Op Type'] == 'Repeat']
+            _n_layers = max(_reps) if _reps else 1
+            decode_latency += _CPU_TP_ALLREDUCE_LAT_MS * 2 * _n_layers * (tensor_parallel - 1)
 
     ## 1000x because the latency is in milli seconds. thrpt is in Token/s
     # M1: steady-state pipelined throughput is gated by the per-token work, which is CONSERVED across
