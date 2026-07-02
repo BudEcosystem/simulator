@@ -28,7 +28,7 @@ vLLM 0.24.0+cpu, `--dtype bfloat16` (AMX). No GPU.
 |---|---|---|
 | `c0_baseline` | vLLM default = **1 socket** (TP=1) | `Xeon6767P_1socket_CPU`, `--tensor-parallel 1` |
 | `c1_tp2_numa` | `-tp 2` = **2 sockets** (TP=2) | `Xeon6767P_1socket_CPU`, `--tensor-parallel 2` |
-| `c6_tp2_chunked`, `c7_tp4`, `c8/c9_*bt*`, `c10_*int8kv*` | vLLM feature sweep (not calibration inputs) | — |
+| `c6_tp2_chunked`, `c7_tp4`, `c8/c9_*bt*` | vLLM feature sweep (not calibration inputs) | — |
 | `prefixdemo_*` | prefix-cache A/B (shared-prefix dataset) | — |
 
 The calibration was fit/validated against `c0_baseline` (TP=1) and `c1_tp2_numa` (TP=2) only;
