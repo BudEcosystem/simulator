@@ -120,10 +120,14 @@ def gguf_to_hf_config(path):
         # Modeling them RAISES TPOT — the SAFE (conservative) direction, like the routed-expert emit
         # above. Emit the shared geometry only when the per-expert FF is known (both keys together, so
         # GenZ never sees n_shared_experts without its intermediate size).
+        # Prefer the DISTINCT shared-expert FF key when the GGUF carries it (review #-medium: some MoE
+        # GGUFs size the shared expert differently from the routed one); fall back to the routed
+        # per-expert FF (correct for DeepSeek, where they match) so the emit is never dropped.
         n_shared = a("expert_shared_count")
-        if n_shared and int(n_shared) > 0 and n_ff_exp:
+        n_ff_shared = a("expert_shared_feed_forward_length") or n_ff_exp
+        if n_shared and int(n_shared) > 0 and n_ff_shared:
             cfg["n_shared_experts"] = int(n_shared)
-            cfg["shared_expert_intermediate_size"] = int(n_ff_exp)
+            cfg["shared_expert_intermediate_size"] = int(n_ff_shared)
         n_dense = a("leading_dense_block_count")
         if n_dense:
             cfg["first_k_dense_replace"] = int(n_dense)
@@ -224,21 +228,39 @@ def onnx_dir_to_hf_config(path):
     inter = d.get("intermediate_size") or m.get("intermediate_size")
     if inter:
         cfg["intermediate_size"] = int(inter)
-    # CHAOS-#5/#10 for ONNX (chaos-fix-iterate #9/#10): surface MoE geometry so a MoE model served via
-    # ONNX-GenAI (e.g. Phi-3.5-MoE) is NOT modeled as a dense single expert (optimistic TPOT), symmetric
-    # with the GGUF path. Read the standard HF MoE keys from the decoder/model if present; gated on
-    # presence, so a dense ONNX model is unaffected. Modeling MoE RAISES TPOT — the SAFE direction.
-    n_expert = d.get("num_local_experts") or d.get("num_experts") or m.get("num_local_experts")
+    # CHAOS-#5/#10 for ONNX (chaos-fix-iterate #9/#10, review-corrected): surface MoE geometry so a MoE
+    # model served via ONNX-GenAI (e.g. Phi-3.5-MoE) is NOT modeled as a dense single expert (optimistic
+    # TPOT), symmetric with the GGUF path. genai_config.json does NOT carry expert geometry — the brutal
+    # review found reading it was DEAD CODE — so read the sibling HF `config.json` that the ONNX-GenAI
+    # model_builder saves alongside (the canonical source). Gated on config.json presence + is_moe, so a
+    # dense ONNX model (no config.json / no experts) is unaffected. Modeling MoE RAISES TPOT — SAFE.
+    hf = {}
+    hf_path = os.path.join(path, "config.json")
+    if os.path.exists(hf_path):
+        try:
+            hf = json.load(open(hf_path))
+        except Exception:
+            hf = {}
+    hf = hf.get("text_config", hf)  # unwrap multimodal wrappers
+    n_expert = hf.get("num_local_experts") or hf.get("num_experts") or hf.get("n_routed_experts")
     if n_expert and int(n_expert) > 1:
         cfg["num_experts"] = int(n_expert)
         cfg["n_routed_experts"] = int(n_expert)  # GenZ config_normalizer keys is_moe on this
-        n_used = (
-            d.get("num_experts_per_tok")
-            or d.get("num_experts_per_token")
-            or m.get("num_experts_per_tok")
-        )
+        n_used = hf.get("num_experts_per_tok") or hf.get("num_experts_per_token")
         if n_used:
             cfg["num_experts_per_tok"] = int(n_used)
+        moe_inter = hf.get("moe_intermediate_size") or hf.get("intermediate_size")
+        if moe_inter:
+            cfg["moe_intermediate_size"] = int(moe_inter)
+        # DeepSeek/Qwen-MoE always-active shared experts + leading dense (symmetric with the GGUF path).
+        n_shared = hf.get("n_shared_experts") or hf.get("num_shared_experts")
+        shared_inter = hf.get("shared_expert_intermediate_size")
+        if n_shared and int(n_shared) > 0 and shared_inter:
+            cfg["n_shared_experts"] = int(n_shared)
+            cfg["shared_expert_intermediate_size"] = int(shared_inter)
+        fkd = hf.get("first_k_dense_replace")
+        if fkd is not None:
+            cfg["first_k_dense_replace"] = int(fkd)
     # NOTE: MLA for ONNX is deliberately NOT surfaced here. The GGUF path gates MLA on `key_length_mla`
     # (the runtime's is_mla() key) specifically to AVOID the legacy-DeepSeek trap where keying on
     # kv_lora_rank models the compact cache for a GGUF the fork actually decompresses to full MHA
