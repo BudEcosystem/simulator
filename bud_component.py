@@ -35,6 +35,23 @@ RUNTIME_KV_PRECISION = "fp16"
 # the analytic estimator but always present on a CUDA backend.
 CUDA_RUNTIME_RESERVE = 1024 * 1024 * 1024
 
+# Known-DENSE decoder architectures for the ONNX no-config.json path (3rd-review no-OOM fix). An ONNX MoE
+# modeled DENSE omits the non-freeing ORT activation-arena expert term → multi-GiB memory OVER-ADMIT on
+# the shared unified pool. A DENYLIST fails OPEN for any MoE arch whose model.type lacks "moe"
+# (deepseekv2/v3, llama4, minimax, grok, arctic, hunyuan, qwen3next, …) — a real over-admit. So we use an
+# ALLOWLIST: with NO config.json to size experts, a model is modeled dense ONLY if its arch is known-dense;
+# anything else (unknown OR MoE) is REFUSED (fail-closed) — "single source of truth, never a guessed
+# number". `model.type` = HF architectures[0] truncated before "For", lowercased (ONNX-GenAI base.py:646);
+# most Llama-derivatives (deepseek-llm/coder, yi, vicuna, tinyllama, smollm) export AS "llama". MoE
+# families are DELIBERATELY absent so they fail closed. Extend as ONNX-GenAI adds dense families.
+ONNX_KNOWN_DENSE_TYPES = frozenset({
+    "llama", "llama2", "llama3", "mistral", "qwen", "qwen2", "qwen3", "phi", "phi3", "phimsft",
+    "phi3small", "phi4", "gemma", "gemma2", "gemma3", "gemma3text", "granite", "nemotron", "nemotronh",
+    "olmo", "olmo2", "internlm", "internlm2", "chatglm", "glm", "glm4", "ernie", "lfm2", "smollm",
+    "falcon", "mpt", "baichuan", "stablelm", "stablelm2", "starcoder2", "gptbigcode", "gptneox", "gptj",
+    "codegen", "bloom", "opt", "cohere", "cohere2", "exaone", "yi", "minicpm", "gpt2", "gptneox20b",
+})
+
 # NOTE: GB10 inference calibration now lives INSIDE GenZ (hardware/configs.py 'inference_calibration'
 # block + genz/LLM_inference). estimate_end_to_end_performance(system_name='GB10') already returns
 # CALIBRATED TTFT/TPOT, so this component no longer post-processes them — it just reads them. This
@@ -234,16 +251,19 @@ def onnx_dir_to_hf_config(path):
     # review established: (1) genai_config.json carries NO expert geometry, and (2) the ONNX-GenAI
     # model_builder does NOT write the HF config.json into the model dir (only pre-packaged HF-ONNX repos
     # and the Qwen3.5 builder do) — so an on-box-built ONNX MoE has NO config.json and reading it is dead.
-    # BUT genai_config's `model.type` ALWAYS names the architecture, so we can DETECT MoE even when we
-    # cannot SIZE it. Policy: read the expert geometry from a sibling config.json when present; if the
-    # arch is MoE but its geometry is unavailable, FAIL CLOSED (raise) rather than emit a dense/optimistic
-    # estimate — the "single source of truth, never a guessed number" invariant (the model is REFUSED,
-    # not admitted-then-missed). To model such a model accurately, place its source HF config.json here.
+    # Policy (3rd-review, no-OOM-correct ALLOWLIST — replaces the fail-OPEN denylist): read expert
+    # geometry from a sibling config.json when present; a config.json present without experts is
+    # authoritatively DENSE. With NO config.json, model dense ONLY for a known-dense arch
+    # (ONNX_KNOWN_DENSE_TYPES); ANY other arch (unknown OR MoE whose model.type lacks "moe") FAILS CLOSED
+    # — "single source of truth, never a guessed number" — because a MoE modeled dense omits the ORT
+    # activation-arena expert term and OVER-ADMITS memory. Place the source HF config.json to size it.
     hf = {}
+    config_present = False
     hf_path = os.path.join(path, "config.json")
     if os.path.exists(hf_path):
         try:
             hf = json.load(open(hf_path))
+            config_present = True
         except Exception:
             hf = {}
     hf = hf.get("text_config", hf)  # unwrap multimodal wrappers
@@ -251,9 +271,6 @@ def onnx_dir_to_hf_config(path):
     if "intermediate_size" not in cfg and hf.get("intermediate_size"):
         cfg["intermediate_size"] = int(hf["intermediate_size"])
     model_type = str(m.get("type", "")).lower()
-    is_moe_arch = ("moe" in model_type) or (
-        model_type in ("gptoss", "gpt_oss", "mixtral", "dbrx", "jamba", "jetmoe", "granitemoe")
-    )
     n_expert = hf.get("num_local_experts") or hf.get("num_experts") or hf.get("n_routed_experts")
     if n_expert and int(n_expert) > 1:
         cfg["num_experts"] = int(n_expert)
@@ -273,13 +290,22 @@ def onnx_dir_to_hf_config(path):
         fkd = hf.get("first_k_dense_replace")
         if fkd is not None:
             cfg["first_k_dense_replace"] = int(fkd)
-    elif is_moe_arch:
+    elif config_present:
+        # config.json IS present and carries no experts → authoritatively DENSE; model it dense (the
+        # HF config is the source of truth — a MoE would have declared num_experts here). No fail-close.
+        pass
+    elif model_type not in ONNX_KNOWN_DENSE_TYPES:
+        # No config.json to rule out MoE AND the arch is not on the known-dense allowlist → we CANNOT
+        # safely model it dense (a MoE modeled dense OMITS the ORT activation-arena expert term →
+        # OVER-ADMITS memory on the shared pool + misses TPOT). FAIL CLOSED — refuse rather than guess.
         raise ValueError(
-            f"ONNX model '{cfg['name']}' is a MoE architecture (model.type='{model_type}') but its expert "
-            f"geometry is unavailable — genai_config.json carries none and there is no sibling config.json "
-            f"in {path}. Modeling it dense would under-predict TPOT and admit requests that miss the SLO, "
-            f"so it is REFUSED (fail-closed). Place the source HF config.json in the model dir to size it."
+            f"ONNX model '{cfg['name']}' has model.type='{model_type}', which is not a known DENSE "
+            f"architecture, and no expert geometry is available (genai_config carries none; no sibling "
+            f"config.json in {path}). Modeling an unknown or MoE arch as dense would omit the MoE "
+            f"activation arena → OVER-ADMIT memory and miss TPOT, so it is REFUSED (fail-closed). "
+            f"Place the source HF config.json in the model dir to size it."
         )
+    # else: no config.json but a KNOWN-DENSE arch → model dense (safe).
     # NOTE: MLA for ONNX is deliberately NOT surfaced here. The GGUF path gates MLA on `key_length_mla`
     # (the runtime's is_mla() key) specifically to AVOID the legacy-DeepSeek trap where keying on
     # kv_lora_rank models the compact cache for a GGUF the fork actually decompresses to full MHA
