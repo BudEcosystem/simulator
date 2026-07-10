@@ -22,7 +22,11 @@ import sys
 
 from llm_memory_calculator import get_hardware_config
 from llm_memory_calculator import estimate_end_to_end_performance
-from llm_memory_calculator.inference_engines import estimate_memory_for_engine
+from llm_memory_calculator.inference_engines import (
+    KNOWN_ENGINES,
+    estimate_memory_for_engine,
+    get_engine,
+)
 from llm_memory_calculator.genz.Models.default_models import MODEL_DICT
 from llm_memory_calculator.genz.Models.get_language_model import (
     huggingface_config_to_model_config,
@@ -320,6 +324,120 @@ def onnx_dir_to_hf_config(path):
     return cfg, weight_bytes
 
 
+# MLA-gating keys (mirrors calculator.py's ConfigCalculator.detect_attention_type /
+# _calculate_attention_params, which key MLA detection on this exact set). Stripping them forces the
+# base calculator to fall back to MHA/GQA/MQA detection instead.
+_MLA_GATING_KEYS = (
+    "q_lora_rank", "kv_lora_rank", "qk_rope_head_dim", "qk_nope_head_dim",
+    "latent_attention_dim", "compressed_kv_dim",
+)
+
+
+def _mistralrs_precision_from_config(cfg):
+    """Weight precision for the mistral.rs perf model (the GenZ `bits` a-la :425, NOT the exact-bytes
+    weight sizing below): `quantization_config.quant_method` when the model is quantized (mxfp4/int4/
+    gptq/awq family → the int4-class perf bits, so decode isn't modeled at full BF16 bandwidth — GPT-OSS
+    MXFP4 is the named v1 case, G_measurements.md), else `torch_dtype` (bfloat16/float16 → fp16 → perf
+    bits "bf16" at :425 — mistral.rs's current BF16-only reality, A5 §6). ``None`` when undetermined
+    (caller falls back to the per-source default)."""
+    quant = cfg.get("quantization_config")
+    if isinstance(quant, dict):
+        method = str(quant.get("quant_method", "")).lower()
+        if any(tag in method for tag in ("mxfp4", "int4", "gptq", "awq", "4bit", "fp4")):
+            return "int4"
+        if any(tag in method for tag in ("int8", "8bit", "fp8")):
+            return "int8"
+    dtype = str(cfg.get("torch_dtype", "")).lower()
+    if dtype in ("float32", "fp32"):
+        return "fp32"
+    if dtype in ("bfloat16", "float16", "fp16", "half"):
+        return "fp16"
+    return None
+
+
+def safetensors_dir_to_hf_config(path):
+    """Read a local HF safetensors model directory (the mistral.rs lane) and return its model spec — the
+    SIMPLEST of the three source readers, because `config.json` IS the HF config already (no field
+    mapping needed, unlike GGUF/ONNX): unwrap a multimodal `text_config` wrapper, pass the rest straight
+    through. MoE keys (`num_local_experts`/`num_experts`/`n_routed_experts`, shared experts,
+    `first_k_dense_replace`) flow free — GenZ's normalizer already understands them
+    (get_language_model.py:73-107) — fail-safe by construction, since the full HF config is always
+    present here (never the ONNX no-config.json guessing problem).
+
+    CHAOS-#10 (MLA) parity: the GGUF path gates compact-MLA modeling on `attention.key_length_mla` — the
+    EXACT field the runtime's `llama_hparams::is_mla()` keys on (`:152-173`) — because a legacy DeepSeek
+    GGUF that lacks it is actually served MHA (decompressed) by the fork, so keying on `kv_lora_rank`
+    alone would under-count KV ~71x → OOM. There is no equivalent runtime-verified gate for mistral.rs
+    yet (NEEDS a real DeepSeek run on mistral.rs to validate, A5 §7.1b), so — same caveat as the GGUF
+    path — the MLA-gating keys are unconditionally stripped here to stay MHA-conservative until that
+    validation lands.
+
+    Returns (config_dict, weight_bytes = Σ *.safetensors sizes on disk, precision_hint_or_None).
+    """
+    cfg_path = os.path.join(path, "config.json")
+    cfg = json.load(open(cfg_path))
+    cfg = dict(cfg.get("text_config", cfg))  # unwrap a multimodal wrapper down to the decoder config
+    cfg.setdefault("name", os.path.basename(path.rstrip("/")))
+
+    for mla_key in _MLA_GATING_KEYS:
+        cfg.pop(mla_key, None)
+
+    weight_bytes = sum(
+        os.path.getsize(os.path.join(path, f))
+        for f in os.listdir(path)
+        if f.endswith(".safetensors") and os.path.isfile(os.path.join(path, f))
+    )
+    if weight_bytes <= 0:
+        raise ValueError(f"no *.safetensors files found in {path}")
+
+    return cfg, weight_bytes, _mistralrs_precision_from_config(cfg)
+
+
+def probe_match(raw_name, mem_gb=None):
+    """GOAL-8 F3 (make-it-work): match a Layer-Zero PROBE device name to a simulator hardware token.
+
+    The daemon calls `--probe-match "<nvml device name>"` when $BUD_SIMULATOR_HARDWARE disagrees with
+    the probe, so the SIMULATOR (single source of hardware truth) does the matching — never Rust-side
+    name heuristics. Strategy: alias-first (every HARDWARE_CONFIGS entry carries an `aliases` list;
+    case-insensitive substring either way, LONGEST alias wins = most specific), memory-proximity
+    tie-break when the probe supplies its pool size, then the library's own DeviceMatcher as a
+    fallback parser. Returns {"matched": <token>|None, "method": "alias"|"parser"|None}.
+    """
+    from llm_memory_calculator.hardware.configs import HARDWARE_CONFIGS
+
+    name = (raw_name or "").strip().lower()
+    if not name:
+        return {"matched": None, "method": None}
+    candidates = []
+    for token, hw in HARDWARE_CONFIGS.items():
+        names = [str(hw.get("name", token))] + [str(a) for a in hw.get("aliases", [])]
+        best_len = 0
+        for al in names:
+            a = al.strip().lower()
+            if a and (a == name or a in name or name in a):
+                best_len = max(best_len, len(a))
+        if best_len:
+            candidates.append((token, hw, best_len))
+    if candidates:
+        candidates.sort(key=lambda t: -t[2])
+        top_len = candidates[0][2]
+        top = [c for c in candidates if c[2] == top_len]
+        if len(top) > 1 and mem_gb is not None:
+            top.sort(key=lambda c: abs(float(c[1].get("Memory_size", 0)) - float(mem_gb)))
+        return {"matched": top[0][0], "method": "alias"}
+    try:
+        from llm_memory_calculator.hardware.device_matcher import match_device
+        r = match_device({"raw_name": raw_name}, HARDWARE_CONFIGS)
+        if r:
+            for token, hw in HARDWARE_CONFIGS.items():
+                if hw is r:
+                    return {"matched": token, "method": "parser"}
+            return {"matched": r.get("name"), "method": "parser"}
+    except Exception:
+        pass
+    return {"matched": None, "method": None}
+
+
 def main():
     ap = argparse.ArgumentParser()
     src = ap.add_mutually_exclusive_group(required=True)
@@ -327,6 +445,17 @@ def main():
     src.add_argument("--onnx-dir", help="path to a local ONNX-GenAI model directory")
     src.add_argument("--hf-id", help="HuggingFace model id (fetches config)")
     src.add_argument("--config", help="inline HF-style config JSON")
+    src.add_argument("--safetensors-dir",
+                      help="path to a local HF safetensors model directory (mistral.rs lane)")
+    src.add_argument("--probe-match",
+                      help="F3: match a probed GPU device name to a simulator hardware token; prints "
+                           "JSON {matched, method} and exits (the daemon's auto-derive path)")
+    ap.add_argument("--probe-mem-gb", type=float, default=None,
+                    help="probed device memory (GB) — memory-proximity tie-break for --probe-match")
+    ap.add_argument("--engine", default=None,
+                     help="serving runtime override: llamacpp|onnxruntime|mistralrs|mistralrs-zerocopy "
+                          "(default: inferred from the source flag). Unknown values are a hard error "
+                          "(fail-closed) — never a silent fallback to the base engine.")
     ap.add_argument("--hardware", default="GB10")
     ap.add_argument("--batch", type=int, default=1, help="concurrent requests (batch size)")
     ap.add_argument("--sweep-batch-max", type=int, default=None,
@@ -345,6 +474,11 @@ def main():
     ap.add_argument("--weight-precision", default=None,
                     help="weight quant: fp16/int8/int4 (GGUF q4≈int4). Default: derived per source.")
     args = ap.parse_args()
+
+    # F3 probe-match mode: answer + exit before any model resolution (no model source needed).
+    if args.probe_match:
+        json.dump(probe_match(args.probe_match, args.probe_mem_gb), sys.stdout)
+        return
 
     out = {"hardware": args.hardware, "batch": args.batch, "seq": args.seq}
 
@@ -365,6 +499,13 @@ def main():
         # (weights come from the exact on-disk byte sum, independent of this).
         if args.weight_precision is None:
             args.weight_precision = _precision_from_name(args.onnx_dir)
+    elif args.safetensors_dir:
+        cfg, weight_bytes_override, st_precision = safetensors_dir_to_hf_config(args.safetensors_dir)
+        model_spec = cfg
+        # Prefer the config's own quant_method/torch_dtype (mistral.rs lane); only the per-source
+        # fallback below (fp16) applies when the config carries neither.
+        if args.weight_precision is None and st_precision is not None:
+            args.weight_precision = st_precision
     elif args.config:
         cfg = json.loads(args.config)
         model_spec = cfg
@@ -393,10 +534,38 @@ def main():
 
     # ---- MEMORY (arch- AND runtime-aware) via the inference-engine LAYER -----------------------
     # The serving runtime sets the activation model: ONNX models run on ONNX Runtime (one non-freeing
-    # arena → all-layers prefill working set); GGUF runs on llama.cpp (layer-freeing == the base). The
-    # layer (llm_memory_calculator.inference_engines) overrides ONLY the runtime-specific activation on
-    # top of the calibrated base — weights (exact on-disk for a GGUF/ONNX dir) + KV are runtime-agnostic.
-    engine_name = "onnxruntime" if args.onnx_dir else ("llamacpp" if args.gguf else None)
+    # arena → all-layers prefill working set); GGUF runs on llama.cpp (layer-freeing == the base);
+    # a safetensors dir runs on mistral.rs (candle, also layer-freeing, but with a paged-attention KV
+    # pool — A5 §7.1c). `--engine` lets a caller override the inference explicitly (e.g. force
+    # `mistralrs-zerocopy` for a safetensors dir served via the zero-copy loader); the source flag is
+    # only the DEFAULT when `--engine` is absent. The layer (llm_memory_calculator.inference_engines)
+    # overrides the runtime-specific activation (and, for mistral.rs, the KV pool rounding) on top of
+    # the calibrated base — weights (exact on-disk for a GGUF/ONNX/safetensors dir) are always
+    # runtime-agnostic.
+    engine_name = args.engine or (
+        "onnxruntime" if args.onnx_dir else
+        "llamacpp" if args.gguf else
+        "mistralrs" if args.safetensors_dir else
+        None
+    )
+    if engine_name is not None and engine_name.lower() not in KNOWN_ENGINES:
+        # Fail-closed (NO silent fallback): mirrors the hardware guard above. `get_engine()` would
+        # otherwise silently degrade an unknown/version-skewed engine name to the generic base engine
+        # (A5 §2.4's silent-fallback hazard) — e.g. Gaia shipping `--engine mistralrs` before this
+        # Python class lands would silently estimate base/llama.cpp-shaped numbers instead of refusing.
+        json.dump(
+            {
+                "error": f"unknown engine '{engine_name}'",
+                "hint": "supported engines: " + ", ".join(sorted(KNOWN_ENGINES)),
+            },
+            sys.stdout,
+        )
+        sys.exit(2)
+    # Resolve ONCE (R6-5/R6-6): `_perf_point` below (both the top-level `out["slo"]` call site and
+    # every `batch_sweep` point) closes over this SAME `eng` and calls `eng.adjust_slo(...)` internally,
+    # immediately before returning — never as a post-hoc line after `out["slo"]` is assembled — so every
+    # derived SLO field (top-level AND every batch_sweep point) is uniformly derated.
+    eng = get_engine(engine_name)
     em = estimate_memory_for_engine(
         model_spec, engine_name,
         batch_size=args.batch, seq_length=args.seq,
@@ -435,7 +604,17 @@ def main():
 
     def _perf_point(b, in_override=None):
         """TTFT/TPOT/throughput at batch ``b`` (hardware-calibrated INSIDE GenZ); ``None`` on failure.
-        ``in_override`` recomputes TTFT for a shorter prefill (prefix-cache reuse)."""
+        ``in_override`` recomputes TTFT for a shorter prefill (prefix-cache reuse).
+
+        R6-5/R6-6 wiring: `eng.adjust_slo` (e.g. mistralrs-zerocopy's ÷0.84 decode-BW derate) is applied
+        HERE, immediately before returning — NOT as a post-hoc line after `out["slo"]` is assembled below
+        — and every derived field (`decode_tok_s`/`total_latency_ms`/`throughput_tok_s`) is computed FROM
+        the (possibly derated) `tpot_ms` that `adjust_slo` returns, never from the raw pre-derate value.
+        This is the ONLY call site, and both `out["slo"]` (`sp = _perf_point(args.batch)` below) and every
+        `out["batch_sweep"][]` point (`pp = _perf_point(bb)` in the sweep loop) share it, so a runtime
+        derate is uniformly applied everywhere TPOT-derived numbers appear — identity for every other
+        engine (llamacpp/onnxruntime/generic), whose `adjust_slo` is the inherited no-op.
+        """
         if perf_name is None:
             return None
         try:
@@ -444,13 +623,13 @@ def main():
                 output_tokens=out_tok, system_name=hw, bits=perf_bits)
             tp = p.get("average_tpot") or 0.0
             tf = p.get("ttft") or 0.0
-            return {
-                "ttft_ms": tf,
-                "tpot_ms": tp,
-                "decode_tok_s": (1000.0 / tp) if tp else None,
-                "total_latency_ms": tf + out_tok * tp,
-                "throughput_tok_s": (1000.0 / tp * b) if tp else None,
-            }
+            point = eng.adjust_slo({"ttft_ms": tf, "tpot_ms": tp})
+            tf = point["ttft_ms"]
+            tp = point["tpot_ms"]
+            point["decode_tok_s"] = (1000.0 / tp) if tp else None
+            point["total_latency_ms"] = tf + out_tok * tp
+            point["throughput_tok_s"] = (1000.0 / tp * b) if tp else None
+            return point
         except Exception:
             return None
 
