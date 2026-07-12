@@ -7,6 +7,7 @@ import warnings
 from llm_memory_calculator.genz.collective_times import *
 from llm_memory_calculator.genz.utils.plot_rooflines import *
 from llm_memory_calculator.genz.Models import get_configs, create_full_prefill_model
+from math import ceil
 
 unit = Unit()
 
@@ -101,11 +102,26 @@ def prefill_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     if system.kernel_launch_latency_ms:
         prefill_latency += system.kernel_launch_latency_ms * count_repeat_aware_ops(model_df)
 
+    # Pipeline-parallel TTFT semantics: prefill_latency above is ONE microbatch (ub requests)
+    # filling the whole pipeline (all L layers + inter-stage comm). The remaining m-1 microbatches
+    # drain behind it, one slowest-stage time T_stage = prefill_latency * ceil(L/PP)/L apart.
+    # Latency reports the batch makespan (worst request's TTFT); TTFT_first / TTFT_mean expose the
+    # first and mean request TTFT. PP=1 (m=1) is byte-identical.
+    ttft_first = prefill_latency
+    ttft_mean = prefill_latency
+    if pipeline_parallel > 1:
+        m = ceil(batch_size / ub)
+        num_layers = get_configs(model).num_decoder_layers
+        t_stage = prefill_latency * ceil(num_layers / pipeline_parallel) / num_layers
+        prefill_latency = prefill_latency + (m - 1) * t_stage
+        ttft_mean = ttft_first + (m - 1) / 2 * t_stage
+
     ## 1000x because the latency is in milli seconds. thrpt is in Token/s
     # M1: steady-state pipelined throughput is gated by conserved per-token work (inter-stage comm is
     # already in prefill_latency), not the one-shot fill/drain latency. PP adds bubble LATENCY and
     # memory capacity but does not reduce steady-state throughput; the prior /(2 - 1/PP) under-counted it.
-    thrpt = 1000 * batch_size / prefill_latency  # Requests per second (steady-state, PP-independent)
+    # With PP>1, prefill_latency is the batch makespan (fill + m-1 stage-steps).
+    thrpt = 1000 * batch_size / prefill_latency  # Requests per second
     tokens_per_sec = thrpt * input_tokens  # Tokens per second
 
     attn_time = summary_table[f'Attn Latency ({unit.unit_time})'].values[0]
@@ -125,4 +141,6 @@ def prefill_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
                         is_offload=is_offloaded,
                         model_df = model_df,
                         summary_table = summary_table,
+                        TTFT_first=ttft_first,
+                        TTFT_mean=ttft_mean,
                 )

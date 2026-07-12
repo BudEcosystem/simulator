@@ -6,7 +6,7 @@ from llm_memory_calculator.genz.analyse_model import *
 import warnings
 from llm_memory_calculator.genz.collective_times import *
 from llm_memory_calculator.genz.utils.plot_rooflines import *
-from llm_memory_calculator.genz.Models import create_full_decode_model
+from llm_memory_calculator.genz.Models import create_full_decode_model, get_configs
 from math import ceil
 
 unit = Unit()
@@ -43,6 +43,12 @@ _X86_CPU_VENDORS = ('intel', 'amd')
 # 55.4 ms floor + 2*36 all-reduces * L = 60 ms  ->  L ~= 0.064 ms/all-reduce.
 _CPU_TP_ALLREDUCE_LAT_MS = 0.064
 
+# Decode microbatches a serving engine keeps in flight per pipeline under pipeline parallelism.
+# Production schedulers (vLLM-class) double-buffer rather than saturating all PP stages, which is
+# why measured single-node PP decode loses to TP (vLLM: PP2 13.09 vs TP2 51.63 tok/s output
+# throughput). Raise toward PP to model an ideal bubble-free pipeline scheduler.
+PP_DECODE_INFLIGHT_MICROBATCHES = 2
+
 
 def _cpu_decode_mem_efficiency(system, system_name):
     """Sustained decode memory efficiency for a CPU, or None if not a CPU.
@@ -64,7 +70,7 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
 
     if pipeline_parallel > 1:
         ub = max(batch_size // pipeline_parallel, 1)
-        num_micro_batches = batch_size // ub
+        num_micro_batches = ceil(batch_size / ub)
         if batch_size < pipeline_parallel:
             warnings.warn(f"Batch size is divided into micro batches for pipeline parallel, micro batch size:{ub}, consider increasing batch size")
     else:
@@ -88,7 +94,8 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
                                             output_gen_tokens = output_tokens ,
                                             tensor_parallel=tensor_parallel,
                                             pipeline_parallel=pipeline_parallel,
-                                            expert_parallel=expert_parallel)
+                                            expert_parallel=expert_parallel,
+                                            num_decode_tokens=ub*Bb)
 
     # Get model dataframe, which will include detailed metrics if model_characterstics is True
     model_df = get_model_df(model_decode, system=system, batch_size= ub*Bb, intermediate_on_chip=True , beam_merge= (Bb > 1), beam_size= Bb, model_characterstics=model_characterstics)
@@ -146,7 +153,8 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
                                                       output_gen_tokens=1,
                                                       tensor_parallel=tensor_parallel,
                                                       pipeline_parallel=pipeline_parallel,
-                                                      expert_parallel=expert_parallel)
+                                                      expert_parallel=expert_parallel,
+                                                      num_decode_tokens=ub*Bb)
         
         initial_df = get_model_df(model_decode_initial, system, unit, ub*Bb,
                                 intermediate_on_chip=True, beam_merge=(Bb > 1), beam_size=Bb, model_characterstics=model_characterstics)
@@ -164,7 +172,8 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
                                                     output_gen_tokens=1,
                                                     tensor_parallel=tensor_parallel,
                                                     pipeline_parallel=pipeline_parallel,
-                                                    expert_parallel=expert_parallel)
+                                                    expert_parallel=expert_parallel,
+                                                    num_decode_tokens=ub*Bb)
 
         final_df = get_model_df(model_decode_final, system, unit, ub*Bb,
                               intermediate_on_chip=True, beam_merge=(Bb > 1), beam_size=Bb, model_characterstics=model_characterstics)
@@ -184,7 +193,8 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
                                                 output_gen_tokens=output_tokens,
                                                 tensor_parallel=tensor_parallel,
                                                 pipeline_parallel=pipeline_parallel,
-                                                expert_parallel=expert_parallel)
+                                                expert_parallel=expert_parallel,
+                                                num_decode_tokens=ub*Bb)
 
         model_df = get_model_df(model_decode, system, unit, ub*Bb,  
                               intermediate_on_chip=True, beam_merge=(Bb > 1), beam_size=Bb, model_characterstics=model_characterstics)
@@ -234,13 +244,30 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
             _n_layers = max(_reps) if _reps else 1
             decode_latency += _CPU_TP_ALLREDUCE_LAT_MS * 2 * _n_layers * (tensor_parallel - 1)
 
+    # Pipeline-parallel decode semantics: decode_latency above is one microbatch (ub*Bb tokens)
+    # traversing ALL L layers (inter-stage comm included), so the slowest stage holds a microbatch
+    # for t_stage_max = decode_latency * ceil(L/PP)/L. A microbatch's next token needs a full
+    # P-stage traversal (P * t_stage_max); real engines keep only a couple of decode microbatches
+    # in flight per pipeline (vLLM-class schedulers), so with V in flight the per-user ITL is
+    # m * P * t_stage_max / V, not the zero-bubble ideal m * t_stage_max. V=2 reproduces the
+    # measured single-node ordering (vLLM: PP2 13.09 vs TP2 51.63 tok/s — PP must not beat TP on
+    # one node); set V=PP to study an ideal bubble-free scheduler. PP=1 path is unchanged.
+    if pipeline_parallel > 1:
+        m = num_micro_batches
+        num_layers = get_configs(model).num_decoder_layers
+        t_stage_max = decode_latency * ceil(num_layers / pipeline_parallel) / num_layers
+        in_flight = min(PP_DECODE_INFLIGHT_MICROBATCHES, m, pipeline_parallel)
+        decode_latency = max(decode_latency, m * pipeline_parallel * t_stage_max / in_flight)
+
     ## 1000x because the latency is in milli seconds. thrpt is in Token/s
     # M1: steady-state pipelined throughput is gated by the per-token work, which is CONSERVED across
     # pipeline stages (inter-stage comm is already in decode_latency). Pipeline parallelism raises
     # memory capacity and adds fill/drain BUBBLE LATENCY, but does not reduce steady-state token
     # throughput. The prior formula divided throughput by the one-shot fill/drain latency
     # (~(2 - 1/PP)×), under-counting PP throughput ~1.5-2×. Fill/drain belongs to first-token latency.
-    thrpt = 1000 * batch_size / decode_latency  # Requests per second (steady-state, PP-independent)
+    # With PP>1, decode_latency is now the saturated-pipeline per-user ITL (m * t_stage_max), so
+    # batch/latency = ub / t_stage_max is the correct per-stage-step steady-state token rate.
+    thrpt = 1000 * batch_size / decode_latency  # Requests per second (steady-state)
     # For decode, each request generates one token per iteration
     tokens_per_sec = thrpt  # Since decode generates 1 token per request per iteration
 

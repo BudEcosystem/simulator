@@ -142,6 +142,23 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         ffn_implementation = "deepseek"
 
     # ============================================================
+    # Gated MLP detection (num_ffi)
+    # ============================================================
+    # Gated MLPs (SwiGLU/GeGLU) have 3 matrices per FFN (gate, up, down) -> num_ffi=2
+    # (see Model_sets/mistral.py); plain MLPs have 2 (up, down) -> num_ffi=1.
+    hidden_act = str(hf_config.get('hidden_act', hf_config.get('activation_function', '')) or '').lower()
+    _GATED_MODEL_TYPES = {
+        'llama', 'mistral', 'mixtral', 'qwen2', 'qwen2_moe', 'qwen3', 'qwen3_moe',
+        'gemma', 'gemma2', 'gemma3', 'gpt_oss', 'deepseek_v2', 'deepseek_v3', 'phi3',
+    }
+    is_gated_mlp = (
+        hidden_act in ('silu', 'swiglu', 'geglu', 'gelu_glu', 'gated_gelu')
+        or 'glu' in hidden_act
+        or model_type in _GATED_MODEL_TYPES
+    )
+    num_ffi = 2 if is_gated_mlp else 1
+
+    # ============================================================
     # Per-layer heterogeneous configs (DeciLM / Nemotron-51B)
     # ============================================================
     layer_configs = None
@@ -180,6 +197,30 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
                 ffn_mult=layer_ffn_mult,
             ))
 
+    # ============================================================
+    # Per-layer attention types (e.g. gpt-oss, Gemma3-style HF configs)
+    # ============================================================
+    # HF configs may carry a `layer_types` list like
+    # ['sliding_attention', 'full_attention', ...]: sliding layers attend to at
+    # most `sliding_window` KV tokens (MHA-local), full layers to the whole
+    # context (MHA-global). Mirror the block_configs schema above.
+    # NOTE: create_full_chunked_model has no layer_configs/local-attention
+    # branch yet, so chunked modeling still charges full attention everywhere.
+    layer_types = hf_config.get('layer_types')
+    if layer_configs is None and isinstance(layer_types, list) and len(layer_types) == num_layers:
+        sliding_window = hf_config.get('sliding_window')
+        has_sliding = sliding_window and any('sliding' in str(lt).lower() for lt in layer_types)
+        if has_sliding:
+            from llm_memory_calculator.genz.Models.default_models import LayerConfig
+            ffn_type_val = "MoE" if num_experts > 1 else "Dense"
+            layer_configs = [
+                LayerConfig(
+                    attention_type="MHA-local" if 'sliding' in str(lt).lower() else "MHA-global",
+                    ffn_type=ffn_type_val,
+                )
+                for lt in layer_types
+            ]
+
     # Create ModelConfig with all extracted attributes
     return ModelConfig(
         model=model_name,
@@ -187,6 +228,7 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         max_model_len=max_seq_len,
         hidden_size=hidden_size,
         intermediate_size=intermediate_size,
+        num_ffi=num_ffi,
         num_decoder_layers=num_layers,
         num_attention_heads=num_heads,
         head_dim=head_dim,
@@ -496,6 +538,7 @@ def create_full_decode_model(
     input_sequence_length: int = 1024,
     output_gen_tokens: int = 0,
     data_path: str=DATA_PATH,
+    num_decode_tokens: int = 1,
     **args) -> str:
     """
     The function `create_full_decode_model` constructs a decode model with specified configurations and
@@ -515,6 +558,9 @@ def create_full_decode_model(
     data_path: The `data_path` parameter in the `create_full_decode_model` function is a string
     that represents the path where the data will be saved or loaded from. It is a default parameter with
     a value of `DATA_PATH`, which is likely a constant or variable defined elsewhere in your codebase
+
+    num_decode_tokens: Total tokens decoded together in one step (batch x beams). Used by MoE FFN
+    layers to size the union of activated experts (routing collisions); defaults to 1
 
     tensor_parallel: The `tensor_parallel` to define the degree of tensor parallelism, defaults to 1
     expert_parallel: The `expert_parallel` to define the degree of expert parallelism, defaults to 1
@@ -559,11 +605,11 @@ def create_full_decode_model(
         elif ffn_type == "linear":
             return linear_ffn_decode(cfg, parallelism_config)
         else:
-            ops = ffn_decode(cfg, parallelism_config)
+            ops = ffn_decode(cfg, parallelism_config, num_tokens=num_decode_tokens)
             return inject_lora_ops(ops, cfg, parallelism_config, 1)
 
     def add_layers(layers, num_layers):
-        ffn_ops = ffn_decode(model_config, parallelism_config)
+        ffn_ops = ffn_decode(model_config, parallelism_config, num_tokens=num_decode_tokens)
         ffn_ops = inject_lora_ops(ffn_ops, model_config, parallelism_config, 1)
 
         if model_config.layer_configs is not None:
@@ -662,8 +708,11 @@ def create_full_chunked_model(name:str ='GPT-2',
     chunk_size = prefill_length + decode_length
 
     def add_layers(layers, num_layers):
+        # TODO: no layer_configs / local-attention branch here — models with per-layer
+        # sliding-window attention (e.g. gpt-oss layer_types) are charged full attention
+        # on every layer in chunked mode.
         layers += repeat_layers(num_layers)
-        
+
         # Get attention operations and inject LoRA if configured
         attn_ops = mha_flash_attention_chunked(  model_config=model_config,
                                                 parallelism_config=parallelism_config,
