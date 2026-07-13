@@ -30,13 +30,20 @@ def calculate_activated_experts(
     """
     if num_experts <= 1:
         return 1
+    # No tokens -> no experts activated (empty batch / degenerate call).
+    if num_tokens <= 0:
+        return 0
+    # top_k cannot exceed the number of experts; clamp so the (1 - K/E) base
+    # below stays in [0, 1) even under misconfiguration (a negative base raised
+    # to a float power yields a complex number and crashes downstream).
+    k = min(top_k, num_experts)
     # For a single token, exactly top_k experts are activated
     if num_tokens <= 1:
-        return min(top_k, num_experts)
+        return k
     # For multiple tokens, expected distinct experts under uniform routing:
     # each token misses a given expert w.p. (1 - K/E), so after n independent
     # tokens an expert is activated w.p. 1 - (1 - K/E)^n.
-    expected_distinct = num_experts * (1 - (1 - top_k / num_experts) ** (num_tokens * capacity_factor))
+    expected_distinct = num_experts * (1 - (1 - k / num_experts) ** (num_tokens * capacity_factor))
     return min(num_experts, ceil(expected_distinct))
 
 def ffn_prefill(model_config:ModelConfig, parallelism_config:ParallelismConfig, input_sequence_length:int):

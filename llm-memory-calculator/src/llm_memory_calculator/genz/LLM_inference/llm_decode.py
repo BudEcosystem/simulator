@@ -254,7 +254,7 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     # one node); set V=PP to study an ideal bubble-free scheduler. PP=1 path is unchanged.
     if pipeline_parallel > 1:
         m = num_micro_batches
-        num_layers = get_configs(model).num_decoder_layers
+        num_layers = max(1, get_configs(model).num_decoder_layers)
         t_stage_max = decode_latency * ceil(num_layers / pipeline_parallel) / num_layers
         in_flight = min(PP_DECODE_INFLIGHT_MICROBATCHES, m, pipeline_parallel)
         decode_latency = max(decode_latency, m * pipeline_parallel * t_stage_max / in_flight)

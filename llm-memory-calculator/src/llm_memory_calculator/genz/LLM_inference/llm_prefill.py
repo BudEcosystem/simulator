@@ -111,7 +111,7 @@ def prefill_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     ttft_mean = prefill_latency
     if pipeline_parallel > 1:
         m = ceil(batch_size / ub)
-        num_layers = get_configs(model).num_decoder_layers
+        num_layers = max(1, get_configs(model).num_decoder_layers)
         t_stage = prefill_latency * ceil(num_layers / pipeline_parallel) / num_layers
         prefill_latency = prefill_latency + (m - 1) * t_stage
         ttft_mean = ttft_first + (m - 1) / 2 * t_stage

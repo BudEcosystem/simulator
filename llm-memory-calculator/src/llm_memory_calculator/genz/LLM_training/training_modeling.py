@@ -4168,6 +4168,7 @@ def _calculate_training_memory(
         num_samples_per_prompt=num_samples_per_prompt,
         expert_top_k=expert_top_k,
         context_parallel=context_parallel,
+        expert_parallel=expert_parallel,
     )
 
     reference_memory_gb = 0.0
@@ -4273,6 +4274,7 @@ def _calculate_activation_memory(
     num_samples_per_prompt: int = 1,
     expert_top_k: int = 1,
     context_parallel: int = 1,
+    expert_parallel: int = 1,
 ) -> float:
     """
     Calculate activation memory in GB (FlashAttention + layer checkpointing model).
@@ -4310,6 +4312,11 @@ def _calculate_activation_memory(
             intermediates are materialized once per activated expert
         context_parallel: Context (sequence) parallel degree; shards all
             sequence-dimension activations (e.g. ring attention at 128K)
+        expert_parallel: Expert parallel degree; the MoE FFN intermediate
+            activations are distributed across the EP group (each rank holds
+            E/EP experts and, with balanced routing, materializes ~1/EP of the
+            token-expert intermediates). Attention/residual activations are NOT
+            expert-parallel, so only the FFN term is divided by EP.
 
     Returns:
         Activation memory in GB
@@ -4318,13 +4325,16 @@ def _calculate_activation_memory(
     # the effective batch size increases accordingly
     effective_batch_size = batch_size * num_samples_per_prompt
 
-    # Live activations of a single layer (FlashAttention: no S^2 score matrix)
-    per_layer_live_bytes = (
-        (4 * effective_batch_size * seq_length * hidden_size
-         + 2 * effective_batch_size * seq_length * intermediate_size * max(1, expert_top_k))
+    # Live activations of a single layer (FlashAttention: no S^2 score matrix).
+    # Attention/output projections shard with TP; the gated-FFN intermediates
+    # additionally shard across the EP group (TP*EP total) for MoE models.
+    attn_live_bytes = 4 * effective_batch_size * seq_length * hidden_size * precision_bytes
+    ffn_live_bytes = (
+        2 * effective_batch_size * seq_length * intermediate_size * max(1, expert_top_k)
         * precision_bytes
-        + 4 * effective_batch_size * num_heads * seq_length  # fp32 softmax logsumexp stats
-    )
+    ) / max(1, expert_parallel)
+    softmax_stats_bytes = 4 * effective_batch_size * num_heads * seq_length  # fp32 logsumexp
+    per_layer_live_bytes = attn_live_bytes + ffn_live_bytes + softmax_stats_bytes
 
     # Layer-input checkpoints (one B*S*H tensor per layer boundary)
     boundary_bytes = effective_batch_size * seq_length * hidden_size * precision_bytes * num_layers

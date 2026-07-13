@@ -64,6 +64,14 @@ class TestMoEDecodeTraffic:
         assert 98 <= calculate_activated_experts(128, 4, num_tokens=50) <= 106
         assert calculate_activated_experts(128, 4, num_tokens=500) == 128
 
+    def test_activated_experts_edge_cases(self):
+        """Guards from PR review: no tokens -> 0; top_k>E must not crash."""
+        from llm_memory_calculator.genz.Models.ffn import calculate_activated_experts
+        assert calculate_activated_experts(128, 4, num_tokens=0) == 0
+        # top_k > num_experts is a misconfig; must clamp, not raise/return complex
+        val = calculate_activated_experts(4, 8, num_tokens=50)
+        assert isinstance(val, int) and 0 < val <= 4
+
     def test_ep_beneficial_for_moe_decode(self, gpt_oss_available):
         """Expert weights dominate batched MoE decode -> sharding them must win."""
         tp1 = _decode()['Throughput_tokens_per_sec']
@@ -134,6 +142,14 @@ class TestTrainingRealism:
         r = self._train(seq_length=131072)
         assert 20 <= r.activation_memory_gb <= 80, f'{r.activation_memory_gb:.1f} GB'
         assert r.memory_per_gpu_gb <= 300, '128K SFT must fit a 288 GB B300 node'
+
+    def test_moe_ffn_activation_sharded_by_ep(self, gpt_oss_available):
+        """PR review (high): MoE FFN intermediate activations shard across EP,
+        so activation memory must not be identical for EP=1 vs EP>1."""
+        a1 = self._train(seq_length=131072).activation_memory_gb
+        a8 = self._train(seq_length=131072, num_gpus=16, tensor_parallel=1,
+                         data_parallel=2, expert_parallel=8).activation_memory_gb
+        assert a8 < a1, f'EP did not shard FFN activations: EP1={a1:.1f} EP8={a8:.1f} GB'
 
     def test_mfu_in_measured_band(self, gpt_oss_available):
         """MoE training MFU 20-40% measured (DeepSeek-V3); MFU == timeline identity."""
