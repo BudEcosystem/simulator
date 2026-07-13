@@ -379,6 +379,9 @@ class BatchScheduler:
                 batch_size=bs,
                 input_tokens=avg_context,
                 output_tokens=0,
+                # Serving has no beam search: without this, decode_moddeling's Bb=4
+                # default silently models a 4x larger decode batch (ub*Bb tokens).
+                Bb=1,
                 system_name=self._hardware,
                 bits=self._precision,
                 tensor_parallel=self._tensor_parallel,

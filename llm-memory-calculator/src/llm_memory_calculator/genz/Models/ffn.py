@@ -13,8 +13,10 @@ def calculate_activated_experts(
     """Calculate the number of unique experts activated across all tokens.
 
     For a single token (decode), exactly top_k experts are activated.
-    For multiple tokens (prefill), up to min(top_k * num_tokens, num_experts)
-    unique experts may be activated, scaled by a capacity factor.
+    For multiple tokens, tokens' expert choices collide: the expected number
+    of DISTINCT experts touched follows the union (coupon-collector) formula
+        E * (1 - (1 - K/E)^n)
+    which saturates at E instead of growing linearly with n.
 
     Args:
         num_experts: Total number of experts (E).
@@ -28,13 +30,21 @@ def calculate_activated_experts(
     """
     if num_experts <= 1:
         return 1
+    # No tokens -> no experts activated (empty batch / degenerate call).
+    if num_tokens <= 0:
+        return 0
+    # top_k cannot exceed the number of experts; clamp so the (1 - K/E) base
+    # below stays in [0, 1) even under misconfiguration (a negative base raised
+    # to a float power yields a complex number and crashes downstream).
+    k = min(top_k, num_experts)
     # For a single token, exactly top_k experts are activated
     if num_tokens <= 1:
-        return min(top_k, num_experts)
-    # For multiple tokens, estimate unique experts activated
-    # With perfect routing, K * num_tokens slots distributed across E experts
-    raw_activated = int(top_k * num_tokens * capacity_factor)
-    return min(raw_activated, num_experts)
+        return k
+    # For multiple tokens, expected distinct experts under uniform routing:
+    # each token misses a given expert w.p. (1 - K/E), so after n independent
+    # tokens an expert is activated w.p. 1 - (1 - K/E)^n.
+    expected_distinct = num_experts * (1 - (1 - k / num_experts) ** (num_tokens * capacity_factor))
+    return min(num_experts, ceil(expected_distinct))
 
 def ffn_prefill(model_config:ModelConfig, parallelism_config:ParallelismConfig, input_sequence_length:int):
 
@@ -90,7 +100,7 @@ def ffn_prefill(model_config:ModelConfig, parallelism_config:ParallelismConfig, 
 
     return layers + sync
 
-def ffn_decode(model_config:ModelConfig, parallelism_config:ParallelismConfig):
+def ffn_decode(model_config:ModelConfig, parallelism_config:ParallelismConfig, num_tokens:int=1):
     D = model_config.hidden_size
     Df = model_config.intermediate_size
     fi = model_config.num_ffi
@@ -124,7 +134,10 @@ def ffn_decode(model_config:ModelConfig, parallelism_config:ParallelismConfig):
             dispatch_all2all = [["Dispatch A2A",1, K*D, 1, 1, ep, CollectiveType.All2All, OpType.Sync]]
             layers += dispatch_all2all
 
-        A = calculate_activated_experts(E, K, num_tokens=1)
+        # num_tokens = total decode tokens in the step (batch x beams): with many tokens the
+        # union of their top-k choices touches (and streams from memory) far more experts
+        # than a single token's K.
+        A = calculate_activated_experts(E, K, num_tokens=num_tokens)
         experts_activated_per_chip = max(1,ceil(A/ep))
         ## Understanding load imbalance among experts
         # Lets' say we have 4 experts and 2 experts per token
@@ -142,6 +155,11 @@ def ffn_decode(model_config:ModelConfig, parallelism_config:ParallelismConfig):
         #   Worst case: min(5, 16//4) = 4 expert per chip
 
         ## Activated experts are distributed among EP
+        # NOTE: with M covering all A activated experts and N=1 (batch inserted later by
+        # get_model_df), FFN FLOPs are overcounted (B*A*Df*D instead of B*K*Df*D: each token
+        # only runs through its K experts). The weight BYTES — (M x D) streamed once per step,
+        # the binding term for memory-bound decode — are correct. A fractional per-expert load
+        # N=K/A would fix FLOPs too, but operator dims are int-truncated (operator_base.py).
         ffup =           [["up+gate",experts_activated_per_chip*Df*fi, 1, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]    ## Df is already divided
         ffdown =           [["down",D, 1, experts_activated_per_chip*Df, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
 

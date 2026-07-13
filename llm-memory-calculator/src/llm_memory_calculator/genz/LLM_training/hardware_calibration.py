@@ -15,6 +15,7 @@ hardware-specific characteristics that are not captured by theoretical models.
 from dataclasses import dataclass
 from typing import Dict, Any, Optional, Tuple
 import math
+import warnings
 
 
 @dataclass
@@ -236,6 +237,58 @@ CALIBRATED_HARDWARE_EFFICIENCY: Dict[str, HardwareEfficiencyProfile] = {
         max_efficiency=0.72,
         large_scale_efficiency_boost=0.06,
         description="NVIDIA GB200 Superchip (projected), ~20 PFLOPS FP8"
+    ),
+
+    # B200 (standalone Blackwell GPU, x86 hosts)
+    # Same Blackwell silicon/NVLink 5.0 as GB200 without Grace coherent link
+    'B200_GPU': HardwareEfficiencyProfile(
+        base_efficiency=0.78,
+        peak_mfu_observed=0.65,
+        optimal_batch_threshold=16384,
+        nvlink_efficiency=0.88,
+        ib_efficiency=0.85,
+        fp8_speedup=2.2,
+        nvls_available=True,
+        hbm_efficiency=0.92,
+        # Hardware-specific kernel overhead (Blackwell)
+        kernel_launch_us=2.5,
+        sync_overhead_us=6.0,
+        # Communication overlap (NVLink 5.0 with enhanced NVLink Switch)
+        tp_overlap_ratio=0.75,
+        dp_overlap_ratio=0.90,
+        ep_overlap_ratio=0.70,
+        pp_overlap_ratio=0.05,
+        # Efficiency bounds (GB200-equivalent)
+        min_efficiency=0.22,
+        max_efficiency=0.72,
+        large_scale_efficiency_boost=0.06,
+        description="NVIDIA B200 180GB HBM3e (Blackwell), NVLink 5.0"
+    ),
+
+    # B300 (Blackwell Ultra)
+    # 288 GB HBM3e, 8 TB/s, NVLink 5.0 — cloned from GB200 calibration
+    'B300': HardwareEfficiencyProfile(
+        base_efficiency=0.78,
+        peak_mfu_observed=0.65,
+        optimal_batch_threshold=16384,
+        nvlink_efficiency=0.88,
+        ib_efficiency=0.85,
+        fp8_speedup=2.2,
+        nvls_available=True,
+        hbm_efficiency=0.92,
+        # Hardware-specific kernel overhead (Blackwell)
+        kernel_launch_us=2.5,
+        sync_overhead_us=6.0,
+        # Communication overlap (NVLink 5.0 with enhanced NVLink Switch)
+        tp_overlap_ratio=0.75,
+        dp_overlap_ratio=0.90,
+        ep_overlap_ratio=0.70,
+        pp_overlap_ratio=0.05,
+        # Efficiency bounds (GB200-equivalent)
+        min_efficiency=0.22,
+        max_efficiency=0.72,
+        large_scale_efficiency_boost=0.06,
+        description="NVIDIA B300 288GB HBM3e (Blackwell Ultra), NVLink 5.0"
     ),
 
     # ========================================
@@ -567,7 +620,7 @@ def _get_hardware_table_key(hardware_name: str) -> str:
         return 'TPU'
     elif 'mi300' in hw_lower or 'mi325' in hw_lower or 'amd' in hw_lower:
         return 'MI300X'
-    elif 'gb200' in hw_lower or 'b200' in hw_lower or 'blackwell' in hw_lower:
+    elif 'gb200' in hw_lower or 'b200' in hw_lower or 'b300' in hw_lower or 'blackwell' in hw_lower:
         return 'GB200'
     else:
         return 'A100_NVLink'  # Default
@@ -643,7 +696,30 @@ def get_hardware_efficiency_profile(hardware_name: str) -> HardwareEfficiencyPro
         if key.lower() in hardware_lower or hardware_lower in key.lower():
             return profile
 
+    # Fall back by architecture: look up the hardware registry so new SKUs
+    # (e.g. future Blackwell parts) map to their architecture's profile
+    # instead of silently degrading to the A100 profile.
+    try:
+        from llm_memory_calculator.hardware import get_hardware_config
+        hw_config = get_hardware_config(hardware_name)
+        if isinstance(hw_config, dict):
+            architecture = str(hw_config.get('architecture', '')).upper()
+            if architecture == 'BLACKWELL':
+                warnings.warn(
+                    f"No calibrated efficiency profile for '{hardware_name}'; "
+                    f"falling back to the GB200/B300 Blackwell profile based on "
+                    f"its 'architecture' field."
+                )
+                return CALIBRATED_HARDWARE_EFFICIENCY['B300']
+    except Exception:
+        pass
+
     # Default to A100 profile if unknown
+    warnings.warn(
+        f"No calibrated efficiency profile for '{hardware_name}'; "
+        f"falling back to the A100_80GB_GPU profile. Overlap ratios and "
+        f"efficiency bounds may not reflect this hardware."
+    )
     return CALIBRATED_HARDWARE_EFFICIENCY['A100_80GB_GPU']
 
 

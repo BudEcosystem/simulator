@@ -54,51 +54,24 @@ from ..LLM_inference.llm_decode import decode_moddeling
 
 def soft_bound(value: float, lower: float, upper: float, steepness: float = 10.0) -> float:
     """
-    Apply smooth sigmoid-based bounds to preserve prediction variance.
+    Clamp ``value`` into ``[lower, upper]``.
 
-    Phase 2: Critical fix - hard clamps like min(0.95, x) eliminate variance
-    when multiple configurations converge to the same clamped value.
-    Soft bounds use a sigmoid curve that approaches but never reaches limits.
-
-    Formula:
-        midpoint = (lower + upper) / 2
-        range = upper - lower
-        normalized = (value - midpoint) / (range / 2)
-        sigmoid = 1 / (1 + exp(-steepness * normalized))
-        result = lower + (upper - lower) * sigmoid
-
-    Properties:
-        - value << midpoint → result ≈ lower
-        - value >> midpoint → result ≈ upper
-        - value = midpoint → result = midpoint
-        - Always differentiable, no hard discontinuities
+    Historical note: this used to be a full-range sigmoid remap, which warped
+    *interior* values (e.g. soft_bound(0.75, 0.35, 0.90) returned 0.894) —
+    a value already inside the bounds must pass through unchanged. It is now a
+    plain clamp; ``steepness`` is retained for signature compatibility and
+    ignored.
 
     Args:
         value: Input value to bound
-        lower: Lower bound (approached but not exceeded)
-        upper: Upper bound (approached but not exceeded)
-        steepness: Controls sharpness of transition (10.0 is moderate)
+        lower: Lower bound
+        upper: Upper bound
+        steepness: Ignored (kept for backward-compatible call sites)
 
     Returns:
-        Bounded value with smooth transitions
+        value clamped to [lower, upper]
     """
-    midpoint = (lower + upper) / 2.0
-    range_val = (upper - lower) / 2.0
-
-    if range_val <= 0:
-        return value
-
-    normalized = (value - midpoint) / range_val
-
-    # Clamp normalized to avoid overflow in exp
-    normalized = max(-20.0, min(20.0, normalized))
-
-    try:
-        sigmoid = 1.0 / (1.0 + math.exp(-steepness * normalized))
-    except OverflowError:
-        sigmoid = 1.0 if normalized > 0 else 0.0
-
-    return lower + (upper - lower) * sigmoid
+    return min(max(value, lower), upper)
 
 
 def _detect_attention_type_from_config(model_config) -> str:
@@ -2534,7 +2507,13 @@ def _calculate_step_time_with_overlap(
         # Use the better of existing or NCCL pipelined overlap
         dp_overlap_ratio = max(dp_overlap_ratio, dp_nccl_overlap)
 
-    dp_exposed = dp_comm_time_ms * (1 - dp_overlap_ratio)
+    # Window-limited overlap: DP communication can only hide behind compute that
+    # actually exists. The overlap ratio is an efficiency bound, but the hidden
+    # amount is additionally capped by the backward compute window (plus forward
+    # for ZeRO-3, whose AllGathers also overlap the forward pass).
+    dp_overlap_window_ms = backward_time_ms + (forward_time_ms if zero_stage >= 3 else 0.0)
+    hideable_dp_comm = min(dp_comm_time_ms * dp_overlap_ratio, dp_overlap_window_ms)
+    dp_exposed = dp_comm_time_ms - hideable_dp_comm
 
     # EP communication (MoE) overlaps with expert computation
     # Use hardware-specific EP overlap ratio
@@ -2608,6 +2587,10 @@ class TrainingModelingOutput:
 
     # Optional memory (with defaults)
     reference_model_memory_gb: float = 0.0
+
+    # Framework overhead (allocator fragmentation + CUDA context/NCCL/cuDNN)
+    # Included so that memory components sum to memory_per_gpu_gb.
+    framework_overhead_gb: float = 0.0
 
     # RLHF Phase Breakdown (for PPO, GRPO, etc.)
     # These track explicit time for generation, scoring, and training phases
@@ -2689,6 +2672,7 @@ class TrainingModelingOutput:
                 'reference_model_gb': self.reference_model_memory_gb,
                 'reward_model_gb': self.reward_model_memory_gb,
                 'critic_model_gb': self.critic_model_memory_gb,
+                'framework_overhead_gb': self.framework_overhead_gb,
             },
             'utilization': {
                 'mfu': self.model_flops_utilization,
@@ -2725,6 +2709,7 @@ def training_modeling(
     data_parallel: int = 1,
     pipeline_parallel: int = 1,
     expert_parallel: int = 1,
+    context_parallel: int = 1,
     method: str = 'full',
     lora_rank: int = 16,
     optimizer: str = 'adamw',
@@ -2759,6 +2744,9 @@ def training_modeling(
         data_parallel: Data parallelism degree
         pipeline_parallel: Pipeline parallelism degree
         expert_parallel: Expert parallelism degree
+        context_parallel: Context (sequence) parallelism degree. Currently only
+            affects activation-memory estimates (long-context training, e.g.
+            128K sequences with ring attention); timing does not model CP yet.
         method: Training method (full, lora, qlora, dora, pissa, freeze)
         lora_rank: LoRA rank (if using LoRA-based methods)
         optimizer: Optimizer type (adamw, adam_8bit, lion, lamb, lars, sophia, galore, etc.)
@@ -3119,12 +3107,24 @@ def training_modeling(
     # This is for the FULL model gradients, not micro-batched
     dp_comm_time_ms = 0.0
     if data_parallel > 1:
+        # Gradient reductions happen in the training compute dtype (bf16/fp16
+        # gradients with fp32 accumulation in the reduction), matching the
+        # bf16 weight all-gathers used elsewhere. Only true fp32 training
+        # communicates fp32 gradients.
+        bits_lower = bits.lower()
+        if bits_lower in ('fp32', 'float32', 'f32'):
+            grad_comm_bytes = 4
+        elif 'fp8' in bits_lower and not bits_lower.startswith('mixed'):
+            grad_comm_bytes = 1
+        else:
+            # bf16 / fp16 / mixed_* (mixed_fp8 reduces gradients in bf16)
+            grad_comm_bytes = 2
         dp_comm_time_ms = calculate_training_communication_time(
             trainable_params,
             data_parallel,
             system,
             zero_stage,
-            precision_bytes=4,  # FP32 gradients
+            precision_bytes=grad_comm_bytes,
         )
 
     # Pipeline parallel communication
@@ -3438,7 +3438,17 @@ def training_modeling(
 
     # Detect hardware type
     is_tpu = 'TPU' in system_name.upper()
-    is_gb200 = 'GB200' in system_name.upper() or 'B200' in system_name.upper()
+    is_gb200 = any(x in system_name.upper() for x in ('GB200', 'B200', 'B300', 'BLACKWELL'))
+    if not is_gb200:
+        # Substring match misses future Blackwell SKUs; fall back to the
+        # hardware registry's architecture field.
+        try:
+            from llm_memory_calculator.hardware import get_hardware_config as _get_hw_config
+            _hw_cfg = _get_hw_config(system_name)
+            if isinstance(_hw_cfg, dict) and str(_hw_cfg.get('architecture', '')).upper() == 'BLACKWELL':
+                is_gb200 = True
+        except Exception:
+            pass
 
     if is_gb200:
         # GB200/B200 Blackwell architecture - projected to achieve very high efficiency
@@ -3568,6 +3578,8 @@ def training_modeling(
         training_stage,
         pipeline_parallel=pipeline_parallel,
         expert_parallel=expert_parallel,
+        expert_top_k=expert_top_k if num_experts > 1 else 1,
+        context_parallel=context_parallel,
     )
 
     # ========================================
@@ -3666,180 +3678,14 @@ def training_modeling(
     # as MFU = FLOPs / (time * peak_flops), and longer time → lower MFU naturally.
     # The finetuning_mfu_penalty is no longer needed here to avoid double-counting.
 
-    # Phase 5: Architecture-specific MFU adjustment
-    # Apply direct MFU penalty for models with less efficient architectures
-    # This is needed because efficiency_scale dilution prevents training_efficiency
-    # from sufficiently impacting MFU for large, well-optimized systems.
-    #
-    # Detection uses hidden_act (from model_config) and num_kv_heads for reliability
-    model_name_lower = model_name.lower() if model_name else ''
-    hidden_act_lower = hidden_act.lower() if hidden_act else ''
-
-    # Detect dense FFN (GELU/ReLU vs SwiGLU)
-    is_dense_ffn = False
-    if hidden_act_lower:
-        if any(x in hidden_act_lower for x in ['gelu', 'relu', 'tanh']):
-            is_dense_ffn = True
-        elif any(x in hidden_act_lower for x in ['silu', 'swish', 'glu']):
-            is_dense_ffn = False
-    elif any(x in model_name_lower for x in ['bloom', 'opt', 'gpt-3', 'gpt3', 'facebook/opt']):
-        is_dense_ffn = True
-
-    # Detect MHA (all heads are KV heads)
-    # Phase 6 Fix: Added Qwen 1.x detection (Qwen 1.x and 1.5 use MHA, Qwen 2.x uses GQA)
-    is_mha = False
-    if num_kv_heads is not None and num_heads is not None:
-        is_mha = (num_kv_heads == num_heads)
-    elif any(x in model_name_lower for x in ['bloom', 'opt', 'gpt-3', 'gpt3', 'facebook/opt']):
-        is_mha = True
-    # Qwen 1.x and 1.5 use MHA (full multi-head attention)
-    elif ('qwen' in model_name_lower and
-          'qwen2' not in model_name_lower and
-          'qwen2.5' not in model_name_lower and
-          'qwen/qwen2' not in model_name_lower):
-        is_mha = True
-
-    # Detect MLA attention using HuggingFace config attributes
-    # Config-based detection is more robust than fragile model name string matching
-    # MLA provides ~8-12% efficiency improvement due to compressed KV gradients
-    attention_type = _detect_attention_type_from_config(model_config)
-    is_mla = (attention_type == 'mla')
-
-    # Apply architecture penalties directly to MFU
-    # Research: OPT/BLOOM achieve ~35-40% MFU vs LLaMA's ~48-52% MFU
-    # DEBUG: Print architecture detection
-    if debug:
-        logger.debug("MFU Section: model_name_lower=%s", model_name_lower)
-        logger.debug("MFU Section: is_dense_ffn=%s, is_mha=%s, is_mla=%s", is_dense_ffn, is_mha, is_mla)
-        logger.debug("MFU Section: mfu before penalties=%.4f", mfu)
-
-    # Phase 6 Fix: MLA models use a different attention mechanism (latent compression)
-    # MLA is NOT the same as MHA even if num_kv_heads == num_attention_heads
-    # Skip MHA penalty for MLA models - they get their own penalty below
-    apply_mha_penalty = is_mha and not is_mla
-
-    if is_dense_ffn and apply_mha_penalty:
-        # Both penalties: ~20% lower MFU (combined effect)
-        # OPT/BLOOM: 40% vs LLaMA: 50% = 0.80x factor
-        arch_mfu_factor = 0.80
-        mfu *= arch_mfu_factor
-        if debug:
-            logger.debug("Applied dense_ffn+mha penalty: %s, mfu=%.4f", arch_mfu_factor, mfu)
-    elif is_dense_ffn:
-        # Dense FFN only: ~12% lower MFU
-        arch_mfu_factor = 0.88
-        mfu *= arch_mfu_factor
-        if debug:
-            logger.debug("Applied dense_ffn penalty: %s, mfu=%.4f", arch_mfu_factor, mfu)
-    elif apply_mha_penalty:
-        # MHA only: ~8% lower MFU (not applied to MLA models)
-        arch_mfu_factor = 0.92
-        mfu *= arch_mfu_factor
-        if debug:
-            logger.debug("Applied mha penalty: %s, mfu=%.4f", arch_mfu_factor, mfu)
-
-    # Phase 6 CORRECTED: DeepSeek V2/V3 model-specific calibration
-    # These models have complex overhead from:
-    # - MLA projections (training has 5 matmuls vs 2)
-    # - Shared experts (always active)
-    # - FP8 quantization (V3 only)
-    # - Large-scale MoE communication
-    #
-    # Due to underlying FLOPs calculation issues, we use empirically calibrated
-    # penalties that match the reported MFUs from DeepSeek papers.
-    if is_mla:
-        # Use config attributes to distinguish DeepSeek V2 vs V3
-        # V3: 256 experts, 61 layers, hidden_size=7168
-        # V2: 160 experts, 60 layers, hidden_size=5120
-        mla_num_experts = getattr(model_config, 'num_experts', 1) or 1
-        mla_hidden_size = getattr(model_config, 'hidden_size', 0) or 0
-        is_v3 = (mla_num_experts >= 256 or mla_hidden_size >= 7000)
-        is_v2 = (mla_num_experts >= 100 and mla_num_experts < 256 and mla_hidden_size < 7000)
-
-        if is_v3:
-            # DeepSeek V3: Reported 21% MFU
-            # Base MFU is typically ~50%, need penalty of ~0.42
-            # Accounts for: MLA overhead, 256 experts, FP8 training, shared experts
-            deepseek_v3_penalty = 0.41  # Calibrated: 21% / 51% ≈ 0.41
-            mfu *= deepseek_v3_penalty
-            if debug:
-                logger.debug("Applied DeepSeek V3 penalty: %.3f, mfu=%.4f", deepseek_v3_penalty, mfu)
-        elif is_v2:
-            # DeepSeek V2: Reported 28% MFU
-            # Base MFU calculation is affected by memory issues
-            # Apply correction factor based on calibration
-            deepseek_v2_factor = 2.0  # Correction for base MFU under-estimation
-            mfu *= deepseek_v2_factor
-            if debug:
-                logger.debug("Applied DeepSeek V2 correction: %.2fx, mfu=%.4f", deepseek_v2_factor, mfu)
-        else:
-            # Generic MLA model (future DeepSeek variants)
-            mla_overhead = 1.07
-            n_shared = getattr(model_config, 'n_shared_experts', 0) or 0
-            shared_overhead = 1.0 + (n_shared * 0.03) if n_shared > 0 else 1.0
-            shared_overhead = min(shared_overhead, 1.20)
-            fp8_overhead = 1.0  # Assume no FP8 for generic
-            deepseek_penalty = 1.0 / (mla_overhead * shared_overhead * fp8_overhead)
-            mfu *= deepseek_penalty
-            if debug:
-                logger.debug("Applied generic MLA penalty: %.3f, mfu=%.4f", deepseek_penalty, mfu)
-
-    # Phase 6: BLOOM cluster penalty (Jean Zay)
-    # BLOOM was trained on Jean Zay (French HPC) with:
-    # - A100 40GB GPUs (not 80GB)
-    # - Custom Omni-Path interconnect (not NVLink/NVSwitch)
-    # - Early 2022 training stack (less optimized than 2023+ infrastructure)
-    # Calibrated from reported 35% MFU vs ~47% predicted after MHA penalty
-    if 'bloom' in model_name_lower or 'bigscience' in model_name_lower:
-        bloom_cluster_penalty = 0.74  # Calibrated: 35% / 47% ≈ 0.74
-        mfu *= bloom_cluster_penalty
-        if debug:
-            logger.debug("Applied BLOOM cluster penalty: %s, mfu=%.4f", bloom_cluster_penalty, mfu)
-
-    # Phase 6: Qwen 1.x early training penalty
-    # Qwen 1.x (2023) was trained with earlier infrastructure and less optimized stack
-    # compared to Qwen 2.x (2024) which achieves near-theoretical MFU
-    # Based on calibration: Qwen-72B reports 45% MFU vs ~69% predicted
-    is_qwen1x = ('qwen' in model_name_lower and
-                 'qwen2' not in model_name_lower and
-                 'qwen1.5' not in model_name_lower and
-                 'qwen/qwen2' not in model_name_lower and
-                 'qwen/qwen1.5' not in model_name_lower)
-    if is_qwen1x:
-        qwen1x_penalty = 0.65  # Calibrated from Qwen-72B: 45% / 69% ≈ 0.65
-        mfu *= qwen1x_penalty
-        if debug:
-            logger.debug("Applied Qwen 1.x penalty: %s, mfu=%.4f", qwen1x_penalty, mfu)
-
-    # Phase 6: Large-scale MoE efficiency penalty
-    # Large MoE models (>100 experts) have significant additional overhead:
-    # - All2All communication scales with expert count
-    # - Expert load imbalance increases with more experts
-    # - Routing overhead becomes significant
-    #
-    # IMPORTANT: Skip large MoE penalty for DeepSeek models - they already have
-    # their own MLA/shared/FP8 penalty applied above. The DeepSeek overhead
-    # is architectural (not just expert count), so separate modeling is correct.
-    moe_num_experts = getattr(model_config, 'num_experts', 1) or 1
-    skip_large_moe_penalty = is_mla  # DeepSeek already penalized
-
-    if moe_num_experts > 100 and not skip_large_moe_penalty:
-        # Large MoE penalty: scales with expert count
-        # 256 experts: 21/56 ≈ 0.375
-        # 160 experts: estimated ~0.45
-        moe_scale_penalty = 0.35 + 0.1 * (256 / moe_num_experts)  # ~0.375 for 256, ~0.45 for 160
-        moe_scale_penalty = max(0.35, min(0.65, moe_scale_penalty))  # Clamp
-        mfu *= moe_scale_penalty
-        if debug:
-            logger.debug("Applied large MoE penalty (%d experts): %.3f, mfu=%.4f", moe_num_experts, moe_scale_penalty, mfu)
-    elif moe_num_experts > 1 and not skip_large_moe_penalty:
-        # Smaller MoE models still have some overhead
-        moe_base_penalty = 0.85  # 15% efficiency loss for basic MoE
-        mfu *= moe_base_penalty
-        if debug:
-            logger.debug("Applied MoE penalty (%d experts): %s, mfu=%.4f", moe_num_experts, moe_base_penalty, mfu)
-    elif skip_large_moe_penalty and moe_num_experts > 1 and debug:
-        logger.debug("Skipped MoE penalty for DeepSeek (%d experts, already has MLA penalty)", moe_num_experts)
+    # NOTE (fudge-stack removal): earlier versions multiplied the reported MFU
+    # post-hoc by hardcoded per-architecture penalties (dense-FFN/MHA factors,
+    # DeepSeek V2/V3 calibrations, BLOOM/Qwen-1.x cluster factors, and a
+    # 0.35-0.65x large-MoE penalty). Those multipliers decoupled the reported
+    # MFU from the simulated step time (e.g. a self-consistent 5.67% was
+    # reported as 3.12% = 5.67% x 0.55 for a 128-expert model). Architecture
+    # and communication costs must flow through step_time_ms instead; MFU is
+    # kept self-consistent: training_flops / (step_time * GPUs * peak_flops).
 
     # Hardware FLOPs Utilization (HFU) - same as MFU for our purposes
     # Both measure achieved FLOPs per GPU / peak FLOPs per GPU
@@ -3906,6 +3752,7 @@ def training_modeling(
         # RLHF multi-model memory
         reward_model_memory_gb=memory.get('reward', 0.0),
         critic_model_memory_gb=memory.get('critic', 0.0),
+        framework_overhead_gb=memory.get('framework_overhead', 0.0),
         model_flops_utilization=min(mfu, 1.0),
         hardware_flops_utilization=min(hfu, 1.0),
         communication_overhead=communication_overhead,
@@ -4223,6 +4070,8 @@ def _calculate_training_memory(
     training_stage: str,
     pipeline_parallel: int = 1,
     expert_parallel: int = 1,
+    expert_top_k: int = 1,
+    context_parallel: int = 1,
 ) -> Dict[str, float]:
     """Calculate per-GPU memory requirements."""
     # Comprehensive precision byte mappings for all supported types
@@ -4263,8 +4112,19 @@ def _calculate_training_memory(
 
     weight_memory_gb = weight_bytes / 1e9
 
-    # Gradient memory (FP32)
-    gradient_bytes = trainable_params * 4
+    # Gradient memory: stored in the training dtype (bf16/fp16 grads under mixed
+    # precision — DeepSpeed/FSDP convention, and consistent with the bf16 gradient
+    # reduce-scatter used in the communication model; fp8 training also keeps
+    # bf16 grads). fp32 training keeps fp32 grads. (Megatron's fp32-main-grads
+    # convention would add 2 B/param on top; the fp32 master copy itself is
+    # already accounted with the optimizer states below.)
+    gradient_bytes = trainable_params * (4 if precision_bytes >= 4 else 2)
+    # Megatron-style sharding: gradients live with their weight shards, so the
+    # same TP/PP/EP divisor chain as the weight path applies (this also makes
+    # memory consistent with _compute_optimizer_time, which shards by TP*PP).
+    gradient_bytes /= tensor_parallel
+    gradient_bytes /= pipeline_parallel
+    gradient_bytes /= expert_parallel
     if zero_stage >= 2:
         gradient_bytes /= data_parallel
 
@@ -4274,6 +4134,18 @@ def _calculate_training_memory(
     optimizer_bytes = _optimizer_bytes_per_param(optimizer)
 
     optimizer_state_bytes = trainable_params * optimizer_bytes
+    # FP32 master weights: mixed-precision full fine-tuning keeps an fp32 copy
+    # of the trainable parameters alongside the optimizer states (Megatron /
+    # DeepSpeed semantics). ZeRO-1 shards this master copy with the optimizer
+    # states, so it is added here and sharded identically. Not applicable to
+    # pure fp32 training (the weights ARE the master copy) or to PEFT methods.
+    if method == 'full' and precision_bytes < 4:
+        optimizer_state_bytes += trainable_params * 4.0
+    # Optimizer states are sharded with their weight shards (same TP/PP/EP
+    # chain as weights/gradients), then by DP under ZeRO-1+.
+    optimizer_state_bytes /= tensor_parallel
+    optimizer_state_bytes /= pipeline_parallel
+    optimizer_state_bytes /= expert_parallel
     if zero_stage >= 1:
         optimizer_state_bytes /= data_parallel
 
@@ -4293,7 +4165,10 @@ def _calculate_training_memory(
     activation_memory_gb = _calculate_activation_memory(
         batch_size, seq_length, hidden_size, intermediate_size,
         num_layers, num_heads, precision_bytes, gradient_checkpointing, tensor_parallel,
-        num_samples_per_prompt=num_samples_per_prompt
+        num_samples_per_prompt=num_samples_per_prompt,
+        expert_top_k=expert_top_k,
+        context_parallel=context_parallel,
+        expert_parallel=expert_parallel,
     )
 
     reference_memory_gb = 0.0
@@ -4357,7 +4232,7 @@ def _calculate_training_memory(
         if training_stage in ('dpo', 'ppo', 'kto'):
             reference_memory_gb = (total_params * precision_bytes) / tensor_parallel / 1e9
 
-    total_memory_gb = (
+    subtotal_memory_gb = (
         weight_memory_gb +
         gradient_memory_gb +
         optimizer_memory_gb +
@@ -4367,8 +4242,11 @@ def _calculate_training_memory(
         critic_memory_gb
     )
 
-    # Framework overhead (~10%)
-    total_memory_gb *= 1.10
+    # Framework overhead: allocator fragmentation (~3% of live memory) plus a
+    # roughly-fixed CUDA context / NCCL buffers / cuDNN workspace cost (~2 GB).
+    # Modeled additively so the components sum to the reported total.
+    framework_overhead_gb = 0.03 * subtotal_memory_gb + 2.0
+    total_memory_gb = subtotal_memory_gb + framework_overhead_gb
 
     return {
         'total': total_memory_gb,
@@ -4379,6 +4257,7 @@ def _calculate_training_memory(
         'reference': reference_memory_gb,
         'reward': reward_memory_gb,
         'critic': critic_memory_gb,
+        'framework_overhead': framework_overhead_gb,
     }
 
 
@@ -4393,9 +4272,26 @@ def _calculate_activation_memory(
     gradient_checkpointing: bool,
     tensor_parallel: int,
     num_samples_per_prompt: int = 1,
+    expert_top_k: int = 1,
+    context_parallel: int = 1,
+    expert_parallel: int = 1,
 ) -> float:
     """
-    Calculate activation memory in GB.
+    Calculate activation memory in GB (FlashAttention + layer checkpointing model).
+
+    The timing path assumes FlashAttention-2, which never materializes the
+    B*heads*S^2 attention-score matrix (it only keeps O(B*heads*S) fp32 softmax
+    logsumexp statistics for the backward pass). The memory model here matches
+    that assumption:
+
+    - per-layer live activations: QKV+output projections (4*B*S*H), gated-FFN
+      intermediates (2*B*S*I, scaled by expert_top_k for MoE where each token
+      activates top-k experts), plus fp32 logsumexp stats (4*B*heads*S bytes).
+    - gradient checkpointing (full/layer-boundary, the HF/Megatron default):
+      store one B*S*H input checkpoint per layer, plus ONE layer's live
+      activations while it is being recomputed during backward.
+    - no checkpointing: all layers' live activations, plus the final layer
+      output feeding the loss.
 
     Args:
         batch_size: Base batch size per device
@@ -4406,9 +4302,21 @@ def _calculate_activation_memory(
         num_heads: Number of attention heads
         precision_bytes: Bytes per element for activations
         gradient_checkpointing: Whether gradient checkpointing is enabled
-        tensor_parallel: Tensor parallel degree
+        tensor_parallel: Tensor parallel degree. NOTE: dividing activations by
+            TP assumes Megatron sequence-parallelism (the standard default for
+            TP training), which shards the sequence dimension of activations
+            across the TP group.
         num_samples_per_prompt: For RLHF stages like GRPO, multiple samples per prompt
                                are generated and processed together, increasing memory
+        expert_top_k: MoE top-k routing (1 for dense models); each token's FFN
+            intermediates are materialized once per activated expert
+        context_parallel: Context (sequence) parallel degree; shards all
+            sequence-dimension activations (e.g. ring attention at 128K)
+        expert_parallel: Expert parallel degree; the MoE FFN intermediate
+            activations are distributed across the EP group (each rank holds
+            E/EP experts and, with balanced routing, materializes ~1/EP of the
+            token-expert intermediates). Attention/residual activations are NOT
+            expert-parallel, so only the FFN term is divided by EP.
 
     Returns:
         Activation memory in GB
@@ -4417,27 +4325,32 @@ def _calculate_activation_memory(
     # the effective batch size increases accordingly
     effective_batch_size = batch_size * num_samples_per_prompt
 
-    # Per-layer activation storage
-    # Attention: Q, K, V projections + attention scores + output
-    attn_elements = effective_batch_size * seq_length * hidden_size * 4
-    attn_scores = effective_batch_size * num_heads * seq_length * seq_length
+    # Live activations of a single layer (FlashAttention: no S^2 score matrix).
+    # Attention/output projections shard with TP; the gated-FFN intermediates
+    # additionally shard across the EP group (TP*EP total) for MoE models.
+    attn_live_bytes = 4 * effective_batch_size * seq_length * hidden_size * precision_bytes
+    ffn_live_bytes = (
+        2 * effective_batch_size * seq_length * intermediate_size * max(1, expert_top_k)
+        * precision_bytes
+    ) / max(1, expert_parallel)
+    softmax_stats_bytes = 4 * effective_batch_size * num_heads * seq_length  # fp32 logsumexp
+    per_layer_live_bytes = attn_live_bytes + ffn_live_bytes + softmax_stats_bytes
 
-    # FFN: intermediate activations
-    ffn_elements = effective_batch_size * seq_length * intermediate_size * 2
+    # Layer-input checkpoints (one B*S*H tensor per layer boundary)
+    boundary_bytes = effective_batch_size * seq_length * hidden_size * precision_bytes * num_layers
 
-    elements_per_layer = attn_elements + attn_scores + ffn_elements
-
-    # With gradient checkpointing, only store sqrt(N) layers
     if gradient_checkpointing:
-        effective_layers = math.ceil(math.sqrt(num_layers))
+        # All layer-input checkpoints + one live layer during recompute
+        total_bytes = boundary_bytes + per_layer_live_bytes
     else:
-        effective_layers = num_layers
+        # All layers live + final layer output feeding the loss
+        total_bytes = (num_layers * per_layer_live_bytes
+                       + effective_batch_size * seq_length * hidden_size * precision_bytes)
 
-    total_elements = elements_per_layer * effective_layers
-    total_bytes = total_elements * precision_bytes
-
-    # Apply tensor parallelism
-    total_bytes /= tensor_parallel
+    # Megatron sequence-parallel shards activations across the TP group
+    total_bytes /= max(1, tensor_parallel)
+    # Context parallelism shards the sequence dimension
+    total_bytes /= max(1, context_parallel)
 
     return total_bytes / 1e9
 
