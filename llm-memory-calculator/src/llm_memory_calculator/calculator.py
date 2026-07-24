@@ -427,20 +427,22 @@ class ModelMemoryCalculator:
             KV cache memory in GB
         """
         hidden_size = config.get('hidden_size', config.get('d_model', 768))
-        num_attention_heads = config.get('num_attention_heads', 12)
-        num_key_value_heads = config.get('num_key_value_heads', num_attention_heads)
-        head_dim = config.get('head_dim', hidden_size // num_attention_heads)
+        num_attention_heads = config.get('num_attention_heads', config.get('n_head', 12))
+        num_key_value_heads = config.get('num_key_value_heads', config.get('num_kv_heads', num_attention_heads))
+        head_dim = config.get('head_dim') or (hidden_size // num_attention_heads)
         
         if attention_type == 'mla':
+            # One compressed latent per token per layer; no factor of 2.
             kv_lora_rank = config.get('kv_lora_rank', 512)
-            compressed_kv_dim = config.get('compressed_kv_dim', kv_lora_rank)
-            kv_elements = 2 * batch_size * num_layers * seq_length * compressed_kv_dim
+            qk_rope_head_dim = config.get('qk_rope_head_dim', 0)
+            compressed_kv_dim = config.get('compressed_kv_dim', kv_lora_rank + qk_rope_head_dim)
+            kv_elements = batch_size * num_layers * seq_length * compressed_kv_dim
         elif attention_type == 'mqa':
             kv_elements = 2 * batch_size * num_layers * seq_length * head_dim
         elif attention_type == 'gqa':
             kv_elements = 2 * batch_size * num_layers * seq_length * num_key_value_heads * head_dim
         else:  # mha
-            kv_elements = 2 * batch_size * num_layers * seq_length * hidden_size
+            kv_elements = 2 * batch_size * num_layers * seq_length * num_attention_heads * head_dim
         
         return (kv_elements * bytes_per_element) / 1e9
 
@@ -449,13 +451,17 @@ class ModelMemoryCalculator:
         """Calculate KV cache for Multi-Head Attention."""
         num_layers = config.get('num_hidden_layers', config.get('n_layers', 12))
         hidden_size = config.get('hidden_size', config.get('d_model', 768))
+        num_attention_heads = config.get('num_attention_heads', config.get('n_head', 12))
+        # Read explicit head_dim; models such as Qwen3 decouple it from
+        # hidden_size // num_heads (128 vs 64), and deriving it halves the cache.
+        head_dim = config.get('head_dim') or (hidden_size // num_attention_heads)
         
         # Count only attention layers for hybrid models
         if self.model_type == 'hybrid':
             num_layers = self._count_attention_layers(config, num_layers)
         
-        # 2 for K and V, full hidden size for each
-        kv_elements = 2 * batch_size * num_layers * seq_length * hidden_size
+        # 2 for K and V, one full set of heads each
+        kv_elements = 2 * batch_size * num_layers * seq_length * num_attention_heads * head_dim
         return (kv_elements * bytes_per_element) / 1e9
     
     def _calculate_kv_cache_mqa(self, config: Dict[str, Any], batch_size: int, seq_length: int, bytes_per_element: float) -> float:
@@ -463,7 +469,7 @@ class ModelMemoryCalculator:
         num_layers = config.get('num_hidden_layers', config.get('n_layers', 12))
         hidden_size = config.get('hidden_size', config.get('d_model', 768))
         num_attention_heads = config.get('num_attention_heads', config.get('n_head', 12))
-        head_dim = hidden_size // num_attention_heads
+        head_dim = config.get('head_dim') or (hidden_size // num_attention_heads)
         
         # Count only attention layers for hybrid models
         if self.model_type == 'hybrid':
@@ -479,7 +485,7 @@ class ModelMemoryCalculator:
         hidden_size = config.get('hidden_size', config.get('d_model', 768))
         num_attention_heads = config.get('num_attention_heads', config.get('n_head', 12))
         num_key_value_heads = config.get('num_key_value_heads', config.get('num_kv_heads', num_attention_heads))
-        head_dim = hidden_size // num_attention_heads
+        head_dim = config.get('head_dim') or (hidden_size // num_attention_heads)
         
         # Count only attention layers for hybrid models
         if self.model_type == 'hybrid':
@@ -493,16 +499,21 @@ class ModelMemoryCalculator:
         """Calculate KV cache for Multi-Latent Attention (DeepSeek V2/V3)."""
         num_layers = config.get('num_hidden_layers', config.get('n_layers', 12))
         
-        # MLA compresses KV into latent dimensions
+        # MLA caches ONE compressed latent per token per layer: the decoupled
+        # RoPE key (qk_rope_head_dim) plus the compressed KV latent (kv_lora_rank).
+        # No factor of 2 -- K and V are reconstructed from the single stored
+        # latent (matches vLLM MLAAttentionSpec: num_kv_heads=1,
+        # head_dim=kv_lora_rank+qk_rope_head_dim).
         kv_lora_rank = config.get('kv_lora_rank', 512)  # DeepSeek V3 default
-        compressed_kv_dim = config.get('compressed_kv_dim', kv_lora_rank)
+        qk_rope_head_dim = config.get('qk_rope_head_dim', 0)
+        compressed_kv_dim = config.get('compressed_kv_dim', kv_lora_rank + qk_rope_head_dim)
         
         # Count only attention layers for hybrid models
         if self.model_type == 'hybrid':
             num_layers = self._count_attention_layers(config, num_layers)
         
         # Latent KV cache is much smaller
-        kv_elements = 2 * batch_size * num_layers * seq_length * compressed_kv_dim
+        kv_elements = batch_size * num_layers * seq_length * compressed_kv_dim
         return (kv_elements * bytes_per_element) / 1e9
     
     def _count_attention_layers(self, config: Dict[str, Any], total_layers: int) -> int:
@@ -966,7 +977,13 @@ class ModelMemoryCalculator:
         hidden_size = config.get('hidden_size', config.get('d_model', 768))
         expand_factor = config.get('expand_factor', config.get('expand', 2))
         
-        bytes_per_element = self.PRECISION_BYTES.get(precision.lower(), 2)
+        # The recurrent SSM state is kept in float32, not the model dtype: it is
+        # accumulated across the whole sequence and would lose too much precision
+        # at bf16/fp16 (vLLM forces mamba_ssm_cache_dtype=float32 on its CPU/AMX
+        # path). Pricing it at the model precision under-counts by 2x for a bf16
+        # model -- the term that grows with concurrency on hybrid models.
+        mamba_state_dtype = config.get('mamba_ssm_cache_dtype', 'float32')
+        bytes_per_element = self.PRECISION_BYTES.get(mamba_state_dtype.lower(), 4)
         
         # State memory is constant regardless of sequence length
         state_elements = batch_size * num_layers * state_size * hidden_size * expand_factor
@@ -1169,14 +1186,33 @@ class ModelMemoryCalculator:
             # Standard decoder-only model
             kv_cache = self.calculate_kv_cache(config, batch_size, seq_length, precision)
 
-        # Divide KV cache by tensor parallelism (each device holds a slice)
-        kv_cache = kv_cache / tensor_parallel
+        # Shard the KV cache across ranks. Each rank holds
+        # max(1, num_kv_heads // tp) heads: vLLM replicates KV heads when there
+        # are fewer of them than ranks (at least one per rank), so KV stops
+        # shrinking once tp exceeds num_kv_heads -- a flat divide-by-tp
+        # under-counts every rank in that regime. MLA caches a single shared
+        # latent that is replicated on every rank, so it does not shard at all.
+        if self.attention_type == 'mla':
+            pass  # replicated per rank; no division
+        else:
+            kv_cfg = config.get('text_config', config)
+            if not isinstance(kv_cfg, dict):
+                kv_cfg = config
+            num_kv_heads = kv_cfg.get(
+                'num_key_value_heads',
+                kv_cfg.get('num_kv_heads', kv_cfg.get('num_attention_heads', tensor_parallel))
+            ) or tensor_parallel
+            kv_heads_per_rank = max(1, num_kv_heads // tensor_parallel)
+            kv_cache = kv_cache * kv_heads_per_rank / num_kv_heads
 
         # Calculate activations
         activations = self.calculate_activation_memory(config, batch_size, seq_length, precision)
         
-        # Calculate state memory (for SSM models)
+        # Calculate state memory (for SSM models). Mamba shards its inner
+        # projection across ranks, so the recurrent state shards with tp like
+        # weights and KV; keep it per-rank for a consistent report.
         state_memory = self.calculate_state_memory(config, batch_size, precision)
+        state_memory = state_memory / tensor_parallel
 
         # Calculate LoRA adapter memory (if enabled)
         lora_memory = 0.0
