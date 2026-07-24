@@ -426,7 +426,12 @@ class ModelMemoryCalculator:
         num_sliding_layers = layer_metadata.get("num_sliding_layers", 0)
         num_full_layers = layer_metadata.get("num_full_layers", 0)
 
-        sliding_window = config.get("sliding_window", seq_length)
+        # `.get(key, default)` returns a stored None, and the window is legitimately
+        # None here: a config carrying layer_types can also carry
+        # `use_sliding_window: false`, which the normalizer scrubs to None to stop
+        # the global path clamping. "No window" means those layers attend to the
+        # full sequence, so fall back to seq_length rather than comparing to None.
+        sliding_window = config.get("sliding_window") or seq_length
 
         total_kv_cache = 0.0
 

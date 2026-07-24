@@ -291,3 +291,27 @@ def test_head_dim_null_is_treated_as_absent_everywhere():
     assert 0 < ratio < 1
     # ... and the KV geometry must fall back to hidden // heads
     assert kv_bytes(cfg, 1, 1) == 2 * 28 * 8 * (1024 // 16) * 2
+
+
+def test_disabled_window_with_explicit_layer_types_does_not_crash():
+    """A config can carry BOTH layer_types and `use_sliding_window: false`.
+
+    The normalizer scrubs the window to None so the global path stops clamping,
+    but the per-layer path then compared that None against an int and raised
+    TypeError. "No window" means those layers attend to the full sequence.
+    """
+    per_layer_token = 2 * 16 * 128 * 2
+    base = dict(
+        model_type="gemma3",
+        hidden_size=5376,
+        num_hidden_layers=4,
+        num_attention_heads=32,
+        num_key_value_heads=16,
+        head_dim=128,
+        sliding_window=1024,
+        layer_types=["sliding_attention", "full_attention", "sliding_attention", "full_attention"],
+    )
+    # window disabled -> every layer full-attention
+    assert kv_bytes(dict(base, use_sliding_window=False), 1, 8192) == per_layer_token * 4 * 8192
+    # window active -> 2 local at the window + 2 global at full context
+    assert kv_bytes(base, 1, 8192) == pytest.approx(per_layer_token * (2 * 1024 + 2 * 8192), rel=1e-9)
