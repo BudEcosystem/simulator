@@ -281,7 +281,7 @@ class ModelMemoryCalculator:
         num_layers = config.get("num_hidden_layers", 24)
         num_heads = config.get("num_attention_heads", 32)
         num_kv_heads = config.get("num_key_value_heads", num_heads)
-        head_dim = config.get("head_dim", hidden_size // num_heads)
+        head_dim = config.get("head_dim") or (hidden_size // num_heads)
 
         # Check if embeddings are tied
         tie_embeddings = config.get("tie_word_embeddings", False)

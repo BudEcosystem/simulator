@@ -266,3 +266,28 @@ def test_ssm_state_dtype_override_is_honored():
     )
     expected = 44 * 256 * 4096 * 1 * 2 / 1e9
     assert state_gb == pytest.approx(expected, rel=1e-9)
+
+
+# ------------------------------------------------- null-valued optional keys
+
+
+def test_head_dim_null_is_treated_as_absent_everywhere():
+    """HF configs ship optional keys as explicit `null` (the real Qwen3 config has
+    `sliding_window: null`, `rope_scaling: null`). `.get(key, default)` returns the
+    null rather than the default, so every head_dim reader must use `or`.
+    """
+    cfg = dict(
+        model_type="qwen3",
+        hidden_size=1024,
+        num_hidden_layers=28,
+        num_attention_heads=16,
+        num_key_value_heads=8,
+        head_dim=None,
+        vocab_size=151936,
+    )
+    calc = ModelMemoryCalculator()
+    # weight accounting must not raise on a null head_dim ...
+    ratio = calc._estimate_skip_ratio(cfg, ["self_attn"], 1_000_000_000)
+    assert 0 < ratio < 1
+    # ... and the KV geometry must fall back to hidden // heads
+    assert kv_bytes(cfg, 1, 1) == 2 * 28 * 8 * (1024 // 16) * 2
