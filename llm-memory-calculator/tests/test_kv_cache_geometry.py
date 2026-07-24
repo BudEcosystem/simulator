@@ -109,6 +109,26 @@ def test_gemma3_kv_counts_global_and_local_layers_separately():
     assert got > 10 * 2**30
 
 
+def test_interleave_is_detected_through_a_multimodal_text_config():
+    """Gemma-3 ships as multimodal: the attention layout lives in text_config.
+
+    The per-layer metadata is built when text_config is normalized, so reading it
+    only from the outer config skips the per-layer path entirely and clamps every
+    layer to the sliding window -- a ~21x under-count at 128k on the real config
+    shape. The multimodal and flat forms must agree.
+    """
+    text = {k: v for k, v in GEMMA3_27B.items() if k != "model_type"}
+    multimodal = dict(
+        model_type="gemma3",
+        vision_config=dict(hidden_size=1152, image_size=896, patch_size=14),
+        text_config=text,
+    )
+    assert ModelMemoryCalculator().detect_model_type(multimodal) == "multimodal"
+    assert kv_bytes(multimodal, 1, 131072) == pytest.approx(
+        kv_bytes(GEMMA3_27B, 1, 131072), rel=1e-9
+    )
+
+
 def test_use_sliding_window_false_disables_the_window():
     # Qwen2.5 ships a sliding_window value with the feature switched off; the
     # cache must be sized at the full context, not clamped to the window.
