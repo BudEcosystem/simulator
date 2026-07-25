@@ -121,11 +121,37 @@ class ConfigNormalizer:
                 config['quantization_config']
             )
         
-        # 5. Parse layer types for per-layer handling
-        if 'layer_types' in config:
+        # 5. Parse layer types for per-layer handling.
+        #
+        # The per-layer KV path keys off `_layer_metadata`, built only from an
+        # explicit `layer_types` list. Interleaved-attention models such as
+        # Gemma-3 do not ship that list; they declare a `sliding_window_pattern`
+        # integer meaning "one global (full-attention) layer every N". Without
+        # the synthesis below every layer is treated as full-attention and the
+        # global layers' cache dominates a large over-count. We also honor
+        # `use_sliding_window: false` (Qwen2.5 ships a window with the feature
+        # switched off) so the window is not applied to a full-context model.
+        # Honor `use_sliding_window: false` globally: scrub the window from the
+        # normalized config so the standalone KV path (no interleave pattern, e.g.
+        # Qwen2.5) does not clamp seq_length to a window the model does not use.
+        if config.get('use_sliding_window') is False:
+            normalized['sliding_window'] = None
+
+        layer_types = config.get('layer_types')
+        if layer_types is None:
+            window = normalized.get('sliding_window')
+            pattern = config.get('sliding_window_pattern')
+            n_layers = config.get('num_hidden_layers', 0)
+            if window and isinstance(pattern, int) and pattern > 1 and n_layers:
+                layer_types = ['sliding_attention'] * n_layers
+                # A global (full-attention) layer every `pattern` layers.
+                for idx in range(pattern - 1, n_layers, pattern):
+                    layer_types[idx] = 'full_attention'
+
+        if layer_types:
             normalized['_layer_metadata'] = ConfigNormalizer._parse_layer_types(
-                config['layer_types'],
-                config.get('num_hidden_layers', len(config['layer_types']))
+                layer_types,
+                config.get('num_hidden_layers', len(layer_types))
             )
         
         return normalized
