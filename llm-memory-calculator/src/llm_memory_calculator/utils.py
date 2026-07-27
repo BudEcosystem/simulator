@@ -24,6 +24,11 @@ def calculate_memory(
     lora_dtype: Optional[str] = None,
     fully_sharded_loras: Optional[bool] = None,
     target_modules: Optional[List[str]] = None,
+    # Tokens in ONE engine forward pass (vLLM's --max-num-batched-tokens). With
+    # chunked prefill this is below the context length, and it -- not the context --
+    # sizes the LoRA prefill transient. Defaults to seq_length when unset, so
+    # existing callers are unaffected.
+    max_num_batched_tokens: Optional[int] = None,
     # Advanced: pass LoraConfig directly (overrides individual parameters)
     lora_config: Optional[LoraConfig] = None,
     **kwargs
@@ -116,6 +121,7 @@ def calculate_memory(
         include_gradients=include_gradients,
         lora_config=lora_config,
         respect_weight_tying=respect_weight_tying,
+        max_num_batched_tokens=max_num_batched_tokens,
         **kwargs
     )
 

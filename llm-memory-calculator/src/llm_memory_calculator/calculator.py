@@ -1,6 +1,6 @@
 """Core memory calculator for LLM models."""
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 from .types import MemoryReport
 from .parameter_counter import UniversalParameterCounter
@@ -1268,6 +1268,103 @@ class ModelMemoryCalculator:
         # Convert to GB
         return (total_elements * bytes_per_element) / 1e9
 
+    # ---------------------------------------------------------------- LoRA prefill scratch
+    #
+    # MEASURED, not derived. The A/B matrices above are the adapter STORAGE and are
+    # small (~0.3 GB at rank 256 for a 0.6B model). They are not what dominates a
+    # serving pod. During the prefill forward pass vLLM's Punica wrapper allocates
+    # shrink/expand working buffers whose size tracks the BATCHED TOKEN COUNT, and
+    # for the same model that transient measured 16.8 GB -- roughly 50x the storage.
+    #
+    # Isolated by differencing two otherwise identical pods, LoRA on vs off, on
+    # vllm-cpu:0.6.0 / Qwen3-0.6B (28 layers, hidden 1024), max_loras=1, rank 256,
+    # max_num_seqs=1, reading cgroup memory.peak:
+    #
+    #   batched tokens   LoRA off   LoRA on    scratch
+    #        2394         5143 MiB  22311 MiB  16.77 GiB
+    #        4273         5113 MiB  27119 MiB  21.49 GiB
+    #        8192         5096 MiB   OOM@50GiB >45.02 GiB
+    #
+    # Two things that decides. The LoRA-off pod is FLAT in the token budget (47 MiB
+    # across a 3.4x range), so every bit of context sensitivity in a LoRA deployment
+    # comes from this term and none of it from activations. And the term is convex:
+    # the slope more than doubles above ~4.3k tokens, so a line fitted to the low end
+    # under-predicts the 8k point by at least 13 GiB.
+    #
+    # Therefore: model the measured range, and REFUSE to extrapolate past it. An
+    # optimistic number here does not produce a slightly small pod, it produces one
+    # that OOMKills at "Warming up model for the compilation" with the evidence gone.
+    LORA_SCRATCH_BYTES_PER_UNIT = 1_609_727  # per (max_loras * max_lora_rank * num_layers)
+    LORA_SCRATCH_BYTES_PER_TOKEN_UNIT = 376.7  # per unit, per batched token
+    LORA_SCRATCH_CALIBRATED_MAX_TOKENS = 4273
+    # The geometry the constants were fitted at. `units` assumes the transient is
+    # linear in depth and in rank; neither has been measured at a second value, so a
+    # caller outside this geometry is extrapolating on an assumed shape.
+    LORA_SCRATCH_CALIBRATED_LAYERS = 28
+    LORA_SCRATCH_CALIBRATED_RANK = 256
+
+    def calculate_lora_prefill_scratch(
+        self,
+        config: Dict[str, Any],
+        lora_config: Any,
+        batched_tokens: int,
+        tensor_parallel: int = 1,
+    ) -> Tuple[float, List[str]]:
+        """Punica prefill working buffers, in GB, plus any calibration caveats.
+
+        This is the transient that dominates a LoRA-enabled serving pod. It is
+        separate from :meth:`calculate_lora_adapter_memory`, which is the persistent
+        A/B storage -- reporting them as one number is how a 16 GB term stayed
+        invisible behind a 0.3 GB one.
+
+        ``batched_tokens`` is the engine's ``max_num_batched_tokens`` (the tokens in
+        one forward pass), NOT the context length. With chunked prefill the two
+        differ, and it is the batch that sizes these buffers.
+
+        Returns ``(gb, notes)``. ``notes`` is non-empty whenever the request leaves
+        the measured envelope; callers should surface it rather than drop it.
+        """
+        notes: List[str] = []
+        if not lora_config or not getattr(lora_config, "enabled", False):
+            return 0.0, notes
+
+        core = config.get("text_config") if isinstance(config.get("text_config"), dict) else config
+        num_layers = int(core.get("num_hidden_layers", core.get("n_layers", 0)) or 0)
+        if num_layers <= 0:
+            notes.append("LoRA prefill scratch not sized: the config declares no layer count")
+            return 0.0, notes
+
+        max_loras = int(getattr(lora_config, "max_loras", 1) or 1)
+        rank = int(getattr(lora_config, "max_lora_rank", 0) or 0)
+        if rank <= 0:
+            notes.append("LoRA prefill scratch not sized: max_lora_rank is unset")
+            return 0.0, notes
+
+        tokens = max(int(batched_tokens or 0), 1)
+        if tokens > self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS:
+            notes.append(
+                f"LoRA prefill scratch is UNCALIBRATED at {tokens} batched tokens "
+                f"(measured up to {self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS}). The term is convex -- "
+                f"at 8192 tokens the linear form under-predicted the measured floor by >13 GiB -- "
+                f"so this figure is a LOWER BOUND, not an estimate."
+            )
+        if num_layers != self.LORA_SCRATCH_CALIBRATED_LAYERS or rank != self.LORA_SCRATCH_CALIBRATED_RANK:
+            notes.append(
+                f"LoRA prefill scratch extrapolated beyond the measured geometry "
+                f"({num_layers} layers x rank {rank} vs measured "
+                f"{self.LORA_SCRATCH_CALIBRATED_LAYERS} x {self.LORA_SCRATCH_CALIBRATED_RANK}); "
+                f"linearity in depth and rank is assumed, not measured."
+            )
+
+        units = max_loras * rank * num_layers
+        scratch = units * (
+            self.LORA_SCRATCH_BYTES_PER_UNIT + self.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT * tokens
+        )
+        # The buffers are per-rank working memory, so they shard with tp like the
+        # rest of the forward pass.
+        scratch = scratch / max(int(tensor_parallel or 1), 1)
+        return scratch / 1e9, notes
+
     def calculate_total_memory(
         self,
         config: Dict[str, Any],
@@ -1283,6 +1380,7 @@ class ModelMemoryCalculator:
         lora_config: Optional[Any] = None,
         respect_weight_tying: bool = True,
         encoder_seq_length: Optional[int] = None,
+        max_num_batched_tokens: Optional[int] = None,
     ) -> MemoryReport:
         """
         Calculate total memory requirements for model inference.
@@ -1393,10 +1491,21 @@ class ModelMemoryCalculator:
 
         # Calculate LoRA adapter memory (if enabled)
         lora_memory = 0.0
+        lora_scratch = 0.0
+        notes: List[str] = []
         if lora_config:
             lora_memory = self.calculate_lora_adapter_memory(
                 config, lora_config, precision, tensor_parallel
             )
+            # The Punica prefill transient is sized by the tokens in ONE forward
+            # pass. With chunked prefill that is max_num_batched_tokens, which can
+            # be well below the context; default to seq_length so a caller that
+            # does not know its engine's batch behaves exactly as before.
+            batched = max_num_batched_tokens if max_num_batched_tokens else seq_length
+            lora_scratch, scratch_notes = self.calculate_lora_prefill_scratch(
+                config, lora_config, batched, tensor_parallel
+            )
+            notes.extend(scratch_notes)
 
         # Calculate image memory (for multimodal models)
         image_memory = 0.0
@@ -1488,6 +1597,8 @@ class ModelMemoryCalculator:
             state_memory_bytes=state_bytes,
             image_memory_bytes=image_bytes,
             lora_adapter_memory_bytes=lora_bytes,
+            lora_prefill_scratch_bytes=lora_scratch * 1e9,
+            notes=notes,
             extra_work_bytes=extra_work_bytes
             + (runtime_bytes_with_overhead - runtime_bytes),
         )

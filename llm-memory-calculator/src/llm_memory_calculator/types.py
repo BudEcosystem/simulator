@@ -1,7 +1,7 @@
 """Type definitions for LLM Memory Calculator."""
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, List
 
 
 @dataclass
@@ -18,6 +18,13 @@ class MemoryReport:
     image_memory_bytes: float
     extra_work_bytes: float
     lora_adapter_memory_bytes: float = 0.0
+    # Punica prefill working buffers -- the TRANSIENT, ~50x the storage above and
+    # the term that actually sizes a LoRA serving pod. Kept separate because
+    # folding it into the storage figure is how it stayed invisible.
+    lora_prefill_scratch_bytes: float = 0.0
+    # Non-fatal calibration caveats (empty when every term is inside its measured
+    # envelope). Callers should surface these, not drop them.
+    notes: List[str] = field(default_factory=list)
     
     @property
     def total_memory_bytes(self) -> float:
@@ -29,6 +36,7 @@ class MemoryReport:
             self.state_memory_bytes +
             self.image_memory_bytes +
             self.lora_adapter_memory_bytes +
+            self.lora_prefill_scratch_bytes +
             self.extra_work_bytes
         )
     
