@@ -1302,6 +1302,14 @@ class ModelMemoryCalculator:
     # caller outside this geometry is extrapolating on an assumed shape.
     LORA_SCRATCH_CALIBRATED_LAYERS = 28
     LORA_SCRATCH_CALIBRATED_RANK = 256
+    # Rank was subsequently measured at a SECOND value, and it is not linear. A
+    # rank-64 pod at the same 2394-token budget peaked 2.82 GiB above its LoRA-off
+    # control, where `units` predicts 16.77/4 = 4.19. Four times the rank costs 5.95x
+    # the scratch (~rank^1.29). The linear form is therefore conservative below rank
+    # 256 and an UNDER-estimate above it; both are reported in `notes` rather than
+    # silently applied, because refitting from two points -- with the token slope
+    # itself only fitted at rank 256 -- would be the same over-reach that produced
+    # two earlier wrong models here.
 
     def calculate_lora_prefill_scratch(
         self,
@@ -1348,12 +1356,29 @@ class ModelMemoryCalculator:
                 f"at 8192 tokens the linear form under-predicted the measured floor by >13 GiB -- "
                 f"so this figure is a LOWER BOUND, not an estimate."
             )
-        if num_layers != self.LORA_SCRATCH_CALIBRATED_LAYERS or rank != self.LORA_SCRATCH_CALIBRATED_RANK:
+        if rank > self.LORA_SCRATCH_CALIBRATED_RANK:
+            # Rank scales SUPERLINEARLY, so `units` under-charges above the ceiling.
+            # Measured at a 2394-token budget: 2.82 GiB at rank 64 and 16.77 GiB at
+            # rank 256 -- 4x the rank for 5.95x the scratch, about rank^1.29. At rank
+            # 512 the linear form gives 33.5 GiB where that gives 40.9. A caller
+            # sizing a pod on the smaller number OOMKills at warmup.
             notes.append(
-                f"LoRA prefill scratch extrapolated beyond the measured geometry "
-                f"({num_layers} layers x rank {rank} vs measured "
-                f"{self.LORA_SCRATCH_CALIBRATED_LAYERS} x {self.LORA_SCRATCH_CALIBRATED_RANK}); "
-                f"linearity in depth and rank is assumed, not measured."
+                f"LoRA prefill scratch is an UNDER-ESTIMATE at rank {rank}: the term grows as "
+                f"about rank^1.29, and the linear form is only calibrated to rank "
+                f"{self.LORA_SCRATCH_CALIBRATED_RANK}. Treat this as a LOWER BOUND."
+            )
+        elif rank < self.LORA_SCRATCH_CALIBRATED_RANK:
+            notes.append(
+                f"LoRA prefill scratch is CONSERVATIVE at rank {rank}: the term grows as about "
+                f"rank^1.29, so the linear form over-charges below the calibrated rank "
+                f"{self.LORA_SCRATCH_CALIBRATED_RANK} (a rank-64 pod measured 2.82 GiB where "
+                f"this predicts 4.19)."
+            )
+        if num_layers != self.LORA_SCRATCH_CALIBRATED_LAYERS:
+            notes.append(
+                f"LoRA prefill scratch extrapolated in depth ({num_layers} layers vs the measured "
+                f"{self.LORA_SCRATCH_CALIBRATED_LAYERS}); linearity in depth is assumed, not "
+                f"measured -- rank turned out to scale superlinearly, so depth may too."
             )
 
         units = max_loras * rank * num_layers

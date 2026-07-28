@@ -209,11 +209,30 @@ def test_no_note_inside_the_measured_envelope():
     assert notes_for(2048) == []
 
 
-def test_flags_extrapolated_geometry():
-    """Depth and rank linearity are assumed. Say so rather than imply measurement."""
+def test_flags_depth_extrapolation():
+    """Depth has never been measured at a second value, so the direction is unknown."""
     deeper = dict(QWEN3_0_6B, num_hidden_layers=80)
-    assert any("extrapolated" in n for n in notes_for(2048, config=deeper))
-    assert any("extrapolated" in n for n in notes_for(2048, rank=64))
+    note = next(n for n in notes_for(2048, config=deeper) if "extrapolated in depth" in n)
+    assert "assumed, not" in note
+
+
+def test_rank_scaling_is_superlinear_and_says_which_way_it_errs():
+    """Rank WAS measured at a second value, and `units` is wrong in both directions.
+
+    2.82 GiB at rank 64 vs 16.77 GiB at rank 256, same 2394-token budget: 4x the rank
+    for 5.95x the scratch (~rank^1.29). Below 256 the linear form over-charges, which
+    is safe; above it, it under-charges, which is an OOMKill. Reporting one number
+    without saying which side you are on is how a caller sizes a pod 7.4 GiB short.
+    """
+    below = notes_for(2394, rank=64)
+    assert any("CONSERVATIVE at rank" in n for n in below)
+    assert not any("UNDER-ESTIMATE" in n for n in below)
+
+    above = notes_for(2394, rank=512)
+    assert any("UNDER-ESTIMATE" in n and "LOWER BOUND" in n for n in above)
+
+    # at the calibrated geometry, claim nothing
+    assert notes_for(2394, rank=256) == []
 
 
 def test_notes_reach_the_report():
