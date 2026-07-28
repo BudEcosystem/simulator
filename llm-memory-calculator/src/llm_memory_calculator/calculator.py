@@ -1295,21 +1295,41 @@ class ModelMemoryCalculator:
     # optimistic number here does not produce a slightly small pod, it produces one
     # that OOMKills at "Warming up model for the compilation" with the evidence gone.
     LORA_SCRATCH_BYTES_PER_UNIT = 1_609_727  # per (max_loras * max_lora_rank * num_layers)
-    LORA_SCRATCH_BYTES_PER_TOKEN_UNIT = 376.7  # per unit, per batched token
-    LORA_SCRATCH_CALIBRATED_MAX_TOKENS = 4273
+    # The token slope has a KNEE. Below ~4273 batched tokens it is 376 B/token/unit;
+    # above, it is 2.75x steeper. Measured on same-series pods (LoRA-on minus a
+    # LoRA-off control run minutes apart, cgroup `anon` so page cache cannot inflate
+    # it, limits generous enough that nothing clipped):
+    #
+    #   rank 64: T=4273 -> 5.14 GiB     T=7310 -> 10.39 GiB (repeat 10.38, so the
+    #   term is deterministic to ~1 MiB, not noisy as an earlier pass concluded)
+    #
+    # A single-slope fit calibrated below the knee under-predicts T=7310 by 3.10 GiB
+    # (43%), which is what left a production pod pinned against its cgroup ceiling.
+    # Cross-check: extending the steep slope to T=8192 at rank 256 predicts 48.6 GiB
+    # of scratch, and such a pod did OOMKill at a 50 GiB limit -- consistent.
+    LORA_SCRATCH_BYTES_PER_TOKEN_UNIT = 376.3  # per unit, per batched token, below the knee
+    LORA_SCRATCH_KNEE_TOKENS = 4273
+    LORA_SCRATCH_BYTES_PER_TOKEN_UNIT_STEEP = 1035.8  # above the knee
+    LORA_SCRATCH_CALIBRATED_MAX_TOKENS = 7310
     # The geometry the constants were fitted at. `units` assumes the transient is
     # linear in depth and in rank; neither has been measured at a second value, so a
     # caller outside this geometry is extrapolating on an assumed shape.
     LORA_SCRATCH_CALIBRATED_LAYERS = 28
-    LORA_SCRATCH_CALIBRATED_RANK = 256
-    # Rank was subsequently measured at a SECOND value, and it is not linear. A
-    # rank-64 pod at the same 2394-token budget peaked 2.82 GiB above its LoRA-off
-    # control, where `units` predicts 16.77/4 = 4.19. Four times the rank costs 5.95x
-    # the scratch (~rank^1.29). The linear form is therefore conservative below rank
-    # 256 and an UNDER-estimate above it; both are reported in `notes` rather than
-    # silently applied, because refitting from two points -- with the token slope
-    # itself only fitted at rank 256 -- would be the same over-reach that produced
-    # two earlier wrong models here.
+    # RANK 64 IS THE ONLY VALIDATED RANK, and the ceiling is set there deliberately.
+    #
+    # The original rank-256 figures came from `max_num_seqs=1` pods. At rank 64 the
+    # scratch is independent of max_num_seqs (seqs 1 vs 2 differ by 54 MiB), so that
+    # looked safe to generalise. It is not: a rank-256 pod at T=4273 with seqs=2
+    # OOMKilled at a 55 GiB limit, where linear-in-rank predicts 20.6 GiB of scratch.
+    # Something about high rank interacts with the sequence count, and it is not
+    # modelled here.
+    #
+    # An earlier revision claimed rank scales as ~rank^1.29. That came from comparing
+    # pods across two measurement campaigns with different controls, and the
+    # same-series data does not support it -- at T=4273 rank 64 and rank 256 sit
+    # within 4.5% of linear. The claim is withdrawn rather than restated: what is
+    # actually known is that rank 64 is characterised and rank 256 is not.
+    LORA_SCRATCH_CALIBRATED_RANK = 64
 
     def calculate_lora_prefill_scratch(
         self,
@@ -1352,27 +1372,26 @@ class ModelMemoryCalculator:
         if tokens > self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS:
             notes.append(
                 f"LoRA prefill scratch is UNCALIBRATED at {tokens} batched tokens "
-                f"(measured up to {self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS}). The term is convex -- "
-                f"at 8192 tokens the linear form under-predicted the measured floor by >13 GiB -- "
-                f"so this figure is a LOWER BOUND, not an estimate."
+                f"(measured up to {self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS}). The term already steepens "
+                f"once past {self.LORA_SCRATCH_KNEE_TOKENS} and may steepen again, so this figure is a "
+                f"LOWER BOUND, not an estimate."
             )
         if rank > self.LORA_SCRATCH_CALIBRATED_RANK:
-            # Rank scales SUPERLINEARLY, so `units` under-charges above the ceiling.
-            # Measured at a 2394-token budget: 2.82 GiB at rank 64 and 16.77 GiB at
-            # rank 256 -- 4x the rank for 5.95x the scratch, about rank^1.29. At rank
-            # 512 the linear form gives 33.5 GiB where that gives 40.9. A caller
-            # sizing a pod on the smaller number OOMKills at warmup.
+            # `units` treats rank as linear, and above the characterised rank that is
+            # demonstrably wrong in the dangerous direction: a rank-256 pod at T=4273
+            # with max_num_seqs=2 OOMKilled at a 55 GiB limit, where linear-in-rank
+            # from the rank-64 measurement predicts 20.6 GiB of scratch. The size of
+            # the error is unknown -- only that it is an under-estimate.
             notes.append(
-                f"LoRA prefill scratch is an UNDER-ESTIMATE at rank {rank}: the term grows as "
-                f"about rank^1.29, and the linear form is only calibrated to rank "
-                f"{self.LORA_SCRATCH_CALIBRATED_RANK}. Treat this as a LOWER BOUND."
+                f"LoRA prefill scratch is UNVALIDATED at rank {rank}: only rank "
+                f"{self.LORA_SCRATCH_CALIBRATED_RANK} is characterised. A rank-256 pod at 4273 "
+                f"tokens OOMKilled at a 55 GiB limit where linear-in-rank predicts 20.6 GiB, so "
+                f"treat this as a LOWER BOUND, not an estimate."
             )
         elif rank < self.LORA_SCRATCH_CALIBRATED_RANK:
             notes.append(
-                f"LoRA prefill scratch is CONSERVATIVE at rank {rank}: the term grows as about "
-                f"rank^1.29, so the linear form over-charges below the calibrated rank "
-                f"{self.LORA_SCRATCH_CALIBRATED_RANK} (a rank-64 pod measured 2.82 GiB where "
-                f"this predicts 4.19)."
+                f"LoRA prefill scratch is extrapolated DOWN to rank {rank} from the characterised "
+                f"rank {self.LORA_SCRATCH_CALIBRATED_RANK}; linearity in rank is assumed below it."
             )
         if num_layers != self.LORA_SCRATCH_CALIBRATED_LAYERS:
             notes.append(
@@ -1382,9 +1401,13 @@ class ModelMemoryCalculator:
             )
 
         units = max_loras * rank * num_layers
-        scratch = units * (
-            self.LORA_SCRATCH_BYTES_PER_UNIT + self.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT * tokens
+        knee = self.LORA_SCRATCH_KNEE_TOKENS
+        per_unit = (
+            self.LORA_SCRATCH_BYTES_PER_UNIT
+            + self.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT * min(tokens, knee)
+            + self.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT_STEEP * max(0, tokens - knee)
         )
+        scratch = units * per_unit
         # The buffers are per-rank working memory, so they shard with tp like the
         # rest of the forward pass.
         scratch = scratch / max(int(tensor_parallel or 1), 1)

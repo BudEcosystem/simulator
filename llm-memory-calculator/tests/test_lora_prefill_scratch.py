@@ -76,13 +76,43 @@ def notes_for(batched_tokens, rank=256, config=None):
 @pytest.mark.parametrize(
     "batched_tokens, measured_gib",
     [
-        (2394, 16.77),  # 22311 MiB peak - 5143 MiB LoRA-off control
-        (4273, 21.49),  # 27119 MiB peak - 5113 MiB LoRA-off control
+        (4273, 5.14),   # 10.85 GiB anon - 5.70 GiB same-series LoRA-off control
+        (7310, 10.39),  # 16.08 GiB anon - 5.70 GiB same-series LoRA-off control
     ],
 )
 def test_reproduces_measured_scratch(batched_tokens, measured_gib):
-    """Both calibration points, within the run-to-run noise of the pods (2 MiB)."""
-    assert scratch_gib(batched_tokens) == pytest.approx(measured_gib, abs=0.05)
+    """The two same-series rank-64 points, straddling the knee.
+
+    Both are cgroup ``anon`` deltas against a LoRA-off control run minutes apart on
+    the same node, at limits generous enough that nothing clipped. A repeat of the
+    7310 run landed within 1 MiB, so the term is deterministic.
+
+    The model is allowed to sit ABOVE measurement (it is a pod budget, and short
+    kills the pod) but only by a few percent -- 5.37 vs 5.14 and 10.62 vs 10.39.
+    """
+    got = scratch_gib(batched_tokens, rank=64)
+    assert got >= measured_gib, "a budget below measurement OOMKills the pod"
+    assert got == pytest.approx(measured_gib, rel=0.06)
+
+
+def test_the_token_slope_has_a_knee():
+    """A single slope fitted below 4273 under-predicts 7310 by 43%.
+
+    That is not academic: it is what left a production pod pinned against its
+    cgroup ceiling, hitting the limit 196 times and surviving only by evicting
+    page cache. The steep segment is 2.75x the shallow one.
+    """
+    calc = ModelMemoryCalculator()
+    below = scratch_gib(4273, rank=64)
+    above = scratch_gib(7310, rank=64)
+    shallow = (below - scratch_gib(2394, rank=64)) / (4273 - 2394)
+    steep = (above - below) / (7310 - 4273)
+    assert steep > 2.5 * shallow
+    assert calc.LORA_SCRATCH_KNEE_TOKENS == 4273
+
+    # a single-slope model would have said this, and it is 3 GiB short
+    single = scratch_gib(4273, rank=64) + shallow * (7310 - 4273)
+    assert above - single > 3.0
 
 
 def test_scratch_dwarfs_adapter_storage():
@@ -199,14 +229,13 @@ def test_flags_uncalibrated_token_budget():
     The fit must not present that as an estimate -- a caller sizing a pod at
     31 GiB would OOM. It is a lower bound and the note has to say so.
     """
-    notes = notes_for(8192)
+    notes = notes_for(8192, rank=64)
     assert any("UNCALIBRATED" in n and "LOWER BOUND" in n for n in notes)
-    assert scratch_gib(8192) < 45.02  # under-predicts the measured floor, as documented
 
 
 def test_no_note_inside_the_measured_envelope():
-    assert notes_for(4273) == []
-    assert notes_for(2048) == []
+    assert notes_for(4273, rank=64) == []
+    assert notes_for(7310, rank=64) == []
 
 
 def test_flags_depth_extrapolation():
@@ -216,23 +245,25 @@ def test_flags_depth_extrapolation():
     assert "assumed, not" in note
 
 
-def test_rank_scaling_is_superlinear_and_says_which_way_it_errs():
-    """Rank WAS measured at a second value, and `units` is wrong in both directions.
+def test_only_rank_64_is_treated_as_characterised():
+    """Rank 256 is NOT safe to size, and the model must say so.
 
-    2.82 GiB at rank 64 vs 16.77 GiB at rank 256, same 2394-token budget: 4x the rank
-    for 5.95x the scratch (~rank^1.29). Below 256 the linear form over-charges, which
-    is safe; above it, it under-charges, which is an OOMKill. Reporting one number
-    without saying which side you are on is how a caller sizes a pod 7.4 GiB short.
+    The rank-256 numbers this library shipped came from max_num_seqs=1 pods. At rank
+    64 the scratch is seqs-independent (1 vs 2 differ by 54 MiB), which made that look
+    generalisable -- but a rank-256 pod at T=4273 with seqs=2 OOMKilled at a 55 GiB
+    limit, where linear-in-rank predicts 20.6 GiB. So the ceiling sits at the only
+    rank actually characterised.
+
+    An earlier revision claimed rank^1.29 from a cross-campaign comparison; the
+    same-series data puts rank 64 and 256 within 4.5% of linear at T=4273. That claim
+    is withdrawn, and this test exists so it is not quietly reintroduced.
     """
-    below = notes_for(2394, rank=64)
-    assert any("CONSERVATIVE at rank" in n for n in below)
-    assert not any("UNDER-ESTIMATE" in n for n in below)
-
-    above = notes_for(2394, rank=512)
-    assert any("UNDER-ESTIMATE" in n and "LOWER BOUND" in n for n in above)
-
-    # at the calibrated geometry, claim nothing
-    assert notes_for(2394, rank=256) == []
+    calc = ModelMemoryCalculator()
+    assert calc.LORA_SCRATCH_CALIBRATED_RANK == 64
+    assert notes_for(4273, rank=64) == []
+    assert any("UNVALIDATED at rank" in n and "LOWER BOUND" in n for n in notes_for(4273, rank=256))
+    import inspect
+    assert "rank^1.29" not in inspect.getsource(calc.calculate_lora_prefill_scratch)
 
 
 def test_notes_reach_the_report():
