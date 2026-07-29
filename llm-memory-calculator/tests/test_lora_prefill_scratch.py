@@ -223,14 +223,35 @@ def test_zero_without_lora():
 # ------------------------------------------------------------------ honesty about limits
 
 
-def test_flags_uncalibrated_token_budget():
-    """8192 tokens OOMKilled a 50 GiB pod; the linear fit says 31 GiB.
+def test_past_the_ceiling_gets_margin_and_says_so():
+    """A bare warning was not enough, so past the ceiling the term carries margin.
 
-    The fit must not present that as an estimate -- a caller sizing a pod at
-    31 GiB would OOM. It is a lower bound and the note has to say so.
+    The previous revision returned the un-margined figure and labelled it a LOWER
+    BOUND. A T=17600 pod shipped on it and crash-looped -- its KV check found 8.8 GiB
+    free where it needed 10.0, short by 1.21 GiB across 5 identical restarts. The
+    note had fired; the pod died regardless.
     """
+    calc = ModelMemoryCalculator()
     notes = notes_for(8192, rank=64)
-    assert any("UNCALIBRATED" in n and "LOWER BOUND" in n for n in notes)
+    assert any("UNCALIBRATED" in n and "margin is applied" in n for n in notes)
+
+    # margin is arithmetic, not just wording
+    knee, ceil = calc.LORA_SCRATCH_KNEE_TOKENS, calc.LORA_SCRATCH_CALIBRATED_MAX_TOKENS
+    units = 1 * 64 * 28
+    raw = units * (
+        calc.LORA_SCRATCH_BYTES_PER_UNIT
+        + calc.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT * min(8192, knee)
+        + calc.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT_STEEP * max(0, 8192 - knee)
+    ) / 1e9
+    assert 8192 > ceil
+    assert scratch_gib(8192, rank=64) == pytest.approx(
+        raw * 1e9 / GIB * calc.LORA_SCRATCH_EXTRAPOLATION_MARGIN, rel=1e-6
+    )
+
+
+def test_the_failing_production_config_would_now_fit():
+    """T=17600 crash-looped at 28.41 GiB planned; >=29.62 GiB was needed."""
+    assert scratch_gib(17600, rank=64) > 29.62
 
 
 def test_no_note_inside_the_measured_envelope():
