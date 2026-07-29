@@ -1311,6 +1311,18 @@ class ModelMemoryCalculator:
     LORA_SCRATCH_KNEE_TOKENS = 4273
     LORA_SCRATCH_BYTES_PER_TOKEN_UNIT_STEEP = 1035.8  # above the knee
     LORA_SCRATCH_CALIBRATED_MAX_TOKENS = 7310
+    # Beyond the calibrated ceiling, add margin instead of reporting a bare lower
+    # bound. A note is not protection: a T=17600 pod (2.4x past calibration) shipped
+    # on the un-margined figure and crash-looped, its KV check finding 8.8 GiB free
+    # where it needed 10.0 -- short by 1.21 GiB, identically across 5 restarts, so a
+    # deterministic shortfall rather than a race.
+    #
+    # That observed error is +4.3% of the extrapolated term. The margin is set to 20%
+    # -- roughly 4.6x the one error we have measured -- because the two sides are not
+    # symmetric: too much costs memory on a machine with plenty, too little costs a
+    # crash-loop. It applies only above the ceiling, so calibrated deployments are
+    # unaffected.
+    LORA_SCRATCH_EXTRAPOLATION_MARGIN = 1.20
     # The geometry the constants were fitted at. `units` assumes the transient is
     # linear in depth and in rank; neither has been measured at a second value, so a
     # caller outside this geometry is extrapolating on an assumed shape.
@@ -1372,9 +1384,9 @@ class ModelMemoryCalculator:
         if tokens > self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS:
             notes.append(
                 f"LoRA prefill scratch is UNCALIBRATED at {tokens} batched tokens "
-                f"(measured up to {self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS}). The term already steepens "
-                f"once past {self.LORA_SCRATCH_KNEE_TOKENS} and may steepen again, so this figure is a "
-                f"LOWER BOUND, not an estimate."
+                f"(measured up to {self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS}); a "
+                f"{self.LORA_SCRATCH_EXTRAPOLATION_MARGIN:.0%} margin is applied because the term steepens "
+                f"past {self.LORA_SCRATCH_KNEE_TOKENS} and the un-margined figure crash-looped a real pod."
             )
         if rank > self.LORA_SCRATCH_CALIBRATED_RANK:
             # `units` treats rank as linear, and above the characterised rank that is
@@ -1408,6 +1420,8 @@ class ModelMemoryCalculator:
             + self.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT_STEEP * max(0, tokens - knee)
         )
         scratch = units * per_unit
+        if tokens > self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS:
+            scratch *= self.LORA_SCRATCH_EXTRAPOLATION_MARGIN
         # The buffers are per-rank working memory, so they shard with tp like the
         # rest of the forward pass.
         scratch = scratch / max(int(tensor_parallel or 1), 1)
