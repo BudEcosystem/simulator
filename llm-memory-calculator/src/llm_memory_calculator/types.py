@@ -25,6 +25,11 @@ class MemoryReport:
     # Non-fatal calibration caveats (empty when every term is inside its measured
     # envelope). Callers should surface these, not drop them.
     notes: List[str] = field(default_factory=list)
+    # How weight_memory_bytes was determined: a checkpoint measurement, or the
+    # parameter-counting estimate. A caller sizing a pod should know which it got --
+    # the estimate carries architecture risk, the measurement does not.
+    weight_source: str = "estimated"
+
     
     @property
     def total_memory_bytes(self) -> float:

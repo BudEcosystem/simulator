@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional, Union
 from .calculator import ModelMemoryCalculator
 from .types import MemoryReport
 from .huggingface_loader import HuggingFaceConfigLoader
+from .checkpoint_weights import weights_from_checkpoint
 from .lora.config import LoraConfig
 
 
@@ -111,7 +112,7 @@ def calculate_memory(
 
     # Create calculator and compute memory
     calculator = ModelMemoryCalculator()
-    return calculator.calculate_total_memory(
+    report = calculator.calculate_total_memory(
         config,
         batch_size=batch_size,
         seq_length=seq_length,
@@ -124,6 +125,30 @@ def calculate_memory(
         max_num_batched_tokens=max_num_batched_tokens,
         **kwargs
     )
+
+    # Weights: MEASURED beats estimated. Determining weight memory has two methods,
+    # and counting parameters from config.json is the fallback -- it has to know the
+    # architecture and can be wrong about it (a bad MoE assumption under-counted one
+    # model by 47% and OOMKilled the pod sized from it). When the caller handed us a
+    # readable checkpoint, its files are the answer and cannot be wrong about an
+    # architecture they do not model.
+    if isinstance(model_id_or_config, str):
+        measured, source = weights_from_checkpoint(model_id_or_config)
+        if measured:
+            estimated = report.weight_memory_bytes
+            report.weight_memory_bytes = float(measured)
+            report.weight_source = source
+            if estimated:
+                drift = 100 * (measured / estimated - 1)
+                if abs(drift) > 5:
+                    report.notes.append(
+                        f"Weights measured {measured / 1e9:.2f} GB from {source}; the estimate said "
+                        f"{estimated / 1e9:.2f} GB ({drift:+.1f}%). Sizing from the measurement."
+                    )
+        else:
+            report.weight_source = f"estimated ({source})"
+
+    return report
 
 
 def estimate_memory(config: Dict[str, Any], **kwargs) -> MemoryReport:
