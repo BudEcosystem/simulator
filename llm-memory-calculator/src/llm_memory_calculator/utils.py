@@ -126,24 +126,26 @@ def calculate_memory(
         **kwargs
     )
 
-    # Weights: MEASURED beats estimated. Determining weight memory has two methods,
-    # and counting parameters from config.json is the fallback -- it has to know the
-    # architecture and can be wrong about it (a bad MoE assumption under-counted one
-    # model by 47% and OOMKilled the pod sized from it). When the caller handed us a
-    # readable checkpoint, its files are the answer and cannot be wrong about an
-    # architecture they do not model.
+    # Weights: what the CHECKPOINT says beats what we infer. Determining weight memory
+    # has two methods, and counting parameters from config.json is the fallback -- it
+    # has to know the architecture and can be wrong about it (a bad MoE assumption
+    # under-counted one model by 47% and OOMKilled the pod sized from it). A shard
+    # index states the total outright and cannot be wrong about an architecture it does
+    # not model. Note this works BEFORE the weights are fetched: the index ships with
+    # config.json, so a caller sizing a model ahead of transferring it still gets the
+    # true number rather than the estimate.
     if isinstance(model_id_or_config, str):
-        measured, source = weights_from_checkpoint(model_id_or_config)
-        if measured:
+        actual, source = weights_from_checkpoint(model_id_or_config)
+        if actual:
             estimated = report.weight_memory_bytes
-            report.weight_memory_bytes = float(measured)
+            report.weight_memory_bytes = float(actual)
             report.weight_source = source
             if estimated:
-                drift = 100 * (measured / estimated - 1)
+                drift = 100 * (actual / estimated - 1)
                 if abs(drift) > 5:
                     report.notes.append(
-                        f"Weights measured {measured / 1e9:.2f} GB from {source}; the estimate said "
-                        f"{estimated / 1e9:.2f} GB ({drift:+.1f}%). Sizing from the measurement."
+                        f"Weights are {actual / 1e9:.2f} GB per {source}; the estimate said "
+                        f"{estimated / 1e9:.2f} GB ({drift:+.1f}%). Sizing from the checkpoint."
                     )
         else:
             report.weight_source = f"estimated ({source})"

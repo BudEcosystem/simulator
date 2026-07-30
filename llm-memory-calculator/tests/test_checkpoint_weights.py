@@ -1,28 +1,30 @@
-"""Measuring a checkpoint's weight bytes, the FIRST method for weight memory.
+"""Taking a checkpoint's weight bytes, the FIRST method for weight memory.
 
 Determining weight memory has two methods and this is the primary one; counting
-parameters from config.json is the fallback for when the checkpoint is not readable.
-This lived in budcluster because that is where the files happen to be at deploy time
--- placing logic by who holds the input rather than by what owns the method, the same
-error that had the LoRA scratch duplicated there.
+parameters from config.json is the fallback for when the checkpoint does not say.
 
 budsim estimates weights from config.json by counting parameters. That estimate was
 47% low for Qwen3.5-35B-A3B (a heuristic assumed 256 experts shared one
 down-projection) and is still ~3.4% low after the fix, which is the dangerous
-direction -- budcluster sizes the pod from it and a short pod OOMKills while loading.
+direction -- the pod is sized from it and a short pod OOMKills while loading.
 
-Where the checkpoint is on disk the number does not have to be estimated at all. The
-file sizes ARE the weights, and they are architecture-agnostic: a dense 7B, a
-256-expert MoE, a hybrid linear-attention stack, a multimodal wrapper and a quantized
-export all answer the same way, and none can be got wrong by a counting rule.
+Where the checkpoint states its size the number does not have to be estimated at all,
+and the statement is architecture-agnostic: a dense 7B, a 256-expert MoE, a hybrid
+linear-attention stack, a multimodal wrapper and a quantized export all answer the
+same way, and none can be got wrong by a counting rule.
 
-But measurement is not always possible, so this is a fallback chain, not a
-replacement. The model registry is a metadata cache -- of five real checkpoints in it,
-one had a shard index, two had a bare `model.safetensors`, one had `pytorch_model.bin`
-and one had no weight files at all. Weights arrive from object storage per deployment,
-so at simulation time there is usually nothing to measure and the estimator remains
-the only answer. It has to stay correct; this narrows where it is trusted, it does not
-retire it.
+The sharpest distinction these tests draw is between the two ways a checkpoint answers:
+
+* A shard **index** DECLARES the total. That is model metadata -- a few hundred KB
+  fetched alongside config.json -- and it is equally true before, during and after the
+  shards are transferred. The registry is a metadata cache, so this is precisely the
+  state a caller sizing a model *before* deployment finds it in.
+* Summing **files** MEASURES local disk. A partial download understates it.
+
+An earlier version required the shards to be present for both, which meant the one
+caller that most needed the true number -- sizing a pod before the 67 GiB transfer --
+was the one guaranteed to be refused and pushed back onto the estimator. Completeness
+is now checked only on the summing path, where a partial download can actually lie.
 """
 
 import json
@@ -112,11 +114,15 @@ def test_a_config_only_registry_entry_returns_none(tmp_path):
     assert "no weight files" in why
 
 
-def test_a_truncated_download_is_refused_not_measured(tmp_path):
-    """The exact stub that sat in the registry: index present, shards missing.
+def test_an_index_answers_before_the_shards_arrive(tmp_path):
+    """The exact stub that sat in the registry: index present, not one shard fetched.
 
-    Measuring here would report a 67 GiB model as ~0 and size a pod into a confident
-    OOMKill -- worse than the estimate it replaced, because it looks authoritative.
+    This is the whole reason the module exists. A control plane sizes the pod from the
+    metadata cache, *then* the 67 GiB transfers -- so every real sizing call sees this
+    directory, not a complete one. `metadata.total_size` is a property of the model and
+    is already correct here; refusing it (as an earlier version did, on the grounds that
+    the bytes were not on disk) sent the caller to the estimator that under-counts this
+    exact model, and the pod OOMKilled at 78.96 GiB.
     """
     total = 71_903_655_008
     write(
@@ -124,15 +130,20 @@ def test_a_truncated_download_is_refused_not_measured(tmp_path):
         "model.safetensors.index.json",
         content=json.dumps({"metadata": {"total_size": total}, "weight_map": {}}),
     )
+    write(tmp_path, "config.json", content="{}")
     write(tmp_path, "model.safetensors-00009-of-00014.safetensors.aria2", size=0)
 
-    got, why = measure(str(tmp_path))
-    assert got is None
-    assert "incomplete" in why
+    got, source = measure(str(tmp_path))
+    assert got == total
+    assert "total_size" in source
 
 
-def test_a_partially_downloaded_shard_set_is_refused(tmp_path):
-    """Half the shards present is still not a model."""
+def test_a_declared_total_does_not_track_the_bytes_on_disk(tmp_path):
+    """Half the shards present, and the answer is unchanged.
+
+    A declared total cannot shrink with the download; a sum would. That asymmetry is
+    why completeness is checked on one path and not the other.
+    """
     total = 14_000_000_000
     write(
         tmp_path,
@@ -141,9 +152,22 @@ def test_a_partially_downloaded_shard_set_is_refused(tmp_path):
     )
     for i in range(7):
         write(tmp_path, f"model-{i:05d}-of-00014.safetensors", size=1_000_000_000)
+    got, _ = measure(str(tmp_path))
+    assert got == total
+
+
+def test_a_truncated_shard_set_with_no_index_is_refused(tmp_path):
+    """No index to declare the total, so summing is all there is -- and it would lie.
+
+    The filenames still say how many shards belong here, which is the only signal left
+    that 7 GiB is not the model. Reporting it would size a 14 GiB model into a
+    confident OOMKill, worse than the estimate it replaced because it looks measured.
+    """
+    for i in range(1, 8):
+        write(tmp_path, f"model-{i:05d}-of-00014.safetensors", size=1_000_000_000)
     got, why = measure(str(tmp_path))
     assert got is None
-    assert "incomplete" in why
+    assert "incomplete" in why and "7 of 14" in why
 
 
 def test_a_missing_directory_returns_none(tmp_path):
@@ -167,7 +191,10 @@ def test_an_unparseable_index_falls_through_to_summing(tmp_path):
     "label, files",
     [
         ("dense", {"model.safetensors": 16_000_000_000}),
-        ("MoE", {f"model-{i:05d}-of-00014.safetensors": 5_000_000_000 for i in range(14)}),
+        (
+            "MoE",
+            {f"model-{i:05d}-of-00014.safetensors": 5_000_000_000 for i in range(14)},
+        ),
         ("multimodal", {"model.safetensors": 71_900_000_000}),
         ("quantized AWQ", {"model.safetensors": 4_000_000_000}),
     ],
