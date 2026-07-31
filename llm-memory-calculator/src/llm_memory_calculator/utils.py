@@ -30,6 +30,10 @@ def calculate_memory(
     # sizes the LoRA prefill transient. Defaults to seq_length when unset, so
     # existing callers are unaffected.
     max_num_batched_tokens: Optional[int] = None,
+    # Which engine backend will serve this. The LoRA prefill scratch is an artifact
+    # of vLLM's CPU torch_ops and is ZERO on CUDA; None is treated as CPU so callers
+    # that do not know their device stay conservative.
+    target_device: Optional[str] = None,
     # Advanced: pass LoraConfig directly (overrides individual parameters)
     lora_config: Optional[LoraConfig] = None,
     **kwargs
@@ -123,6 +127,7 @@ def calculate_memory(
         lora_config=lora_config,
         respect_weight_tying=respect_weight_tying,
         max_num_batched_tokens=max_num_batched_tokens,
+        target_device=target_device,
         **kwargs
     )
 

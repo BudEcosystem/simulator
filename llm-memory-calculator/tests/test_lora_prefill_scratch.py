@@ -239,18 +239,14 @@ def test_past_the_ceiling_gets_margin_and_says_so():
     notes = notes_for(8192, rank=64)
     assert any("UNCALIBRATED" in n and "margin is applied" in n for n in notes)
 
-    # margin is arithmetic, not just wording
-    knee, ceil = calc.LORA_SCRATCH_KNEE_TOKENS, calc.LORA_SCRATCH_CALIBRATED_MAX_TOKENS
-    units = 1 * 64 * 28
-    mult = calc.LORA_SCRATCH_ARCH_MULTIPLIER["Qwen3ForCausalLM"][1024]
-    raw = mult * units * (
-        calc.LORA_SCRATCH_BYTES_PER_UNIT
-        + calc.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT * min(8192, knee)
-        + calc.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT_STEEP * max(0, 8192 - knee)
-    ) / 1e9
+    # margin is arithmetic, not just wording: anchor scaled along the token shape,
+    # then the extrapolation margin on top
+    ceil = calc.LORA_SCRATCH_CALIBRATED_MAX_TOKENS
+    anchor_bytes, anchor_tokens = calc.LORA_SCRATCH_MEASURED_ANCHORS["Qwen3ForCausalLM"][1024]
+    raw = anchor_bytes * calc._lora_token_shape(8192) / calc._lora_token_shape(anchor_tokens)
     assert 8192 > ceil
     assert scratch_gib(8192, rank=64) == pytest.approx(
-        raw * 1e9 / GIB * calc.LORA_SCRATCH_EXTRAPOLATION_MARGIN, rel=1e-6
+        raw / GIB * calc.LORA_SCRATCH_EXTRAPOLATION_MARGIN, rel=1e-6
     )
 
 
@@ -265,18 +261,14 @@ def test_no_note_inside_the_measured_envelope():
     assert notes_for(7310, rank=64) == []
 
 
-def test_depth_is_still_assumed_linear():
-    """Depth remains the one axis never varied independently.
-
-    Every model carries its own depth AND its own width, so the campaign could not
-    separate them; the per-architecture multiplier absorbs whatever depth error remains
-    within a measured family. The old free-standing "extrapolated in depth" note is gone
-    because it fired on every model, including measured ones, and a note that always
-    fires is not information. This pins the assumption that is still being made.
-    """
+def test_depth_does_not_drive_the_term():
+    """The peak is per-call LIVE memory (copies of one module's weights at a time),
+    not a per-layer accumulation: Llama at 32 layers measured BELOW Qwen3-4B at 36,
+    and Gemma at 48 below both. An earlier revision multiplied by num_layers, which
+    is how a 28-layer calibration under-sized every deeper model."""
     shallow = scratch_gib(2048, config=dict(QWEN3_0_6B, num_hidden_layers=28))
     deeper = scratch_gib(2048, config=dict(QWEN3_0_6B, num_hidden_layers=56))
-    assert deeper == pytest.approx(2 * shallow, rel=1e-6)
+    assert deeper == pytest.approx(shallow, rel=1e-6)
 
 
 def test_only_rank_64_is_treated_as_characterised():
@@ -318,12 +310,12 @@ def test_notes_reach_the_report():
 
 
 def test_unsized_rather_than_guessed_when_geometry_is_missing():
-    """No layer count means no answer -- and the caller is told, not left at 0."""
+    """No module dimensions means no answer -- and the caller is told, not left at 0."""
     calc = ModelMemoryCalculator()
     lora = LoraConfig(enabled=True, max_loras=1, max_lora_rank=256)
     gb, notes = calc.calculate_lora_prefill_scratch({"model_type": "qwen3"}, lora, 2048)
     assert gb == 0.0
-    assert any("no layer count" in n for n in notes)
+    assert any("no usable module dimensions" in n for n in notes)
 
     gb, notes = calc.calculate_lora_prefill_scratch(
         QWEN3_0_6B, LoraConfig(enabled=True, max_loras=1, max_lora_rank=0), 2048
