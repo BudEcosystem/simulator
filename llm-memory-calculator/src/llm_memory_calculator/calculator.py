@@ -1294,7 +1294,9 @@ class ModelMemoryCalculator:
     # Therefore: model the measured range, and REFUSE to extrapolate past it. An
     # optimistic number here does not produce a slightly small pod, it produces one
     # that OOMKills at "Warming up model for the compilation" with the evidence gone.
-    LORA_SCRATCH_BYTES_PER_UNIT = 1_609_727  # per (max_loras * max_lora_rank * num_layers)
+    LORA_SCRATCH_BYTES_PER_UNIT = (
+        1_609_727  # per (max_loras * max_lora_rank * num_layers)
+    )
     # The token slope has a KNEE. Below ~4273 batched tokens it is 376 B/token/unit;
     # above, it is 2.75x steeper. Measured on same-series pods (LoRA-on minus a
     # LoRA-off control run minutes apart, cgroup `anon` so page cache cannot inflate
@@ -1307,7 +1309,9 @@ class ModelMemoryCalculator:
     # (43%), which is what left a production pod pinned against its cgroup ceiling.
     # Cross-check: extending the steep slope to T=8192 at rank 256 predicts 48.6 GiB
     # of scratch, and such a pod did OOMKill at a 50 GiB limit -- consistent.
-    LORA_SCRATCH_BYTES_PER_TOKEN_UNIT = 376.3  # per unit, per batched token, below the knee
+    LORA_SCRATCH_BYTES_PER_TOKEN_UNIT = (
+        376.3  # per unit, per batched token, below the knee
+    )
     LORA_SCRATCH_KNEE_TOKENS = 4273
     LORA_SCRATCH_BYTES_PER_TOKEN_UNIT_STEEP = 1035.8  # above the knee
     LORA_SCRATCH_CALIBRATED_MAX_TOKENS = 7310
@@ -1343,6 +1347,112 @@ class ModelMemoryCalculator:
     # actually known is that rank 64 is characterised and rank 256 is not.
     LORA_SCRATCH_CALIBRATED_RANK = 64
 
+    # ------------------------------------------------------------------ measured rates
+    #
+    # THE TERM IS ARCHITECTURE-SPECIFIC, NOT A FUNCTION OF THE CONFIG.
+    #
+    # The constants above model it as `rank * layers * f(tokens)` with one global
+    # coefficient. A five-architecture campaign (LoRA-on peak minus a LoRA-off control
+    # run back-to-back, cgroup `memory.peak`, limits generous enough that nothing
+    # clipped and oom_kills stayed 0) shows the per-unit rate spans 100x:
+    #
+    #   model             arch                    hidden layers  inter   B/(rank*layer*token)
+    #   Qwen3-0.6B        Qwen3ForCausalLM          1024     28   3072     855
+    #   Qwen3-4B          Qwen3ForCausalLM          2560     36   9728    2625
+    #   Llama-3.1-8B      LlamaForCausalLM          4096     32  14336    2480
+    #   Gemma-4-12B       Gemma4Unified             3840     48  15360    1473
+    #   Qwen3.5-4B        Qwen3_5 (hybrid)          2560     32   9216      26
+    #
+    # No config dimension predicts it. Within Qwen3 the rate triples with width, but
+    # across families it does not -- Llama at hidden 4096 sits BELOW Qwen3-4B at 2560.
+    # The two low outliers (Gemma, Qwen3.5) are the hybrid/sliding-window designs,
+    # where most layers carry no full attention projections for LoRA to wrap. The
+    # determinant is which modules vLLM's per-architecture LoRA support list wraps,
+    # which is engine state, not model metadata.
+    #
+    # Three width laws were fitted and rejected against this data: proportional to
+    # `hidden` (spread 3570/4381/2587), to `intermediate` (1190/1153/739 -- agreed to
+    # 3% on two points, then failed out-of-sample on Llama by 62%), and to the summed
+    # LoRA target output dims. A fourth fitted constant would relocate the error, not
+    # remove it; the previous one silently encoded the 0.6B's intermediate_size of 3072
+    # (3_217_660 / 3072 = 1047 B, within 20% of its measured 855) and every model since
+    # has been sized as though its FFN were 3072 wide.
+    #
+    # So: look up what has been measured, and be loud about anything else.
+    # Stored as MULTIPLIERS on the token shape above, not as flat bytes-per-token. The
+    # shape (base + knee + steeper slope) is the one thing the campaign did NOT have to
+    # re-derive: it was measured on Qwen3-0.6B across two token budgets and is convex
+    # (T=4273 -> 5.14 GiB, T=7310 -> 10.39 GiB; 2.02x the memory for 1.71x the tokens).
+    # Each architecture was measured at a single token budget, so a per-architecture
+    # token curve cannot be fitted -- but replacing the curve with a flat rate would
+    # under-predict exactly where under-prediction OOMKills, so the shape is kept and
+    # only its magnitude is per-architecture.
+    #
+    #   multiplier = measured_scratch / (units * shape(T_measured))
+    LORA_SCRATCH_ARCH_MULTIPLIER = {
+        "Qwen3ForCausalLM": {1024: 1.136, 2560: 3.486},
+        "LlamaForCausalLM": {4096: 3.293},
+        "Gemma4UnifiedForConditionalGeneration": {3840: 1.267},
+        "Qwen3_5ForConditionalGeneration": {2560: 0.034},
+    }
+    # `architectures` is absent from some configs, and falling back to the conservative
+    # multiplier for a model we HAVE measured over-reserves for no reason. These are the
+    # `model_type` values read from the same checkpoints the multipliers were measured
+    # on, so the alias is verified rather than assumed.
+    LORA_SCRATCH_MODEL_TYPE_ALIAS = {
+        "qwen3": "Qwen3ForCausalLM",
+        "llama": "LlamaForCausalLM",
+        "gemma4_unified": "Gemma4UnifiedForConditionalGeneration",
+        "qwen3_5": "Qwen3_5ForConditionalGeneration",
+    }
+    # Applied when the architecture has never been measured. It is the largest observed
+    # multiplier, not an average: over-reserving wastes memory on a machine that has it,
+    # under-reserving OOMKills at "Warming up model for the compilation" and takes the
+    # evidence with it. Callers that cannot afford the reservation should measure the
+    # model and add it to the table rather than lowering this.
+    LORA_SCRATCH_UNMEASURED_MULTIPLIER = 3.486
+
+    def _lora_scratch_multiplier(
+        self, config: Dict[str, Any], hidden: int
+    ) -> Tuple[float, List[str]]:
+        """Per-architecture multiplier on the token shape, plus provenance notes."""
+        notes: List[str] = []
+        arch = (config.get("architectures") or [None])[0]
+        by_width = self.LORA_SCRATCH_ARCH_MULTIPLIER.get(arch)
+        if by_width is None:
+            mt = config.get("model_type")
+            aliased = self.LORA_SCRATCH_MODEL_TYPE_ALIAS.get(mt)
+            if aliased:
+                arch, by_width = aliased, self.LORA_SCRATCH_ARCH_MULTIPLIER[aliased]
+
+        if by_width is None:
+            notes.append(
+                f"LoRA prefill scratch is UNMEASURED for architecture '{arch}'. Using the "
+                f"largest observed multiplier ({self.LORA_SCRATCH_UNMEASURED_MULTIPLIER:.3f}, "
+                f"from Qwen3-4B). Measured multipliers span 0.034-3.486 across five "
+                f"architectures and are NOT predictable from the config, so this is a safe "
+                f"upper bound rather than an estimate -- it over-reserves by ~100x on hybrid "
+                f"designs. Measure this model and add it to the table."
+            )
+            return self.LORA_SCRATCH_UNMEASURED_MULTIPLIER, notes
+
+        if hidden in by_width:
+            return by_width[hidden], notes
+
+        # Same architecture, unmeasured width. Take the largest measured multiplier for the
+        # family rather than interpolating: within Qwen3 the rate tripled between the
+        # two measured widths, so an interpolation across that gap is a guess, and the
+        # guess that OOMKills is the one that reads low.
+        widest = max(by_width, key=lambda h: by_width[h])
+        mult = by_width[widest]
+        notes.append(
+            f"LoRA prefill scratch is extrapolated within '{arch}': hidden_size {hidden} is "
+            f"unmeasured (have {sorted(by_width)}). Using the family's largest measured "
+            f"multiplier ({mult:.3f} at hidden {widest}) rather than interpolating -- the "
+            f"rate tripled between measured widths, so interpolation is not supported."
+        )
+        return mult, notes
+
     def calculate_lora_prefill_scratch(
         self,
         config: Dict[str, Any],
@@ -1368,10 +1478,16 @@ class ModelMemoryCalculator:
         if not lora_config or not getattr(lora_config, "enabled", False):
             return 0.0, notes
 
-        core = config.get("text_config") if isinstance(config.get("text_config"), dict) else config
+        core = (
+            config.get("text_config")
+            if isinstance(config.get("text_config"), dict)
+            else config
+        )
         num_layers = int(core.get("num_hidden_layers", core.get("n_layers", 0)) or 0)
         if num_layers <= 0:
-            notes.append("LoRA prefill scratch not sized: the config declares no layer count")
+            notes.append(
+                "LoRA prefill scratch not sized: the config declares no layer count"
+            )
             return 0.0, notes
 
         max_loras = int(getattr(lora_config, "max_loras", 1) or 1)
@@ -1405,12 +1521,13 @@ class ModelMemoryCalculator:
                 f"LoRA prefill scratch is extrapolated DOWN to rank {rank} from the characterised "
                 f"rank {self.LORA_SCRATCH_CALIBRATED_RANK}; linearity in rank is assumed below it."
             )
-        if num_layers != self.LORA_SCRATCH_CALIBRATED_LAYERS:
-            notes.append(
-                f"LoRA prefill scratch extrapolated in depth ({num_layers} layers vs the measured "
-                f"{self.LORA_SCRATCH_CALIBRATED_LAYERS}); linearity in depth is assumed, not "
-                f"measured -- rank turned out to scale superlinearly, so depth may too."
-            )
+        # Depth is still assumed linear -- it is the one axis the campaign could not
+        # vary independently, since every model has its own depth AND its own width.
+        # The per-architecture rate absorbs whatever depth error remains within a
+        # measured family; across families it is untested.
+        hidden = int(core.get("hidden_size", core.get("d_model", 0)) or 0)
+        multiplier, mult_notes = self._lora_scratch_multiplier(config, hidden)
+        notes.extend(mult_notes)
 
         units = max_loras * rank * num_layers
         knee = self.LORA_SCRATCH_KNEE_TOKENS
@@ -1419,7 +1536,7 @@ class ModelMemoryCalculator:
             + self.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT * min(tokens, knee)
             + self.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT_STEEP * max(0, tokens - knee)
         )
-        scratch = units * per_unit
+        scratch = units * per_unit * multiplier
         if tokens > self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS:
             scratch *= self.LORA_SCRATCH_EXTRAPOLATION_MARGIN
         # The buffers are per-rank working memory, so they shard with tp like the

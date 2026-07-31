@@ -80,19 +80,20 @@ def notes_for(batched_tokens, rank=256, config=None):
         (7310, 10.39),  # 16.08 GiB anon - 5.70 GiB same-series LoRA-off control
     ],
 )
-def test_reproduces_measured_scratch(batched_tokens, measured_gib):
-    """The two same-series rank-64 points, straddling the knee.
+def test_stays_above_the_original_anon_measurements(batched_tokens, measured_gib):
+    """These two points are a FLOOR now, not a target -- the methodology changed.
 
-    Both are cgroup ``anon`` deltas against a LoRA-off control run minutes apart on
-    the same node, at limits generous enough that nothing clipped. A repeat of the
-    7310 run landed within 1 MiB, so the term is deterministic.
+    They are cgroup ``anon`` deltas. The five-architecture campaign that made the term
+    architecture-aware measured ``memory.peak`` deltas instead, because peak is what the
+    cgroup limit actually constrains. On this same model at T=4273 the two agree on the
+    LoRA-on run (10.85 GiB anon vs 11.08 GiB peak) and differ on the control (5.70 vs
+    4.98), so the delta moved 5.14 -> 6.10 GiB. See test_lora_scratch_architecture.py.
 
-    The model is allowed to sit ABOVE measurement (it is a pod budget, and short
-    kills the pod) but only by a few percent -- 5.37 vs 5.14 and 10.62 vs 10.39.
+    Peak >= anon by construction, so the model must never fall BELOW these; asserting
+    equality would be asserting the old methodology.
     """
     got = scratch_gib(batched_tokens, rank=64)
     assert got >= measured_gib, "a budget below measurement OOMKills the pod"
-    assert got == pytest.approx(measured_gib, rel=0.06)
 
 
 def test_the_token_slope_has_a_knee():
@@ -134,7 +135,10 @@ def test_scratch_dwarfs_adapter_storage():
     storage = report.lora_adapter_memory_bytes / GIB
     scratch = report.lora_prefill_scratch_bytes / GIB
     assert storage == pytest.approx(0.22, abs=0.05)
-    assert scratch == pytest.approx(16.77, abs=0.05)
+    # 16.77 was the original anon-based figure; the architecture-aware term scales the
+    # 0.6B by its measured multiplier (1.136), giving 19.05. The point of this test is
+    # the ratio, not the absolute -- storage is ~1% of scratch either way.
+    assert scratch == pytest.approx(19.05, abs=0.1)
     assert scratch > 50 * storage
 
 
@@ -238,7 +242,8 @@ def test_past_the_ceiling_gets_margin_and_says_so():
     # margin is arithmetic, not just wording
     knee, ceil = calc.LORA_SCRATCH_KNEE_TOKENS, calc.LORA_SCRATCH_CALIBRATED_MAX_TOKENS
     units = 1 * 64 * 28
-    raw = units * (
+    mult = calc.LORA_SCRATCH_ARCH_MULTIPLIER["Qwen3ForCausalLM"][1024]
+    raw = mult * units * (
         calc.LORA_SCRATCH_BYTES_PER_UNIT
         + calc.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT * min(8192, knee)
         + calc.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT_STEEP * max(0, 8192 - knee)
@@ -255,15 +260,23 @@ def test_the_failing_production_config_would_now_fit():
 
 
 def test_no_note_inside_the_measured_envelope():
+    """Measured architecture + measured width + calibrated rank = no caveats."""
     assert notes_for(4273, rank=64) == []
     assert notes_for(7310, rank=64) == []
 
 
-def test_flags_depth_extrapolation():
-    """Depth has never been measured at a second value, so the direction is unknown."""
-    deeper = dict(QWEN3_0_6B, num_hidden_layers=80)
-    note = next(n for n in notes_for(2048, config=deeper) if "extrapolated in depth" in n)
-    assert "assumed, not" in note
+def test_depth_is_still_assumed_linear():
+    """Depth remains the one axis never varied independently.
+
+    Every model carries its own depth AND its own width, so the campaign could not
+    separate them; the per-architecture multiplier absorbs whatever depth error remains
+    within a measured family. The old free-standing "extrapolated in depth" note is gone
+    because it fired on every model, including measured ones, and a note that always
+    fires is not information. This pins the assumption that is still being made.
+    """
+    shallow = scratch_gib(2048, config=dict(QWEN3_0_6B, num_hidden_layers=28))
+    deeper = scratch_gib(2048, config=dict(QWEN3_0_6B, num_hidden_layers=56))
+    assert deeper == pytest.approx(2 * shallow, rel=1e-6)
 
 
 def test_only_rank_64_is_treated_as_characterised():
@@ -334,4 +347,4 @@ def test_counted_in_the_total():
         model_id_or_config=QWEN3_0_6B, batch_size=1, seq_length=2394, precision="bf16"
     )
     delta = (with_lora.total_memory_bytes - without.total_memory_bytes) / GIB
-    assert delta == pytest.approx(16.77 + 0.22, abs=0.1)
+    assert delta == pytest.approx(19.05 + 0.22, abs=0.1)
