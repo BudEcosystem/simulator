@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional, Union
 from .calculator import ModelMemoryCalculator
 from .types import MemoryReport
 from .huggingface_loader import HuggingFaceConfigLoader
+from .checkpoint_weights import weights_from_checkpoint
 from .lora.config import LoraConfig
 
 
@@ -24,6 +25,18 @@ def calculate_memory(
     lora_dtype: Optional[str] = None,
     fully_sharded_loras: Optional[bool] = None,
     target_modules: Optional[List[str]] = None,
+    # Tokens in ONE engine forward pass (vLLM's --max-num-batched-tokens). With
+    # chunked prefill this is below the context length, and it -- not the context --
+    # sizes the LoRA prefill transient. Defaults to seq_length when unset, so
+    # existing callers are unaffected.
+    max_num_batched_tokens: Optional[int] = None,
+    # Which engine backend will serve this. The LoRA prefill scratch is an artifact
+    # of vLLM's CPU torch_ops and is ZERO on CUDA; None is treated as CPU so callers
+    # that do not know their device stay conservative.
+    target_device: Optional[str] = None,
+    # Engine's concurrent-sequence ceiling (vLLM's --max-num-seqs). Sizes the
+    # sampler's per-sequence logits buffer, whose width is the model vocabulary.
+    max_num_seqs: Optional[int] = None,
     # Advanced: pass LoraConfig directly (overrides individual parameters)
     lora_config: Optional[LoraConfig] = None,
     **kwargs
@@ -106,7 +119,7 @@ def calculate_memory(
 
     # Create calculator and compute memory
     calculator = ModelMemoryCalculator()
-    return calculator.calculate_total_memory(
+    report = calculator.calculate_total_memory(
         config,
         batch_size=batch_size,
         seq_length=seq_length,
@@ -116,8 +129,37 @@ def calculate_memory(
         include_gradients=include_gradients,
         lora_config=lora_config,
         respect_weight_tying=respect_weight_tying,
+        max_num_batched_tokens=max_num_batched_tokens,
+        target_device=target_device,
+        max_num_seqs=max_num_seqs,
         **kwargs
     )
+
+    # Weights: what the CHECKPOINT says beats what we infer. Determining weight memory
+    # has two methods, and counting parameters from config.json is the fallback -- it
+    # has to know the architecture and can be wrong about it (a bad MoE assumption
+    # under-counted one model by 47% and OOMKilled the pod sized from it). A shard
+    # index states the total outright and cannot be wrong about an architecture it does
+    # not model. Note this works BEFORE the weights are fetched: the index ships with
+    # config.json, so a caller sizing a model ahead of transferring it still gets the
+    # true number rather than the estimate.
+    if isinstance(model_id_or_config, str):
+        actual, source = weights_from_checkpoint(model_id_or_config)
+        if actual:
+            estimated = report.weight_memory_bytes
+            report.weight_memory_bytes = float(actual)
+            report.weight_source = source
+            if estimated:
+                drift = 100 * (actual / estimated - 1)
+                if abs(drift) > 5:
+                    report.notes.append(
+                        f"Weights are {actual / 1e9:.2f} GB per {source}; the estimate said "
+                        f"{estimated / 1e9:.2f} GB ({drift:+.1f}%). Sizing from the checkpoint."
+                    )
+        else:
+            report.weight_source = f"estimated ({source})"
+
+    return report
 
 
 def estimate_memory(config: Dict[str, Any], **kwargs) -> MemoryReport:

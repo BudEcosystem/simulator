@@ -1,7 +1,7 @@
 """Type definitions for LLM Memory Calculator."""
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, List
 
 
 @dataclass
@@ -18,6 +18,26 @@ class MemoryReport:
     image_memory_bytes: float
     extra_work_bytes: float
     lora_adapter_memory_bytes: float = 0.0
+    # Punica prefill working buffers -- the TRANSIENT, ~50x the storage above and
+    # the term that actually sizes a LoRA serving pod. Kept separate because
+    # folding it into the storage figure is how it stayed invisible.
+    lora_prefill_scratch_bytes: float = 0.0
+    # Sampler working set: logits + log_softmax + sorted values + an int64 index,
+    # live per in-flight sequence. Its width is the VOCABULARY, not the hidden
+    # size, so a small-hidden/large-vocab model (Qwen3-0.6B: vocab 151936 vs
+    # hidden 1024) carries a real per-sequence term that no weights+KV formula
+    # sees. Model geometry x workload concurrency -- the same shape as KV and
+    # activation, so it belongs here rather than in a deployment layer that would
+    # have to re-open config.json to get the vocabulary.
+    sampler_logits_bytes: float = 0.0
+    # Non-fatal calibration caveats (empty when every term is inside its measured
+    # envelope). Callers should surface these, not drop them.
+    notes: List[str] = field(default_factory=list)
+    # How weight_memory_bytes was determined: a checkpoint measurement, or the
+    # parameter-counting estimate. A caller sizing a pod should know which it got --
+    # the estimate carries architecture risk, the measurement does not.
+    weight_source: str = "estimated"
+
     
     @property
     def total_memory_bytes(self) -> float:
@@ -29,6 +49,8 @@ class MemoryReport:
             self.state_memory_bytes +
             self.image_memory_bytes +
             self.lora_adapter_memory_bytes +
+            self.lora_prefill_scratch_bytes +
+            self.sampler_logits_bytes +
             self.extra_work_bytes
         )
     
@@ -61,6 +83,11 @@ class MemoryReport:
     def extra_work_gb(self) -> float:
         """Extra work memory in GB."""
         return self.extra_work_bytes / 1e9
+
+    @property
+    def sampler_logits_gb(self) -> float:
+        """Sampler working set in decimal GB."""
+        return self.sampler_logits_bytes / 1e9
 
     @property
     def lora_adapter_memory_gb(self) -> float:

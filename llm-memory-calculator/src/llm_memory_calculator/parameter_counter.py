@@ -29,6 +29,11 @@ class UniversalParameterCounter:
         # signal. Primary detector; the activation-string list above is the secondary/general fallback.
         self.gated_ffn_model_types = {
             'llama', 'llama4', 'mistral', 'mixtral', 'qwen2', 'qwen3', 'qwen2_moe', 'qwen3_moe',
+            # Qwen3.5 MoE, including the text tower of the multimodal wrapper. Without
+            # these, a 3-matrix (gate/up/down) expert is charged as 2 -- a 33%
+            # under-count -- resting entirely on `hidden_act` being present, which is
+            # exactly the unreliable signal this set exists to bypass.
+            'qwen3_5_moe', 'qwen3_5_moe_text', 'qwen3_next', 'qwen3_5',
             'gemma', 'gemma2', 'gemma3', 'phi3', 'phi4', 'yi', 'deepseek', 'deepseek_v2', 'deepseek_v3',
             'stablelm', 'starcoder2', 'cohere', 'command_r', 'olmo', 'olmo2', 'granite', 'minicpm',
             'internlm2', 'baichuan', 'exaone',
@@ -148,20 +153,31 @@ class UniversalParameterCounter:
         return tie_flag
     
     def _is_down_shared(self, config: Dict[str, Any]) -> bool:
-        """Determine if experts share the down projection matrix."""
-        # Check explicit keys first
-        if any(config.get(k) for k in self.shared_down_keys):
-            return True
-        
-        # Heuristic fallback
-        n_routed_experts = config.get('n_routed_experts', 1)
-        if n_routed_experts > 32 and config.get('moe_layer_freq', 1) == 1:
-            moe_intermediate_size = config.get('moe_intermediate_size', 0)
-            hidden_size = config.get('hidden_size', 1)
-            ratio = moe_intermediate_size / hidden_size
-            # Small experts often share down projection
-            return ratio < 0.6
-        return False
+        """Do the experts share ONE down-projection, rather than one each?
+
+        Only an explicit config key answers this. There used to be a heuristic
+        fallback -- ``n_routed_experts > 32`` and ``moe_intermediate/hidden < 0.6``
+        implied sharing, on the reasoning that "small experts often share down
+        projection". It is wrong, and wrong in the direction that under-counts a
+        model into an OOMKill.
+
+        A small ``moe_intermediate/hidden`` ratio is the *signature of fine-grained
+        MoE* -- many narrow experts -- not evidence of weight sharing. Every
+        mainstream MoE (Mixtral, Qwen2/3/3.5-MoE, DeepSeek) gives each expert its own
+        gate, up AND down matrix. The heuristic fired on exactly the architectures
+        that do not share: Qwen3.5-35B-A3B (256 experts, ratio 0.25), DeepSeek-V3
+        (256, 0.286), Qwen3-235B-A22B (128, 0.375). Mixtral escaped only because it
+        has 8 experts.
+
+        On Qwen3.5-35B-A3B it dropped 10.70B parameters -- 21.39 GB at bf16 -- which
+        is how budsim came to report 49.08 GB for a checkpoint whose own
+        safetensors index says 71.90 GB. BudCluster sized a 59 GiB pod from that and
+        the deployment OOMKilled loading weights.
+
+        So: no inference. If a model genuinely shares the projection it must say so
+        through one of ``shared_down_keys``.
+        """
+        return any(config.get(k) for k in self.shared_down_keys)
     
     def _aux_seq_head_params(self, config: Dict[str, Any], hidden_size: int) -> int:
         """Calculate auxiliary sequence head parameters."""
