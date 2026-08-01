@@ -8,15 +8,16 @@ See docs/lora-scratch-root-cause.md for the full derivation and probe evidence.
 That mechanism fixes what each input is allowed to do:
 
   * configured `max_lora_rank` -- linear with a floor (probe: rank 32 -> 0.573x)
-  * `max_num_batched_tokens`   -- convex measured shape
+  * `max_num_batched_tokens`   -- LINEAR (re-measured; the old convex knee was wrong)
   * `max_loras`                -- nearly nothing (probe: 2 slots -> +7.7%)
   * device                     -- CPU only; CUDA's Triton kernels never copy
   * architecture / width       -- via the wrapped modules' dimensions
 
-Measured (arch, hidden) pairs reproduce their anchors exactly. Everything else gets
-the mechanistic envelope `C x T x R x S_max x 2B + base` with C=7 (measured 2.3-6.5)
-and a note saying so. A five-architecture campaign showed no config dimension predicts
-the term across families, so unmeasured cases must err high and say why.
+Measured (arch, hidden) pairs reproduce their anchors exactly and scale LINEARLY in
+tokens. Everything else gets the mechanistic envelope `C x T x R x S_max x 2B` with
+C=6, above every measured model (C = 2.30-4.86), and a note saying so. A
+five-architecture campaign showed no config dimension predicts the term across
+families, so unmeasured cases must err high and say why.
 """
 
 import pytest
@@ -94,15 +95,28 @@ def test_measured_dense_models_carry_no_notes():
         assert notes == [], f"{arch}@{hidden}: {notes}"
 
 
-def test_out_of_sample_token_budget_errs_high():
-    """Qwen3-4B at T=2048 -- the one point never fitted. Measured 15.46 GiB.
+def test_tokens_are_linear_not_convex():
+    """The re-measurement that killed the knee.
 
-    The convex shape predicts ~+15% high, the safe direction; a linear-in-T form
-    under-predicted this point by 19%, which is the error that OOMKills."""
-    got, _ = scratch_gib(cfg("Qwen3ForCausalLM", 2560), 2048)
-    measured = 15.46
-    assert got > measured, "under-predicting is the failure mode that crash-loops pods"
-    assert got == pytest.approx(measured, rel=0.25)
+    0.6B at T=4273 -> 6.10 GiB and T=11183 -> 14.81 GiB: 2.43x the memory for 2.62x
+    the tokens, i.e. SUB-linear. The old convex shape (knee at 4273, 2.75x steeper
+    above) predicted 23.60 GiB there -- 1.59x the measurement -- and that inflation
+    made budsim report "no valid configuration" for a Qwen3-4B that fits.
+
+    Pinned as a ratio so a future re-introduction of a knee fails here.
+    """
+    lo, _ = scratch_gib(cfg("Qwen3ForCausalLM", 1024), 4273)
+    hi, _ = scratch_gib(cfg("Qwen3ForCausalLM", 1024), 11183)
+    assert lo == pytest.approx(6.10, rel=0.02)
+    assert hi == pytest.approx(14.81, rel=0.02)
+    assert hi / lo < 11183 / 4273, "must stay at or below proportional -- never convex"
+
+
+def test_the_wrongly_rejected_config_now_fits():
+    """Qwen3-4B at T=11183: the convex model said 99.98 GB and budsim rejected it."""
+    got, notes = scratch_gib(cfg("Qwen3ForCausalLM", 2560, inter=9728), 11183)
+    assert got * 1024**3 / 1e9 < 70, "linear form must be far below the convex 99.98 GB"
+    assert any("extrapolated to 11183" in n for n in notes)
 
 
 def test_model_type_alias_resolves_without_architectures_key():
@@ -191,7 +205,7 @@ def test_extra_lora_slots_cost_percent_not_multiples():
 def test_unmeasured_architecture_uses_the_mechanism_and_says_so():
     """Mistral-7B geometry: envelope = 7 x T x R x S_max x 2B + 1GB, S_max from config."""
     got, notes = scratch_gib(cfg("MistralForCausalLM", 4096, inter=14336), 4273)
-    expect = (7 * 4273 * 64 * 14336 * 2 + 1e9) / GIB
+    expect = (6 * 4273 * 64 * 14336 * 2) / GIB
     assert got == pytest.approx(expect, rel=0.01)
     assert any("UNMEASURED" in n and "largest wrapped slice" in n for n in notes)
 
@@ -208,7 +222,7 @@ def test_unmeasured_width_in_a_measured_family_gets_the_envelope():
     """Qwen3 at an unmeasured width: the rate tripled between measured widths, so
     neither anchor transfers; the mechanism (which knows the new width) does."""
     got, notes = scratch_gib(cfg("Qwen3ForCausalLM", 5120, inter=25600), 4273)
-    expect = (7 * 4273 * 64 * 25600 * 2 + 1e9) / GIB
+    expect = (6 * 4273 * 64 * 25600 * 2) / GIB
     assert got == pytest.approx(expect, rel=0.01)
     assert any("hidden_size 5120" in n for n in notes)
 

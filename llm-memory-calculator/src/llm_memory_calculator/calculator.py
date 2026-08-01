@@ -1270,176 +1270,125 @@ class ModelMemoryCalculator:
 
     # ---------------------------------------------------------------- LoRA prefill scratch
     #
-    # MEASURED, not derived. The A/B matrices above are the adapter STORAGE and are
-    # small (~0.3 GB at rank 256 for a 0.6B model). They are not what dominates a
-    # serving pod. During the prefill forward pass vLLM's Punica wrapper allocates
-    # shrink/expand working buffers whose size tracks the BATCHED TOKEN COUNT, and
-    # for the same model that transient measured 16.8 GB -- roughly 50x the storage.
-    #
-    # Isolated by differencing two otherwise identical pods, LoRA on vs off, on
-    # vllm-cpu:0.6.0 / Qwen3-0.6B (28 layers, hidden 1024), max_loras=1, rank 256,
-    # max_num_seqs=1, reading cgroup memory.peak:
-    #
-    #   batched tokens   LoRA off   LoRA on    scratch
-    #        2394         5143 MiB  22311 MiB  16.77 GiB
-    #        4273         5113 MiB  27119 MiB  21.49 GiB
-    #        8192         5096 MiB   OOM@50GiB >45.02 GiB
-    #
-    # Two things that decides. The LoRA-off pod is FLAT in the token budget (47 MiB
-    # across a 3.4x range), so every bit of context sensitivity in a LoRA deployment
-    # comes from this term and none of it from activations. And the term is convex:
-    # the slope more than doubles above ~4.3k tokens, so a line fitted to the low end
-    # under-predicts the 8k point by at least 13 GiB.
-    #
-    # Therefore: model the measured range, and REFUSE to extrapolate past it. An
-    # optimistic number here does not produce a slightly small pod, it produces one
-    # that OOMKills at "Warming up model for the compilation" with the evidence gone.
-    LORA_SCRATCH_BYTES_PER_UNIT = (
-        1_609_727  # per (max_loras * max_lora_rank * num_layers)
-    )
-    # The token slope has a KNEE. Below ~4273 batched tokens it is 376 B/token/unit;
-    # above, it is 2.75x steeper. Measured on same-series pods (LoRA-on minus a
-    # LoRA-off control run minutes apart, cgroup `anon` so page cache cannot inflate
-    # it, limits generous enough that nothing clipped):
-    #
-    #   rank 64: T=4273 -> 5.14 GiB     T=7310 -> 10.39 GiB (repeat 10.38, so the
-    #   term is deterministic to ~1 MiB, not noisy as an earlier pass concluded)
-    #
-    # A single-slope fit calibrated below the knee under-predicts T=7310 by 3.10 GiB
-    # (43%), which is what left a production pod pinned against its cgroup ceiling.
-    # Cross-check: extending the steep slope to T=8192 at rank 256 predicts 48.6 GiB
-    # of scratch, and such a pod did OOMKill at a 50 GiB limit -- consistent.
-    LORA_SCRATCH_BYTES_PER_TOKEN_UNIT = (
-        376.3  # per unit, per batched token, below the knee
-    )
-    LORA_SCRATCH_KNEE_TOKENS = 4273
-    LORA_SCRATCH_BYTES_PER_TOKEN_UNIT_STEEP = 1035.8  # above the knee
-    LORA_SCRATCH_CALIBRATED_MAX_TOKENS = 7310
-    # Beyond the calibrated ceiling, add margin instead of reporting a bare lower
-    # bound. A note is not protection: a T=17600 pod (2.4x past calibration) shipped
-    # on the un-margined figure and crash-looped, its KV check finding 8.8 GiB free
-    # where it needed 10.0 -- short by 1.21 GiB, identically across 5 restarts, so a
-    # deterministic shortfall rather than a race.
-    #
-    # That observed error is +4.3% of the extrapolated term. The margin is set to 20%
-    # -- roughly 4.6x the one error we have measured -- because the two sides are not
-    # symmetric: too much costs memory on a machine with plenty, too little costs a
-    # crash-loop. It applies only above the ceiling, so calibrated deployments are
-    # unaffected.
-    LORA_SCRATCH_EXTRAPOLATION_MARGIN = 1.20
-    # RANK 64 IS THE ONLY VALIDATED RANK, and the ceiling is set there deliberately.
-    #
-    # The original rank-256 figures came from `max_num_seqs=1` pods. At rank 64 the
-    # scratch is independent of max_num_seqs (seqs 1 vs 2 differ by 54 MiB), so that
-    # looked safe to generalise. It is not: a rank-256 pod at T=4273 with seqs=2
-    # OOMKilled at a 55 GiB limit, where linear-in-rank predicts 20.6 GiB of scratch.
-    # Something about high rank interacts with the sequence count, and it is not
-    # modelled here.
-    #
-    # An earlier revision claimed rank scales as ~rank^1.29. That came from comparing
-    # pods across two measurement campaigns with different controls, and the
-    # same-series data does not support it -- at T=4273 rank 64 and rank 256 sit
-    # within 4.5% of linear. The claim is withdrawn rather than restated: what is
-    # actually known is that rank 64 is characterised and rank 256 is not.
-    LORA_SCRATCH_CALIBRATED_RANK = 64
-
-    # ------------------------------------------------- the mechanism, and measured anchors
-    #
-    # ROOT CAUSE (read the analysis in docs/lora-scratch-root-cause.md before touching
-    # this): the scratch is NOT model physics. vLLM's CPU LoRA path
-    # (`lora/ops/torch_ops/lora_ops.py`, used by PunicaWrapperCPU) fancy-indexes the
+    # ROOT CAUSE (docs/lora-scratch-root-cause.md): the scratch is NOT model physics.
+    # vLLM's CPU LoRA path (`lora/ops/torch_ops`, used by PunicaWrapperCPU) indexes the
     # stacked weight tensor with a PER-TOKEN index vector:
     #
     #     selected_loras = lora_b_weights[lora_indices_tensor]   # indices shape (T,)
     #
-    # which materializes (T, out_features, max_lora_rank) -- one full copy of the LoRA
-    # B matrix per token -- per wrapped module, per layer, per forward. Four probe
-    # experiments on Qwen3-0.6B pinned the shape of the term:
+    # materializing (T, out_features, max_lora_rank) -- one copy of the LoRA matrix per
+    # token -- per wrapped module, per forward. Probes on Qwen3-0.6B pinned every axis:
     #
-    #   rank 32 vs 64        -> 0.573x   linear in the CONFIGURED rank with a floor
-    #                                    (the copy is of the stacked slot, not the
-    #                                    rank-8 warmup dummy)
-    #   max_loras 2 vs 1     -> +7.7%    NOT proportional to max_loras (indexing
-    #                                    selects one slot per token)
+    #   rank 32 vs 64        -> 0.573x   linear in CONFIGURED rank, with a floor
+    #   max_loras 2 vs 1     -> +7.7%    NOT proportional to slot count
     #   MALLOC trim forced   -> same     live memory, not allocator retention
-    #   OMP threads 4 vs 12  -> same     no per-thread component
+    #   OMP 4 vs 12 threads  -> same     no per-thread component
     #
-    # And it is CPU-ONLY: punica_gpu uses Triton grouped-GEMM kernels that never
-    # materialize per-token copies. CUDA deployments must get ZERO for this term.
+    # It is CPU-ONLY: punica_gpu uses Triton grouped-GEMM kernels that never copy.
     #
-    # The dominant allocation is the largest wrapped slice (gate/up: intermediate_size
-    # columns), so the mechanistic envelope for an UNMEASURED model is
+    # TOKENS ARE LINEAR, NOT CONVEX. An earlier revision carried a "knee at 4273 with a
+    # 2.75x steeper slope above it" from a cgroup-`anon` campaign. Re-measured against
+    # LoRA-off controls using cgroup memory.peak, that shape is wrong -- and wrong in
+    # the expensive direction:
     #
-    #     C * T * R * S_max * 2 bytes + base
+    #   Qwen3-0.6B, rank 64:  T=4273 -> 6.10 GiB     T=11183 -> 14.81 GiB
+    #                         2.43x the memory for 2.62x the tokens: SUB-linear.
+    #   The convex shape predicted 23.60 GiB at T=11183 -- 1.59x the measurement.
     #
-    # with C the number of such copies live at the peak instant. C measured 2.3-6.5
-    # across five architectures (einsum temporaries and module overlap -- engine
-    # scheduling, not physics); 7 covers every observation.
+    # The mechanism explains it exactly. Normalising by one live copy of the largest
+    # wrapped slice (T * S_max * rank * 2 B) gives a CONSTANT live-copy count:
     #
-    # For MEASURED (arch, hidden) pairs the anchor below reproduces the observation
-    # exactly and scales in T along the convex measured shape (validated +15% high,
-    # the safe direction, at an out-of-sample token budget). Anchors are the
-    # control-subtracted peaks at rank 64, max_loras 1, TP 1:
+    #   0.6B T=4273 -> C=3.44        0.6B T=11183 -> C=3.44
     #
-    #   arch                    hidden   scratch      T_meas
-    #   Qwen3ForCausalLM          1024    6.55 GB      4273
-    #   Qwen3ForCausalLM          2560   25.84 GB      4273
-    #   LlamaForCausalLM          4096   21.70 GB      4273
-    #   Gemma4Unified...          3840    9.27 GB      2048
-    #   Qwen3_5ForCondGen         2560    0.22 GB      4273   (see WARMUP_SKIP below)
-    LORA_SCRATCH_MEASURED_ANCHORS = {
-        "Qwen3ForCausalLM": {1024: (6.55e9, 4273), 2560: (25.84e9, 4273)},
-        "LlamaForCausalLM": {4096: (21.70e9, 4273)},
-        "Gemma4UnifiedForConditionalGeneration": {3840: (9.27e9, 2048)},
-        "Qwen3_5ForConditionalGeneration": {2560: (0.2244e9, 4273)},
+    # Constant C across a 2.6x token range is what "one copy per token, a few live at
+    # once" predicts. The convex shape was an artifact of the older methodology, and it
+    # cost a real deployment: a Qwen3-4B plan was sized at 99.98 GB of scratch where the
+    # linear form gives 54.6 GB, and the inflated figure made budsim report "no valid
+    # configuration" for a model that fits.
+    #
+    # So: scale each measured anchor LINEARLY in tokens, and never re-introduce a knee
+    # without measuring one.
+    #
+    # Anchors are control-subtracted cgroup memory.peak deltas (LoRA-on pod minus a
+    # LoRA-off pod, same node, same args, generous limits, oom_kills=0), at rank 64,
+    # max_loras=1, TP=1. Stored in MiB exactly as measured:
+    #
+    #   arch                    hidden   T      LoRA    control   scratch
+    #   Qwen3ForCausalLM          1024   4273   11343    5095      6248 MiB
+    #   Qwen3ForCausalLM          1024  11183   23418    8252     15166 MiB
+    #   Qwen3ForCausalLM          2560   2048   28146   12319     15827 MiB
+    #   Qwen3ForCausalLM          2560   4273   37128   12478     24650 MiB
+    #   LlamaForCausalLM          4096   4273   54574   33872     20702 MiB
+    #   Gemma4Unified             3840   2048   56959   48122      8837 MiB
+    #   Qwen3_5ForCondGen         2560   4273   18362   18148       214 MiB  (WARMUP_SKIP)
+    LORA_SCRATCH_ANCHORS_MIB = {
+        "Qwen3ForCausalLM": {
+            1024: [(4273, 6248), (11183, 15166)],
+            2560: [(2048, 15827), (4273, 24650)],
+        },
+        "LlamaForCausalLM": {4096: [(4273, 20702)]},
+        "Gemma4UnifiedForConditionalGeneration": {3840: [(2048, 8837)]},
+        "Qwen3_5ForConditionalGeneration": {2560: [(4273, 214)]},
     }
-    # `architectures` is absent from some configs; these aliases were read from the
-    # same checkpoints the anchors were measured on, so they are verified.
+    # `architectures` is absent from some configs; these `model_type` values were read
+    # from the same checkpoints the anchors were measured on, so the alias is verified.
     LORA_SCRATCH_MODEL_TYPE_ALIAS = {
         "qwen3": "Qwen3ForCausalLM",
         "llama": "LlamaForCausalLM",
         "gemma4_unified": "Gemma4UnifiedForConditionalGeneration",
         "qwen3_5": "Qwen3_5ForConditionalGeneration",
     }
-    # Architectures whose ~zero measurement is suspected to be warmup SKIPPING the
-    # copy path (GDN-hybrid execution), not the path being cheap. A real adapter
-    # request at serving time may still take it -- a pod budgeted from the near-zero
-    # anchor would then OOM *after* passing warmup. The anchor is used (it is what
-    # was measured) but the caller is warned every time.
+    # Architectures whose ~zero measurement is suspected to be warmup SKIPPING the copy
+    # path (GDN-hybrid execution), not the path being cheap. A real adapter request at
+    # serving time may still take it -- a pod budgeted from the near-zero anchor would
+    # then OOM AFTER passing warmup. The anchor is used (it is what was measured) but
+    # the caller is warned every time.
     LORA_SCRATCH_WARMUP_SKIP_SUSPECTED = {"Qwen3_5ForConditionalGeneration"}
-    # Live-concurrency envelope for unmeasured models: how many copies of the
-    # largest slice are live at the peak instant. Measured 2.3-6.5; 7 covers all.
-    LORA_SCRATCH_LIVE_CONCURRENCY_ENVELOPE = 7
-    # Observed floor: shrink-side fp32 copies, index tensors, warmup overhead. From
-    # the rank-32/64 pair on Qwen3-0.6B (0.081 GiB/rank + 0.90 GiB).
-    LORA_SCRATCH_BASE_BYTES = 1.0e9
-    # Rank factor relative to the rank-64 anchors: linear with a floor below 64
-    # (measured: rank 32 -> 0.573x, not 0.5x), plain linear above 64 (the floor form
-    # would under-predict there, and rank >64 is already flagged UNVALIDATED).
+    # Live-copy count for architectures with no anchor. Measured C (scratch over one
+    # live copy of the largest slice) is 3.90 / 4.86 / 2.77 / 2.30 on the four dense
+    # anchors -- max 4.86. The envelope sits above all of them because an unmeasured
+    # architecture must err high: over-reserving wastes memory on a machine that has it,
+    # under-reserving OOMKills at warmup and destroys the evidence.
+    LORA_SCRATCH_LIVE_COPY_ENVELOPE = 6.0
+    # Beyond the largest measured token budget the linear form is extrapolating. The one
+    # extrapolation actually checked (0.6B, 4273 -> 11183, a 2.6x reach) came in 7.8%
+    # HIGH against a proportional scale, so the shape is already mildly conservative;
+    # 10% covers the residual without the 20% the convex shape needed.
+    LORA_SCRATCH_EXTRAPOLATION_MARGIN = 1.10
+    # RANK 64 IS THE ONLY VALIDATED RANK. Linear with a floor below it (measured: rank
+    # 32 -> 0.573x, not 0.5x); plain linear above, where the floor form would
+    # under-predict and rank >64 is separately flagged UNVALIDATED. An earlier revision
+    # claimed rank^1.29 from a cross-campaign comparison; same-series data puts rank 64
+    # and 256 within 4.5% of linear, so that claim is withdrawn rather than restated.
+    LORA_SCRATCH_CALIBRATED_RANK = 64
     LORA_SCRATCH_RANK_SLOPE = 0.855
     LORA_SCRATCH_RANK_FLOOR = 0.145
-    # Each adapter slot past the first cost +7.7% measured at max_loras=2; budget 10%
-    # per extra slot.
+    # Each adapter slot past the first cost +7.7% measured at max_loras=2; budget 10%.
     LORA_SCRATCH_EXTRA_LORA_FACTOR = 0.10
     # Device strings that use the CPU torch_ops path and therefore pay this term.
     LORA_SCRATCH_CPU_DEVICES = {"cpu", "cpu_high"}
     # Device strings with dedicated non-copying kernels: the term is zero.
     LORA_SCRATCH_ZERO_DEVICES = {"cuda", "gpu", "rocm"}
 
-    def _lora_token_shape(self, tokens: int) -> float:
-        """The convex token shape measured on Qwen3-0.6B (base + knee + steep slope).
+    @staticmethod
+    def _lora_scratch_from_anchors(anchors, tokens: int) -> float:
+        """Bytes at ``tokens``, scaling the measured anchors LINEARLY.
 
-        Used only as a RATIO between two token budgets, so its absolute scale
-        cancels. Kept convex because a linear form under-predicted an out-of-sample
-        low-T point by 19% while this shape over-predicted by 15% -- and between
-        those two errors, only one of them OOMKills a pod.
+        Two or more anchors give a straight line through them (base + slope), which
+        separates the token-proportional copies from the fixed overhead. One anchor can
+        only be scaled proportionally, which is the conservative reading -- it
+        attributes all of the measurement to the token term.
         """
-        knee = self.LORA_SCRATCH_KNEE_TOKENS
-        return (
-            self.LORA_SCRATCH_BYTES_PER_UNIT
-            + self.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT * min(tokens, knee)
-            + self.LORA_SCRATCH_BYTES_PER_TOKEN_UNIT_STEEP * max(0, tokens - knee)
-        )
+        pts = sorted(anchors)
+        if len(pts) >= 2:
+            (t1, m1), (t2, m2) = pts[0], pts[-1]
+            slope = (m2 - m1) / (t2 - t1)
+            base = m1 - slope * t1
+            if base < 0:
+                return m2 * tokens / t2 * 1024**2
+            return max(0.0, base + slope * tokens) * 1024**2
+        t0, m0 = pts[0]
+        return m0 * tokens / t0 * 1024**2
 
     def _lora_rank_factor(self, rank: int) -> float:
         """Scratch at ``rank`` relative to the rank-64 anchors."""
@@ -1452,9 +1401,9 @@ class ModelMemoryCalculator:
     def _lora_largest_slice(core: Dict[str, Any]) -> int:
         """out_features of the widest LoRA-wrapped slice, from the config.
 
-        gate/up slices (intermediate_size) dominate on every measured model, but a
-        model with an unusually wide attention could flip that, so take the max over
-        the candidate slices rather than assuming.
+        gate/up (intermediate_size) dominates on every measured model, but a model with
+        unusually wide attention could flip that, so take the max over the candidates
+        rather than assuming.
         """
         hidden = int(core.get("hidden_size", core.get("d_model", 0)) or 0)
         heads = int(core.get("num_attention_heads", 0) or 0)
@@ -1462,14 +1411,13 @@ class ModelMemoryCalculator:
         if not head_dim and heads and hidden:
             head_dim = hidden // heads
         kv_heads = int(core.get("num_key_value_heads", heads) or 0)
-        candidates = [
+        return max(
             int(core.get("intermediate_size", 0) or 0),
             int(core.get("moe_intermediate_size", 0) or 0),
-            heads * head_dim,          # q slice
-            2 * kv_heads * head_dim,   # fused kv slice
-            hidden,                    # o / down out
-        ]
-        return max(candidates)
+            heads * head_dim,
+            2 * kv_heads * head_dim,
+            hidden,
+        )
 
     def calculate_lora_prefill_scratch(
         self,
@@ -1481,19 +1429,19 @@ class ModelMemoryCalculator:
     ) -> Tuple[float, List[str]]:
         """Peak transient of vLLM's CPU LoRA path, in GB, plus provenance notes.
 
-        This is the term that dominates a LoRA-enabled CPU serving pod. It is
-        separate from :meth:`calculate_lora_adapter_memory`, the persistent A/B
-        storage -- reporting them as one number is how a 16 GB term stayed
-        invisible behind a 0.3 GB one.
+        This is the term that dominates a LoRA-enabled CPU serving pod. It is separate
+        from :meth:`calculate_lora_adapter_memory`, the persistent A/B storage --
+        reporting them as one number is how a 16 GB term stayed invisible behind a
+        0.3 GB one.
 
         ``batched_tokens`` is the engine's ``max_num_batched_tokens`` (tokens in one
         forward pass), NOT the context length. ``target_device`` decides whether the
-        term exists at all: it is an artifact of the CPU torch_ops implementation,
-        and CUDA's Triton kernels do not pay it. ``None`` is treated as CPU so that
-        callers that do not know their device stay conservative.
+        term exists at all: it is an artifact of the CPU torch_ops implementation and
+        CUDA's Triton kernels do not pay it. ``None`` is treated as CPU so callers that
+        do not know their device stay conservative.
 
-        Returns ``(gb, notes)``. ``notes`` is non-empty whenever any input leaves
-        the measured envelope; callers must surface them rather than drop them.
+        Returns ``(gb, notes)``. ``notes`` is non-empty whenever any input leaves the
+        measured envelope; callers must surface them rather than drop them.
         """
         notes: List[str] = []
         if not lora_config or not getattr(lora_config, "enabled", False):
@@ -1514,13 +1462,13 @@ class ModelMemoryCalculator:
                 f"dedicated (non-copying) LoRA kernels the reservation is phantom."
             )
 
-        max_loras = int(getattr(lora_config, "max_loras", 1) or 1)
         rank = int(getattr(lora_config, "max_lora_rank", 0) or 0)
         if rank <= 0:
             notes.append("LoRA prefill scratch not sized: max_lora_rank is unset")
             return 0.0, notes
-
+        max_loras = int(getattr(lora_config, "max_loras", 1) or 1)
         tokens = max(int(batched_tokens or 0), 1)
+
         core = (
             config.get("text_config")
             if isinstance(config.get("text_config"), dict)
@@ -1529,18 +1477,11 @@ class ModelMemoryCalculator:
         hidden = int(core.get("hidden_size", core.get("d_model", 0)) or 0)
 
         arch = (config.get("architectures") or [None])[0]
-        if arch not in self.LORA_SCRATCH_MEASURED_ANCHORS:
+        if arch not in self.LORA_SCRATCH_ANCHORS_MIB:
             aliased = self.LORA_SCRATCH_MODEL_TYPE_ALIAS.get(config.get("model_type"))
             if aliased:
                 arch = aliased
 
-        if tokens > self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS:
-            notes.append(
-                f"LoRA prefill scratch is UNCALIBRATED at {tokens} batched tokens "
-                f"(measured up to {self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS}); a "
-                f"{self.LORA_SCRATCH_EXTRAPOLATION_MARGIN:.0%} margin is applied on the "
-                f"measured path because the term is convex in tokens."
-            )
         if rank > self.LORA_SCRATCH_CALIBRATED_RANK:
             notes.append(
                 f"LoRA prefill scratch is UNVALIDATED at rank {rank}: only rank "
@@ -1549,21 +1490,25 @@ class ModelMemoryCalculator:
                 f"treat this as a LOWER BOUND, not an estimate."
             )
 
-        anchors = self.LORA_SCRATCH_MEASURED_ANCHORS.get(arch) or {}
-        if hidden in anchors:
-            anchor_bytes, anchor_tokens = anchors[hidden]
-            scratch = anchor_bytes * self._lora_token_shape(tokens) / self._lora_token_shape(anchor_tokens)
-            if tokens > self.LORA_SCRATCH_CALIBRATED_MAX_TOKENS:
+        anchors = (self.LORA_SCRATCH_ANCHORS_MIB.get(arch) or {}).get(hidden)
+        if anchors:
+            scratch = self._lora_scratch_from_anchors(anchors, tokens)
+            t_max = max(t for t, _ in anchors)
+            if tokens > t_max:
                 scratch *= self.LORA_SCRATCH_EXTRAPOLATION_MARGIN
-            scratch *= self._lora_rank_factor(rank)
+                notes.append(
+                    f"LoRA prefill scratch is extrapolated to {tokens} batched tokens "
+                    f"(measured to {t_max} for this model); the term is linear in tokens "
+                    f"(measured, not assumed) and a "
+                    f"{self.LORA_SCRATCH_EXTRAPOLATION_MARGIN:.0%} margin is applied."
+                )
             if arch in self.LORA_SCRATCH_WARMUP_SKIP_SUSPECTED:
                 notes.append(
                     f"LoRA prefill scratch for '{arch}' is budgeted from a near-zero WARMUP "
-                    f"measurement, and the warmup is suspected to SKIP the CPU copy path for "
-                    f"this hybrid architecture rather than the path being cheap. A real "
-                    f"adapter request at serving time may still take it -- if so the pod OOMs "
-                    f"after passing warmup. Validate with a real adapter before relying on "
-                    f"this figure."
+                    f"measurement, and warmup is suspected to SKIP the CPU copy path for this "
+                    f"hybrid architecture rather than the path being cheap. A real adapter "
+                    f"request at serving time may still take it -- if so the pod OOMs after "
+                    f"passing warmup. Validate with a real adapter before relying on this."
                 )
         else:
             slice_out = self._lora_largest_slice(core)
@@ -1574,30 +1519,34 @@ class ModelMemoryCalculator:
                 )
                 return 0.0, notes
             scratch = (
-                self.LORA_SCRATCH_LIVE_CONCURRENCY_ENVELOPE * tokens * rank * slice_out * 2
-                + self.LORA_SCRATCH_BASE_BYTES
+                self.LORA_SCRATCH_LIVE_COPY_ENVELOPE
+                * tokens
+                * self.LORA_SCRATCH_CALIBRATED_RANK
+                * slice_out
+                * 2
             )
+            known = sorted((self.LORA_SCRATCH_ANCHORS_MIB.get(arch) or {}))
             where = (
                 f"architecture '{arch}'"
-                if not anchors
-                else f"'{arch}' at hidden_size {hidden} (measured: {sorted(anchors)})"
+                if not known
+                else f"'{arch}' at hidden_size {hidden} (measured: {known})"
             )
             notes.append(
-                f"LoRA prefill scratch is UNMEASURED for {where}. Sized from the "
-                f"mechanism instead: {self.LORA_SCRATCH_LIVE_CONCURRENCY_ENVELOPE} live "
-                f"copies x {tokens} tokens x rank {rank} x {slice_out} (largest wrapped "
-                f"slice) x 2 B + base. The live-concurrency envelope covers every "
-                f"measured model (2.3-6.5 observed) and errs high on purpose -- measure "
-                f"this model and add an anchor to remove the margin."
+                f"LoRA prefill scratch is UNMEASURED for {where}. Sized from the mechanism: "
+                f"{self.LORA_SCRATCH_LIVE_COPY_ENVELOPE:g} live copies x {tokens} tokens x rank "
+                f"{self.LORA_SCRATCH_CALIBRATED_RANK} x {slice_out} (largest wrapped slice) x 2 B. "
+                f"The envelope sits above every measured model (C = 2.30-4.86) and errs high on "
+                f"purpose -- measure this model and add an anchor to remove the margin."
             )
+
+        scratch *= self._lora_rank_factor(rank)
 
         if max_loras > 1:
             scratch *= 1 + self.LORA_SCRATCH_EXTRA_LORA_FACTOR * (max_loras - 1)
             if max_loras > 2:
                 notes.append(
-                    f"LoRA prefill scratch at max_loras={max_loras} is extrapolated: only "
-                    f"1 and 2 slots are measured (+7.7% for the second; 10% per extra slot "
-                    f"budgeted)."
+                    f"LoRA prefill scratch at max_loras={max_loras} is extrapolated: only 1 and "
+                    f"2 slots are measured (+7.7% for the second; 10% per extra slot budgeted)."
                 )
 
         # The copies are per-rank working memory: column-parallel slices shard their
