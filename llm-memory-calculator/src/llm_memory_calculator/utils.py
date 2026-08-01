@@ -34,6 +34,9 @@ def calculate_memory(
     # of vLLM's CPU torch_ops and is ZERO on CUDA; None is treated as CPU so callers
     # that do not know their device stay conservative.
     target_device: Optional[str] = None,
+    # Engine's concurrent-sequence ceiling (vLLM's --max-num-seqs). Sizes the
+    # sampler's per-sequence logits buffer, whose width is the model vocabulary.
+    max_num_seqs: Optional[int] = None,
     # Advanced: pass LoraConfig directly (overrides individual parameters)
     lora_config: Optional[LoraConfig] = None,
     **kwargs
@@ -128,6 +131,7 @@ def calculate_memory(
         respect_weight_tying=respect_weight_tying,
         max_num_batched_tokens=max_num_batched_tokens,
         target_device=target_device,
+        max_num_seqs=max_num_seqs,
         **kwargs
     )
 

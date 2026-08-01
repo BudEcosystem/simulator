@@ -1554,6 +1554,51 @@ class ModelMemoryCalculator:
         scratch = scratch / max(int(tensor_parallel or 1), 1)
         return scratch / 1e9, notes
 
+    # ------------------------------------------------------------- sampler / logits
+    #
+    # vLLM's sampler keeps logits + log_softmax + sorted values + an int64 index
+    # (two 4-byte words) live per in-flight sequence. The width is the VOCABULARY,
+    # not the hidden size, so a small-hidden/large-vocab model carries a real
+    # per-sequence cost that a weights+KV formula never sees: Qwen3-0.6B has a
+    # 151936 vocabulary against a hidden size of 1024.
+    #
+    # This lived in budcluster, which had to re-open the model's config.json to get
+    # the vocabulary -- deployment code reaching into a checkpoint for model
+    # geometry. It is model dims x workload concurrency, exactly the shape of KV and
+    # activation, so it belongs with the physics.
+    SAMPLER_LOGITS_DTYPE_BYTES = 4
+    SAMPLER_LOGITS_COPIES = 5
+
+    def calculate_sampler_logits(
+        self, config: Dict[str, Any], max_num_seqs: Optional[int]
+    ) -> Tuple[float, List[str]]:
+        """Sampler working set in bytes for one rank, plus notes.
+
+        ``max_num_seqs`` is the engine's concurrent-sequence ceiling. Returns 0 with
+        a note when the vocabulary is unknown -- at concurrency 10 the term is only
+        ~29 MiB, too small to refuse sizing over, but silently dropping it is how
+        terms go missing.
+        """
+        notes: List[str] = []
+        core = (
+            config.get("text_config")
+            if isinstance(config.get("text_config"), dict)
+            else config
+        )
+        vocab = int(core.get("vocab_size") or config.get("vocab_size") or 0)
+        seqs = max(int(max_num_seqs or 0), 0)
+        if not vocab or not seqs:
+            if not vocab:
+                notes.append(
+                    "Sampler logits not sized: the config declares no vocab_size. The "
+                    "term is small (~29 MiB at concurrency 10) but is omitted, not covered."
+                )
+            return 0.0, notes
+        return (
+            float(seqs * vocab * self.SAMPLER_LOGITS_COPIES * self.SAMPLER_LOGITS_DTYPE_BYTES),
+            notes,
+        )
+
     def calculate_total_memory(
         self,
         config: Dict[str, Any],
@@ -1571,6 +1616,7 @@ class ModelMemoryCalculator:
         encoder_seq_length: Optional[int] = None,
         max_num_batched_tokens: Optional[int] = None,
         target_device: Optional[str] = None,
+        max_num_seqs: Optional[int] = None,
     ) -> MemoryReport:
         """
         Calculate total memory requirements for model inference.
@@ -1697,6 +1743,13 @@ class ModelMemoryCalculator:
             )
             notes.extend(scratch_notes)
 
+        # Sampler working set: model vocabulary x concurrent sequences. Zero for
+        # pooling/embedding models, which never sample.
+        sampler_logits = 0.0
+        if max_num_seqs:
+            sampler_logits, sampler_notes = self.calculate_sampler_logits(config, max_num_seqs)
+            notes.extend(sampler_notes)
+
         # Calculate image memory (for multimodal models)
         image_memory = 0.0
         if num_images and num_images > 0:
@@ -1788,6 +1841,7 @@ class ModelMemoryCalculator:
             image_memory_bytes=image_bytes,
             lora_adapter_memory_bytes=lora_bytes,
             lora_prefill_scratch_bytes=lora_scratch * 1e9,
+            sampler_logits_bytes=sampler_logits,
             notes=notes,
             extra_work_bytes=extra_work_bytes
             + (runtime_bytes_with_overhead - runtime_bytes),
