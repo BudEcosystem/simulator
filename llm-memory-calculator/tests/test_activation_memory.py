@@ -15,6 +15,8 @@ import pytest
 from llm_memory_calculator import calculate_memory
 from llm_memory_calculator.activation_memory import (
     DEFAULT_PREFILL_CHUNK_TOKENS,
+    _attention_working_width,
+    _ffn_working_width,
     calculate_activation_bytes,
     prefill_tokens_in_flight,
 )
@@ -120,25 +122,73 @@ def test_moe_prices_only_the_routed_experts():
 
 def test_gated_attention_output_widens_the_attention_path():
     """Qwen3.5/3.6 set attn_output_gate, so q_proj emits q *and* its gate --
-    visible in the shipped q_proj weight, [12288, 5120] for 24 heads x 256."""
-    base = dict(
+    visible in the shipped q_proj weight, [12288, 5120] for 24 heads x 256.
+
+    Measured on a config whose attention path is the WIDER of the two, so the
+    gate actually moves the peak. Testing it on Qwen3.6's real dimensions would
+    assert nothing: its FFN (2 x 17408) dominates either way, so the result is
+    equal with and without the gate for reasons unrelated to the gate.
+    """
+    narrow_ffn = dict(
         hidden_size=5120,
-        intermediate_size=17408,
+        intermediate_size=2048,
         num_attention_heads=24,
         num_key_value_heads=4,
         head_dim=256,
         hidden_act="silu",
     )
-    ungated = calculate_activation_bytes(base, 1, 8192, 2)
-    gated = calculate_activation_bytes(dict(base, attn_output_gate=True), 1, 8192, 2)
-    # The FFN (2*17408=34816) still dominates both, so the peak is unchanged...
-    assert gated == ungated
-    # ...but the attention width itself did grow, which matters for models whose
-    # attention path is the wider of the two.
-    narrow_ffn = dict(base, intermediate_size=2048)
+    ungated = _attention_working_width(narrow_ffn, 5120)
+    gated = _attention_working_width(dict(narrow_ffn, attn_output_gate=True), 5120)
+    # q doubles (q + its gate); k, v and the attention output are unchanged.
+    assert gated - ungated == 24 * 256
     assert calculate_activation_bytes(
         dict(narrow_ffn, attn_output_gate=True), 1, 8192, 2
     ) > calculate_activation_bytes(narrow_ffn, 1, 8192, 2)
+
+
+def test_nested_moe_text_config_is_normalized():
+    """A multimodal MoE must cost the same as the identical flat model.
+
+    `calculate_activation_bytes` used to read `config["text_config"]` verbatim
+    while only the OUTER dict had been normalized, so vendor MoE spellings
+    (moe_ffn_dim, num_local_experts, experts_per_token) never resolved inside it
+    and the FFN width fell back to the dense `intermediate_size` -- 1.84x over.
+    """
+    moe = dict(
+        hidden_size=4096, num_hidden_layers=32, num_attention_heads=32,
+        num_key_value_heads=8, hidden_act="silu", intermediate_size=14336,
+        moe_ffn_dim=1024, num_local_experts=128, experts_per_token=4,
+    )
+    flat = calculate_activation_bytes(moe, 1, 8192, 2)
+    nested = calculate_activation_bytes(
+        {"vision_config": {"hidden_size": 1024, "patch_size": 14, "image_size": 336},
+         "text_config": dict(moe)},
+        1, 8192, 2,
+    )
+    vision_only = calculate_activation_bytes(
+        {"vision_config": {"hidden_size": 1024, "patch_size": 14, "image_size": 336},
+         "text_config": dict(moe)}, 1, 8192, 2,
+    ) - calculate_activation_bytes({"text_config": dict(moe)}, 1, 8192, 2)
+    assert nested - vision_only == pytest.approx(flat, rel=1e-12)
+    # And the MoE width is the routed one, not the dense fallback.
+    assert _ffn_working_width(
+        __import__("llm_memory_calculator.config_normalizer", fromlist=["x"])
+        .ConfigNormalizer.normalize_config(moe), 4096
+    ) == 4 * 1024 * 2
+
+
+def test_activation_bytes_does_not_depend_on_caller_normalization():
+    """Callable directly with a raw config, as the public API implies."""
+    from llm_memory_calculator.config_normalizer import ConfigNormalizer
+
+    raw = dict(
+        hidden_size=2048, num_hidden_layers=24, num_attention_heads=16,
+        num_key_value_heads=4, hidden_act="silu", moe_ffn_dim=512,
+        num_local_experts=64, experts_per_token=2, intermediate_size=8192,
+    )
+    assert calculate_activation_bytes(raw, 1, 4096, 2) == calculate_activation_bytes(
+        ConfigNormalizer.normalize_config(raw), 1, 4096, 2
+    )
 
 
 def test_decode_steady_state_is_negligible():

@@ -214,6 +214,36 @@ def test_smallthinker_moe_key_aliases_resolve():
     assert n["expert_top_k"] == 6
 
 
+def test_state_and_param_sizing_share_one_dimension_resolver():
+    """Structural guard against re-duplicating `mamba_dims`.
+
+    Two independent copies drifted immediately: one validated num_heads/head_dim
+    against d_inner, the other assumed a head width of 64. The product
+    n_heads*d_head matched either way so the STATE term hid it -- but n_heads
+    enters the parameter formula additively, so the two would have disagreed for
+    any Mamba-2 model whose head width is not 64.
+    """
+    from llm_memory_calculator import mechanism_dims, mixer_params, state_memory
+
+    assert mixer_params._mamba_dims is mechanism_dims.mamba_dims
+    assert state_memory._mamba_dims is mechanism_dims.mamba_dims
+
+
+def test_mamba_dims_prefers_explicit_head_geometry_over_expand():
+    """Nemotron-H's d_inner is mamba_num_heads x mamba_head_dim = 10240.
+
+    Deriving it as expand x hidden_size instead gives 8960 -- and the head width
+    is 80, so the discarded `d_inner // 64` heuristic would have reported 140
+    heads where the checkpoint has 128.
+    """
+    from llm_memory_calculator.mechanism_dims import mamba_dims
+
+    c = cfg("nvidia_NVIDIA-Nemotron-Nano-9B-v2")
+    d = mamba_dims(c, c["hidden_size"])
+    assert (d["n_heads"], d["d_head"], d["d_inner"]) == (128, 80, 10240)
+    assert d["d_inner"] != 2 * c["hidden_size"]
+
+
 def test_recurrent_mixer_params_is_zero_without_recurrent_layers():
     c = cfg("openai_gpt-oss-120b")
     assert recurrent_mixer_params(c, resolve_layer_plan(c), c["hidden_size"]) == 0

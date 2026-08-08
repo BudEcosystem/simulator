@@ -22,6 +22,8 @@ and never forms one.
 
 from typing import Any, Dict, Optional
 
+from .config_normalizer import ConfigNormalizer
+
 # vLLM V1's default --max-num-batched-tokens. Engines differ (TRT-LLM commonly
 # 8192, SGLang 8192, older vLLM 2048/512) but they are all within a small factor,
 # and every one of them is bounded -- which is the property that matters here.
@@ -81,9 +83,14 @@ def _ffn_working_width(config: Dict[str, Any], hidden: int) -> int:
     gated = any(x in act for x in ("silu", "swish", "swiglu", "geglu", "glu"))
     fan = 2 if gated else 1  # gate and up are both live before down runs
 
-    n_experts = _get(config, "n_routed_experts", "num_local_experts", "num_experts")
-    top_k = _get(config, "expert_top_k", "num_experts_per_tok", "experts_per_token")
-    moe_inter = _get(config, "moe_intermediate_size", "expert_intermediate_size")
+    # Canonical names only. `config` is normalized by the caller, and
+    # ConfigNormalizer already owns the full alias table (moe_ffn_dim,
+    # moe_ffn_hidden_size, num_local_experts, moe_topk, ...). Re-listing a
+    # shorter copy here is how a nested text_config silently fell back to the
+    # dense width and over-stated activations by 1.84x.
+    n_experts = config.get("n_routed_experts")
+    top_k = config.get("expert_top_k")
+    moe_inter = config.get("moe_intermediate_size")
     if n_experts and int(n_experts) > 1 and moe_inter and top_k:
         # Only the routed experts run per token, not all of them.
         return int(top_k) * int(moe_inter) * fan
@@ -120,8 +127,21 @@ def calculate_activation_bytes(
     Independent of ``num_hidden_layers`` by design: layer N's activations are
     freed before layer N+1 allocates, so depth does not multiply the peak.
     """
+    # Normalize here rather than trusting the caller, and normalize the nested
+    # sub-config in its own right.
+    #
+    # Relying on the caller left a multimodal model's `text_config` in raw vendor
+    # spelling -- its MoE keys never resolved and the FFN width fell back to the
+    # dense `intermediate_size`, measured at 1.84x on an aliased MoE config.
+    # Owning it here also makes this function safe to call directly, which the
+    # tests and any external user reasonably do. Normalization returns a copy and
+    # is idempotent, so a second pass costs nothing.
+    config = ConfigNormalizer.normalize_config(config)
     text_config = config.get("text_config")
-    text_config = text_config if isinstance(text_config, dict) else config
+    if isinstance(text_config, dict):
+        text_config = ConfigNormalizer.normalize_config(text_config)
+    else:
+        text_config = config
     vision_config = config.get("vision_config")
     vision_config = vision_config if isinstance(vision_config, dict) else {}
 

@@ -1148,7 +1148,8 @@ class ModelMemoryCalculator:
         workload that read 76.8 GB against a real figure under 1 GB.
         """
         bytes_per_element = self.PRECISION_BYTES.get(precision.lower(), 2)
-        config = ConfigNormalizer.normalize_config(config)
+        # `calculate_activation_bytes` normalizes internally, including the
+        # nested text_config -- no pre-pass needed here.
         return (
             calculate_activation_bytes(
                 config,

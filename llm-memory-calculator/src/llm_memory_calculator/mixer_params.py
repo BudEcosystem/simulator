@@ -16,6 +16,7 @@ inferred from the obvious config keys -- Nemotron-H's d_inner is
 
 from typing import Any, Dict, Optional
 
+from .mechanism_dims import first as _first, mamba_dims as _mamba_dims
 from .layer_plan import (
     MECH_GDN,
     MECH_KDA,
@@ -24,35 +25,6 @@ from .layer_plan import (
     MECH_MAMBA2,
     MECH_SHORTCONV,
 )
-
-
-def _first(config: Dict[str, Any], *keys, default=None):
-    for k in keys:
-        v = config.get(k)
-        if v is not None:
-            return v
-    return default
-
-
-def _mamba_dims(config: Dict[str, Any], hidden: int) -> Dict[str, int]:
-    d_state = int(_first(config, "state_size", "d_state", "mamba_d_state", "ssm_state_size", default=16))
-    expand = int(_first(config, "expand", "expand_factor", "mamba_expand", "ssm_expand", default=2))
-    d_conv = int(_first(config, "conv_kernel", "d_conv", "mamba_d_conv", "ssm_conv_kernel", default=4))
-    n_groups = int(_first(config, "n_groups", "mamba_n_groups", "ssm_n_groups", default=1))
-    n_heads = _first(config, "mamba_n_heads", "mamba_num_heads", "n_mamba_heads")
-    d_head = _first(config, "mamba_d_head", "mamba_head_dim")
-
-    if n_heads and d_head:
-        d_inner = int(n_heads) * int(d_head)
-    else:
-        d_inner = expand * hidden
-        n_heads = int(n_heads) if n_heads else max(1, d_inner // 64)
-        d_head = max(1, d_inner // n_heads)
-    dt_rank = int(_first(config, "dt_rank", "time_step_rank", "mamba_dt_rank", default=max(1, hidden // 16)))
-    return dict(
-        d_state=d_state, d_conv=d_conv, n_groups=n_groups, d_inner=d_inner,
-        n_heads=int(n_heads), d_head=int(d_head), dt_rank=dt_rank,
-    )
 
 
 def gdn_params(config: Dict[str, Any], hidden: int) -> int:

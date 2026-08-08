@@ -36,6 +36,22 @@ MECH_SHORTCONV = "shortconv"  # conv cache only, no recurrent matrix (LFM2)
 ATTN_FULL = "full"
 ATTN_SLIDING = "sliding"
 
+# The config keys that let a mechanism be sized from the model itself. If none
+# of them are present the sizing functions fall back to built-in defaults, which
+# are one particular model's geometry -- so the plan is marked approximate
+# instead of passing a fabricated number off as a measurement.
+_MECHANISM_REQUIRED_KEYS = {
+    MECH_GDN: {
+        "linear_num_key_heads", "linear_num_value_heads",
+        "linear_key_head_dim", "linear_value_head_dim",
+    },
+    MECH_KDA: {"linear_attn_config"},
+    MECH_MAMBA1: {"state_size", "d_state", "mamba_d_state", "ssm_state_size"},
+    MECH_MAMBA2: {"state_size", "d_state", "mamba_d_state", "ssm_state_size"},
+    MECH_SHORTCONV: {"conv_L_cache"},
+    MECH_LIGHTNING: {"num_attention_heads"},
+}
+
 
 def _first(config: Dict[str, Any], *keys, default=None):
     """First present, non-None key among aliases. Families disagree on spelling."""
@@ -271,28 +287,17 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     # discard the 512-token window and inflate KV by 195x at 100k context -- a
     # far worse answer than the one being approximated.
     if model_type == "phi4flash" or "phi4flash" in arch:
-        return {
-            "attn": [ATTN_SLIDING] * n,
-            "recurrent": [None] * n,
-            "ffn": [True] * n,
-            "dialect": "phi4flash",
-            "parallel": False,
-            "num_attention_layers": n,
-            "num_full_layers": 0,
-            "num_sliding_layers": n,
-            "num_recurrent_layers": 0,
-            "num_ffn_layers": n,
-            "num_attention_param_layers": n,
-            "num_ffn_param_layers": n,
-            "mechanisms": [],
-            "approximate": True,
-            "notes": [
+        plan["attn"] = [ATTN_SLIDING] * n
+        return _finish(
+            plan, config, "phi4flash",
+            notes + [
                 "SambaY (Phi-4-flash): YOCO cross-attention layers share one "
                 "global KV cache and half the stack is Mamba, so charging all "
                 "layers a windowed KV is an OVER-estimate. Recurrent state is "
                 "reported as 0 because the config ships no SSM dimensions."
             ],
-        }
+            approximate=True,
+        )
 
     return None
 
@@ -306,6 +311,8 @@ def _finish(
     ffn: Optional[List[bool]] = None,
     attention_param_layers: Optional[int] = None,
     ffn_param_layers: Optional[int] = None,
+    approximate: bool = False,
+    keep_uniform: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Attach summary counts; drop plans that found no hybrid structure."""
     attn, rec = plan["attn"], plan["recurrent"]
@@ -319,13 +326,28 @@ def _finish(
     # A plain transformer resolved through `layer_types` (all full, no
     # recurrence) carries no information the uniform path lacks. Returning None
     # keeps those models on their existing, already-correct code path.
-    if n_rec == 0 and n_slide == 0:
+    if n_rec == 0 and n_slide == 0 and not keep_uniform:
         return None
+
+    # A mechanism whose defining dimensions are absent from the config gets
+    # sized from this module's fallbacks -- which are one specific model's
+    # geometry. Producing a plausible number from another model's shape is the
+    # same failure the hardcoded `state_size = 16` default used to cause, so say
+    # so rather than let it pass as a measurement.
+    for mech, keys in _MECHANISM_REQUIRED_KEYS.items():
+        if mech in {r for r in rec if r} and not any(k in _text_config(config) for k in keys):
+            approximate = True
+            notes = notes + [
+                f"{mech}: none of {sorted(keys)} present in the config, so its "
+                f"state and parameter counts fall back to default geometry and "
+                f"are an ESTIMATE, not derived from this model."
+            ]
 
     plan.update(
         {
             "dialect": dialect,
             "parallel": parallel,
+            "approximate": approximate,
             "num_attention_layers": n_full + n_slide,
             "num_full_layers": n_full,
             "num_sliding_layers": n_slide,
@@ -341,7 +363,6 @@ def _finish(
                 sum(1 for f in plan["ffn"] if f) if ffn_param_layers is None else ffn_param_layers
             ),
             "mechanisms": sorted({r for r in rec if r}),
-            "approximate": False,
             "notes": notes,
         }
     )

@@ -25,6 +25,7 @@ one: Nemotron-H, Bamba, granite-4.0-h and Mamba-2 proper all carry the same
 
 from typing import Any, Dict, Optional
 
+from .mechanism_dims import first as _first, mamba_dims as _mamba_dims
 from .layer_plan import (
     MECH_GDN,
     MECH_KDA,
@@ -37,14 +38,6 @@ from .layer_plan import (
 _FP32 = 4
 
 
-def _first(config: Dict[str, Any], *keys, default=None):
-    for k in keys:
-        v = config.get(k)
-        if v is not None:
-            return v
-    return default
-
-
 def _state_dtype_bytes(config: Dict[str, Any]) -> int:
     """Bytes per recurrent-state element. fp32 unless the config overrides."""
     dt = str(
@@ -53,48 +46,6 @@ def _state_dtype_bytes(config: Dict[str, Any]) -> int:
     return {"float32": 4, "fp32": 4, "float16": 2, "fp16": 2, "bfloat16": 2, "bf16": 2}.get(
         dt, 4
     )
-
-
-def _mamba_dims(config: Dict[str, Any], hidden_size: int) -> Dict[str, int]:
-    """Resolve Mamba dims across the four key dialects in circulation.
-
-    ``state_size`` (Mamba proper), ``mamba_d_state`` (Jamba, Falcon-H1, granite,
-    Bamba, Zamba2) and ``ssm_state_size`` (Nemotron-H) all mean d_state. Missing
-    aliases used to fall through to a hardcoded 16, which is off by 16x on a
-    Falcon-H1 that ships 256.
-    """
-    d_state = int(_first(config, "state_size", "d_state", "mamba_d_state", "ssm_state_size", default=16))
-    expand = int(_first(config, "expand", "expand_factor", "mamba_expand", "ssm_expand", default=2))
-    d_conv = int(_first(config, "conv_kernel", "d_conv", "mamba_d_conv", "ssm_conv_kernel", default=4))
-    n_groups = int(_first(config, "n_groups", "mamba_n_groups", "ssm_n_groups", default=1))
-
-    n_heads = _first(config, "mamba_n_heads", "mamba_num_heads", "n_mamba_heads")
-    d_head = _first(config, "mamba_d_head", "mamba_head_dim")
-
-    if n_heads and d_head:
-        d_inner = int(n_heads) * int(d_head)
-    else:
-        d_inner = expand * hidden_size
-        if n_heads:
-            d_head = max(1, d_inner // int(n_heads))
-        else:
-            # Mamba-2 proper puts head counts under the generic names; only trust
-            # them when they are consistent with d_inner, since `num_heads` also
-            # means attention heads on hybrid configs.
-            nh, dh = config.get("num_heads"), config.get("head_dim")
-            if nh and dh and int(nh) * int(dh) == d_inner:
-                n_heads, d_head = int(nh), int(dh)
-            else:
-                n_heads, d_head = 1, d_inner
-
-    return {
-        "d_state": d_state,
-        "d_conv": d_conv,
-        "n_groups": n_groups,
-        "d_inner": d_inner,
-        "n_heads": int(n_heads),
-        "d_head": int(d_head),
-    }
 
 
 def _per_layer_bytes(

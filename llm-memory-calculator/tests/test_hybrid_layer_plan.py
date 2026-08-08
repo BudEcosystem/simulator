@@ -358,6 +358,33 @@ def test_multimodal_no_longer_preempts_hybrid_handling():
     assert calc.calculate_state_memory(c, batch_size=5, precision="bf16") > 0
 
 
+def test_unknown_recurrent_family_is_flagged_not_silently_defaulted():
+    """A mechanism whose defining dims are absent must not borrow another
+    model's geometry and pass it off as a measurement.
+
+    `layer_types: ["recurrent", ...]` routes to the Gated-DeltaNet path, whose
+    fallbacks are Qwen3-Next's specific head counts. Producing a confident number
+    from those is the same failure as the old hardcoded `state_size = 16`, which
+    was 16x off on a Falcon-H1 shipping 256 -- so the plan says so.
+    """
+    c = dict(
+        model_type="somenewhybrid",
+        hidden_size=4096,
+        num_hidden_layers=8,
+        num_attention_heads=32,
+        num_key_value_heads=8,
+        layer_types=["recurrent", "recurrent", "recurrent", "full_attention"] * 2,
+    )
+    plan = resolve_layer_plan(c)
+    assert plan["num_recurrent_layers"] == 6 and plan["num_full_layers"] == 2
+    assert plan["approximate"] is True
+    assert plan["notes"] and "ESTIMATE" in plan["notes"][0]
+
+    # A config that DOES declare them is not flagged.
+    ok = resolve_layer_plan(cfg("Qwen_Qwen3.6-27B"))
+    assert ok["approximate"] is False and ok["notes"] == []
+
+
 def test_phi4flash_is_flagged_rather_than_silently_approximated():
     """SambaY shares one global KV across its YOCO layers, which a per-layer plan
     cannot express. It must announce that instead of quietly reporting a number
