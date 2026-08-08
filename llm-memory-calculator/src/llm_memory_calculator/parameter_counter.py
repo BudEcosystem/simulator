@@ -3,6 +3,8 @@
 import warnings
 from typing import Dict, Any, Union
 from .config_normalizer import ConfigNormalizer
+from .layer_plan import resolve_layer_plan
+from .mixer_params import recurrent_mixer_params
 
 
 class UniversalParameterCounter:
@@ -37,6 +39,14 @@ class UniversalParameterCounter:
             'gemma', 'gemma2', 'gemma3', 'phi3', 'phi4', 'yi', 'deepseek', 'deepseek_v2', 'deepseek_v3',
             'stablelm', 'starcoder2', 'cohere', 'command_r', 'olmo', 'olmo2', 'granite', 'minicpm',
             'internlm2', 'baichuan', 'exaone',
+            # Hybrid/recurrent families. All of these ship SwiGLU FFNs but name
+            # the matrices w1/w2/w3 (LFM2) or omit `hidden_act` entirely, so the
+            # activation-string fallback misses them and charges 2 matrices
+            # instead of 3 -- a flat 33% under-count on the model's single
+            # largest weight block. LFM2-2.6B came out at 2.04B against 2.57B.
+            'lfm2', 'jamba', 'zamba', 'zamba2', 'bamba', 'falcon_h1',
+            'granitemoehybrid', 'kimi_linear', 'minimax_text_01', 'minimax_m1',
+            'minimax_m2', 'qwen3_5_text', 'hymba', 'plamo2', 'smallthinker',
         }
         
         # Keys that indicate shared down projection in MoE models
@@ -91,9 +101,17 @@ class UniversalParameterCounter:
         if 'vision_config' in config and 'text_config' in config:
             return "multimodal"
             
+        # A config that resolves to a hybrid layer plan goes to the plan-aware
+        # transformer path, which knows each mechanism's mixer shape. The legacy
+        # "hybrid" branch below splits the config in two, counts one half as a
+        # dense transformer and the other as Mamba-1, and subtracts embeddings
+        # twice to compensate -- wrong for every mechanism except Mamba-1.
+        if resolve_layer_plan(config) is not None:
+            return "transformer"
+
         # Check model_type first
         model_type = config.get('model_type', '').lower()
-        
+
         # Direct mappings
         if model_type in ['mamba', 's4', 'ssm']:
             return "mamba"
@@ -234,17 +252,33 @@ class UniversalParameterCounter:
         if max_position_embeddings > 0 and not use_rope and not use_alibi:
             embeddings += max_position_embeddings * hidden_size
         
-        # Attention parameters
-        attention_params = self._calculate_attention_params(config, num_layers, hidden_size)
-        
+        # Token mixers. On a hybrid, only the attention layers carry Q/K/V/O;
+        # the rest carry a mechanism-specific set (fused in_proj, depthwise conv,
+        # low-rank gates, per-head decay) that is shaped nothing like attention.
+        # Charging QKVO on all layers put Kimi-Linear at 2.10B against a real
+        # 49.12B.
+        plan = resolve_layer_plan(config)
+        if plan is not None:
+            attention_params = self._calculate_attention_params(
+                config, plan["num_attention_param_layers"], hidden_size
+            )
+            attention_params += recurrent_mixer_params(config, plan, hidden_size)
+            # Nemotron-H gives the FFN its own layer slot rather than pairing one
+            # with every mixer, and a pure SSM stack has none at all, so the FFN
+            # layer count is not the model depth.
+            ffn_layers = plan["num_ffn_param_layers"]
+        else:
+            attention_params = self._calculate_attention_params(config, num_layers, hidden_size)
+            ffn_layers = num_layers
+
         # FFN parameters
-        ffn_params = self._calculate_ffn_params(config, num_layers, hidden_size)
-        
+        ffn_params = self._calculate_ffn_params(config, ffn_layers, hidden_size)
+
         # Layer norms
         norm_params = self._calculate_norm_params(config, num_layers, hidden_size)
-        
+
         # MoE parameters (if applicable)
-        moe_params = self._calculate_moe_params(config, num_layers, hidden_size)
+        moe_params = self._calculate_moe_params(config, ffn_layers, hidden_size)
         
         # Auxiliary sequence head (if applicable)
         aux_params = self._aux_seq_head_params(config, hidden_size)
@@ -256,13 +290,21 @@ class UniversalParameterCounter:
         """Calculate attention-related parameters."""
         # Check for MLA (Multi-Latent Attention) first
         if any(key in config for key in ['q_lora_rank', 'kv_lora_rank', 'qk_rope_head_dim']):
-            # DeepSeek V2/V3 style MLA
-            q_lora_rank = config.get('q_lora_rank', 0)
-            kv_lora_rank = config.get('kv_lora_rank', 0)
-            qk_rope_head_dim = config.get('qk_rope_head_dim', 0)
-            qk_nope_head_dim = config.get('qk_nope_head_dim', 0)
-            v_head_dim = config.get('v_head_dim', 128)
-            num_attention_heads = config.get('num_attention_heads', 1)
+            # DeepSeek V2/V3 style MLA.
+            #
+            # `.get(key, default)` returns a stored None, and these keys are
+            # routinely shipped as explicit JSON null -- Kimi-Linear declares
+            # `"q_lora_rank": null` because it uses MLA without the Q low-rank
+            # factorization. The arithmetic below then raised
+            # `NoneType + int`, the whole count fell through to the crude
+            # fallback, and a 49B model was reported as 2.1B. `or 0` treats a
+            # null the same as an absent key, which is what it means.
+            q_lora_rank = config.get('q_lora_rank') or 0
+            kv_lora_rank = config.get('kv_lora_rank') or 0
+            qk_rope_head_dim = config.get('qk_rope_head_dim') or 0
+            qk_nope_head_dim = config.get('qk_nope_head_dim') or 0
+            v_head_dim = config.get('v_head_dim') or 128
+            num_attention_heads = config.get('num_attention_heads') or 1
             
             # Q projection: hidden -> q_lora + rope + nope
             q_proj = hidden_size * (q_lora_rank + qk_rope_head_dim + qk_nope_head_dim)
@@ -275,10 +317,14 @@ class UniversalParameterCounter:
             
             return num_layers * (q_proj + kv_proj + o_proj)
         
-        # Standard attention (MHA/MQA/GQA)
-        num_attention_heads = config.get('num_attention_heads', config.get('n_head', 12))
-        num_key_value_heads = config.get('num_key_value_heads', config.get('num_kv_heads', num_attention_heads))
-        head_dim = config.get('head_dim', hidden_size // num_attention_heads)
+        # Standard attention (MHA/MQA/GQA). Same null-vs-absent hazard as above:
+        # `head_dim: null` is common in HF configs that derive it from
+        # hidden_size // num_attention_heads.
+        num_attention_heads = config.get('num_attention_heads') or config.get('n_head') or 12
+        num_key_value_heads = (
+            config.get('num_key_value_heads') or config.get('num_kv_heads') or num_attention_heads
+        )
+        head_dim = config.get('head_dim') or (hidden_size // num_attention_heads)
         
         # Q, K, V, O projections
         q_size = num_attention_heads * head_dim
@@ -306,6 +352,17 @@ class UniversalParameterCounter:
         model_type = str(config.get('model_type', '')).lower()
         if model_type in self.gated_ffn_model_types:
             return True
+
+        # Tertiary signal: the architecture class name. Some configs ship with
+        # NEITHER model_type nor any activation key -- SmallThinker-21BA3B has
+        # only `architectures: ["SmallThinkerForCausalLM"]`, and its experts are
+        # gate/up/down in the checkpoint. With both primary signals absent the
+        # activation default ('gelu') wins and charges 2 matrices instead of 3,
+        # a flat 1/3 under-count on the model's largest weight block.
+        arch = ' '.join(config.get('architectures') or []).lower()
+        if arch and any(name in arch for name in self.gated_ffn_model_types):
+            return True
+
         act_fn = str(config.get('activation_function')
                      or config.get('hidden_act')
                      or config.get('hidden_activation')

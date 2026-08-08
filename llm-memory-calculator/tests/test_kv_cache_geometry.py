@@ -247,24 +247,38 @@ FALCON_H1_LIKE = dict(
 )
 
 
+# d_inner = expand * hidden = 4096; Mamba-2 convolves x alongside the B and C
+# group projections, so the ring buffer is (d_inner + 2*n_groups*d_state) wide and
+# holds d_conv-1 previous inputs, at model precision.
+_FH1_CONV = 44 * (4096 + 2 * 1 * 256) * (4 - 1) * 2
+
+
 def test_ssm_recurrent_state_is_priced_at_fp32():
+    """No `calc.model_type = "hybrid"` here, deliberately.
+
+    These two tests used to assign that by hand, which meant they asserted the
+    arithmetic while hiding the fact that detection never reached it: a real
+    falcon_h1 config returned 0.0 because "falcon_h1" is not the literal string
+    "jamba" or "mamba". Driving it through the layer plan is the point.
+    """
     calc = ModelMemoryCalculator()
-    calc.model_type = "hybrid"
     normalized = ConfigNormalizer.normalize_config(FALCON_H1_LIKE)
     state_gb = calc.calculate_state_memory(normalized, batch_size=1, precision="bf16")
-    # 44 layers * 256 state * 4096 hidden * 1 expand * 4 bytes (fp32), not 2.
-    expected = 44 * 256 * 4096 * 1 * 4 / 1e9
+    # 44 layers * 256 state * 4096 d_inner * 4 bytes (fp32, not 2), plus the conv
+    # ring buffer that was previously missing altogether.
+    expected = (44 * 256 * 4096 * 1 * 4 + _FH1_CONV) / 1e9
     assert state_gb == pytest.approx(expected, rel=1e-9)
 
 
 def test_ssm_state_dtype_override_is_honored():
     calc = ModelMemoryCalculator()
-    calc.model_type = "hybrid"
     cfg = dict(FALCON_H1_LIKE, mamba_ssm_cache_dtype="bf16")
     state_gb = calc.calculate_state_memory(
         ConfigNormalizer.normalize_config(cfg), batch_size=1, precision="bf16"
     )
-    expected = 44 * 256 * 4096 * 1 * 2 / 1e9
+    # The override applies to the recurrent state only; the conv cache already
+    # sits at model precision and does not move.
+    expected = (44 * 256 * 4096 * 1 * 2 + _FH1_CONV) / 1e9
     assert state_gb == pytest.approx(expected, rel=1e-9)
 
 

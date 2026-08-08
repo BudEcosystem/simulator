@@ -12,6 +12,8 @@ from .calculator import ModelMemoryCalculator
 from .parameter_counter import UniversalParameterCounter
 from .huggingface_loader import HuggingFaceConfigLoader
 from .types import MemoryReport
+from .layer_plan import resolve_layer_plan
+from .state_memory import calculate_recurrent_state_bytes
 
 # Import convenience functions
 from .utils import (
@@ -76,6 +78,8 @@ __all__ = [
     "compare_models",
     "estimate_max_batch_size",
     "analyze_attention_efficiency",
+    "resolve_layer_plan",
+    "calculate_recurrent_state_bytes",
     
     # Hardware functions
     "get_hardware_config",
