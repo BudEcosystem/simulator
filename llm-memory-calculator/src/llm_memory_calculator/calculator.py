@@ -5,6 +5,49 @@ from typing import Dict, Any, Optional, List, Tuple
 from .types import MemoryReport
 from .parameter_counter import UniversalParameterCounter
 from .config_normalizer import ConfigNormalizer
+from .layer_plan import MECH_MAMBA1, MECH_MAMBA2, resolve_layer_plan
+from .state_memory import calculate_recurrent_state_bytes
+from .activation_memory import calculate_activation_bytes
+
+# Pure state-space models: no attention layers at all, so no KV cache. `mamba2`
+# and `falcon_mamba` were absent here, which sent them to "unknown" and from
+# there into the generic-transformer fallback -- hidden_size 768, 12 layers,
+# vocab 50257 -- for a 7B model.
+SSM_MODEL_TYPES = {
+    "mamba",
+    "mamba2",
+    "falcon_mamba",
+    "s4",
+    "ssm",
+    "state-space",
+    "rwkv",
+    "rwkv6",
+    "rwkv7",
+}
+
+# Interleaved or parallel attention + recurrence. Deliberately excludes
+# `minimax_m2`, which dropped lightning attention and is genuinely full-attention
+# on every layer -- listing it would under-count its KV by the interleave ratio.
+HYBRID_MODEL_TYPES = {
+    "jamba",
+    "hybrid",
+    "qwen3_next",
+    "qwen3_5",
+    "qwen3_5_text",
+    "falcon_h1",
+    "nemotron_h",
+    "granitemoehybrid",
+    "zamba",
+    "zamba2",
+    "bamba",
+    "lfm2",
+    "minimax_text_01",
+    "minimax_m1",
+    "kimi_linear",
+    "hymba",
+    "plamo2",
+    "phi4flash",
+}
 
 
 class ModelMemoryCalculator:
@@ -85,11 +128,11 @@ class ModelMemoryCalculator:
             return "multimodal"
 
         # Mamba/SSM models
-        if model_type in ["mamba", "s4", "ssm", "state-space"]:
+        if model_type in SSM_MODEL_TYPES:
             return "state-space"
 
         # Hybrid models
-        if model_type in ["jamba", "hybrid"] or "mamba_config" in config:
+        if model_type in HYBRID_MODEL_TYPES or "mamba_config" in config:
             return "hybrid"
 
         # Text-to-speech
@@ -107,6 +150,14 @@ class ModelMemoryCalculator:
         # Check for hybrid architectures
         if "mamba_config" in config or "attention_layers" in config:
             return "hybrid"
+
+        # Structural fallback: let the config's own layer layout speak. New
+        # hybrid families ship roughly quarterly and each invents its own
+        # model_type string, so an allow-list alone goes stale by design -- this
+        # catches the ones not yet enumerated above.
+        plan = resolve_layer_plan(config)
+        if plan is not None and plan.get("num_recurrent_layers"):
+            return "hybrid" if plan.get("num_attention_layers") else "state-space"
 
         # Infer from config structure if model_type not specified
         if (
@@ -132,9 +183,18 @@ class ModelMemoryCalculator:
         if "text_config" in config and isinstance(config["text_config"], dict):
             config = config["text_config"]
 
-        # Check for MLA first (DeepSeek V2/V3 uses this)
-        if any(
-            key in config
+        # Check for MLA first (DeepSeek V2/V3 uses this).
+        #
+        # Test the VALUE, not mere key presence. Models that borrowed DeepSeek's
+        # config schema without using MLA ship these keys as explicit null --
+        # Hunyuan-A13B declares `kv_lora_rank: null` alongside `use_mla: false`
+        # and is ordinary GQA (32 q heads, 8 kv heads). Keying off `key in
+        # config` labelled it MLA, then the compressed-dim arithmetic raised
+        # `NoneType + NoneType` and the model could not be sized at all.
+        if config.get("use_mla") is False:
+            pass  # explicit opt-out wins over any leftover schema keys
+        elif any(
+            config.get(key)
             for key in [
                 "q_lora_rank",
                 "kv_lora_rank",
@@ -143,7 +203,7 @@ class ModelMemoryCalculator:
             ]
         ):
             return "mla"  # Multi-Latent Attention
-        if "latent_attention_dim" in config or "compressed_kv_dim" in config:
+        elif config.get("latent_attention_dim") or config.get("compressed_kv_dim"):
             return "mla"  # Multi-Latent Attention
 
         num_attention_heads = config.get("num_attention_heads", config.get("n_head", 0))
@@ -334,14 +394,17 @@ class ModelMemoryCalculator:
         self, config: Dict[str, Any], batch_size: int, seq_length: int, precision: str
     ) -> float:
         """Calculate KV cache memory in GB with per-layer attention type support."""
+        raw_config = config
         # Normalize config for consistent key handling
         config = ConfigNormalizer.normalize_config(config)
 
-        # For multimodal models, use text_config
-        if self.model_type == "multimodal" and "text_config" in config:
-            text_config = config["text_config"]
-            # Normalize text_config as well
-            text_config = ConfigNormalizer.normalize_config(text_config)
+        # Pick the language-model sub-config structurally rather than gating on a
+        # detected model type. A model can be multimodal *and* hybrid at once --
+        # Qwen3.6 is both -- and `self.model_type` holds only one label, so gating
+        # on "multimodal" made the hybrid layout unreachable for exactly the
+        # models that need it most.
+        if isinstance(config.get("text_config"), dict):
+            text_config = ConfigNormalizer.normalize_config(config["text_config"])
         else:
             text_config = config
 
@@ -352,6 +415,27 @@ class ModelMemoryCalculator:
 
         # Get bytes per element
         bytes_per_element = self.PRECISION_BYTES.get(precision.lower(), 2)
+
+        # Canonical hybrid plan first. It resolves all eleven "which layers carry
+        # a KV cache" dialects, including the recurrent/full mixes that the
+        # `has_mixed_attention` flag below -- defined as sliding>0 and full>0 --
+        # structurally cannot express. Charging KV on a Gated-DeltaNet or Mamba
+        # layer over-counts by 3.75x (LFM2) to 14x (Nemotron-H).
+        plan = resolve_layer_plan(raw_config)
+        if plan is not None:
+            if plan["num_attention_layers"] == 0:
+                return 0.0  # pure SSM: no KV cache at all
+            return self._calculate_kv_cache_per_layer(
+                text_config,
+                {
+                    "num_sliding_layers": plan["num_sliding_layers"],
+                    "num_full_layers": plan["num_full_layers"],
+                },
+                batch_size,
+                seq_length,
+                bytes_per_element,
+                attention_type,
+            )
 
         # Check for per-layer attention types (e.g., mixed sliding/full).
         # Prefer the text_config's metadata: for a multimodal model the attention
@@ -495,8 +579,8 @@ class ModelMemoryCalculator:
 
         if attention_type == "mla":
             # One compressed latent per token per layer; no factor of 2.
-            kv_lora_rank = config.get("kv_lora_rank", 512)
-            qk_rope_head_dim = config.get("qk_rope_head_dim", 0)
+            kv_lora_rank = config.get("kv_lora_rank") or 512
+            qk_rope_head_dim = config.get("qk_rope_head_dim") or 0
             compressed_kv_dim = config.get(
                 "compressed_kv_dim", kv_lora_rank + qk_rope_head_dim
             )
@@ -617,8 +701,10 @@ class ModelMemoryCalculator:
         # No factor of 2 -- K and V are reconstructed from the single stored
         # latent (matches vLLM MLAAttentionSpec: num_kv_heads=1,
         # head_dim=kv_lora_rank+qk_rope_head_dim).
-        kv_lora_rank = config.get("kv_lora_rank", 512)  # DeepSeek V3 default
-        qk_rope_head_dim = config.get("qk_rope_head_dim", 0)
+        # `or` rather than a .get default: these ship as explicit null on configs
+        # that borrowed DeepSeek's schema without using MLA.
+        kv_lora_rank = config.get("kv_lora_rank") or 512  # DeepSeek V3 default
+        qk_rope_head_dim = config.get("qk_rope_head_dim") or 0
         compressed_kv_dim = config.get(
             "compressed_kv_dim", kv_lora_rank + qk_rope_head_dim
         )
@@ -1044,95 +1130,71 @@ class ModelMemoryCalculator:
         return (total_elements * bytes_per_element) / 1e9
 
     def calculate_activation_memory(
-        self, config: Dict[str, Any], batch_size: int, seq_length: int, precision: str
+        self,
+        config: Dict[str, Any],
+        batch_size: int,
+        seq_length: int,
+        precision: str,
+        max_num_batched_tokens: Optional[int] = None,
     ) -> float:
-        """Calculate activation memory for forward pass."""
+        """Peak inference activation memory in GB.
+
+        Sized from the engine's prefill chunk and one layer's working set. The
+        previous model multiplied ``batch_size * seq_length`` by a 10-15x
+        retention factor, which is a training shape: it assumed both that a
+        forward pass materializes the whole context at once (no engine does --
+        they all chunk prefill) and that every layer's activations stay live for
+        a backward pass (inference frees them as it goes). For a 5 x 100k
+        workload that read 76.8 GB against a real figure under 1 GB.
+        """
         bytes_per_element = self.PRECISION_BYTES.get(precision.lower(), 2)
-
-        if self.model_type == "multimodal":
-            # Multimodal models have separate text and vision activations
-            text_config = config.get("text_config", config)
-            vision_config = config.get("vision_config", {})
-
-            # Text activations
-            text_hidden = text_config.get("hidden_size", 768)
-            text_layers = text_config.get("num_hidden_layers", 12)
-            text_activation_multiplier = 10
-            if seq_length > 8192:
-                text_activation_multiplier = 15
-            text_elements = (
-                batch_size * seq_length * text_hidden * text_activation_multiplier
+        config = ConfigNormalizer.normalize_config(config)
+        return (
+            calculate_activation_bytes(
+                config,
+                batch_size,
+                seq_length,
+                bytes_per_element,
+                max_num_batched_tokens,
             )
-
-            # Vision activations
-            vision_hidden = vision_config.get("hidden_size", 768)
-            image_size = vision_config.get("image_size", 224)
-            patch_size = vision_config.get("patch_size", 16)
-            num_patches = (image_size // patch_size) ** 2
-            vision_elements = batch_size * num_patches * vision_hidden * 4
-
-            total_elements = text_elements + vision_elements
-            return (total_elements * bytes_per_element) / 1e9
-        else:
-            # Standard calculation for non-multimodal
-            hidden_size = config.get("hidden_size", config.get("d_model", 768))
-            num_layers = config.get("num_hidden_layers", config.get("n_layers", 12))
-
-            # Base activation memory (hidden states through the network)
-            # Typically need to keep activations for: residual connections, attention outputs, FFN outputs
-            activation_multiplier = (
-                10  # Conservative estimate for peak activation memory
-            )
-
-            # For very long sequences, activation memory can be dominant
-            if seq_length > 8192:
-                activation_multiplier = 15  # More buffer for long sequences
-
-            activation_elements = (
-                batch_size * seq_length * hidden_size * activation_multiplier
-            )
-            return (activation_elements * bytes_per_element) / 1e9
+            / 1e9
+        )
 
     def calculate_state_memory(
         self, config: Dict[str, Any], batch_size: int, precision: str
     ) -> float:
-        """Calculate state memory for SSM/Mamba models."""
-        if self.model_type not in ["state-space", "hybrid"]:
+        """Recurrent + convolutional state for SSM/hybrid models, in GB.
+
+        Constant in sequence length by construction -- that is the property these
+        architectures are built around, and the reason this term must not be
+        folded into the KV cache.
+
+        No longer gated on ``self.model_type``. That gate returned 0.0 for every
+        hybrid whose model_type string was not literally "jamba" or "mamba",
+        which is to say all of Qwen3-Next, Qwen3.5/3.6, Nemotron-H,
+        granite-4.0-h, Bamba, Zamba2, Falcon-H1, LFM2, Kimi-Linear and MiniMax.
+        The two existing tests only passed because they assigned
+        ``calc.model_type = "hybrid"`` by hand before calling.
+        """
+        plan = resolve_layer_plan(config)
+
+        if plan is None and self.model_type in ("state-space", "hybrid"):
+            # A config that declares SSM-ness only through a nested `mamba_config`
+            # or a bare `attention_ratio`, with no per-layer dialect to resolve.
+            # Synthesize a plan so there is still exactly one arithmetic path.
+            n = config.get("num_hidden_layers", config.get("n_layers", 12))
+            if self.model_type == "hybrid":
+                n = int(n * (1 - config.get("attention_ratio", 0.5)))
+            mech = MECH_MAMBA2 if "n_groups" in config else MECH_MAMBA1
+            plan = {"recurrent": [mech] * n, "num_recurrent_layers": n}
+
+        if plan is None:
             return 0.0
 
-        num_layers = config.get("num_hidden_layers", config.get("n_layers", 12))
-
-        # For hybrid models, count only SSM layers
-        if self.model_type == "hybrid":
-            layer_types = config.get("layer_types", [])
-            if layer_types:
-                num_layers = sum(
-                    1
-                    for lt in layer_types
-                    if any(x in str(lt).lower() for x in ["mamba", "ssm"])
-                )
-            else:
-                attention_ratio = config.get("attention_ratio", 0.5)
-                num_layers = int(num_layers * (1 - attention_ratio))
-
-        # SSM state dimensions
-        state_size = config.get("state_size", config.get("d_state", 16))
-        hidden_size = config.get("hidden_size", config.get("d_model", 768))
-        expand_factor = config.get("expand_factor", config.get("expand", 2))
-
-        # The recurrent SSM state is kept in float32, not the model dtype: it is
-        # accumulated across the whole sequence and would lose too much precision
-        # at bf16/fp16 (vLLM forces mamba_ssm_cache_dtype=float32 on its CPU/AMX
-        # path). Pricing it at the model precision under-counts by 2x for a bf16
-        # model -- the term that grows with concurrency on hybrid models.
-        mamba_state_dtype = config.get("mamba_ssm_cache_dtype", "float32")
-        bytes_per_element = self.PRECISION_BYTES.get(mamba_state_dtype.lower(), 4)
-
-        # State memory is constant regardless of sequence length
-        state_elements = (
-            batch_size * num_layers * state_size * hidden_size * expand_factor
+        model_bytes = self.PRECISION_BYTES.get(precision.lower(), 2)
+        return (
+            calculate_recurrent_state_bytes(config, plan, batch_size, model_bytes) / 1e9
         )
-        return (state_elements * bytes_per_element) / 1e9
 
     def calculate_lora_adapter_memory(
         self,
@@ -1714,9 +1776,10 @@ class ModelMemoryCalculator:
             kv_heads_per_rank = max(1, num_kv_heads // tensor_parallel)
             kv_cache = kv_cache * kv_heads_per_rank / num_kv_heads
 
-        # Calculate activations
+        # Calculate activations. `max_num_batched_tokens` is the engine's prefill
+        # chunk, so it bounds the tokens in flight and therefore the peak.
         activations = self.calculate_activation_memory(
-            config, batch_size, seq_length, precision
+            config, batch_size, seq_length, precision, max_num_batched_tokens
         )
 
         # Calculate state memory (for SSM models). Mamba shards its inner

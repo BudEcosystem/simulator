@@ -1,0 +1,37 @@
+{
+    "architectures": [
+      "Phi4FlashForCausalLM"
+    ],
+    "attention_dropout": 0.0,
+    "auto_map": {
+      "AutoConfig": "configuration_phi4flash.Phi4FlashConfig",
+      "AutoModelForCausalLM": "modeling_phi4flash.Phi4FlashForCausalLM",
+      "AutoTokenizer": "Xenova/gpt-4o"
+    },
+    "pad_token_id": 199999,
+    "bos_token_id": 199999,
+    "embd_pdrop": 0.0,
+    "eos_token_id": 199999,
+    "hidden_act": "silu",
+    "hidden_size": 2560,
+    "initializer_range": 0.02,
+    "intermediate_size": 10240,
+    "layer_norm_eps": 1e-5,
+    "max_position_embeddings": 262144,
+    "_attn_implementation": "flash_attention_2",
+    "mb_per_layer": 2,
+    "model_type": "phi4flash",
+    "num_attention_heads": 40,
+    "num_hidden_layers": 32,
+    "num_key_value_heads": 20,
+    "resid_pdrop": 0.0,
+    "sliding_window": 512,
+    "torch_dtype": "bfloat16",
+    "tie_word_embeddings": true,
+    "transformers_version": "4.46.1",
+    "use_cache": true,
+    "mlp_bias": false,
+    "lm_head_bias": false,
+    "vocab_size": 200064
+  }
+  

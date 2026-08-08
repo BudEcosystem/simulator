@@ -20,9 +20,10 @@ class ConfigNormalizer:
     # MoE expert count key variants
     MOE_EXPERT_KEYS = [
         'num_local_experts',
-        'num_experts', 
+        'num_experts',
         'n_routed_experts',
         'moe_num_experts',
+        'moe_num_primary_experts',  # SmallThinker
         'num_experts_per_tok',  # Alternative naming
     ]
     
@@ -32,15 +33,20 @@ class ConfigNormalizer:
         'experts_per_token',
         'num_experts_per_tok',
         'top_k_experts',
+        'moe_topk',      # Hunyuan
+        'moe_top_k',
+        'moe_num_active_primary_experts',  # SmallThinker
+        'num_selected_experts',
     ]
     
     # Intermediate size key variants
     INTERMEDIATE_KEYS = {
         'dense': ['intermediate_size', 'ffn_dim', 'd_ff', 'ffn_hidden_size'],
         'moe': [
-            'moe_intermediate_size', 
+            'moe_intermediate_size',
             'expert_intermediate_size',
             'moe_ffn_dim',
+            'moe_ffn_hidden_size',  # SmallThinker
             'expert_ffn_dim',
         ]
     }
@@ -60,6 +66,65 @@ class ConfigNormalizer:
         'squeezellm': 0.5, # SqueezeLLM
     }
     
+    # Keys the counters read as plain numbers, but which some families ship as a
+    # per-layer schedule. Hunyuan-A13B declares `moe_intermediate_size`,
+    # `moe_topk` and `num_shared_expert` as 32-element lists (one per layer), and
+    # the arithmetic downstream raised `int + list` -- the whole model failed to
+    # size at all rather than sizing wrongly.
+    #
+    # The aggregation is chosen per key, not uniformly:
+    #   'mean' for width-like values, because total parameters are the SUM over
+    #          layers and mean x num_layers reproduces that sum exactly, even
+    #          when the schedule varies.
+    #   'max'  for top-k, because it drives an activation PEAK, and a peak is
+    #          set by the worst layer rather than the average one.
+    PER_LAYER_SCALAR_KEYS = {
+        'moe_intermediate_size': 'mean',
+        'intermediate_size': 'mean',
+        'expert_intermediate_size': 'mean',
+        'shared_expert_intermediate_size': 'mean',
+        'num_shared_expert': 'mean',
+        'n_shared_experts': 'mean',
+        'num_experts': 'mean',
+        'n_routed_experts': 'mean',
+        'moe_topk': 'max',
+        'num_experts_per_tok': 'max',
+        'expert_top_k': 'max',
+    }
+
+    @staticmethod
+    def _scalarize_per_layer_lists(normalized: Dict[str, Any]) -> None:
+        """Collapse per-layer schedules to the scalar the counters expect.
+
+        Only collapses a list whose length matches the model depth. That test is
+        what separates a genuine per-layer schedule from a list that means
+        something else entirely: `attn_layer_indices` (3 entries naming which
+        layers hold attention) and `time_step_limit` (a 2-element min/max pair)
+        must not be averaged into nonsense.
+        """
+        depth = normalized.get('num_hidden_layers') or normalized.get('n_layers')
+        if not isinstance(depth, int) or depth <= 0:
+            return
+
+        collapsed = {}
+        for key, how in ConfigNormalizer.PER_LAYER_SCALAR_KEYS.items():
+            value = normalized.get(key)
+            if not isinstance(value, list) or len(value) != depth:
+                continue
+            nums = [v for v in value if isinstance(v, (int, float)) and not isinstance(v, bool)]
+            if not nums:
+                continue
+            scalar = max(nums) if how == 'max' else sum(nums) / len(nums)
+            # Keep it an int when the schedule is integral, so downstream
+            # comparisons like `n_routed_experts > 1` behave as before.
+            if all(float(v).is_integer() for v in nums):
+                scalar = int(round(scalar))
+            normalized[key] = scalar
+            collapsed[key] = {'how': how, 'uniform': len(set(nums)) == 1}
+
+        if collapsed:
+            normalized['_collapsed_per_layer'] = collapsed
+
     @staticmethod
     def normalize_config(config: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize config to standard internal format.
@@ -75,46 +140,68 @@ class ConfigNormalizer:
         """
         # Create a copy to avoid modifying original
         normalized = config.copy()
-        
+
+        # 0. Collapse per-layer schedules to scalars FIRST. Every step below
+        # treats these keys as numbers -- `n_routed_experts > 1`, the
+        # intermediate-size fallbacks -- so a list reaching them either raises or
+        # compares wrongly.
+        ConfigNormalizer._scalarize_per_layer_lists(normalized)
+
+        # Every alias lookup below reads `normalized`, NOT the original config:
+        # step 0 may have collapsed a per-layer list into a scalar, and reading
+        # the original would resurrect the list under its canonical alias --
+        # Hunyuan's `moe_topk` list reappearing as `expert_top_k` was exactly
+        # that. `normalized` starts as a copy, so this is otherwise identical.
+
         # 1. Normalize MoE expert count keys
         if 'n_routed_experts' not in normalized:
             for key in ConfigNormalizer.MOE_EXPERT_KEYS:
-                if key in config:
-                    normalized['n_routed_experts'] = config[key]
+                if key in normalized:
+                    normalized['n_routed_experts'] = normalized[key]
                     break
-        
+
         # 2. Normalize MoE top-k keys
         if 'expert_top_k' not in normalized:
             for key in ConfigNormalizer.MOE_TOP_K_KEYS:
-                if key in config:
-                    normalized['expert_top_k'] = config[key]
+                if key in normalized:
+                    normalized['expert_top_k'] = normalized[key]
                     break
-        
+
         # 3. Normalize intermediate sizes
         # Check if this is an MoE model
-        is_moe = normalized.get('n_routed_experts', 1) > 1
-        
+        is_moe = (normalized.get('n_routed_experts') or 1) > 1
+
         if is_moe and 'moe_intermediate_size' not in normalized:
             # Try to find MoE-specific intermediate size
             for key in ConfigNormalizer.INTERMEDIATE_KEYS['moe']:
-                if key in config:
-                    normalized['moe_intermediate_size'] = config[key]
+                if key in normalized:
+                    normalized['moe_intermediate_size'] = normalized[key]
                     break
-            
+
             # Fallback: use dense intermediate size if no MoE-specific size found
             if 'moe_intermediate_size' not in normalized:
                 for key in ConfigNormalizer.INTERMEDIATE_KEYS['dense']:
-                    if key in config:
-                        normalized['moe_intermediate_size'] = config[key]
+                    if key in normalized:
+                        normalized['moe_intermediate_size'] = normalized[key]
                         break
-        
+
         # Ensure dense intermediate_size exists
         if 'intermediate_size' not in normalized:
             for key in ConfigNormalizer.INTERMEDIATE_KEYS['dense']:
-                if key in config:
-                    normalized['intermediate_size'] = config[key]
+                if key in normalized:
+                    normalized['intermediate_size'] = normalized[key]
                     break
         
+        # 3b. Normalize MoE layer frequency. Jamba spells "one MoE layer every N"
+        # as `expert_layer_period`; the counter reads `moe_layer_freq`, whose
+        # default of 1 means "every layer is MoE". Missing the alias charges a
+        # 16-expert FFN on all 32 Jamba layers instead of 16, which nearly
+        # doubles the model.
+        if 'moe_layer_freq' not in normalized:
+            period = config.get('expert_layer_period')
+            if isinstance(period, int) and period > 0:
+                normalized['moe_layer_freq'] = period
+
         # 4. Parse quantization config if present
         if 'quantization_config' in config:
             normalized['_quantization'] = ConfigNormalizer._parse_quantization(
@@ -134,6 +221,17 @@ class ConfigNormalizer:
         # Honor `use_sliding_window: false` globally: scrub the window from the
         # normalized config so the standalone KV path (no interleave pattern, e.g.
         # Qwen2.5) does not clamp seq_length to a window the model does not use.
+        # The window size itself has vendor-specific spellings. SmallThinker
+        # ships `sliding_window_size` (its config class assigns
+        # `self.sliding_window = sliding_window_size`); without the alias the
+        # per-layer path finds no window and charges its 39 windowed layers the
+        # full context.
+        if not normalized.get('sliding_window'):
+            for key in ('sliding_window_size', 'attention_window_size', 'window_size'):
+                if normalized.get(key):
+                    normalized['sliding_window'] = normalized[key]
+                    break
+
         if config.get('use_sliding_window') is False:
             normalized['sliding_window'] = None
 
