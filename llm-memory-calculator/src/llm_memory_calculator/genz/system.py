@@ -128,6 +128,10 @@ class System(object):
         # L5: precision of the KV cache. Defaults to the weight precision (byte-identical) but can be set
         # independently — weight-only quant (int4/int8 AWQ/GPTQ) keeps the KV cache in fp16/bf16.
         self.kv_bits = kv_bits if kv_bits is not None else bits
+        # Bytes per parameter for the weight ROLES a pre-quantized checkpoint converted (see
+        # genz/weight_precision.py), e.g. {'expert': 0.53125} for gpt-oss's MXFP4 experts. None — and
+        # any role absent from the map — sizes weights at `bits` exactly as before.
+        self.weight_bytes_by_role = None
         # L1: the FP8-hardware-compatibility warning was moved to get_inference_system, where the
         # device architecture is known. Warning unconditionally here fired even on FP8-capable parts
         # (H100/Ada/Blackwell/MI300), which is noise. System() has no architecture, so it cannot decide.

@@ -115,6 +115,7 @@ class ModelConfig():
         # Per-layer configuration for heterogeneous models (e.g. Nemotron-51B / DeciLM)
         # When provided, must have exactly num_decoder_layers entries.
         layer_configs: Optional[list] = None,     # list[LayerConfig]
+        weight_precision: Optional[dict] = None,  # role -> bytes/param from quantization_config
         **kwargs,
     ):
         self.model = model
@@ -247,6 +248,10 @@ class ModelConfig():
         self.v_head_dim = v_head_dim
         # MLA detection: if any MLA-specific parameter is set, this is an MLA model
         self.is_mla = (kv_lora_rank is not None)
+
+        # Bytes per parameter for the weight roles a pre-quantized checkpoint converted
+        # (genz/weight_precision.py). None = uniform caller precision, as before.
+        self.weight_precision = weight_precision
 
         # Per-layer heterogeneous configs (e.g. DeciLM / Nemotron-51B)
         self.layer_configs = layer_configs

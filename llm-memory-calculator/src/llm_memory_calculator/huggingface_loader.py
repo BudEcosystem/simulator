@@ -24,6 +24,7 @@ _HF_FETCH_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="hf-config
 
 from .calculator import ModelMemoryCalculator
 from .types import MemoryReport
+from .quantization_sidecars import local_reader, merge_quantization_sidecar
 
 
 class HuggingFaceConfigLoader:
@@ -96,7 +97,9 @@ class HuggingFaceConfigLoader:
                 config_path = path_obj / filename
                 if config_path.exists():
                     with open(config_path, 'r') as f:
-                        return json.load(f)
+                        # A checkpoint whose quantizer wrote its metadata to a sidecar file
+                        # (ModelOpt, AutoGPTQ, legacy AutoAWQ) otherwise looks unquantized.
+                        return merge_quantization_sidecar(json.load(f), local_reader(str(path_obj)))
             
             raise FileNotFoundError(f"No config file found in directory: {path}")
         
@@ -157,7 +160,7 @@ class HuggingFaceConfigLoader:
                 with open(config_path, 'r') as f:
                     config = json.load(f)
 
-                return config
+                return merge_quantization_sidecar(config, self._hub_reader(model_id_or_path, download_timeout))
 
             except _FutureTimeout:
                 last_error = Exception(
@@ -187,6 +190,28 @@ class HuggingFaceConfigLoader:
         else:
             raise Exception(f"No config file found for {model_id_or_path}")
     
+    def _hub_reader(self, repo_id: str, timeout_s: float):
+        """A sidecar reader for a Hub repository: a missing file is None, and the first timeout ends the
+        lookup (config.json already downloaded, so a stall is the network, not an absent sidecar)."""
+        state = {'stalled': False}
+
+        def read(filename: str) -> Optional[Dict[str, Any]]:
+            if state['stalled']:
+                return None
+            try:
+                path = _HF_FETCH_POOL.submit(
+                    hf_hub_download, repo_id=repo_id, filename=filename, token=self.token,
+                ).result(timeout=timeout_s)
+                with open(path, 'r') as handle:
+                    return json.load(handle)
+            except _FutureTimeout:
+                state['stalled'] = True
+                return None
+            except Exception:
+                return None
+
+        return read
+
     def get_model_config(self, model_id_or_path: str, add_param_count: bool = True, respect_weight_tying: bool = True) -> Dict[str, Any]:
         """
         Get model configuration with enhanced parameter counting.

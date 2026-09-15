@@ -1,4 +1,4 @@
-from .utils import ModdelingOutput, get_inference_system, get_offload_system
+from .utils import ModdelingOutput, apply_checkpoint_weight_precision, get_inference_system, get_offload_system
 from llm_memory_calculator.genz.unit import Unit
 from llm_memory_calculator.genz.operators import *
 
@@ -7,6 +7,10 @@ import warnings
 from llm_memory_calculator.genz.collective_times import *
 from llm_memory_calculator.genz.utils.plot_rooflines import *
 from llm_memory_calculator.genz.Models import create_full_decode_model, get_configs
+from llm_memory_calculator.hardware.configs import (
+    apply_inference_realism,
+    resolve_inference_realism,
+)
 from math import ceil
 
 unit = Unit()
@@ -80,10 +84,26 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     ### System Declaration
     ##################################################################################################
 
-    system = get_inference_system(system_name = system_name, bits = bits, ceff=system_eff , meff=system_eff,
+    # ACHIEVED EFFICIENCY + FIXED OVERHEAD are DECLARED BY THE HARDWARE, not assumed here.
+    # `system_eff` used to be the only knob and defaulted to 1, i.e. every device was modelled as
+    # sustaining 100% of its datasheet FLOPs and 100% of its datasheet DRAM bandwidth, with zero
+    # kernel-launch/scheduler/sampling cost. Nothing achieves either. The device's own record now
+    # declares what it actually sustains (hardware/configs.py :: resolve_inference_realism), and an
+    # explicit caller-supplied `system_eff` (!= 1) still wins, so this stays a caller override.
+    # `None` here means "nothing declared": get_inference_system then supplies the documented
+    # per-technology band (memory-type MBU / tensor-core-gen GEMM MFU), which is the principled
+    # default for the two efficiencies and deliberately lives in exactly one place.
+    _realism = resolve_inference_realism(system_name, phase='decode')
+    _ceff = system_eff if system_eff != 1 else _realism['compute_efficiency']
+    _meff = system_eff if system_eff != 1 else _realism['memory_efficiency']
+    system = get_inference_system(system_name = system_name, bits = bits,
+                                ceff=1 if _ceff is None else _ceff,
+                                meff=1 if _meff is None else _meff,
                                 network_config=network_config,
                                 collective_strategy=collective_strategy,
                                 parallelism_heirarchy=parallelism_heirarchy, phase='decode' )
+    apply_inference_realism(system, _realism, compute_efficiency=_ceff, memory_efficiency=_meff)
+    apply_checkpoint_weight_precision(system, model)
 
     ##################################################################################################
     ### Model Characterization Calculation
@@ -212,17 +232,6 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     ### Final Latency and Thrpt Calculation
     ##################################################################################################
 
-    # Per-hardware inference calibration (default no-op): add the fixed per-step kernel-launch cost
-    # (N_ops · t_launch) and the per-stream runtime overhead (c_stream · layers · (B-1)) that the
-    # throughput roofline omits. Guarded so the default path (both constants 0) is byte-identical.
-    if system.kernel_launch_latency_ms or system.per_stream_overhead_ms:
-        n_ops = count_repeat_aware_ops(model_df)
-        _repeats = [model_df.loc[i, 'Dimension'] for i in range(len(model_df))
-                    if model_df.loc[i, 'Op Type'] == 'Repeat']
-        n_layers = max(_repeats) if _repeats else 1
-        decode_latency += (system.kernel_launch_latency_ms * n_ops
-                           + system.per_stream_overhead_ms * n_layers * max(0, batch_size - 1))
-
     # CPU decode memory-bandwidth floor: a token cannot be produced faster than the resident weights
     # (+ batch KV) can stream from DRAM. The operator roofline under-counts this traffic on CPU, so
     # clamp to the physical floor  (weight+KV bytes / tensor_parallel) / (eta_decode * offchip_BW).
@@ -243,6 +252,42 @@ def decode_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
                      if model_df.loc[i, 'Op Type'] == 'Repeat']
             _n_layers = max(_reps) if _reps else 1
             decode_latency += _CPU_TP_ALLREDUCE_LAT_MS * 2 * _n_layers * (tensor_parallel - 1)
+
+    # FIXED PER-STEP COST the throughput roofline omits entirely.
+    #
+    # The roofline charges bytes and FLOPs, so it says a small-enough decode step costs ~0 ms. A real
+    # engine step never does: measured on an H100 (vLLM 0.9.0, tp=1) Qwen3-0.6B TPOT never falls below
+    # ~2.1 ms at any batch/context, against a 0.506 ms roofline. The missing ~1.6 ms is kernel
+    # dispatch + the scheduler + sampling + detokenisation, and it does not shrink with the model.
+    #
+    # Four additive terms, each declared per hardware record (hardware/configs.py) with a documented
+    # per-device-class default, each with its own physical scaling:
+    #   t_launch  * N_ops                 per-operator dispatch (graph replay for decode)
+    #   step      * 1                     per-engine-step host cost  (schedule/sample/detokenise)
+    #   per_seq   * batch_size            per-sequence host cost inside that step
+    #   c_stream  * layers * (batch - 1)  legacy layer-scaled per-stream term, kept for the devices
+    #                                     whose MEASURED calibration block was fitted with it
+    #
+    # Applied AFTER the CPU memory floor above and BEFORE the pipeline-parallel expansion: the
+    # host cost is paid on top of however long the step's bytes take to stream, so a clamp to the
+    # streaming floor must not be able to swallow it. (No-op reordering for every GPU, where the
+    # CPU floor never fires, and for every CPU, which declares these terms 0 by default.)
+    #
+    # None of these scales with weight bytes, so a later growth of the roofline term (e.g. a model
+    # config fix that recovers a model's real parameter count) cannot be double-counted here.
+    _t_launch = system.kernel_launch_latency_ms
+    _c_stream = system.per_stream_overhead_ms
+    _step_oh = getattr(system, 'step_overhead_ms', 0.0)
+    _seq_oh = getattr(system, 'per_sequence_overhead_ms', 0.0)
+    if _t_launch or _c_stream or _step_oh or _seq_oh:
+        n_ops = count_repeat_aware_ops(model_df)
+        _repeats = [model_df.loc[i, 'Dimension'] for i in range(len(model_df))
+                    if model_df.loc[i, 'Op Type'] == 'Repeat']
+        n_layers = max(_repeats) if _repeats else 1
+        decode_latency += (_t_launch * n_ops
+                           + _c_stream * n_layers * max(0, batch_size - 1)
+                           + _step_oh
+                           + _seq_oh * batch_size)
 
     # Pipeline-parallel decode semantics: decode_latency above is one microbatch (ub*Bb tokens)
     # traversing ALL L layers (inter-stage comm included), so the slowest stage holds a microbatch

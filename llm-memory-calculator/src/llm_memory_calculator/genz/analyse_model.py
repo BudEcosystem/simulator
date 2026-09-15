@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import os
 from llm_memory_calculator.genz.Models import OpType, ResidencyInfo
+from llm_memory_calculator.genz.weight_precision import WeightRoleTracker
 
 from llm_memory_calculator.genz.LLM_inference.utils import RuntimeBreakdown
 
@@ -208,6 +209,7 @@ def analysis_model(model_dims, system=None, unit=Unit(), densities = None,interm
     
     # First pass: collect all data and track all columns
     roofline_data = []
+    weight_roles = WeightRoleTracker()
     for i, (dim, density) in enumerate(zip(model_dims, densities)):
 
         op_type = op_type_dicts[dim[-1]]
@@ -216,6 +218,7 @@ def analysis_model(model_dims, system=None, unit=Unit(), densities = None,interm
         if beam_merge and (dim[-1] == OpType.Logit_BM_PREFILL or dim[-1] == OpType.Attend_BM_PREFILL):
             dim[1] /= beam_size         ## Batch size is divided by beam size
         operator_instance = operator(dim=dim, density=density)
+        operator_instance.weight_role = weight_roles.role_for(dim[0])
         # print(density[0],density[1],density[2])
         if (intermediate_on_chip):
             if(op_type == 'Logit'):

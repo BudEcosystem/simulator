@@ -5,7 +5,7 @@ This module contains predefined hardware configurations including GPUs, CPUs, TP
 Configurations are merged from multiple sources to provide a comprehensive hardware library.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from llm_memory_calculator.hardware.cpu_specs import CPU_CONFIGS
 
 HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
@@ -1309,3 +1309,351 @@ def get_hardware_by_type(hw_type: str) -> Dict[str, Dict[str, Any]]:
         for name, config in HARDWARE_CONFIGS.items() 
         if config.get('type', '').lower() == hw_type.lower()
     }
+
+# ==================================================================================================
+# INFERENCE REALISM: achieved efficiency + fixed per-step overhead, DECLARED per hardware record
+# ==================================================================================================
+# Two things a pure roofline gets structurally wrong, and that no amount of model-side fixing can
+# repair, because both are properties of the DEVICE + its host serving runtime, not of the model:
+#
+#   1. ACHIEVED EFFICIENCY.  `max(compute_time, memory_time)` against the DATASHEET peak assumes a
+#      kernel sustains 100% of peak FLOPs and 100% of peak DRAM bandwidth. Nothing does. Measured on
+#      an H100 (vLLM 0.9.0, in-cluster, tp=1): a 55.93 GB decode step against the 3350 GB/s HBM3 peak
+#      has a 16.7 ms floor and lands at 20.197 ms — 83% achieved bandwidth. Peak is a ceiling, never
+#      an operating point.
+#
+#   2. FIXED PER-STEP COST.  The roofline is a THROUGHPUT model: it charges bytes and FLOPs and
+#      nothing else. A real engine step also pays kernel dispatch, the scheduler, sampling and
+#      detokenisation. Measured on the same H100, Qwen3-0.6B TPOT never drops below ~2.1 ms however
+#      small the shape, while the roofline predicts 0.506 ms — i.e. the roofline models the ~1.6 ms
+#      floor as exactly zero. That floor does not shrink when the model shrinks, so it dominates
+#      small models and is invisible on large ones.
+#
+# Both are declared here, as ordinary fields on a hardware record, so they are auditable, per-device
+# overridable, and never model-specific. Every field is OPTIONAL, and nothing ever falls back to a
+# silent 1.0 / 0.0:
+#   * the three OVERHEADS fall back to the per-device-CLASS default table below;
+#   * the two EFFICIENCIES fall back to the documented per-TECHNOLOGY bands (memory-type decode MBU,
+#     tensor-core-generation large-GEMM MFU) that get_inference_system already applies. Those bands
+#     are the principled default for a rate, they are keyed off fields every record already carries
+#     (`memory_type`, `tensor_cores`), and they deliberately keep living in exactly one place rather
+#     than being copied per record where the two copies could drift apart.
+#
+# Declarable keys on any HARDWARE_CONFIGS record (see INFERENCE_REALISM_KEYS):
+#
+#   'compute_efficiency'        achieved fraction of the record's peak dense FLOPs   (0, 1]
+#   'memory_efficiency'         achieved fraction of the record's peak DRAM bandwidth (0, 1]
+#   'kernel_launch_latency_ms'  host->device dispatch cost charged PER OPERATOR        >= 0
+#   'step_overhead_ms'          fixed host cost charged ONCE PER ENGINE STEP           >= 0
+#   'per_sequence_overhead_ms'  host cost charged PER SEQUENCE in the batch            >= 0
+#
+# Each value is either a scalar (both phases) or a per-phase dict, e.g.
+#     'kernel_launch_latency_ms': {'prefill': 0.005, 'decode': 0.002}
+#
+# PRECEDENCE (highest first), resolved by resolve_inference_realism():
+#   1. the record's MEASURED `inference_calibration[phase]` block (fitted against real benchmarks by
+#      llm_memory_calculator.validation.inference_calibration) — a measurement always beats a prior;
+#   2. the record's own declared key (scalar or per-phase);
+#   3. the per-device-class default below (overheads) / the per-technology band (efficiencies).
+#
+# WHY THE OVERHEADS LIVE ON THE HARDWARE RECORD.  They are host-runtime costs, not silicon. They are
+# declared here because the hardware record is this simulator's single device declaration, and the
+# defaults are stated for the mainstream serving runtime (a vLLM-class Python engine driving an
+# accelerator). A deployment on a different runtime declares its own values on the record rather than
+# being silently mispredicted.
+#
+# THE TWO TERMS MUST NOT BE FITTED TO THE SAME RESIDUAL.  The "83% achieved bandwidth" above is what
+# you get by attributing the WHOLE 20.197 ms to streaming: 55.93 GB / 20.197 ms = 2769 GB/s = 0.83 of
+# peak. But that step also pays the fixed host cost. Take it out first — ~2.05 ms for a 64-layer model
+# at the defaults below — and the remaining 18.1 ms of streaming implies ~0.92 of peak. The published
+# HBM3 decode-MBU band (~0.85, applied by get_inference_system when a record declares nothing) sits
+# between the two, so nothing here hardcodes 0.83 for one device: a single measurement that conflates
+# a rate with a fixed cost is a worse prior than the published band. A device that measures the two
+# SEPARATELY declares both, and its declaration wins.
+#
+# NOT A FUDGE FACTOR. These are additive, model-independent terms with their own physical units.
+# They do not scale with weight bytes, so they cannot absorb (or be inflated by) an error in the
+# model's parameter count: when a model-config defect is fixed and the weight term grows, the
+# roofline term grows and these do not move. Anything that must be tuned per model belongs in the
+# model, not here.
+
+#: Fields a hardware record may declare to describe its achieved efficiency and fixed overheads.
+INFERENCE_REALISM_KEYS = (
+    'compute_efficiency',
+    'memory_efficiency',
+    'kernel_launch_latency_ms',
+    'step_overhead_ms',
+    'per_sequence_overhead_ms',
+)
+
+#: Efficiency fields, validated to (0, 1]. The rest are latencies in ms, validated to >= 0.
+_EFFICIENCY_KEYS = ('compute_efficiency', 'memory_efficiency')
+
+#: Key spelling used inside a MEASURED `inference_calibration[phase]` block -> declaration key.
+#: `c_stream_ms_per_layer` is deliberately absent: it is a separate, layer-scaled legacy term kept
+#: for the devices whose measured fit used it, and is resolved by get_inference_system, not here.
+_CALIBRATION_ALIASES = {
+    'eta_compute': 'compute_efficiency',
+    'eta_mem': 'memory_efficiency',
+    't_launch_ms': 'kernel_launch_latency_ms',
+    'step_overhead_ms': 'step_overhead_ms',
+    'per_sequence_overhead_ms': 'per_sequence_overhead_ms',
+}
+
+# --------------------------------------------------------------------------------------------------
+# Per-device-class defaults. Principled, published, and identical for every device in a class — no
+# device is special-cased, and none of these was fitted to the measurements quoted above.
+# --------------------------------------------------------------------------------------------------
+#
+# kernel_launch_latency_ms — charged per operator in the model graph.
+#   A CUDA kernel launch costs ~3-10 us of host+device dispatch when issued eagerly; replaying the
+#   same kernel as a node of a captured CUDA Graph costs ~1-2 us (NVIDIA "Getting Started with CUDA
+#   Graphs"; the same order on ROCm/HIP graphs). Production engines capture DECODE — its shapes are
+#   static — and run PREFILL eagerly, because prompt length varies every request. So:
+#     decode  0.002 ms/op  (graph replay, lower edge of the 1-2 us band)
+#     prefill 0.005 ms/op  (eager launch, lower edge of the 3-10 us band)
+#   Both take the conservative lower edge: under-charging a term is safer than inventing one.
+#
+# step_overhead_ms — charged once per engine step, in both phases.
+#   The host-side work around one forward pass: schedule the batch, build the block tables and input
+#   tensors, launch, sample, and hand the tokens to the detokeniser. It is Python-side and roughly
+#   constant, which is exactly why it shows up as a floor. Reported at the ~1-3 ms/step scale for
+#   vLLM-class engines (the motivation for vLLM's V1 rewrite, its async output processing, and the
+#   CUDA-graph/"piecewise" work; TensorRT-LLM's in-flight batching makes the same argument). We take
+#   1.0 ms — the lower edge of the reported band.
+#
+# per_sequence_overhead_ms — charged per sequence in the batch.  DEFAULT 0.0, BECAUSE IT WAS MEASURED.
+#   The term exists for runtimes that do per-request host work INSIDE the engine step (per-sequence
+#   sampling, block-table updates, stop checks, detokenisation) and is kept declarable for them. The
+#   GPU-class default was 0.25 ms, inferred from a fit over batch 1 and batch 10 only. That fit was
+#   contaminated: its batch-10 points came from a 2-replica deployment (5 sequences per engine),
+#   identical prompts (vLLM's prefix cache let the batch share one KV copy) and requests stopping at
+#   their own EOS (the batch drained mid-decode). All three made batch 10 look cheaper than it is,
+#   and the fit split the error between a per-sequence term and an attention coefficient of ~0.35.
+#
+#   Re-measured with those artifacts removed — one engine addressed directly, a unique prompt per
+#   request, ignore_eos with a fixed length, steady-state inter-token gap after every prefill has
+#   finished, captured CUDA-graph batch sizes only — on an H100XM-80C (vLLM V1, tp=1):
+#     Qwen3-0.6B   batch 1..32, context 2k..32k, 12 points    per-seq 0.25: 1.08-2.69x   0.0: 0.95-1.08x
+#     gpt-oss-20b  batch 1..32, context 2k..32k, 10 points    per-seq 0.25: 0.93-2.09x   0.0: 0.86-0.99x
+#   (gpt-oss with its MXFP4 experts sized at their stored precision; see genz/weight_precision.py)
+#   The 0.25 default is not merely a worse fit, it is physically refuted: at 2k context and batch 32
+#   the term alone would add 8.0 ms to a step that measures 4.75 ms IN TOTAL. Even charging the KV
+#   read as free, the per-sequence cost is bounded by (4.75 - 1.0 step - 0.36 weights) / 32 = 0.10 ms.
+#   That matches how vLLM V1 is built: sampling runs batched on the GPU and detokenisation runs in
+#   the API-server process, outside the engine step. And step_overhead_ms is not being re-fitted to
+#   absorb anything: 1.0 ms is independently confirmed by the same data (0.5 and 1.5 both fit worse).
+#   A runtime that does per-request work inside its step declares its own value on the record.
+#
+# CPU (type == 'cpu') declares ZERO for all three, deliberately. The CPU decode path already clamps
+# to a memory floor whose efficiency constant (_ETA_MEM_DECODE_CPU_X86 in llm_decode.py) was fitted
+# against END-TO-END measured decode latency, i.e. with the host overhead already inside it. Adding
+# these terms on top would double-count it. A CPU whose runtime overhead is measured SEPARATELY from
+# that floor can declare them on its record.
+_GPU_CLASS_REALISM = {
+    'decode':  {'kernel_launch_latency_ms': 0.002,
+                'step_overhead_ms': 1.0,
+                'per_sequence_overhead_ms': 0.0},
+    'prefill': {'kernel_launch_latency_ms': 0.005,
+                'step_overhead_ms': 1.0,
+                'per_sequence_overhead_ms': 0.0},
+}
+_ZERO_CLASS_REALISM = {
+    'decode':  {'kernel_launch_latency_ms': 0.0, 'step_overhead_ms': 0.0, 'per_sequence_overhead_ms': 0.0},
+    'prefill': {'kernel_launch_latency_ms': 0.0, 'step_overhead_ms': 0.0, 'per_sequence_overhead_ms': 0.0},
+}
+
+#: Fixed-overhead defaults by device class. Accelerators/ASICs/TPUs are host-driven the same way a
+#: GPU is, so they share the GPU-class defaults rather than silently getting zero.
+INFERENCE_REALISM_DEFAULTS: Dict[str, Dict[str, Dict[str, float]]] = {
+    'gpu': _GPU_CLASS_REALISM,
+    'accelerator': _GPU_CLASS_REALISM,
+    'asic': _GPU_CLASS_REALISM,
+    'tpu': _GPU_CLASS_REALISM,
+    'cpu': _ZERO_CLASS_REALISM,
+}
+
+#: Device class used when a record does not declare `type`.
+DEFAULT_DEVICE_CLASS = 'gpu'
+
+INFERENCE_PHASES = ('prefill', 'decode')
+
+
+def _realism_device_class(hardware: Any) -> str:
+    """Device class of `hardware` ('gpu' / 'cpu' / ...), for the per-class defaults."""
+    try:  # a CPUSystem carries no `type`, but is unambiguously a CPU
+        from llm_memory_calculator.genz.cpu.cpu_system import CPUSystem
+        if isinstance(hardware, CPUSystem):
+            return 'cpu'
+    except Exception:  # pragma: no cover - cpu extras absent
+        pass
+    if isinstance(hardware, dict):
+        declared = hardware.get('type')
+    else:
+        declared = getattr(hardware, 'type', None)
+    declared = str(declared or '').lower()
+    return declared if declared in INFERENCE_REALISM_DEFAULTS else DEFAULT_DEVICE_CLASS
+
+
+def _realism_record(hardware: Any) -> Any:
+    """Resolve `hardware` to something whose declarations we can read.
+
+    A name is looked up (aliases included); a dict / System / CPUSystem is used as-is.
+    """
+    if isinstance(hardware, str):
+        try:
+            from llm_memory_calculator.hardware.manager import get_hardware_config
+            resolved = get_hardware_config(hardware)
+        except Exception:  # pragma: no cover - manager import problems
+            resolved = None
+        if not resolved:  # get_hardware_config returns False (not None) for an unknown name
+            resolved = HARDWARE_CONFIGS.get(hardware)
+        if not resolved:
+            # Same fallback chain get_inference_system uses, so a name it can resolve never dies here.
+            try:
+                from llm_memory_calculator.systems.system_configs import system_configs
+                resolved = system_configs.get(hardware)
+            except Exception:  # pragma: no cover - backward-compat shim unavailable
+                resolved = None
+        if not resolved:
+            raise ValueError(
+                f"Unknown hardware '{hardware}': cannot resolve its inference-realism declaration. "
+                f"Pass a known hardware name or an explicit config dict."
+            )
+        return resolved
+    return hardware
+
+
+def _for_phase(value: Any, phase: str) -> Any:
+    """Unwrap a declaration that may be a scalar or a {'prefill': .., 'decode': ..} dict."""
+    if isinstance(value, dict):
+        return value.get(phase)
+    return value
+
+
+def _declared(record: Any, key: str, phase: str) -> Any:
+    """The value `record` DECLARES for `key` in `phase`, or None if it declares nothing.
+
+    For a hardware-config dict, a declaration is simply the key. For a System / CPUSystem object
+    there is no record to read, and its CONSTRUCTOR DEFAULTS must not be mistaken for declarations:
+    ``System.kernel_launch_latency_ms`` is 0.0 and ``System.compute_efficiency`` is 1 on every
+    freshly built System, and reading those back would re-assert exactly the 100%-of-peak,
+    zero-overhead model this module exists to remove. So an object declares only via an explicit
+    ``inference_realism`` mapping, plus an efficiency it was deliberately built with (!= 1, the same
+    "already set" convention get_inference_system uses).
+    """
+    if isinstance(record, dict):
+        return _for_phase(record.get(key), phase)
+    explicit = getattr(record, 'inference_realism', None)
+    if isinstance(explicit, dict):
+        value = _for_phase(explicit.get(key), phase)
+        if value is not None:
+            return value
+    if key in _EFFICIENCY_KEYS:
+        value = getattr(record, key, None)
+        try:
+            if value is not None and float(value) != 1.0:
+                return value
+        except (TypeError, ValueError):
+            return value
+    return None
+
+
+def _validate(key: str, value: Any, device: str) -> float:
+    """Reject a nonsensical declaration loudly. A silently-clamped efficiency is how a confident
+    wrong number gets shipped."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{device}: inference-realism '{key}' must be a number, got {value!r}")
+    if value != value or value in (float('inf'), float('-inf')):
+        raise ValueError(f"{device}: inference-realism '{key}' must be finite, got {value!r}")
+    if key in _EFFICIENCY_KEYS:
+        if not 0.0 < value <= 1.0:
+            raise ValueError(
+                f"{device}: inference-realism '{key}' is an ACHIEVED FRACTION OF PEAK and must lie in "
+                f"(0, 1]; got {value!r}. A value above 1 would claim the device beats its datasheet."
+            )
+    elif value < 0.0:
+        raise ValueError(f"{device}: inference-realism '{key}' is a latency in ms and must be >= 0, got {value!r}")
+    return value
+
+
+def resolve_inference_realism(hardware: Any, phase: str) -> Dict[str, Optional[float]]:
+    """Achieved efficiency and fixed overheads declared for `hardware` in `phase`.
+
+    Args:
+        hardware: a hardware name, a HARDWARE_CONFIGS-shaped dict, or a System/CPUSystem object.
+        phase: 'prefill' or 'decode'.
+
+    Returns:
+        A dict over INFERENCE_REALISM_KEYS. The two efficiencies are ``None`` when the record
+        declares neither a measured calibration nor an explicit value — the caller then keeps the
+        documented per-technology band (memory-type MBU / tensor-core-generation GEMM MFU) that
+        get_inference_system already applies, which IS the principled default for those two and
+        lives in one place. The three overheads are always a concrete number: their principled
+        default is the per-device-class value in INFERENCE_REALISM_DEFAULTS.
+
+    Raises:
+        ValueError: for an unknown hardware name, an unknown phase, or an out-of-range declaration.
+    """
+    if phase not in INFERENCE_PHASES:
+        raise ValueError(f"phase must be one of {INFERENCE_PHASES}, got {phase!r}")
+
+    record = _realism_record(hardware)
+    device_class = _realism_device_class(record)
+    device = str((record.get('name') if isinstance(record, dict) else None)
+                 or (hardware if isinstance(hardware, str) else device_class))
+    calibration = (record.get('inference_calibration') if isinstance(record, dict)
+                   else getattr(record, 'inference_calibration', None)) or {}
+    measured = calibration.get(phase, {}) if isinstance(calibration, dict) else {}
+
+    # A MEASURED calibration block is the authority for its phase: it was fitted against real
+    # end-to-end benchmarks, so whatever overhead it does not name was already absorbed into the
+    # terms it does name. Layering a class-default overhead on top of a measured fit would
+    # double-count it and silently break that device's published residuals. So a calibrated phase
+    # defaults its unstated overheads to 0; only an UNcalibrated phase gets the class priors.
+    defaults = ({k: 0.0 for k in INFERENCE_REALISM_KEYS if k not in _EFFICIENCY_KEYS} if measured
+                else INFERENCE_REALISM_DEFAULTS[device_class][phase])
+
+    out: Dict[str, Optional[float]] = {}
+    for key in INFERENCE_REALISM_KEYS:
+        value = None
+        # 1. measured calibration block (highest authority)
+        for cal_key, decl_key in _CALIBRATION_ALIASES.items():
+            if decl_key == key and isinstance(measured, dict) and cal_key in measured:
+                value = measured[cal_key]
+                break
+        # 2. the record's own declaration
+        if value is None:
+            value = _declared(record, key, phase)
+        # 3. per-device-class default (efficiencies have none here — see the docstring)
+        if value is None:
+            value = defaults.get(key)
+        out[key] = None if value is None else _validate(key, value, device)
+    return out
+
+
+def apply_inference_realism(system: Any, realism: Dict[str, Optional[float]],
+                            compute_efficiency: Optional[float] = None,
+                            memory_efficiency: Optional[float] = None) -> Any:
+    """Attach the resolved efficiencies and fixed overheads to a constructed System.
+
+    The three overheads are additive terms applied by llm_prefill/llm_decode after the roofline, so
+    they simply ride on the System object.
+
+    The efficiencies are also stamped back when the caller resolved a concrete value, because
+    get_inference_system treats ``efficiency == 1`` as "caller said nothing" and substitutes its
+    per-technology band. That is the right default for an UNDECLARED device, but it would silently
+    discard a device (or a caller) that deliberately declares 1.0 — which is exactly the audit case
+    "declare no derating and no overhead, and reproduce the untouched roofline". Pass None for an
+    efficiency to leave get_inference_system's band in place.
+    """
+    if compute_efficiency is not None:
+        system.compute_efficiency = compute_efficiency
+    if memory_efficiency is not None:
+        system.memory_efficiency = memory_efficiency
+    system.kernel_launch_latency_ms = realism.get('kernel_launch_latency_ms') or 0.0
+    system.step_overhead_ms = realism.get('step_overhead_ms') or 0.0
+    system.per_sequence_overhead_ms = realism.get('per_sequence_overhead_ms') or 0.0
+    return system

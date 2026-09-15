@@ -20,6 +20,9 @@ op_type_dicts = {0: 'FC', 1: 'CONV2D', 2: 'DWCONV', 3: 'GEMM', 4: 'Logit', 5: 'A
 
 
 class Operator(object):
+    #: Weight role assigned by analysis_model (genz/weight_precision.py). None keeps `bits`.
+    weight_role = None
+
     def __init__(self, dim, density=(1.0,1.0,1.0)):
         self.dim = [int(x) if isinstance(x, (int, float, np.int32, np.int64)) else x for x in dim]
         self.density_a, self.density_w, self.density_o = density
@@ -119,10 +122,25 @@ class Operator(object):
                     operators_sizes.append(tensor_sz * system.get_bit_multiplier(type='M', data='v', operators=self.input_w))
                 else:
                     operators_sizes.append(tensor_sz * system.get_bit_multiplier(type='M', data='a'))
+            elif i == 1:
+                operators_sizes.append(tensor_sz * self._weight_bit_multiplier(system))
             else:
                 operators_sizes.append(tensor_sz * system.get_bit_multiplier(type='M', data='w'))
 
         return operators_sizes
+
+    def _weight_bit_multiplier(self, system):
+        """Bytes per parameter for this operator's WEIGHT tensor.
+
+        A pre-quantized checkpoint stores some roles (e.g. MoE experts) below the caller's precision;
+        only the weight tensor carries that format — activations stay in the activation dtype, which
+        is why this is applied to input_w alone. Read through getattr so a CPUSystem wrapper, which
+        delegates attributes to its base System, resolves the same map.
+        """
+        role_bytes = getattr(system, 'weight_bytes_by_role', None)
+        if role_bytes and self.weight_role in role_bytes:
+            return role_bytes[self.weight_role]
+        return system.get_bit_multiplier(type='M', data='w')
 
     def get_memory_time(self, system):
         sz_list = self.get_operators_size(system)
