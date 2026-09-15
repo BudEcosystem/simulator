@@ -42,6 +42,20 @@ class DeviceIdentity:
     gpu_architecture: Optional[str] = None  # e.g., "AMPERE", "RDNA3", "HOPPER"
     compute_capability: Optional[str] = None  # NVIDIA compute capability
     architecture_features: Optional[Dict[str, Any]] = None  # Architecture-specific features
+    # Memory stated in the device NAME (e.g. "A100-SXM4-40GB", or the framebuffer of an NVIDIA vGPU
+    # profile such as "H100XM-80C"), kept apart from `memory_gb`, which prefers the reported size.
+    name_memory_gb: Optional[float] = None
+
+    @property
+    def min_physical_memory_gb(self) -> Optional[float]:
+        """The least memory the physical device can have, given everything observed.
+
+        Cluster-reported memory is often NOT the card: a HAMi slice reports its `gpumem`, a vGPU
+        profile its framebuffer, and inventory can report free rather than total memory. Each of those
+        is at most the card, so every observation is a lower bound and the largest one is the tightest.
+        """
+        observed = [m for m in (self.memory_gb, self.name_memory_gb) if m]
+        return max(observed) if observed else None
 
 
 class DeviceParser:
@@ -127,6 +141,11 @@ class DeviceParser:
         (r'(\d+)\s*mb', 1/1024),  # 40960MB - correct conversion
         (r'(\d+)\s*mib', 1/1024),  # 40960MiB - correct conversion
     ]
+
+    # NVIDIA vGPU profile suffix: <gpu>-<framebuffer GB><series>, e.g. H100XM-80C, L40S-48C, A100-20C.
+    # The number is the profile's framebuffer, which is a lower bound on the physical card, so it is only
+    # used as such (DeviceIdentity.min_physical_memory_gb), never to pick an exact memory variant.
+    VGPU_PROFILE_PATTERN = r'-(\d{1,3})[abcq]\b'
     
     # Variant patterns (form factor, generation, etc.)
     VARIANT_PATTERNS = [
@@ -235,6 +254,20 @@ class DeviceParser:
                         except (ValueError, TypeError):
                             pass
             
+            # Memory the name states, independent of any reported size (a slice reports less).
+            for pattern, multiplier in cls.MEMORY_PATTERNS:
+                match = re.search(pattern, name_lower)
+                if match:
+                    try:
+                        identity.name_memory_gb = round(float(match.group(1)) * multiplier, 1)
+                        break
+                    except (ValueError, TypeError):
+                        pass
+            if identity.name_memory_gb is None:
+                match = re.search(cls.VGPU_PROFILE_PATTERN, name_lower)
+                if match:
+                    identity.name_memory_gb = float(match.group(1))
+
             # Extract variant
             for pattern in cls.VARIANT_PATTERNS:
                 match = re.search(pattern, name_lower)
@@ -553,10 +586,11 @@ class DeviceMatcher:
                     return cls._add_memory_variant(base_model, memory_gb)
                 return base_model
         
-        # Check if model contains any known model name
+        # Check if model contains any known model name. Digit-aware: "A10" is not a prefix-match for
+        # "A100", or an A10 is timed as an A100.
         for base_model, aliases in cls.MODEL_ALIASES.items():
             for alias in aliases:
-                if alias.upper() in model_upper or model_upper in alias.upper():
+                if _contains_model_token(model_upper, alias.upper()) or _contains_model_token(alias.upper(), model_upper):
                     if memory_gb:
                         return cls._add_memory_variant(base_model, memory_gb)
                     return base_model
@@ -587,7 +621,7 @@ class DeviceMatcher:
                 alias_upper = alias.upper()
                 # Check if the base model name is in the raw name
                 base_upper = base_model.upper()
-                if base_upper in raw_upper or raw_upper in alias_upper:
+                if _contains_model_token(raw_upper, base_upper) or _contains_model_token(alias_upper, raw_upper):
                     return base_model
         
         # Score based on matching tokens
@@ -755,6 +789,15 @@ def match_device(device_info: Dict[str, Any],
                            f"(Architecture: {identity.gpu_architecture})")
                 return config
     
+    # Strategy 1b': the device name IS a known label (config name or alias, ignoring case and -/_/space).
+    # Unambiguous, so it runs before every heuristic name strategy, after the hardware-ID ones; for accelerators the observed memory must
+    # still fit the card ("NVIDIA A100" at 80 GB must not stop at the 40 GB record that owns that alias).
+    if identity.raw_name:
+        config = _config_labelled(identity.raw_name, identity.min_physical_memory_gb, hardware_configs)
+        if config:
+            logger.info(f"Matched device by exact label: {config.get('name')}")
+            return config
+
     # Strategy 1c: Match GPU by architecture and model (reliable when PCI ID mapping fails)
     if identity.gpu_architecture and identity.model:
         matched_name = DeviceMatcher.match_by_architecture(
@@ -782,6 +825,25 @@ def match_device(device_info: Dict[str, Any],
                 logger.info(f"Matched device by model name: {config.get('name', matched_name)}")
                 return config
     
+    # Strategy 2b: GPU family with the observed memory as a LOWER BOUND.
+    # Every strategy above requires the reported memory to be within 15% of a card's, which is right for
+    # an idle bare-metal card and wrong for a HAMi slice (reports its gpumem), an NVIDIA vGPU profile (its
+    # framebuffer) or a partly-used card (its free memory). A 32 GB slice of an H100 matched nothing, and
+    # the caller then substituted a generic A100-40GB -- a third of the FLOPs and half the bandwidth. The
+    # name still identifies the family; the memory only rules out cards too small to hold what was seen.
+    if identity.model and identity.device_type != 'cpu':
+        # The parsed model itself is a family when the alias table does not know it (e.g. "A10", which
+        # has a hardware record but no alias entry).
+        family = DeviceMatcher.match_by_name(identity.model, None, identity.vendor) or identity.model
+        # Only a model NUMBER is a family ("H100", "L40", "3080"); a word such as "GRACE" spans unrelated
+        # products (GH200, GB10) and is left to the fuzzy matcher.
+        if family and re.search(r'\d', family):
+            config = _smallest_family_config_holding(family, identity.min_physical_memory_gb, hardware_configs)
+            if config:
+                logger.info(f"Matched GPU by family with memory as a lower bound: {config.get('name', family)} "
+                            f"(observed {identity.min_physical_memory_gb} GB)")
+                return config
+
     # Strategy 3: Fuzzy name matching (least reliable)
     if identity.raw_name:
         matched_name = DeviceMatcher.fuzzy_match(identity.raw_name)
@@ -793,3 +855,77 @@ def match_device(device_info: Dict[str, Any],
     
     logger.warning(f"No match found for device: {device_info}")
     return None
+
+
+def _contains_model_token(haystack: str, needle: str) -> bool:
+    """`needle` occurs in `haystack` as a model token: not preceded by a letter or digit, and not
+    followed by a digit. "NVIDIA A100" contains "A100" but not "A10"; "L40S" contains "L40"."""
+    if not needle:
+        return False
+    return re.search(rf'(?:^|[^A-Z0-9]){re.escape(needle)}(?![0-9])', haystack) is not None
+
+
+#: Reported memory may exceed a card's nominal size by this much (GB vs GiB, rounding) and still fit it.
+_MEMORY_REPORT_SLACK = 1.15
+
+
+def _smallest_family_config_holding(family: str, min_memory_gb: Optional[float],
+                                    hardware_configs: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The smallest non-CPU config of `family` whose memory can hold `min_memory_gb`.
+
+    Family membership is a whole-token match on the config name or an alias, where a family token may
+    not be followed by another digit: "A10" must not claim "A100_40GB_GPU", but "L40" may claim "L40S".
+    Choosing the SMALLEST card that holds the observation picks the exact variant when the observation is
+    a whole card (80 GB -> A100_80GB) and the conservative one when it is a slice (20 GB -> A100_40GB).
+    """
+    candidates = []
+    for index, (name, config) in enumerate(hardware_configs.items()):
+        if str(config.get('type', '')).lower() == 'cpu':
+            continue
+        labels = [name, *config.get('aliases', [])]
+        if not any(_contains_model_token(str(label).upper(), family.upper()) for label in labels):
+            continue
+        memory = config.get('Memory_size', config.get('memory_size', 0)) or 0
+        if min_memory_gb and memory * _MEMORY_REPORT_SLACK < min_memory_gb:
+            continue
+        candidates.append((memory, len(name), index, config))
+    if not candidates:
+        return None
+    # Smallest card that holds the observation; on a memory tie the plainest name ("RTX4070_GPU" rather
+    # than "RTX4070Ti_GPU"), since a suffix the device name did not carry is not evidence for it.
+    return min(candidates, key=lambda c: (c[0], c[1], c[2]))[3]
+
+
+def _normalized_label(label: Any) -> str:
+    return re.sub(r'[\s_\-]+', '', str(label)).upper()
+
+
+def _config_labelled(raw_name: str, min_memory_gb: Optional[float],
+                     hardware_configs: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The config whose name or alias equals `raw_name` exactly, after normalising case and separators.
+
+    For accelerators, a config too small to hold the observed memory is skipped, and among several that
+    carry the label the smallest holding the observation wins. CPUs are not memory-checked: their
+    reported memory is host RAM, unrelated to the record's size.
+    """
+    wanted = _normalized_label(raw_name)
+    if not wanted:
+        return None
+    candidates = []
+    for index, (name, config) in enumerate(hardware_configs.items()):
+        own = {_normalized_label(label) for label in (name, config.get('name', '')) if label}
+        aliases = {_normalized_label(label) for label in config.get('aliases', []) if label}
+        if wanted in own:
+            priority = 0      # the record's own key or name
+        elif wanted in aliases:
+            priority = 1      # a label other records may list too ("EPYC 9654" on the Genoa family)
+        else:
+            continue
+        memory = config.get('Memory_size', config.get('memory_size', 0)) or 0
+        is_cpu = str(config.get('type', '')).lower() == 'cpu'
+        if not is_cpu and min_memory_gb and memory * _MEMORY_REPORT_SLACK < min_memory_gb:
+            continue
+        candidates.append((priority, 0 if is_cpu else memory, index, config))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda c: (c[0], c[1], c[2]))[3]
