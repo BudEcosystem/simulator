@@ -261,6 +261,19 @@ def estimate_decode_performance(
             # Add computed metrics
             if 'Latency' in result:
                 result['TPOT'] = result['Latency']  # Time per output token
+                # Total_latency = TPOT x output_tokens is CORRECT, not a flat-rate approximation.
+                # decode_moddeling does not return the first step's latency: for output_tokens > 1 it
+                # builds the step at context=input_tokens and the step at context=input_tokens+output_
+                # tokens and returns their 50/50 average. Per-step decode latency is affine in the KV
+                # length (the weight term is constant, the attention term is linear in context), so
+                #     sum_{i=0..N-1} t(input+i)  ==  N * (t(input) + t(input+N)) / 2
+                # exactly -- the mean of the endpoints times N IS the trapezoidal integral of an affine
+                # function. So this multiplication reconstitutes the sum over the generation rather than
+                # charging the first step N times. (It overshoots by half a step, t(input+N) instead of
+                # t(input+N-1), i.e. O(1/N) and conservative.) The additive per-step overheads added in
+                # llm_decode.py are constant across steps, so they average to themselves and are charged
+                # exactly once per generated token here. Verified in
+                # tests/test_roofline_realism.py::TestTotalLatencyIsATrapezoidSum.
                 result['Total_latency'] = result['Latency'] * output_tokens  # Total generation time
                 
                 # Effective throughput considering batch size and beam size
@@ -292,6 +305,19 @@ def estimate_decode_performance(
         # Add computed metrics
         if 'Latency' in result:
             result['TPOT'] = result['Latency']  # Time per output token
+            # Total_latency = TPOT x output_tokens is CORRECT, not a flat-rate approximation.
+            # decode_moddeling does not return the first step's latency: for output_tokens > 1 it
+            # builds the step at context=input_tokens and the step at context=input_tokens+output_
+            # tokens and returns their 50/50 average. Per-step decode latency is affine in the KV
+            # length (the weight term is constant, the attention term is linear in context), so
+            #     sum_{i=0..N-1} t(input+i)  ==  N * (t(input) + t(input+N)) / 2
+            # exactly -- the mean of the endpoints times N IS the trapezoidal integral of an affine
+            # function. So this multiplication reconstitutes the sum over the generation rather than
+            # charging the first step N times. (It overshoots by half a step, t(input+N) instead of
+            # t(input+N-1), i.e. O(1/N) and conservative.) The additive per-step overheads added in
+            # llm_decode.py are constant across steps, so they average to themselves and are charged
+            # exactly once per generated token here. Verified in
+            # tests/test_roofline_realism.py::TestTotalLatencyIsATrapezoidSum.
             result['Total_latency'] = result['Latency'] * output_tokens  # Total generation time
             
             # Effective throughput considering batch size and beam size

@@ -1,4 +1,4 @@
-from .utils import ModdelingOutput, get_inference_system, get_offload_system
+from .utils import ModdelingOutput, apply_checkpoint_weight_precision, get_inference_system, get_offload_system
 from llm_memory_calculator.genz.unit import Unit
 from llm_memory_calculator.genz.operators import *
 
@@ -7,6 +7,10 @@ import warnings
 from llm_memory_calculator.genz.collective_times import *
 from llm_memory_calculator.genz.utils.plot_rooflines import *
 from llm_memory_calculator.genz.Models import get_configs, create_full_prefill_model
+from llm_memory_calculator.hardware.configs import (
+    apply_inference_realism,
+    resolve_inference_realism,
+)
 from math import ceil
 
 unit = Unit()
@@ -29,9 +33,20 @@ def prefill_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     ### System Declaration
     ##################################################################################################
 
+    # ACHIEVED EFFICIENCY + FIXED OVERHEAD are DECLARED BY THE HARDWARE, not assumed here — see the
+    # matching block in llm_decode.py. `system_eff` defaulted to 1, i.e. 100% of datasheet FLOPs and
+    # 100% of datasheet bandwidth with zero launch/scheduler cost; the device record now declares
+    # what it actually sustains, and an explicit caller-supplied `system_eff` (!= 1) still wins.
+    # `None` here means "nothing declared" -> get_inference_system's documented per-technology band.
+    _realism = resolve_inference_realism(system_name, phase='prefill')
+    _ceff = system_eff if system_eff != 1 else _realism['compute_efficiency']
+    _meff = system_eff if system_eff != 1 else _realism['memory_efficiency']
     system = get_inference_system(system_name = system_name, bits = bits,
-                                ceff=system_eff, meff=system_eff, network_config=network_config,
+                                ceff=1 if _ceff is None else _ceff,
+                                meff=1 if _meff is None else _meff, network_config=network_config,
                                 collective_strategy=collective_strategy, parallelism_heirarchy=parallelism_heirarchy, phase='prefill')
+    apply_inference_realism(system, _realism, compute_efficiency=_ceff, memory_efficiency=_meff)
+    apply_checkpoint_weight_precision(system, model)
     ##################################################################################################
     ### Model Characterization Calculation
     ##################################################################################################
@@ -96,11 +111,20 @@ def prefill_moddeling(model = 'BERT', batch_size = 1, input_tokens = 4096,
     ### Final Latency and Thrpt Calculation
     ##################################################################################################
 
-    # Per-hardware inference calibration (default no-op): add the fixed per-step kernel-launch cost
-    # (N_ops · t_launch) the throughput roofline omits. Prefill is a single forward pass over the
-    # prompt, so there is no per-stream (c_stream) term. Guarded → default path byte-identical.
-    if system.kernel_launch_latency_ms:
-        prefill_latency += system.kernel_launch_latency_ms * count_repeat_aware_ops(model_df)
+    # FIXED PER-STEP COST the throughput roofline omits entirely (see llm_decode.py for the full
+    # argument and the measurements). Prefill is ONE engine step over the whole prompt, so it pays
+    # the per-operator dispatch cost, the per-step host cost once, and the per-sequence host cost for
+    # each of the ub requests in the microbatch — but no per-stream (c_stream) term, which is a
+    # decode-only, layer-scaled legacy term. Prefill launches eagerly (prompt shapes vary per
+    # request, so engines do not CUDA-graph it), which is why the declared per-op default is larger
+    # for this phase than for decode.
+    _t_launch = system.kernel_launch_latency_ms
+    _step_oh = getattr(system, 'step_overhead_ms', 0.0)
+    _seq_oh = getattr(system, 'per_sequence_overhead_ms', 0.0)
+    if _t_launch or _step_oh or _seq_oh:
+        prefill_latency += (_t_launch * count_repeat_aware_ops(model_df)
+                            + _step_oh
+                            + _seq_oh * ub)
 
     # Pipeline-parallel TTFT semantics: prefill_latency above is ONE microbatch (ub requests)
     # filling the whole pipeline (all L layers + inter-stage comm). The remaining m-1 microbatches

@@ -114,10 +114,24 @@ def test_kimi_layer_lists_are_one_indexed():
 
 
 def _kv(name, batch, seq, precision="bf16"):
+    """KV for the ARCHITECTURE's layer plan, i.e. what the model permits.
+
+    These tests pin which layers a given architecture gives a smaller cache to; they are
+    about the checkpoint, not about any one server. So they declare an engine that can
+    actually hold a heterogeneous layout -- otherwise a windowed layer inside a mixed
+    stack is charged full KV and the plan under test is invisible.
+
+    The DEFAULT is the opposite (no window saving), because that is what vLLM 0.9.0 was
+    measured doing, and it is covered by tests/test_kv_engine_capability.py. Both answers
+    are correct; they answer different questions.
+    """
     calc = ModelMemoryCalculator()
     c = cfg(name)
     calc.model_type = calc.detect_model_type(c)
-    return calc.calculate_kv_cache(c, batch_size=batch, seq_length=seq, precision=precision)
+    return calc.calculate_kv_cache(
+        c, batch_size=batch, seq_length=seq, precision=precision,
+        engine_capabilities={"heterogeneous_kv_layout": True},
+    )
 
 
 def test_qwen36_kv_counts_only_full_attention_layers():

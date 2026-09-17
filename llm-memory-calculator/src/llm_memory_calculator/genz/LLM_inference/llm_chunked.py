@@ -1,4 +1,4 @@
-from .utils import ModdelingOutput, get_inference_system, get_offload_system
+from .utils import ModdelingOutput, apply_checkpoint_weight_precision, get_inference_system, get_offload_system
 from llm_memory_calculator.genz.unit import Unit
 from llm_memory_calculator.genz.operators import *
 
@@ -29,6 +29,7 @@ def chunked_moddeling(model = 'BERT',
                                 network_config=network_config, 
                                 collective_strategy=collective_strategy, 
                                 parallelism_heirarchy=parallelism_heirarchy )
+    apply_checkpoint_weight_precision(system, model)
 
     ##################################################################################################
     ### Model Characterization Calculation

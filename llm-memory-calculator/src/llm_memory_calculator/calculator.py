@@ -1,11 +1,18 @@
 """Core memory calculator for LLM models."""
 
-from typing import Dict, Any, Optional, List, Tuple
+from dataclasses import dataclass, fields
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from .types import MemoryReport
 from .parameter_counter import UniversalParameterCounter
 from .config_normalizer import ConfigNormalizer
-from .layer_plan import MECH_MAMBA1, MECH_MAMBA2, resolve_layer_plan
+from .layer_plan import (
+    ATTN_FULL,
+    ATTN_SLIDING,
+    MECH_MAMBA1,
+    MECH_MAMBA2,
+    resolve_layer_plan,
+)
 from .state_memory import calculate_recurrent_state_bytes
 from .activation_memory import calculate_activation_bytes
 
@@ -48,6 +55,69 @@ HYBRID_MODEL_TYPES = {
     "plamo2",
     "phi4flash",
 }
+
+
+@dataclass(frozen=True)
+class EngineKVCapabilities:
+    """What the SERVING ENGINE does with a KV layout that is not uniform.
+
+    Architecture says which layers *could* hold a smaller cache. The engine
+    decides whether it actually allocates one, and the two answers differ. This
+    object carries the engine half, and it is never inferred from the model --
+    the same checkpoint served by two engines has two different KV footprints.
+
+    ``heterogeneous_kv_layout``
+        The engine can give different attention layers different amounts of KV
+        (vLLM calls it the hybrid KV-cache allocator/manager). Only with that
+        does a windowed layer inside a stack that ALSO has full-attention layers
+        cost less than a full one.
+
+        Default False, and deliberately the pessimistic answer. Measured on an
+        H100 vGPU, vLLM serving gpt-oss-20b (12 windowed layers at window 128,
+        12 full) allocated 49,254 B/token -- the full 2*24*8*64*2 = 49,152, with
+        no window saving at all, because vLLM rewrites every windowed layer's
+        spec to a full one when it cannot manage a heterogeneous layout. Taking
+        the saving by default halves the prediction, and an under-sized KV cache
+        is the dangerous direction: the deployment gets a GPU slice too small
+        and either starves for blocks or OOMs. Over-sizing merely costs money.
+
+        A stack whose attention layers ALL share one window (Mistral-style) is
+        not heterogeneous -- there is nothing for the engine to reconcile, every
+        engine allocates the window -- so it keeps the saving regardless of this
+        flag.
+    """
+
+    heterogeneous_kv_layout: bool = False
+
+    @classmethod
+    def resolve(cls, value: Any) -> "EngineKVCapabilities":
+        """Coerce a caller's argument into capabilities, loudly.
+
+        Accepts None (all capabilities off), a bool (shorthand for
+        ``heterogeneous_kv_layout``), a mapping of field names, or an instance.
+        An unknown key raises instead of being ignored: a caller who passes
+        ``{"sliding_window_kv": True}`` and is silently given the default has
+        exactly the confident-wrong-number failure this parameter exists to end.
+        """
+        if value is None:
+            return cls()
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, bool):
+            return cls(heterogeneous_kv_layout=value)
+        if isinstance(value, Mapping):
+            known = {f.name for f in fields(cls)}
+            unknown = set(value) - known
+            if unknown:
+                raise ValueError(
+                    f"Unknown engine capability {sorted(unknown)}; "
+                    f"known capabilities are {sorted(known)}."
+                )
+            return cls(**value)
+        raise TypeError(
+            "engine_capabilities must be None, a bool, a mapping or an "
+            f"EngineKVCapabilities, not {type(value).__name__}."
+        )
 
 
 class ModelMemoryCalculator:
@@ -390,17 +460,169 @@ class ModelMemoryCalculator:
 
         return ratio
 
+    # ------------------------------------------------------------------ KV cache
+    #
+    # KV is priced from a per-layer plan over attention KINDS, never from a bare
+    # depth. Three kinds exist and each has a different token count behind it:
+    #
+    #   full     -- caches every token of the sequence.
+    #   sliding  -- caches at most `sliding_window` tokens, but only if the
+    #               ENGINE allocates per layer; see EngineKVCapabilities.
+    #   none     -- linear-attention / SSM / short-conv mixers and MLP-only
+    #               layers hold no GROWING cache and contribute exactly zero.
+    #               Their fixed-size recurrent state is a separate term
+    #               (`calculate_state_memory`), constant in context length.
+    #
+    # The kinds come from `resolve_layer_plan`, which reads whichever of the
+    # eleven per-layer config dialects the model happens to speak, so nothing
+    # here keys off a model name or a hardcoded list of models.
+
+    def resolve_kv_layer_plan(
+        self,
+        config: Dict[str, Any],
+        seq_length: int,
+        engine_capabilities: Any = None,
+    ) -> Dict[str, Any]:
+        """Which layers pay KV, over how many tokens each, and why.
+
+        Returns the priced groups plus the layers that pay nothing, so a caller
+        can audit the number rather than trust it. Pure geometry -- no batch, no
+        precision -- which is what makes it comparable against an engine's own
+        "GPU KV cache size" line.
+        """
+        caps = EngineKVCapabilities.resolve(engine_capabilities)
+        normalized = ConfigNormalizer.normalize_config(config)
+        # Structural, not by detected model type: a model can be multimodal AND
+        # hybrid at once, and `self.model_type` holds only one label.
+        if isinstance(normalized.get("text_config"), dict):
+            text_config = ConfigNormalizer.normalize_config(normalized["text_config"])
+        else:
+            text_config = normalized
+
+        depth = int(
+            text_config.get("num_hidden_layers")
+            or text_config.get("n_layers")
+            or text_config.get("num_layers")
+            or 0
+        )
+        notes: List[str] = []
+
+        plan = resolve_layer_plan(config)
+        if plan is not None:
+            source = "layer_plan:" + plan["dialect"]
+            num_full = plan["num_full_layers"]
+            num_sliding = plan["num_sliding_layers"]
+            depth = depth or len(plan["attn"])
+            notes.extend(plan.get("notes") or [])
+        else:
+            metadata = text_config.get("_layer_metadata") or normalized.get(
+                "_layer_metadata"
+            )
+            if metadata:
+                # Whenever the config declares per-layer kinds, they decide --
+                # not just when they happen to MIX windowed and full. A stack
+                # that declares every layer full-attention while also carrying a
+                # `sliding_window` key is the common Qwen2.5/gpt-oss shape, and
+                # the uniform fallback below would clamp all of it to a window
+                # the layers do not use.
+                source = "_layer_metadata"
+                num_full = metadata.get("num_full_layers", 0)
+                num_sliding = metadata.get("num_sliding_layers", 0)
+                if not num_full and not num_sliding:
+                    notes.append(
+                        "KV is charged as zero: no entry in `layer_types` "
+                        f"({metadata.get('num_no_kv_layers', 0)} layers) was "
+                        "recognized as an attention layer. If this model does "
+                        "hold a cache, its dialect is unknown here."
+                    )
+            else:
+                # Uniform stack: every layer is the same kind, so a declared
+                # window applies to all of them -- homogeneous by construction.
+                source = "uniform"
+                num_sliding = depth if text_config.get("sliding_window") else 0
+                num_full = depth - num_sliding
+
+        # `.get(key, default)` returns a stored None, and the window is
+        # legitimately None here: a config carrying layer_types can also carry
+        # `use_sliding_window: false`, which the normalizer scrubs to None. "No
+        # window" means those layers attend to the full sequence.
+        window = text_config.get("sliding_window") or None
+        windowed_seq = min(seq_length, window) if window else seq_length
+
+        # The engine half of the answer. Windowed layers cost less than full ones
+        # only where the engine can hold a different amount of KV per layer; a
+        # stack whose attention layers all share one window needs no such
+        # ability, so it keeps the saving unconditionally.
+        heterogeneous = bool(num_sliding and num_full)
+        withheld = heterogeneous and not caps.heterogeneous_kv_layout
+        sliding_seq = seq_length if withheld else windowed_seq
+        if withheld and windowed_seq < seq_length:
+            notes.append(
+                f"{num_sliding} windowed layers are charged the full {seq_length} "
+                f"tokens, not their {window}-token window: the stack also has "
+                f"{num_full} full-attention layers, and an engine that cannot "
+                "manage a heterogeneous KV layout rewrites every windowed layer "
+                "to a full one (measured: vLLM on gpt-oss-20b). Pass "
+                "engine_capabilities={'heterogeneous_kv_layout': True} for an "
+                "engine that does take the saving."
+            )
+
+        groups: List[Dict[str, Any]] = []
+        if num_full > 0:
+            groups.append(
+                {"kind": ATTN_FULL, "layers": num_full, "effective_seq": seq_length}
+            )
+        if num_sliding > 0:
+            groups.append(
+                {
+                    "kind": ATTN_SLIDING,
+                    "layers": num_sliding,
+                    "effective_seq": sliding_seq,
+                }
+            )
+
+        return {
+            "source": source,
+            "num_layers": depth,
+            "num_full_layers": num_full,
+            "num_sliding_layers": num_sliding,
+            # Linear-attention / SSM / conv / MLP-only layers. Zero KV, and the
+            # count is reported so a 2x error shows up as a layer count rather
+            # than as an unexplained factor.
+            "num_no_kv_layers": max(depth - num_full - num_sliding, 0),
+            "sliding_window": window,
+            "groups": groups,
+            "heterogeneous_attention": heterogeneous,
+            "sliding_window_saving_applied": bool(
+                num_sliding and sliding_seq < seq_length
+            ),
+            "sliding_window_saving_withheld": bool(withheld and windowed_seq < seq_length),
+            "engine_capabilities": caps,
+            "notes": notes,
+        }
+
     def calculate_kv_cache(
-        self, config: Dict[str, Any], batch_size: int, seq_length: int, precision: str
+        self,
+        config: Dict[str, Any],
+        batch_size: int,
+        seq_length: int,
+        precision: str,
+        engine_capabilities: Any = None,
     ) -> float:
-        """Calculate KV cache memory in GB with per-layer attention type support."""
+        """KV cache in GB, per-layer attention kind and engine behavior aware.
+
+        ``engine_capabilities`` is the serving engine's ability to hold a
+        different amount of KV per layer; see EngineKVCapabilities. It defaults
+        to the pessimistic answer (no saving on windowed layers inside a mixed
+        stack) because under-sizing KV is what OOMs a deployment.
+        """
         raw_config = config
         # Normalize config for consistent key handling
         config = ConfigNormalizer.normalize_config(config)
 
         # Pick the language-model sub-config structurally rather than gating on a
         # detected model type. A model can be multimodal *and* hybrid at once --
-        # Qwen3.6 is both -- and `self.model_type` holds only one label, so gating
+        # Qwen3.5 is both -- and `self.model_type` holds only one label, so gating
         # on "multimodal" made the hybrid layout unreachable for exactly the
         # models that need it most.
         if isinstance(config.get("text_config"), dict):
@@ -416,48 +638,32 @@ class ModelMemoryCalculator:
         # Get bytes per element
         bytes_per_element = self.PRECISION_BYTES.get(precision.lower(), 2)
 
-        # Canonical hybrid plan first. It resolves all eleven "which layers carry
-        # a KV cache" dialects, including the recurrent/full mixes that the
-        # `has_mixed_attention` flag below -- defined as sliding>0 and full>0 --
-        # structurally cannot express. Charging KV on a Gated-DeltaNet or Mamba
-        # layer over-counts by 3.75x (LFM2) to 14x (Nemotron-H).
-        plan = resolve_layer_plan(raw_config)
-        if plan is not None:
-            if plan["num_attention_layers"] == 0:
-                return 0.0  # pure SSM: no KV cache at all
-            return self._calculate_kv_cache_per_layer(
-                text_config,
-                {
-                    "num_sliding_layers": plan["num_sliding_layers"],
-                    "num_full_layers": plan["num_full_layers"],
-                },
-                batch_size,
-                seq_length,
-                bytes_per_element,
-                attention_type,
-            )
-
-        # Check for per-layer attention types (e.g., mixed sliding/full).
-        # Prefer the text_config's metadata: for a multimodal model the attention
-        # layout lives in text_config (which is normalized separately just above),
-        # so reading it only from the outer config silently skips the per-layer
-        # path and clamps every layer to the sliding window. Gemma-3 ships in
-        # exactly that shape, where the miss is ~21x on a 128k context.
-        layer_metadata = text_config.get("_layer_metadata") or config.get(
-            "_layer_metadata"
+        kv_plan = self.resolve_kv_layer_plan(
+            raw_config, seq_length, engine_capabilities
         )
-        if layer_metadata and layer_metadata.get("has_mixed_attention"):
-            return self._calculate_kv_cache_per_layer(
-                text_config,
-                layer_metadata,
-                batch_size,
-                seq_length,
-                bytes_per_element,
-                attention_type,
+
+        # A per-layer plan (canonical hybrid dialects, or the normalizer's
+        # sliding/full metadata) prices each kind over its own token count.
+        # Charging KV on a Gated-DeltaNet or Mamba layer over-counts by 3.75x
+        # (LFM2) to 14x (Nemotron-H); charging a windowed layer only its window
+        # on an engine that does not do that UNDER-counts by 2x (gpt-oss).
+        if kv_plan["source"] != "uniform":
+            if not kv_plan["groups"]:
+                return 0.0  # pure SSM: no attention layer, so no KV cache at all
+            return sum(
+                self._calculate_kv_for_layers(
+                    text_config,
+                    group["layers"],
+                    batch_size,
+                    group["effective_seq"],
+                    bytes_per_element,
+                    attention_type,
+                )
+                for group in kv_plan["groups"]
             )
 
-        # Standard calculation: global sliding window or full seq
-        # Handle sliding window attention
+        # Uniform stack: one kind for every layer, so a declared window applies
+        # to all of them and needs no engine capability to be honored.
         if (
             "sliding_window" in text_config
             and text_config["sliding_window"] is not None
@@ -482,6 +688,52 @@ class ModelMemoryCalculator:
                 text_config, batch_size, seq_length, bytes_per_element
             )
 
+    def kv_cache_breakdown(
+        self,
+        config: Dict[str, Any],
+        batch_size: int = 1,
+        seq_length: int = 2048,
+        precision: str = "bf16",
+        engine_capabilities: Any = None,
+    ) -> Dict[str, Any]:
+        """The KV number with its working shown, for auditing a deployment size.
+
+        ``marginal_bytes_per_token`` is what ONE more token costs -- the figure
+        that matters once a windowed layer has saturated its window, and the one
+        directly comparable to an engine's per-token KV accounting. It differs
+        from ``bytes / tokens`` exactly when some layer is clamped.
+        """
+        plan = self.resolve_kv_layer_plan(config, seq_length, engine_capabilities)
+        bytes_per_element = self.PRECISION_BYTES.get(precision.lower(), 2)
+        normalized = ConfigNormalizer.normalize_config(config)
+        if isinstance(normalized.get("text_config"), dict):
+            text_config = ConfigNormalizer.normalize_config(normalized["text_config"])
+        else:
+            text_config = normalized
+        attention_type = self.detect_attention_type(normalized)
+
+        total = self.calculate_kv_cache(
+            config, batch_size, seq_length, precision, engine_capabilities
+        )
+        # Only groups still growing at this length add to the marginal cost.
+        growing = sum(
+            g["layers"] for g in plan["groups"] if g["effective_seq"] >= seq_length
+        )
+        marginal = (
+            self._calculate_kv_for_layers(
+                text_config, growing, 1, 1, bytes_per_element, attention_type
+            )
+            * 1e9
+            if growing and attention_type
+            else 0.0
+        )
+        return dict(
+            plan,
+            attention_type=attention_type,
+            bytes=total * 1e9,
+            marginal_bytes_per_token=marginal,
+        )
+
     def _calculate_kv_cache_per_layer(
         self,
         config: Dict[str, Any],
@@ -490,23 +742,28 @@ class ModelMemoryCalculator:
         seq_length: int,
         bytes_per_element: float,
         attention_type: str,
+        engine_capabilities: Any = None,
     ) -> float:
         """
         Calculate KV cache for models with per-layer attention types.
 
-        Handles mixed sliding/full attention layers (e.g., GPT-OSS-20B).
+        Handles a stack that mixes windowed and full-attention layers. Whether
+        the windowed layers actually cost less is an ENGINE property, not a model
+        one: see EngineKVCapabilities.
 
         Args:
-            config: Model configuration
-            layer_metadata: Layer metadata from config normalization
+            config: Model configuration (the language-model sub-config)
+            layer_metadata: num_sliding_layers / num_full_layers
             batch_size: Batch size
             seq_length: Full sequence length
             bytes_per_element: Bytes per KV element
             attention_type: Attention mechanism type
+            engine_capabilities: Engine's KV-layout abilities; default pessimistic
 
         Returns:
             Total KV cache memory in GB
         """
+        caps = EngineKVCapabilities.resolve(engine_capabilities)
         num_sliding_layers = layer_metadata.get("num_sliding_layers", 0)
         num_full_layers = layer_metadata.get("num_full_layers", 0)
 
@@ -521,7 +778,11 @@ class ModelMemoryCalculator:
 
         # Calculate KV cache for sliding attention layers
         if num_sliding_layers > 0:
-            effective_seq = min(seq_length, sliding_window)
+            heterogeneous = num_full_layers > 0
+            if heterogeneous and not caps.heterogeneous_kv_layout:
+                effective_seq = seq_length
+            else:
+                effective_seq = min(seq_length, sliding_window)
             sliding_kv = self._calculate_kv_for_layers(
                 config,
                 num_sliding_layers,
@@ -545,6 +806,7 @@ class ModelMemoryCalculator:
             total_kv_cache += full_kv
 
         return total_kv_cache
+
 
     def _calculate_kv_for_layers(
         self,
@@ -1680,6 +1942,7 @@ class ModelMemoryCalculator:
         max_num_batched_tokens: Optional[int] = None,
         target_device: Optional[str] = None,
         max_num_seqs: Optional[int] = None,
+        engine_capabilities: Any = None,
     ) -> MemoryReport:
         """
         Calculate total memory requirements for model inference.
@@ -1698,6 +1961,11 @@ class ModelMemoryCalculator:
             lora_config: Optional LoRA configuration for adapter memory calculation
             respect_weight_tying: Whether to respect tie_word_embeddings config (default True)
             encoder_seq_length: Encoder sequence length for encoder-decoder models (audio/speech)
+            engine_capabilities: What the serving ENGINE does with a non-uniform KV
+                layout (EngineKVCapabilities, a mapping of its fields, or a bool).
+                Defaults to the pessimistic answer: windowed layers inside a stack
+                that also has full-attention layers are charged the full context,
+                because under-sizing the KV cache is what OOMs a deployment.
 
         Returns:
             MemoryReport with detailed breakdown
@@ -1718,6 +1986,7 @@ class ModelMemoryCalculator:
         encoder_kv_cache = 0.0
         decoder_kv_cache = 0.0
         cross_attn_kv_cache = 0.0
+        kv_notes: List[str] = []
 
         if self.model_type in ["encoder-decoder", "audio-llm"]:
             # Get encoder sequence length (default from config or parameter)
@@ -1749,8 +2018,14 @@ class ModelMemoryCalculator:
         else:
             # Standard decoder-only model
             kv_cache = self.calculate_kv_cache(
-                config, batch_size, seq_length, precision
+                config, batch_size, seq_length, precision, engine_capabilities
             )
+            # Say out loud when the KV number rests on an engine assumption or on
+            # an approximated layer plan. A silent 2x is how a pod gets sized
+            # against a context it cannot hold.
+            kv_notes = self.resolve_kv_layer_plan(
+                config, seq_length, engine_capabilities
+            )["notes"]
 
         # Shard the KV cache across ranks. Each rank holds
         # max(1, num_kv_heads // tp) heads: vLLM replicates KV heads when there
@@ -1792,7 +2067,7 @@ class ModelMemoryCalculator:
         # Calculate LoRA adapter memory (if enabled)
         lora_memory = 0.0
         lora_scratch = 0.0
-        notes: List[str] = []
+        notes: List[str] = list(kv_notes)
         if lora_config:
             lora_memory = self.calculate_lora_adapter_memory(
                 config, lora_config, precision, tensor_parallel

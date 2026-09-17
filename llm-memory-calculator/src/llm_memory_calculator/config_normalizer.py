@@ -6,6 +6,19 @@ supporting advanced features like mixed precision quantization and per-layer att
 
 from typing import Dict, Any, List, Optional
 
+# One dialect for "what kind of layer is this", shared with the canonical layer
+# plan rather than reimplemented here. The two used to disagree: this module
+# tested `'attention' in layer_type`, which classifies Gated DeltaNet's
+# "linear_attention" as an attention layer and charges it a KV cache it never
+# allocates, while layer_plan tests linear/conv FIRST and gets it right.
+from .layer_plan import (
+    ATTN_FULL,
+    ATTN_SLIDING,
+    MECH_MAMBA1,
+    MECH_MAMBA2,
+    _classify_layer_type_string,
+)
+
 
 class ConfigNormalizer:
     """Normalize various model configs to standard format.
@@ -304,38 +317,46 @@ class ConfigNormalizer:
         sliding_layers = []
         full_layers = []
         mamba_layers = []
-        
+        recurrent_layers = []
+        no_kv_layers = []
+
         for idx, layer_type in enumerate(layer_types):
-            layer_type_lower = layer_type.lower()
-            
-            # Check for attention layers
-            if 'attention' in layer_type_lower:
+            kind = _classify_layer_type_string(layer_type)
+
+            if kind['attn'] == ATTN_SLIDING:
                 attention_layers.append(idx)
-                
-                # Distinguish sliding vs full attention
-                if 'sliding' in layer_type_lower:
-                    sliding_layers.append(idx)
-                elif 'full' in layer_type_lower or 'global' in layer_type_lower:
-                    full_layers.append(idx)
-                else:
-                    # Default to full attention if not specified
-                    full_layers.append(idx)
-            
-            # Check for Mamba/SSM layers
-            elif 'mamba' in layer_type_lower or 'ssm' in layer_type_lower:
-                mamba_layers.append(idx)
-        
+                sliding_layers.append(idx)
+            elif kind['attn'] == ATTN_FULL:
+                attention_layers.append(idx)
+                full_layers.append(idx)
+            else:
+                # No growing KV cache: a linear-attention / SSM / short-conv
+                # mixer, or an MLP-only slot. Its fixed state is a separate term.
+                no_kv_layers.append(idx)
+                if kind['recurrent']:
+                    recurrent_layers.append(idx)
+                if kind['recurrent'] in (MECH_MAMBA1, MECH_MAMBA2):
+                    mamba_layers.append(idx)
+
         return {
             'attention_layers': attention_layers,
             'sliding_attention_layers': sliding_layers,
             'full_attention_layers': full_layers,
             'mamba_layers': mamba_layers,
+            # Any non-attention mixer: Mamba/SSM, but also Gated DeltaNet, Kimi
+            # Delta, lightning attention and short convolutions. `mamba_layers`
+            # keeps its narrower meaning so existing readers are unaffected.
+            'recurrent_layers': recurrent_layers,
+            # Layers that hold no growing cache at all, whatever the mechanism.
+            'no_kv_layers': no_kv_layers,
             'num_attention_layers': len(attention_layers),
             'num_sliding_layers': len(sliding_layers),
             'num_full_layers': len(full_layers),
             'num_mamba_layers': len(mamba_layers),
+            'num_recurrent_layers': len(recurrent_layers),
+            'num_no_kv_layers': len(no_kv_layers),
             'has_mixed_attention': len(sliding_layers) > 0 and len(full_layers) > 0,
-            'has_hybrid_architecture': len(mamba_layers) > 0 and len(attention_layers) > 0,
+            'has_hybrid_architecture': len(recurrent_layers) > 0 and len(attention_layers) > 0,
         }
     
     @staticmethod

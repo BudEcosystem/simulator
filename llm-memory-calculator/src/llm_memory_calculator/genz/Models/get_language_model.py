@@ -1,11 +1,13 @@
 import pandas as pd
 import os
+import warnings
 from math import ceil
 import numpy as np
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Union
 from llm_memory_calculator.genz.parallelism import ParallelismConfig
+from llm_memory_calculator.genz.weight_precision import resolve_weight_precision
 
 from llm_memory_calculator.genz.Models.default_models import ModelConfig, MODEL_DICT
 from llm_memory_calculator.huggingface_loader import HuggingFaceConfigLoader
@@ -30,6 +32,101 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     from lora.injection import inject_lora_ops
 
+# ---------------------------------------------------------------------------
+# Decoder-config resolution
+#
+# Composite checkpoints -- every vision/audio/omni LLM, and some text-only ones --
+# put the DECODER's geometry in a nested block and leave the top level holding only
+# routing metadata (architectures, model_type, the other modality's config...).
+# Every dimension lookup in huggingface_config_to_model_config below is a plain
+# ``hf_config.get(key, DEFAULT)``, so reading such a config at the top level silently
+# yields the DEFAULTS -- a generic ~7B LLaMA -- whatever the model's real size.
+#
+# Qwen3.8-27B is 25.9B with its dims under ``text_config``; read at the top level it
+# resolved to hidden_size 4096 / 32 layers / full MHA, i.e. ~5.5B, which made decode
+# ~5x too fast and the planner escalate to tensor parallelism it did not need.
+#
+# Hoisting the decoder block once, here, keeps every existing lookup correct without
+# touching ~40 call sites, and works for any nesting convention rather than a list of
+# known models.
+# ---------------------------------------------------------------------------
+
+# Conventional names for the decoder block, tried in order.
+_DECODER_SUBCONFIG_NAMES = (
+    "text_config", "llm_config", "language_config", "decoder_config",
+    "text_model", "language_model", "thinker_config",
+)
+# Blocks that describe some OTHER modality's encoder; never the decoder.
+_NON_DECODER_HINTS = (
+    "vision", "image", "audio", "speech", "video", "vocoder", "talker",
+    "projector", "adapter", "encoder",
+)
+# The two dimensions that make a block a decoder. Anything that is one carries both.
+_DECODER_GEOMETRY_KEYS = ("num_hidden_layers", "hidden_size")
+
+
+def _looks_like_decoder(block: object) -> bool:
+    """True when a config block carries a decoder's depth and width."""
+    return isinstance(block, dict) and all(
+        block.get(k) is not None for k in _DECODER_GEOMETRY_KEYS
+    )
+
+
+def _find_decoder_subconfig(cfg: dict, _depth: int = 0):
+    """Return the nested block holding the decoder's geometry, or None.
+
+    Conventional names first, then any nested block that is not another modality's
+    encoder, then one level deeper (omni-style configs nest thinker_config.text_config).
+    """
+    if not isinstance(cfg, dict) or _depth > 2:
+        return None
+    for name in _DECODER_SUBCONFIG_NAMES:
+        if _looks_like_decoder(cfg.get(name)):
+            return cfg[name]
+    for key, value in cfg.items():
+        if not isinstance(value, dict) or any(h in key.lower() for h in _NON_DECODER_HINTS):
+            continue
+        if _looks_like_decoder(value):
+            return value
+    for key, value in cfg.items():
+        if isinstance(value, dict) and not any(h in key.lower() for h in _NON_DECODER_HINTS):
+            found = _find_decoder_subconfig(value, _depth + 1)
+            if found is not None:
+                return found
+    return None
+
+
+def resolve_decoder_config(hf_config: dict) -> dict:
+    """Flatten a composite config so the decoder's dimensions sit at the top level.
+
+    A flat config is returned unchanged (the common case). A composite one gets the
+    decoder block merged over the top level, so nested dims win while top-level keys
+    the block does not carry (architectures, quantization_config, ...) survive.
+
+    Raises:
+        ValueError: the config is composite but no decoder geometry could be found.
+            Refusing is deliberate -- the alternative is silently modelling a
+            different model, which is exactly the failure this function exists to stop.
+    """
+    if not isinstance(hf_config, dict):
+        return hf_config
+    if _looks_like_decoder(hf_config):
+        return hf_config
+    sub = _find_decoder_subconfig(hf_config)
+    if sub is None:
+        if any(isinstance(v, dict) for v in hf_config.values()):
+            raise ValueError(
+                "Could not locate the decoder's geometry in this model config. "
+                f"Top-level keys: {sorted(hf_config)}. Looked for {list(_DECODER_GEOMETRY_KEYS)} "
+                "at the top level and in nested blocks. Refusing to fall back to default "
+                "dimensions, which would silently model a different (~7B) model."
+            )
+        return hf_config
+    merged = dict(hf_config)
+    merged.update({k: v for k, v in sub.items() if v is not None})
+    return merged
+
+
 def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> ModelConfig:
     """Convert HuggingFace config to ModelConfig format.
 
@@ -39,13 +136,37 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
     - Mamba/SSM models (Mamba, Jamba, etc.)
     - Hybrid models (Jamba with Mamba + MoE)
     """
+    # Composite (multimodal / omni) configs keep the decoder's dimensions in a nested
+    # block; hoist them so every lookup below sees the real geometry instead of the
+    # module defaults. Flat configs pass through untouched.
+    hf_config = resolve_decoder_config(hf_config)
+
     # Extract architecture type
     architectures = hf_config.get('architectures', [])
     model_type = hf_config.get('model_type', '').lower()
     is_mamba = any('mamba' in arch.lower() for arch in architectures) or 'mamba' in model_type
     is_jamba = 'jamba' in model_type or any('jamba' in arch.lower() for arch in architectures)
 
-    # Extract key parameters with proper defaults
+    # Extract key parameters with proper defaults.
+    #
+    # These defaults describe a generic ~7B LLaMA. Silently accepting them for a config
+    # that simply names its fields differently produces a confident answer about the
+    # WRONG MODEL -- which is invisible until someone measures the real deployment.
+    # Nesting is handled above; this warns about every remaining way a checkpoint can
+    # fail to resolve, so a new dialect shows up in the logs instead of in the numbers.
+    _missing_geometry = [
+        key for key in ('hidden_size', 'num_hidden_layers', 'num_attention_heads')
+        if hf_config.get(key) is None
+    ]
+    if _missing_geometry:
+        warnings.warn(
+            f"Model '{model_name}': {', '.join(_missing_geometry)} absent from the config; "
+            f"falling back to defaults (hidden_size 4096, 32 layers, 32 heads). Any size, "
+            f"latency or memory figure derived from this describes a generic ~7B model, not "
+            f"this one. Supply the geometry or add this config dialect.",
+            stacklevel=2,
+        )
+
     vocab_size = hf_config.get('vocab_size', 32000)
     hidden_size = hf_config.get('hidden_size', 4096)
     num_layers = hf_config.get('num_hidden_layers', 32)
@@ -266,6 +387,8 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         v_head_dim=hf_config.get('v_head_dim', None),
         # Per-layer heterogeneous configs
         layer_configs=layer_configs,
+        # Pre-quantized checkpoints store some weight roles below the caller's precision
+        weight_precision=resolve_weight_precision(hf_config),
     )
 
 _CONFIG_STR_CACHE: dict = {}
@@ -340,8 +463,9 @@ def save_layers(layers:list, data_path:str, name:str):
     model_path = os.path.join(data_path,"model")
     df = pd.DataFrame(layers, columns=['Name', 'M', 'N', 'D', 'H', 'Z', 'Z', 'T'])
     file_name = name.replace("/", "_") + datetime.now().strftime("%m_%d_%Y_%H_%M_%S") + str(uuid4()) +'.csv'
-    if not os.path.exists(model_path):
-        os.makedirs(model_path)
+    # exist_ok, not check-then-create: budsim evaluates candidates concurrently, and two first calls in a fresh
+    # process raced here -- the loser raised FileExistsError and its candidate was planned with no metrics.
+    os.makedirs(model_path, exist_ok=True)
     df.to_csv(os.path.join(model_path, file_name),  header=True, index=None)
     return file_name
 

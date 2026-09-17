@@ -1,4 +1,4 @@
-from .utils import ModdelingOutput, get_inference_system, get_offload_system
+from .utils import ModdelingOutput, apply_checkpoint_weight_precision, get_inference_system, get_offload_system
 from llm_memory_calculator.genz.unit import Unit
 from llm_memory_calculator.genz.operators import *
 
@@ -47,6 +47,8 @@ def spec_prefill_modeling(model = 'meta-llama/Llama-3.1-70B', draft_model = 'met
                                             pipeline_parallel = pipeline_parallel,
                                             expert_parallel=expert_parallel)
 
+    # Target and draft share one System but may be quantized differently.
+    apply_checkpoint_weight_precision(system, model)
     full_model_df = get_model_df(model_full_created, system=system, batch_size = ub, intermediate_on_chip=True , beam_merge= True, beam_size= 1, model_characterstics = True)
     full_summary_table = get_summary_table(full_model_df, unit, model_characterstics = True)
 
@@ -60,6 +62,7 @@ def spec_prefill_modeling(model = 'meta-llama/Llama-3.1-70B', draft_model = 'met
                                             pipeline_parallel = pipeline_parallel,
                                             expert_parallel=expert_parallel)
 
+    apply_checkpoint_weight_precision(system, draft_model)
     draft_model_df = get_model_df(model_draft_created, system=system, batch_size = ub, intermediate_on_chip=True , beam_merge= True, beam_size= 1, model_characterstics = True)
     draft_summary_table = get_summary_table(draft_model_df, unit, model_characterstics = True)
 
@@ -101,6 +104,7 @@ def spec_prefill_modeling(model = 'meta-llama/Llama-3.1-70B', draft_model = 'met
                                             pipeline_parallel=pipeline_parallel,
                                             expert_parallel=expert_parallel)
 
+    apply_checkpoint_weight_precision(system, model)
     model_df = get_model_df(model_prefill, system, unit, ub,  intermediate_on_chip=True )
     summary_table = get_summary_table(model_df, unit)
 
@@ -116,6 +120,7 @@ def spec_prefill_modeling(model = 'meta-llama/Llama-3.1-70B', draft_model = 'met
                                             pipeline_parallel=pipeline_parallel,
                                             expert_parallel=expert_parallel)
 
+    apply_checkpoint_weight_precision(system, draft_model)
     model_df = get_model_df(model_draft_prefill, system, unit, ub,  intermediate_on_chip=True )
     summary_table = get_summary_table(model_df, unit)
 
@@ -204,6 +209,8 @@ def spec_decode_modeling(model = 'meta-llama/Llama-3.1-70B', draft_model = 'meta
                                             pipeline_parallel = pipeline_parallel,
                                             expert_parallel=expert_parallel)
 
+    # Target and draft share one System but may be quantized differently.
+    apply_checkpoint_weight_precision(system, model)
     full_model_df = get_model_df(model_full_created, system=system, batch_size = ub, intermediate_on_chip=True , beam_merge= True, beam_size= 1, model_characterstics = True)
     full_summary_table = get_summary_table(full_model_df, unit, model_characterstics = True)
 
@@ -218,6 +225,7 @@ def spec_decode_modeling(model = 'meta-llama/Llama-3.1-70B', draft_model = 'meta
                                             pipeline_parallel = pipeline_parallel,
                                             expert_parallel=expert_parallel)
 
+    apply_checkpoint_weight_precision(system, draft_model)
     draft_model_df = get_model_df(model_draft_created, system=system, batch_size = ub, intermediate_on_chip=True , beam_merge= True, beam_size= 1, model_characterstics = True)
     draft_summary_table = get_summary_table(draft_model_df, unit, model_characterstics = True)
 
@@ -260,6 +268,7 @@ def spec_decode_modeling(model = 'meta-llama/Llama-3.1-70B', draft_model = 'meta
                                             pipeline_parallel=pipeline_parallel,
                                             expert_parallel=expert_parallel)
 
+    apply_checkpoint_weight_precision(system, draft_model)
     model_df = get_model_df(model_draft_decode, system, unit, ub,  intermediate_on_chip=True )
     draft_summary_table = get_summary_table(model_df, unit)
 
@@ -278,6 +287,7 @@ def spec_decode_modeling(model = 'meta-llama/Llama-3.1-70B', draft_model = 'meta
                                             pipeline_parallel=pipeline_parallel,
                                             expert_parallel=expert_parallel)
 
+    apply_checkpoint_weight_precision(system, model)
     model_df = get_model_df(model_decode, system, unit, ub,  intermediate_on_chip=True )
     full_summary_table = get_summary_table(model_df, unit)
 

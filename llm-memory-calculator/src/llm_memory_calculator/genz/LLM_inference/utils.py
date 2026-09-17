@@ -300,3 +300,18 @@ def get_inference_system(system_name='A100_40GB_GPU', bits='bf16', ceff=1, meff=
                     offchip_mem_bw=OFFCHIP_MEM_BW, bits=bits, external_mem_bw=OFFLOAD_BW, interchip_link_bw=C2C_BW, interchip_link_latency=C2C_LL,
                     collective_strategy=collective_strategy, network_config=network_config, parallelism_heirarchy = parallelism_heirarchy,
                     kernel_launch_latency_ms=kernel_launch_latency_ms, per_stream_overhead_ms=per_stream_overhead_ms)
+
+
+def apply_checkpoint_weight_precision(system, model):
+    """Size the weights a pre-quantized checkpoint converted at their stored precision.
+
+    `bits` is one precision for every weight; a checkpoint's `quantization_config` usually converts
+    only some roles (gpt-oss: MXFP4 experts, bf16 attention/router/embeddings/lm_head). The plan is
+    resolved once per model config (genz/weight_precision.py) and read by each operator for its weight
+    tensor. A model without one leaves the system untouched, so bf16 checkpoints are byte-identical.
+    """
+    from llm_memory_calculator.genz.Models import get_configs
+
+    plan = getattr(get_configs(model), 'weight_precision', None)
+    system.weight_bytes_by_role = dict(plan) if plan else None
+    return system

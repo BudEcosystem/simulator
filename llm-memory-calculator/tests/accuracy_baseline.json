@@ -1,9 +1,31 @@
 {
   "decode_tpot_ms": {
-    "llama2_7b|H100_GPU": 4.675573,
-    "llama2_7b|A100_80GB_GPU": 8.160742,
-    "llama3_8b|H100_GPU": 4.999119,
+    "llama2_7b|H100_GPU": 6.189573,
+    "llama2_7b|A100_80GB_GPU": 9.674742,
+    "llama3_8b|H100_GPU": 6.513119,
     "llama2_7b|GB10": 75.150455
   },
-  "param_counts": {}
+  "param_counts": {},
+  "_provenance": {
+    "regenerated": "2026-09-14",
+    "reason": "Deliberate calibration change: the GPU-class per_sequence_overhead_ms default went 0.25 -> 0.0. Every GPU case moved by exactly -0.250 ms (batch 1 x 0.25), a pure additive term. GB10 is unchanged: its measured calibration block zeroes the class overheads. The same tree also sizes pre-quantized checkpoints' weights at their stored precision (genz/weight_precision.py); these built-in bf16 models declare no quantization_config, so that change moves none of them.",
+    "previous": {
+      "llama2_7b|H100_GPU": 6.439573,
+      "llama2_7b|A100_80GB_GPU": 9.924742,
+      "llama3_8b|H100_GPU": 6.763119,
+      "llama2_7b|GB10": 75.150455
+    },
+    "evidence": "Clean single-engine measurements on an H100XM-80C (vLLM V1, tp=1): unique prompt per request, ignore_eos, steady-state inter-token gap, captured CUDA-graph batch sizes. Qwen3-0.6B, 12 points, batch 1..32, context 2k..32k: predicted/measured 1.08..2.69x at 0.25, 0.95..1.08x at 0.0. gpt-oss-20b, 10 points: 0.93..2.09x at 0.25, 0.86..0.99x at 0.0. At batch 32 / 2k the 0.25 default alone charged 8 ms to a step measured at 4.75 ms in total. The corpus that produced 0.25 measured batch 10 through a 2-replica gateway with identical prompts and EOS-drained batches. See tests/test_roofline_realism.py section 6.",
+    "history": {
+      "regenerated": "2026-09-14",
+      "reason": "Deliberate calibration change, which is the one case test_decode_byte_identical's docstring sanctions regenerating for. Decode previously modelled kernel launch, the engine step, sampling and detokenisation as ZERO; those are now declared per hardware record and applied. Every GPU case moved by exactly +1.764 ms at batch 1 -- a pure additive floor, not an interaction with the roofline. GB10 is unchanged because the unified-memory/CPU class declares zero overhead: its decode floor constant was fitted end-to-end and already contains the host cost.",
+      "previous": {
+        "llama2_7b|H100_GPU": 4.675573,
+        "llama2_7b|A100_80GB_GPU": 8.160742,
+        "llama3_8b|H100_GPU": 4.999119,
+        "llama2_7b|GB10": 75.150455
+      },
+      "evidence": "Measured on an H100XM-80C vGPU (tp=1, vLLM 0.9.0, in-cluster): Qwen3-0.6B TPOT never drops below ~2.1 ms however small the shape, while the un-derated roofline predicted 0.506 ms. Across the ten measured points, mean |ln(pred/meas)| for TPOT fell 0.857 -> 0.279."
+    }
+  }
 }

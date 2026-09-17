@@ -21,12 +21,22 @@ from llm_memory_calculator.config_normalizer import ConfigNormalizer
 
 
 def kv_bytes(config, batch_size, seq_length, precision="bf16"):
-    """Normalize + dispatch, returning KV bytes (the API returns decimal GB)."""
+    """Normalize + dispatch, returning KV bytes (the API returns decimal GB).
+
+    Declares an engine that can hold a heterogeneous KV layout, because this file pins
+    the GEOMETRY a config describes -- which layers get a smaller cache and how small.
+    Without that declaration a windowed layer sharing a stack with full-attention layers
+    is charged full KV (what vLLM 0.9.0 was measured doing), and the geometry under test
+    would be invisible. The conservative default is pinned in test_kv_engine_capability.py.
+    """
     normalized = ConfigNormalizer.normalize_config(config)
     calc = ModelMemoryCalculator()
     calc.model_type = calc.detect_model_type(normalized)
     calc.attention_type = calc.detect_attention_type(normalized)
-    return calc.calculate_kv_cache(normalized, batch_size, seq_length, precision) * 1e9
+    return calc.calculate_kv_cache(
+        normalized, batch_size, seq_length, precision,
+        engine_capabilities={"heterogeneous_kv_layout": True},
+    ) * 1e9
 
 
 # --------------------------------------------------------------- explicit head_dim
