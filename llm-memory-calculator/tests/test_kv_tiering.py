@@ -418,3 +418,40 @@ def test_genz_memory_model_takes_the_calculators_per_token_kv():
     assert (
         legacy.bytes_per_token_kv != fixed.bytes_per_token_kv
     )  # the GQA formula misprices an MLA latent
+
+
+def test_the_callers_placement_cap_bounds_the_slice_growth():
+    """A grown slice the cards can't hold per replica is cut to the caller's cap, never rounded past it."""
+    free = _plan(hardware_mode="shared", device_free_gib=20.0)
+    capped = _plan(
+        hardware_mode="shared", device_free_gib=20.0, gpu_kv_cap_gib=free.gpu_kv_gib - 3.337
+    )
+    assert capped.gpu_kv_gib == pytest.approx(free.gpu_kv_gib - 3.34, abs=1e-9)
+    assert any("as much as still fits" in d for d in capped.decisions)
+    # T1 is sized against the capped pool, not the uncapped one.
+    assert capped.gpu_pool_gib == capped.gpu_kv_gib
+    # A cap at or below the demand: no growth at all.
+    none = _plan(hardware_mode="shared", device_free_gib=20.0, gpu_kv_cap_gib=0.5)
+    assert none.gpu_kv_gib is None
+    # A cap above the growth changes nothing.
+    loose = _plan(hardware_mode="shared", device_free_gib=20.0, gpu_kv_cap_gib=500.0)
+    assert loose.gpu_kv_gib == free.gpu_kv_gib
+
+
+def test_the_t1_decision_names_what_sized_it():
+    """The reason is decided before the quarter-GiB rounding, so rounding never reads as a host-memory limit."""
+
+    def sized_by(plan):
+        return next(d for d in plan.decisions if d.startswith("T1: ")).split("sized by ")[1]
+
+    # Qwen3-8B on an 80 GiB card: a ~56 GiB pool; the working set is ~5.3 GiB per unit of concurrency.
+    assert (
+        sized_by(_plan(workload=_chat(concurrency=64), host_free_gib=2000.0)) == "the working set"
+    )
+    assert sized_by(_plan(workload=_chat(concurrency=64), host_free_gib=400.0)) == "the host memory"
+    assert (
+        sized_by(_plan(workload=_chat(concurrency=256), host_free_gib=4000.0)) == "10x the GPU pool"
+    )
+    assert (
+        sized_by(_plan(workload=_chat(concurrency=16), host_free_gib=2000.0)) == "3x the GPU pool"
+    )

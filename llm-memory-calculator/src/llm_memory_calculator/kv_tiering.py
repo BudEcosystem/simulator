@@ -329,6 +329,7 @@ def plan_kv_tiers(
     node: Optional[Mapping[str, Any]] = None,
     host_free_gib: Optional[float] = None,
     device_free_gib: Optional[float] = None,
+    gpu_kv_cap_gib: Optional[float] = None,
     device_tflops: Optional[float] = None,
     device_generation: Optional[str] = None,
     precision: str = "bf16",
@@ -340,8 +341,9 @@ def plan_kv_tiers(
     Sizes are GiB. ``*_per_rank`` values are what budsim already sized for one rank (weights, the KV
     demand of the deployment's concurrency and context, and everything else on the device).
     ``host_free_gib`` is the target node's free host memory and ``device_free_gib`` the free memory
-    of the GPU a shared slice lands on. ``node`` is that node's ``kv_capabilities``. A missing input
-    never enables anything.
+    of the GPU a shared slice lands on. ``gpu_kv_cap_gib`` is the most KV per rank a grown slice may
+    hold, from the caller's placement check (budsim: every replica's slice still fits a card).
+    ``node`` is that node's ``kv_capabilities``. A missing input never enables anything.
     """
     plan = KVTierPlan(workload_profile=workload.profile)
     decisions = plan.decisions
@@ -413,6 +415,7 @@ def plan_kv_tiers(
         demand_gib=demand,
         working_set_gib=working_set_gib,
         device_free_gib=device_free_gib,
+        gpu_kv_cap_gib=gpu_kv_cap_gib,
         host_free_gib=host_free_gib,
         replicas=replicas,
         tp=tp,
@@ -467,6 +470,7 @@ def _plan_t0(
     demand_gib: float,
     working_set_gib: float,
     device_free_gib: Optional[float],
+    gpu_kv_cap_gib: Optional[float],
     host_free_gib: Optional[float],
     replicas: int,
     tp: int,
@@ -512,6 +516,20 @@ def _plan_t0(
         if growth <= 0:
             decisions.append("T0 (slice): no room on the card to grow the slice")
             return demand_gib
+        if gpu_kv_cap_gib is not None and demand_gib + growth > gpu_kv_cap_gib:
+            # The cap comes in 0.01 GiB steps; rounding up past it would build a slice that doesn't fit.
+            capped = math.floor(gpu_kv_cap_gib * 100 + 1e-6) / 100
+            if capped <= demand_gib:
+                decisions.append(
+                    "T0 (slice): no growth (a grown slice per replica doesn't fit the free cards)"
+                )
+                return demand_gib
+            plan.gpu_kv_gib = capped
+            decisions.append(
+                f"T0 (slice): KV {demand_gib:.2f} -> {capped} GiB, as much as still fits one slice"
+                f" per replica ({replicas}) on the free cards"
+            )
+            return capped
         plan.gpu_kv_gib = _round_gib(demand_gib + growth)
         decisions.append(
             f"T0 (slice): KV {demand_gib:.2f} -> {plan.gpu_kv_gib} GiB,"
@@ -609,12 +627,19 @@ def _plan_t1(
             f"{recompute_s * 1e3:.0f} ms to recompute ({bandwidth:g} GB/s, {source})"
         )
 
-    wanted = min(
-        max(working_set_gib_total, T1_MIN_POOL_MULTIPLE * pool_gib_total),
-        T1_MAX_POOL_MULTIPLE * pool_gib_total,
-    )
+    floor_gib = T1_MIN_POOL_MULTIPLE * pool_gib_total
+    ceiling_gib = T1_MAX_POOL_MULTIPLE * pool_gib_total
+    wanted = min(max(working_set_gib_total, floor_gib), ceiling_gib)
     available = T1_HOST_RAM_SHARE * host_free_gib / replicas
     size = min(wanted, available)
+    if available < wanted:
+        limit = "the host memory"
+    elif working_set_gib_total > ceiling_gib:
+        limit = f"{T1_MAX_POOL_MULTIPLE:g}x the GPU pool"
+    elif working_set_gib_total < floor_gib:
+        limit = f"{T1_MIN_POOL_MULTIPLE:g}x the GPU pool"
+    else:
+        limit = "the working set"
     if size < pool_gib_total:
         decisions.append(
             f"T1 dropped: {available:.1f} GiB of host memory per replica is less than"
@@ -634,8 +659,7 @@ def _plan_t1(
     )
     plan.host_memory_gib = size
     plan.shm_gib = size if mode == "register" else 0.0
-    limit = "host memory" if size < wanted else "working set"
-    decisions.append(f"T1: {size:g} GiB of pod host memory ({mode} mode), sized by the {limit}")
+    decisions.append(f"T1: {size:g} GiB of pod host memory ({mode} mode), sized by {limit}")
     return size
 
 
