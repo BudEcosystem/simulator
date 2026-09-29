@@ -14,6 +14,7 @@ from .huggingface_loader import HuggingFaceConfigLoader
 from .types import MemoryReport
 from .layer_plan import resolve_layer_plan
 from .state_memory import calculate_recurrent_state_bytes
+from .kv_tiering import KVTierPlan, KVWorkload, NodeKVFacts, plan_kv_tiers
 
 # Import convenience functions
 from .utils import (
@@ -80,6 +81,11 @@ __all__ = [
     "analyze_attention_efficiency",
     "resolve_layer_plan",
     "calculate_recurrent_state_bytes",
+    # KV cache tier planning (Bud FRD-023)
+    "plan_kv_tiers",
+    "KVWorkload",
+    "KVTierPlan",
+    "NodeKVFacts",
     
     # Hardware functions
     "get_hardware_config",
