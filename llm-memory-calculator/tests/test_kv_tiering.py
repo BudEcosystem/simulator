@@ -1,4 +1,4 @@
-"""KV tier planning (Bud FRD-023 Phase 1): plan_kv_tiers() plans T0 and T1 from deployment fields."""
+"""KV tier planning (Bud FRD-023 Phase 1): plan_kv_tiers() plans T0 and T1."""
 
 import pytest
 
