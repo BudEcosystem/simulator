@@ -168,6 +168,12 @@ def test_a_shared_slice_grows_toward_the_working_set_capped_by_free_gpu_memory()
     assert plan.gpu_memory_utilization is None
 
 
+def test_replicas_share_the_slice_growth_cap():
+    """Split the growth cap across replicas pinned to the node: they may land on the same card."""
+    plan = _plan(hardware_mode="shared", device_free_gib=20.0, replicas=2)
+    assert plan.gpu_kv_gib == pytest.approx(2.0 + kt.SLICE_KV_SHARE_MAX * 20.0 / 2, abs=0.01)
+
+
 def test_a_shared_slice_does_not_grow_when_the_working_set_fits():
     """Keep the demand-sized slice when the working set already fits it."""
     plan = _plan(

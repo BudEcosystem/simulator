@@ -499,7 +499,8 @@ def _plan_t0(
         if not device_free_gib or device_free_gib <= 0:
             decisions.append("T0 (slice): no growth (the GPU's free memory is unknown)")
             return demand_gib
-        growth = min(working_set_gib - demand_gib, SLICE_KV_SHARE_MAX * device_free_gib)
+        # Replicas pinned to the node may land on the same card, so they share the cap.
+        growth = min(working_set_gib - demand_gib, SLICE_KV_SHARE_MAX * device_free_gib / replicas)
         room = (
             GPU_UTIL_MAX * device_memory_gib
             - weight_gib
@@ -515,7 +516,7 @@ def _plan_t0(
         decisions.append(
             f"T0 (slice): KV {demand_gib:.2f} -> {plan.gpu_kv_gib} GiB,"
             f" at most {SLICE_KV_SHARE_MAX:.0%} of "
-            f"the GPU's {device_free_gib:.1f} GiB free"
+            f"the GPU's {device_free_gib:.1f} GiB free, shared by {replicas} replica(s)"
         )
         return demand_gib + growth
     # FR-T0-1: a dedicated card's leftover memory goes to the KV pool.
