@@ -268,13 +268,16 @@ def test_t1_is_single_node_only():
 
 
 def test_break_even_drops_t1_for_a_small_model_on_a_fast_gpu():
-    """Drop T1 where loading costs about as much as recomputing (S2: Qwen3-0.6B on an H100)."""
+    """Drop T1 where a hit saves too little (S2: Qwen3-0.6B on an H100): loading costs about as much
+    as recomputing, and a 4K prefix is ~12 ms of batched GPU work, under the tier's own cost."""
     plan = _plan(
         model_config=QWEN3_06B,
         weight_gib_per_rank=1.4,
         workload=_chat(concurrency=64, input_tokens=4000, output_tokens=1000),
     )
-    assert _t1(plan) is None and any("costs about as much" in d for d in plan.decisions)
+    assert _t1(plan) is None and any(
+        "costs about as much" in d or "batched GPU work" in d for d in plan.decisions
+    )
 
 
 @pytest.mark.parametrize("model", ["8b", "70b"])
@@ -327,11 +330,11 @@ def test_kv_bytes_come_from_the_calculator():
 # dtype
 
 
-def test_fp8_only_where_validated(monkeypatch):
+def test_fp8_only_where_validated():
     """Keep the model's KV dtype unless (model family, GPU generation) is validated (FR-QUANT-2)."""
     assert _plan(device_generation="hopper").kv_cache_dtype == "auto"
-    monkeypatch.setattr(kt, "FP8_KV_VALIDATED", frozenset({("qwen3", "hopper")}))
-    assert _plan(device_generation="hopper").kv_cache_dtype == "fp8"
+    validated = frozenset({("qwen3", "hopper")})
+    assert _plan(device_generation="hopper", validated_kv_dtypes=validated).kv_cache_dtype == "fp8"
 
 
 # ------------------------------------------------------------------------------------------------
@@ -357,6 +360,7 @@ def test_the_wire_shape_is_frd_023_section_8_1():
         "pd",
         "predicted",
         "resources",
+        "dropped",
         "decisions",
     }
     assert wire["version"] == 1 and wire["events"]["enabled"] is True
@@ -421,7 +425,8 @@ def test_genz_memory_model_takes_the_calculators_per_token_kv():
 
 
 def test_the_callers_placement_cap_bounds_the_slice_growth():
-    """A grown slice the cards can't hold per replica is cut to the caller's cap, never rounded past it."""
+    """A grown slice the cards can't hold per replica is cut to the caller's cap, never rounded past
+    it."""
     free = _plan(hardware_mode="shared", device_free_gib=20.0)
     capped = _plan(
         hardware_mode="shared", device_free_gib=20.0, gpu_kv_cap_gib=free.gpu_kv_gib - 3.337
@@ -439,12 +444,14 @@ def test_the_callers_placement_cap_bounds_the_slice_growth():
 
 
 def test_the_t1_decision_names_what_sized_it():
-    """The reason is decided before the quarter-GiB rounding, so rounding never reads as a host-memory limit."""
+    """The reason is decided before the quarter-GiB rounding, so rounding never reads as a
+    host-memory limit."""
 
     def sized_by(plan):
         return next(d for d in plan.decisions if d.startswith("T1: ")).split("sized by ")[1]
 
-    # Qwen3-8B on an 80 GiB card: a ~56 GiB pool; the working set is ~5.3 GiB per unit of concurrency.
+    # Qwen3-8B on an 80 GiB card: a ~56 GiB pool; the working set is ~5.3 GiB per unit of
+    # concurrency.
     assert (
         sized_by(_plan(workload=_chat(concurrency=64), host_free_gib=2000.0)) == "the working set"
     )

@@ -15,6 +15,7 @@ from .types import MemoryReport
 from .layer_plan import resolve_layer_plan
 from .state_memory import calculate_recurrent_state_bytes
 from .kv_tiering import KVTierPlan, KVWorkload, NodeKVFacts, plan_kv_tiers
+from .kv import DeploymentSpec, EngineSpec, InfraSnapshot, NodeGroup, plan_kv
 
 # Import convenience functions
 from .utils import (
@@ -86,6 +87,11 @@ __all__ = [
     "KVWorkload",
     "KVTierPlan",
     "NodeKVFacts",
+    "plan_kv",
+    "DeploymentSpec",
+    "EngineSpec",
+    "NodeGroup",
+    "InfraSnapshot",
     
     # Hardware functions
     "get_hardware_config",
