@@ -54,13 +54,16 @@ def ffn_prefill(model_config:ModelConfig, parallelism_config:ParallelismConfig, 
     dp = parallelism_config.data_parallel
 
     D = model_config.hidden_size
-    Df = model_config.intermediate_size
     fi = model_config.num_ffi
 
     E = model_config.num_experts
     K = model_config.expert_top_k
-    Df = max(ceil(Df/tp),1)
     moe_layer = (E > 1)
+    # Routed experts have their own width (Qwen2/Qwen3-MoE's moe_intermediate_size: 768 against a
+    # dense 6144 for Qwen3-30B-A3B). ModelConfig falls back to intermediate_size when a model
+    # declares none (Mixtral).
+    Df = model_config.moe_intermediate_size if moe_layer else model_config.intermediate_size
+    Df = max(ceil(Df/tp),1)
 
     if E == 1 and ep > 1:
         warnings.warn(f"For dense model, expert parallelism:{ep} will be treated as model parallel")
@@ -102,7 +105,6 @@ def ffn_prefill(model_config:ModelConfig, parallelism_config:ParallelismConfig, 
 
 def ffn_decode(model_config:ModelConfig, parallelism_config:ParallelismConfig, num_tokens:int=1):
     D = model_config.hidden_size
-    Df = model_config.intermediate_size
     fi = model_config.num_ffi
 
     tp = parallelism_config.tensor_parallel
@@ -112,8 +114,10 @@ def ffn_decode(model_config:ModelConfig, parallelism_config:ParallelismConfig, n
 
     E = model_config.num_experts
     K = model_config.expert_top_k
-    Df = max(ceil(Df/tp),1)
     moe_layer = (E > 1)
+    # Routed experts' own width, as in ffn_prefill.
+    Df = model_config.moe_intermediate_size if moe_layer else model_config.intermediate_size
+    Df = max(ceil(Df/tp),1)
 
     if E == 1 and ep > 1:
         warnings.warn(f"For dense model, expert parallelism:{ep} will be treated as model parallel")
