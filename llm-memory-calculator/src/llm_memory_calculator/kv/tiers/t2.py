@@ -46,9 +46,9 @@ def plan_t2(ctx: PlanContext) -> float:
         return drop(
             f"one replica and a {ctx.workload.profile} profile: nothing to share across replicas"
         )
-    storage = ctx.cluster.kv_storage()
+    storage, chosen_by = ctx.cluster.kv_storage_choice(c.T2_MIN_READ_GBPS)
     if storage is None:
-        return drop("the cluster has no KV storage class (the setting is off or names no class)")
+        return drop(chosen_by)
     if storage.node_local is not True:
         return drop(f"storage class '{storage.name}' isn't known to be node-local")
     if not storage.read_gbps:
@@ -63,6 +63,11 @@ def plan_t2(ctx: PlanContext) -> float:
     size = math.floor(min(max(wanted, ctx.tier_gib["T1"]), cap) * 4) / 4
     if size <= 0 or per_token <= 0:
         return drop("no disk room for the working set")
+    if ctx.served_share("T2", size) <= c.T2_MIN_SERVED_SHARE:
+        return drop(
+            "the working set fits in the GPU pool and T1; T2 would hold only copies of their"
+            " blocks (every block T1 stores is written through to it)"
+        )
 
     link = TierLink(
         tier="T2",
@@ -103,12 +108,22 @@ def plan_t2(ctx: PlanContext) -> float:
         "size_gib": size,
         "storage_class": storage.name,
         "transport": None,
-        "params": {"block_size": c.T1_BLOCK_SIZE},
+        "params": {
+            "block_size": c.T1_BLOCK_SIZE,
+            "n_read_threads": c.T2_READ_THREADS,
+            "n_write_threads": c.T2_WRITE_THREADS,
+        },
     }
     ctx.tier_gib["T2"] = size
-    limit = "the working set" if size >= wanted else f"{c.T2_DISK_SHARE:.0%} of the local disk"
+    if max(wanted, ctx.tier_gib["T1"]) > cap:
+        limit = f"{c.T2_DISK_SHARE:.0%} of the local disk"
+    elif ctx.tier_gib["T1"] > wanted:
+        limit = "T1's size (the tier stages every load through T1)"
+    else:
+        limit = "the working set"
     decisions.append(
-        f"T2: {size:g} GiB on '{storage.name}' for {ctx.replicas} replica(s), sized by {limit}"
+        f"T2: {size:g} GiB on '{storage.name}' ({chosen_by}) for {ctx.replicas} replica(s),"
+        f" sized by {limit}"
     )
     ctx.accept(entry)
     return size

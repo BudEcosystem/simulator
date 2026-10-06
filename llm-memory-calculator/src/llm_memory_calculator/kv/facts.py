@@ -171,11 +171,38 @@ class ClusterKVFacts:
             reserved_host_ram_gib_per_node=reserved,
         )
 
-    def kv_storage(self) -> Optional[StorageClassFacts]:
-        """The class T2 uses, or None when the setting is off or names no listed class."""
-        if self.kv_storage_enabled is False or not self.kv_storage_class:
-            return None
-        return next((c for c in self.storage_classes if c.name == self.kv_storage_class), None)
+    def kv_storage(self, min_read_gbps: float = 0.0) -> Optional[StorageClassFacts]:
+        """The class T2 uses, or None (see ``kv_storage_choice``)."""
+        return self.kv_storage_choice(min_read_gbps)[0]
+
+    def kv_storage_choice(
+        self, min_read_gbps: float
+    ) -> Tuple[Optional[StorageClassFacts], str]:
+        """The class T2 uses and how it was chosen, or None and why not.
+
+        The setting is off: none. It names a class: that class (FR-SET-4: the admin's choice,
+        which the break-even still judges per model). It names none, which is Auto (FR-SET-3,
+        and every cluster before the setting exists): the node-local class with the highest
+        measured read rate, if one reaches ``min_read_gbps``.
+        """
+        if self.kv_storage_enabled is False:
+            return None, "the cluster's KV storage setting is off"
+        name = self.kv_storage_class
+        if name:
+            chosen = next((c for c in self.storage_classes if c.name == name), None)
+            if chosen is None:
+                return None, f"the KV storage setting names '{name}', which isn't listed"
+            return chosen, "the cluster's KV storage setting"
+        measured = [c for c in self.storage_classes if c.node_local is True and c.read_gbps]
+        if not measured:
+            return None, "Auto: no node-local storage class has a measured read rate"
+        best = max(measured, key=lambda c: (c.read_gbps, c.name))
+        if best.read_gbps < min_read_gbps:
+            return None, (
+                f"Auto: the fastest node-local class, '{best.name}', reads {best.read_gbps:g} GB/s,"
+                f" under {min_read_gbps:g}"
+            )
+        return best, f"Auto: the fastest node-local class ({best.read_gbps:g} GB/s measured)"
 
 
 @dataclass(frozen=True)

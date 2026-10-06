@@ -64,6 +64,10 @@ STORAGE = {
     "storage_classes": [{"name": "nvme", "node_local": True, "kv_read_gbps": 12.0}],
     "kv_storage": {"class": "nvme", "enabled": True},
 }
+# Free host memory that keeps T1 well under the working set, so T2 holds more than T1 does: the
+# disk tier stores every block T1 stores, so with T1 as large as the working set T2 adds nothing
+# and is dropped (the TCS and accubits01 disk rounds made the node RAM-limited the same way).
+RAM_LIMITED = 200.0  # T1 100 GiB (half of it) against a 169 GiB working set
 TCP_POOL = {"backend": "mooncake", "transport": "tcp", "read_gbps": 1.45, "capacity_gib": 512}
 RDMA_POOL = {"backend": "mooncake", "transport": "rdma", "read_gbps": 40.0, "capacity_gib": 4096}
 
@@ -421,6 +425,41 @@ def test_the_kv_storage_class_is_the_named_one_and_only_when_enabled():
     assert ClusterKVFacts.from_record({"t3": {"backend": "none"}}).t3 is None
 
 
+def test_auto_picks_the_fastest_measured_node_local_class():
+    record = {
+        "storage_classes": [
+            {"name": "local-path", "node_local": True, "kv_read_gbps": 2.6},
+            {"name": "lvms-nvme", "node_local": True, "kv_read_gbps": 6.1},
+            {"name": "ceph-rbd", "node_local": False, "kv_read_gbps": 9.0},
+            {"name": "openebs-hostpath", "node_local": True},
+        ]
+    }
+    chosen, how = ClusterKVFacts.from_record(record).kv_storage_choice(2.0)
+    assert chosen.name == "lvms-nvme" and how.startswith("Auto")
+    # the setting's enabled flag alone (no class) is still Auto
+    on = ClusterKVFacts.from_record({**record, "kv_storage": {"enabled": True}})
+    assert on.kv_storage(2.0).name == "lvms-nvme"
+
+
+def test_auto_picks_nothing_below_the_minimum_read_rate():
+    record = {"storage_classes": [{"name": "local-path", "node_local": True, "kv_read_gbps": 1.4}]}
+    chosen, why = ClusterKVFacts.from_record(record).kv_storage_choice(2.0)
+    assert chosen is None and "local-path" in why and "under 2" in why
+
+
+def test_a_named_class_is_used_even_below_the_auto_minimum_and_a_missing_one_is_reported():
+    """FR-SET-4: the admin's choice holds; the break-even still judges it per model."""
+    slow = {
+        "storage_classes": [{"name": "local-path", "node_local": True, "kv_read_gbps": 1.4}],
+        "kv_storage": {"class": "local-path"},
+    }
+    chosen, how = ClusterKVFacts.from_record(slow).kv_storage_choice(2.0)
+    assert chosen.name == "local-path" and "setting" in how
+    missing = {**slow, "kv_storage": {"class": "gone"}}
+    chosen, why = ClusterKVFacts.from_record(missing).kv_storage_choice(2.0)
+    assert chosen is None and "'gone'" in why
+
+
 # ------------------------------------------------------------------------------- plan_kv from raw
 
 
@@ -456,15 +495,24 @@ def test_every_dropped_tier_is_on_the_wire_with_its_reason():
 
 
 def test_tiers_above_the_release_ceiling_are_planned_but_withheld():
-    plan = _plan(infra=_infra(cluster=STORAGE))
-    assert plan.tier("T1") is not None and plan.tier("T2") is None
-    assert [t["tier"] for t in plan.withheld] == ["T2"]
-    assert any("T2 planned but withheld" in d for d in plan.decisions)
+    """This release returns T1 and T2; T3 (the Mooncake pool) is planned but withheld until
+    budcluster renders it."""
+    plan = _plan(
+        deploy=_deploy(
+            input_tokens=32000, output_tokens=2000, cross_node_need=True, concurrency=64
+        ),
+        group=_group(replicas=4),
+        infra=_infra(caps=RDMA_NODE, cluster={**FAST_STORAGE, "t3": RDMA_POOL}),
+        ms_per_token=0.05,
+    )
+    assert plan.tier("T1") is not None and plan.tier("T2") is not None and plan.tier("T3") is None
+    assert [t["tier"] for t in plan.withheld] == ["T3"]
+    assert any("T3 planned but withheld" in d for d in plan.decisions)
     assert all(t["tier"] in constants.RELEASED_TIERS for t in plan.to_wire()["tiers"])
 
 
 def test_raising_the_ceiling_returns_them(released_all):
-    plan = _plan(infra=_infra(cluster=STORAGE))
+    plan = _plan(infra=_infra(cluster=STORAGE, host_gb=RAM_LIMITED))
     assert plan.tier("T2")["storage_class"] == "nvme" and plan.withheld == []
     assert plan.hash_algo == "sha256_cbor"  # a shared tier needs reproducible hashes (FR-RENDER-2)
 
@@ -475,7 +523,7 @@ def test_raising_the_ceiling_returns_them(released_all):
 @pytest.mark.parametrize(
     ("cluster", "features", "reason"),
     [
-        ({}, FEATURES, "no KV storage class"),
+        ({}, FEATURES, "no node-local storage class has a measured read rate"),
         (
             {
                 **STORAGE,
@@ -516,7 +564,7 @@ def test_a_vgpu_node_gets_no_disk_tier_behind_an_alloc_mode_t1(released_all):
 def test_per_copy_transfers_let_a_vgpu_node_run_the_disk_tier(released_all):
     plan = _plan(
         deploy=_deploy(tool_calling=True, input_tokens=24000, output_tokens=1000),
-        infra=_infra(caps={**TCS_VGPU, "local_nvme_gib": 500.0}, cluster=STORAGE),
+        infra=_infra(caps={**TCS_VGPU, "local_nvme_gib": 500.0}, cluster=STORAGE, host_gb=RAM_LIMITED),
         features=FEATURES + [constants.T1_PER_COPY_FEATURE],
     )
     assert plan.tier("T1")["params"]["host_memory"] == "register" and plan.tier("T2")
@@ -539,7 +587,7 @@ def test_per_copy_t1_loads_use_their_own_link(released_all):
 
 def test_a_disk_hit_pays_one_t1_load_after_the_disk_read(released_all):
     """vLLM's tiering promotes the chunks into T1 first, then loads them to the GPU."""
-    plan = _plan(infra=_infra(cluster=STORAGE))
+    plan = _plan(infra=_infra(cluster=STORAGE, host_gb=RAM_LIMITED))
     t1, t2 = plan.evaluations["T1"], plan.evaluations["T2"]
     disk_ms = constants.T2_FLOOR_MS + t2.bytes / (12.0 * constants.GB) * 1e3
     assert t2.reload_idle_ms == pytest.approx(disk_ms + t1.reload_idle_ms)
@@ -552,8 +600,9 @@ def test_t2_is_kept_for_throughput_unless_ttft_binds(released_all):
         **STORAGE,
         "storage_classes": [{"name": "nvme", "node_local": True, "kv_read_gbps": 1.5}],
     }
-    deploy = _deploy(tool_calling=True, concurrency=16)
-    agentic = _plan(deploy=deploy, infra=_infra(cluster=slow))
+    # 24K-token agentic prompts: a working set past the GPU pool and T1, so T2 holds something
+    deploy = _deploy(tool_calling=True, concurrency=16, input_tokens=24000, output_tokens=1000)
+    agentic = _plan(deploy=deploy, infra=_infra(cluster=slow, host_gb=RAM_LIMITED))
     verdict = agentic.evaluations["T2"]
     assert verdict.reload_idle_ms > verdict.recompute_ms and verdict.utilisation < 0.8
     assert agentic.tier("T2") is not None
@@ -566,7 +615,7 @@ def test_t2_is_kept_for_throughput_unless_ttft_binds(released_all):
     )
     interactive = _plan(
         deploy=deploy,
-        infra=_infra(cluster=slow),
+        infra=_infra(cluster=slow, host_gb=RAM_LIMITED),
         workload=dataclasses.replace(workload, profile="interactive"),
     )
     assert interactive.tier("T2") is None
@@ -574,6 +623,18 @@ def test_t2_is_kept_for_throughput_unless_ttft_binds(released_all):
         d["tier"] == "T2" and "about as much as recomputing" in d["reason"]
         for d in interactive.dropped
     )
+
+
+def test_t2_is_dropped_when_it_would_only_copy_t1(released_all):
+    """With T1 as large as the working set, the disk tier would hold only T1's blocks (it stores
+    every one of them) and add none: dropped, so the node isn't written for nothing."""
+    plan = _plan(infra=_infra(cluster=STORAGE))
+    assert plan.tier("T1") is not None and plan.tier("T2") is None
+    assert any(
+        d["tier"] == "T2" and "only copies" in d["reason"] for d in plan.dropped
+    ), plan.dropped
+    limited = _plan(infra=_infra(cluster=STORAGE, host_gb=RAM_LIMITED))
+    assert limited.tier("T2")["size_gib"] > limited.tier("T1")["size_gib"]
 
 
 def test_t2_sits_behind_t1(released_all):
@@ -586,7 +647,7 @@ def test_a_slow_class_loses_break_even(released_all):
         **STORAGE,
         "storage_classes": [{"name": "nvme", "node_local": True, "kv_read_gbps": 0.3}],
     }
-    plan = _plan(infra=_infra(cluster=slow), ms_per_token=0.01)
+    plan = _plan(infra=_infra(cluster=slow, host_gb=RAM_LIMITED), ms_per_token=0.01)
     assert plan.tier("T2") is None and plan.evaluations["T2"].keep is False
 
 
@@ -726,6 +787,23 @@ def test_s_a_coding_agent_on_bare_metal_plans_t1_and_t2_with_maximal_affinity(re
     )
     assert plan.workload_profile == "agentic" and plan.routing["affinity"] == "max"
     assert plan.tier("T1") and plan.tier("T2") and plan.tier("T3") is None
+
+
+def test_this_release_returns_t2_on_the_auto_class_with_the_fs_tier_params():
+    """T2 is released (budcluster renders it, IMPLEMENTATION_PLAN 3.5). With no KV storage
+    setting (every cluster until budapp's settings exist) Auto picks the class, and the plan
+    carries what the renderer maps."""
+    auto = {"storage_classes": STORAGE["storage_classes"]}
+    plan = _plan(
+        deploy=_deploy(tool_calling=True, input_tokens=24000, output_tokens=1000),
+        group=_group(replicas=2),
+        infra=_infra(cluster=auto),
+    )
+    t2 = plan.tier("T2")
+    assert t2 and t2["storage_class"] == "nvme" and t2["backend"] == "fs"
+    assert t2["params"] == {"block_size": 256, "n_read_threads": 8, "n_write_threads": 4}
+    assert any(d.startswith("T2:") and "Auto" in d for d in plan.decisions)
+    assert plan.namespace and plan.namespace.startswith("kvns-")
 
 
 def test_s_c_tcs_chat_plans_alloc_mode_t1_and_no_pool(released_all):

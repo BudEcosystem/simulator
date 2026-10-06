@@ -17,7 +17,7 @@ PLAN_VERSION = 1
 # The tiers a plan returns. T0 is always planned. Every tier is evaluated and tested; the ones not
 # listed here are withheld from the plan (and named in its decisions) until budcluster can render
 # them. Raising this is a package release, never configuration (FRD-023 §7).
-RELEASED_TIERS: FrozenSet[str] = frozenset({"T1"})
+RELEASED_TIERS: FrozenSet[str] = frozenset({"T1", "T2"})
 OFFLOAD_TIERS: Tuple[str, ...] = ("T1", "T2", "T3")
 
 # -------------------------------------------------------------------------------------------- T0
@@ -102,6 +102,14 @@ T2_FLOOR_MS = 15.0
 T2_DISK_SHARE = 0.25
 # Auto picks no class below this read rate (FR-SET-3).
 T2_MIN_READ_GBPS = 2.0
+# T2 is dropped when it would serve no more than this share of requests beyond the GPU pool and
+# T1: it would only hold copies of their blocks and still write every one to disk.
+T2_MIN_SERVED_SHARE = 0.005
+# vLLM's fs tier I/O threads (its defaults are 16 and 16). The TCS and accubits01 rounds ran 8
+# readers and 4 writers; one reader stream already matches the tier's effective rate (Bud's
+# spikes/accuracy "Disk tier").
+T2_READ_THREADS = 8
+T2_WRITE_THREADS = 4
 
 # -------------------------------------------------------------------------------------------- T3
 T3_FEATURE = "mooncake_store"

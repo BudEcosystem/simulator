@@ -28,7 +28,10 @@ def predict(ctx: PlanContext) -> None:
         if tier not in released:
             continue
         before = ctx.coverage(cumulative)
-        cumulative += ctx.tokens_per_replica(tier)
+        added = ctx.tokens_per_replica(tier)
+        if tier == "T2" and "T1" in released:
+            added = max(0.0, added - ctx.tokens_per_replica("T1"))  # T2 holds T1's blocks too
+        cumulative += added
         tier_share = share * (ctx.coverage(cumulative) - before)
         total_hit += tier_share
         verdict = plan.evaluations.get(tier)

@@ -72,13 +72,32 @@ class PlanContext:
         working = self.working_set_tokens
         return min(1.0, tokens / working) if working > 0 else 1.0
 
+    def added_tokens(self, tier: str, gib: Optional[float] = None) -> float:
+        """Tokens of one replica's working set a tier adds beyond the faster tiers.
+
+        T2 is vLLM's fs secondary tier: every block the CPU tier (T1) stores is written through to
+        it, so it holds T1's blocks too and adds only what is beyond them (accubits01, 2026-10-06:
+        the disk tier wrote exactly the GPU-to-CPU bytes). T3 is a separate connector and adds its
+        whole size.
+        """
+        tokens = self.tokens_per_replica(tier, gib)
+        if tier == "T2":
+            tokens = max(0.0, tokens - self.tokens_per_replica("T1"))
+        return tokens
+
+    def tokens_through(self, tier: Optional[str], gib: Optional[float] = None) -> float:
+        """Tokens held by the GPU pool and every planned offload tier up to and including
+        ``tier`` (None: the pool alone), with ``gib`` as that tier's size."""
+        held = self.pool_tokens()
+        for t in ("T1", "T2", "T3"):
+            if tier is None or t > tier:
+                break
+            held += self.added_tokens(t, gib if t == tier else None)
+        return held
+
     def hit_share_with(self, tier: str, gib: float) -> float:
         """Share of prompt tokens served from cache by every tier up to and including ``tier``."""
-        tokens = self.pool_tokens() + sum(
-            self.tokens_per_replica(t) for t in ("T1", "T2", "T3") if t < tier
-        )
-        tokens += self.tokens_per_replica(tier, gib)
-        return self.workload.reusable_share * self.coverage(tokens)
+        return self.workload.reusable_share * self.coverage(self.tokens_through(tier, gib))
 
     def write_bytes_per_s(self, tier: str, gib: float, rate_per_s: float) -> float:
         """Write-through traffic into a node-shared tier: every request writes the blocks it
@@ -90,10 +109,9 @@ class PlanContext:
     def served_share(self, tier: str, gib: float) -> float:
         """Share of requests whose reusable prefix this tier serves: the reusable share times the
         part of the working set it holds beyond the faster tiers already planned."""
-        before = self.pool_tokens() + sum(
-            self.tokens_per_replica(t) for t in ("T1", "T2", "T3") if t < tier
-        )
-        after = before + self.tokens_per_replica(tier, gib)
+        previous = {"T1": None, "T2": "T1", "T3": "T2"}[tier]
+        before = self.tokens_through(previous)
+        after = before + self.added_tokens(tier, gib)
         share = self.workload.reusable_share * self.workload.repeat_share
         return share * (self.coverage(after) - self.coverage(before))
 
