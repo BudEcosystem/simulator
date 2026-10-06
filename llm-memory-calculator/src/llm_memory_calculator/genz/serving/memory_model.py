@@ -5,7 +5,7 @@ handles KV block allocation/deallocation, and supports eviction
 and spilling between tiers.
 """
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from collections import OrderedDict
 
 from .constants import (
@@ -72,7 +72,16 @@ class MemoryModel:
         eviction_policy: EvictionPolicy = EvictionPolicy.LRU,
         tensor_parallel: int = 1,
         precision_bytes: int = DEFAULT_PRECISION_BYTES,
+        bytes_per_token_kv: Optional[int] = None,
     ):
+        """Build the model.
+
+        ``bytes_per_token_kv`` is the per-rank KV cost of one token. Pass it from
+        :func:`llm_memory_calculator.kv_tiering.kv_bytes_per_token_per_rank`, which reads
+        ``ModelMemoryCalculator.kv_cache_breakdown`` -- the one source of per-token KV, aware of MLA, windowed layers
+        and KV-free layers. Left out, the model falls back to its own GQA-only formula, kept only for existing callers.
+        """
+        self._bytes_per_token_kv_override = int(bytes_per_token_kv) if bytes_per_token_kv else None
         self._model_config = model_config
         self._tier_configs = {tc.tier: tc for tc in tier_configs}
         self._block_size = block_size
@@ -114,8 +123,11 @@ class MemoryModel:
     def bytes_per_token_kv(self) -> int:
         """KV cache bytes per token.
 
-        Formula: 2 (K+V) * kv_heads * head_dim * layers * precision / TP
+        Formula: 2 (K+V) * kv_heads * head_dim * layers * precision / TP, unless the caller passed the
+        calculator's figure (see ``__init__``).
         """
+        if self._bytes_per_token_kv_override:
+            return self._bytes_per_token_kv_override
         return (2 * self._num_kv_heads * self._head_dim
                 * self._num_layers * self._precision_bytes // self._tensor_parallel)
 
