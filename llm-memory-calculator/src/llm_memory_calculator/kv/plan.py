@@ -22,6 +22,9 @@ class KVTierPlan:
     profile: str = "off"
     workload_profile: str = "off"
     kv_cache_dtype: str = "auto"
+    skip_layers_sliding_window: bool = (
+        False  # fp8 KV keeps sliding-window layers at the model's dtype
+    )
     gpu_memory_utilization: Optional[float] = None
     gpu_kv_gib: Optional[float] = None
     cpu_kv_gib: Optional[float] = None
@@ -82,7 +85,7 @@ class KVTierPlan:
             "namespace": self.namespace,
             "profile": self.profile,
             "kv_cache_dtype": self.kv_cache_dtype,
-            "skip_layers_sliding_window": False,
+            "skip_layers_sliding_window": self.skip_layers_sliding_window,
             "hash_algo": self.hash_algo,
             "gpu_memory_utilization": self.gpu_memory_utilization,
             "gpu_kv_gib": self.gpu_kv_gib,

@@ -81,6 +81,20 @@ T1_MIN_RECOMPUTE_SAVED_MS = 25.0
 # at c4, while every MoE cell from 75 ms won (rounds 3-4). The extra cost isn't modelled yet.
 # [MEASURE]
 T1_MIN_RECOMPUTE_SAVED_MS_MOE = 60.0
+# Share of T1's store copy time that lands on a request's critical path. T1 writes every block a
+# request computes through to host memory. Batched copies on a GPU that maps registered memory run
+# on their own stream and mostly overlap the next step: accubits01 (RTX 3050, Gen4 x4, 2026-10-05)
+# cold TTFT rose 8-10 ms at 1K-4K tokens against 30-118 ms of copying. Per-copy transfers (TCS vGPU,
+# the spike's stand-in) block the step: TCS D1 (2026-10-09, Qwen3-8B) cold TTFT rose 21 ms at 2,870
+# tokens and 64 ms at 8,192, the stored bytes over the per-copy link. alloc mode isn't measured; it
+# takes the per-copy value until it is. [MEASURE]
+T1_STORE_BLOCKING_REGISTER = 0.15
+T1_STORE_BLOCKING_PER_COPY = 1.0
+T1_STORE_BLOCKING_ALLOC = 1.0
+# T1 is dropped when its stores cost a request more than this multiple of the prefill its hits save.
+# Inside the band the estimate can't tell them apart: TCS's disk-tier round kept T1 + T2 at Qwen3-8B
+# 4K c16 (+14%) at 1.05x, while D1's Mooncake windows (2.3-2.7x) lost 28-37% TTFT to T1. [MEASURE]
+T1_STORE_TIE = 1.25
 # Pinned-copy bandwidth (GB/s) by PCIe generation, when the node has no measurement.
 PCIE_GBPS_BY_GEN: Dict[int, float] = {3: 12.0, 4: 25.0, 5: 50.0, 6: 100.0}
 DEFAULT_PINNED_GBPS = 12.0  # neither measured nor a known link
@@ -100,8 +114,17 @@ T2_FEATURE = "tiering_fs"
 T2_FLOOR_MS = 15.0
 # A deployment's T2 directory takes at most this share of the node's local disk. [MEASURE]
 T2_DISK_SHARE = 0.25
+# ...and never fills the class past this share of its capacity, when its free space is known:
+# kubelet's image GC starts at 85% by default. TCS's node disk was 79% full (D1, 2026-10-09); 25% of
+# its capacity would have filled it.
+T2_DISK_MAX_USED = 0.80
 # Auto picks no class below this read rate (FR-SET-3).
 T2_MIN_READ_GBPS = 2.0
+# A class's throughput with the fs tier's readers in flight, as a multiple of its single-stream
+# rate, when the record has no parallel measurement: TCS's disk read 3.1 GB/s single stream and 5.0
+# with 8 readers. The disk-tier round's Qwen3-8B 4K c16 cell ran T2 at about 1.0x the single-stream
+# rate and gained 14%. [MEASURE]
+T2_PARALLEL_READ_FACTOR = 1.6
 # T2 is dropped when it would serve no more than this share of requests beyond the GPU pool and
 # T1: it would only hold copies of their blocks and still write every one to disk.
 T2_MIN_SERVED_SHARE = 0.005
@@ -135,8 +158,24 @@ RDMA_MIN_GBPS_PER_GPU = 10.0
 DECODE_MS_PER_TOKEN = 20.0
 
 # ---------------------------------------------------------------------------------- workload
+# Profiles with a measured reuse curve (kv/reuse.py, IMPLEMENTATION_PLAN 1.9): their working set,
+# coverage and hit rate come from the curve, not from PROFILE_REUSE / PROFILE_USES. Interactive is
+# chat with a tight TTFT target.
+PROFILE_CURVE: Dict[str, str] = {
+    "chat": "conversation@1",
+    "interactive": "conversation@1",
+    "agentic": "agent@1",
+}
+# Tiers are sized for this share of the hit a curve can reach (user decision, 2026-10-09). The last
+# 10% of a conversation curve needs about twice the cache of the first 90%. Analytic profiles (RAG,
+# the calibration benches) keep sizing to their whole working set, so the measured calibration runs
+# are unchanged.
+REUSE_TARGET = 0.9
+
 # profile -> (sessions alive per concurrency slot within the reuse window, reusable share of each
-# prompt). [MEASURE]: no real-user reuse data yet; IMPLEMENTATION_PLAN 1.1r names the traces.
+# prompt). [MEASURE]: no real-user reuse data yet; IMPLEMENTATION_PLAN 1.1r names the traces. Since
+# 1.9 used only by profiles without a curve (RAG) and the calibration benches; the trace-implied
+# values for chat and agentic are 19-87 and 13-48 sessions, not 6 and 4 (spikes/reuse-traces).
 PROFILE_REUSE: Dict[str, Tuple[float, float]] = {
     "agentic": (4.0, 0.95),  # tool definitions and the whole history come back every turn
     "chat": (6.0, 0.8),  # multi-turn history
@@ -153,7 +192,10 @@ PROFILE_USES: Dict[str, float] = {
     "interactive": 6.0,
     "rag": 50.0,  # one system prompt shared by many requests
 }
-PREFIX_HEAVY_RATIO = 8.0  # input:output at or above this is prefix-heavy (ARCHITECTURE §10.2)
+# input:output at or above this was read as RAG (ARCHITECTURE §10.2). No longer used to infer a
+# profile: both production traces (conversation 35:1, tool and agent 47:1) pass it, because long
+# histories with short answers are what chat and agents look like. Kept for kv_tiering's re-export.
+PREFIX_HEAVY_RATIO = 8.0
 INTERACTIVE_TTFT_MS = 500.0
 
 # ---------------------------------------------------------------------------------- recompute
@@ -170,6 +212,9 @@ VLLM_KERNEL_BLOCK_ALIGNMENT = 16  # attention backends take block sizes in multi
 # fp8 KV only where validated (FR-QUANT-2), as (model_type, GPU generation). budeval's verdicts
 # arrive through EngineSpec.validated_kv_dtypes; this is the package's own list (empty).
 FP8_KV_VALIDATED: FrozenSet[Tuple[str, str]] = frozenset()
+# The engine feature that lets a deployment ask for fp8 KV: listed for a build once it passes a 128K
+# needle-in-haystack recall above 90% on each GPU generation it serves (ARCHITECTURE §13).
+KV_FP8_FEATURE = "kv_fp8"
 
 # ------------------------------------------------------------------------------------- P/D
 # FR-PD-1 gates.
@@ -180,3 +225,14 @@ PD_MIN_REQUEST_RATE = 2.0
 
 EVENTS_ENDPOINT = "tcp://*:5557"
 EVENTS_REPLAY = "tcp://*:5558"
+
+# ------------------------------------------------------------------------------------- prediction
+# The predicted TTFT adds queueing for the GPU's prefill (Kingman's G/G/1) at the deployment's
+# request rate. At or past this utilisation of the prefill work the GPU can't keep up, and the
+# prediction says so instead of a number.
+TTFT_MAX_UTILISATION = 0.95
+# For a profile without a measured curve: the requests' prefill work spread like an exponential
+# (squared coefficient of variation 1), and Poisson arrivals. The curves carry their trace's
+# (``reuse.py`` ``prompt_cv2``, ``arrival_cv2``).
+DEFAULT_PROMPT_CV2 = 1.0
+DEFAULT_ARRIVAL_CV2 = 1.0

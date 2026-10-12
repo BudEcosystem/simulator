@@ -1098,6 +1098,8 @@ T2_SIZES: Dict[str, Tuple[Dict[str, Any], float, float]] = {  # config, weights 
 }
 # What the T2 health gate reports for the class: a single-stream O_DIRECT sequential read.
 TCS_DISK_GBPS = 3.1
+# ...and with the fs tier's 8 readers in flight (fio, the same disk).
+TCS_DISK_PARALLEL_GBPS = 5.0
 T2_ROUND = [  # model, prefix, concurrency, prefixes, prompts, T1-only req/s, T1+T2 req/s, spread
     ("Qwen/Qwen2.5-72B-Instruct-AWQ", 4096, 4, 24, 192, 0.9600, 1.5750, 0.021),
     ("Qwen/Qwen2.5-72B-Instruct-AWQ", 16384, 2, 6, 48, 0.2400, 0.3050, 0.098),
@@ -1134,6 +1136,7 @@ def _tcs_t2(*, model: str) -> Dict[str, Any]:
                     "name": "local-path",
                     "node_local": True,
                     "kv_read_gbps": TCS_DISK_GBPS,
+                    "kv_read_gbps_parallel": TCS_DISK_PARALLEL_GBPS,
                     "capacity_gib": 200.0,
                 }
             ],

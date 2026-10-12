@@ -29,7 +29,7 @@ from .pd import plan_pd
 from .plan import KVTierPlan
 from .predict import predict
 from .routing import routing_policy
-from .tiers import plan_t0, plan_t1, plan_t2, plan_t3
+from .tiers import check_write_through, plan_t0, plan_t1, plan_t2, plan_t3
 from .workload import DeploymentSpec, KVWorkload
 
 GIB = c.GIB
@@ -113,6 +113,7 @@ def plan_kv(
         recompute_fn=recompute_fn,
         cross_node_need=deployment.cross_node_need,
         e2e_latency_s=deployment.e2e_latency_s,
+        kv_fp8=deployment.kv_fp8,
     )
 
 
@@ -147,6 +148,7 @@ def plan_kv_tiers(
     recompute_fn: Optional[Callable[[int], Optional[float]]] = None,
     cross_node_need: bool = False,
     e2e_latency_s: Optional[float] = None,
+    kv_fp8: Optional[bool] = None,
 ) -> KVTierPlan:
     """Plan a deployment's KV tiers from already-derived inputs (the Phase 1 API budsim calls).
 
@@ -190,6 +192,7 @@ def plan_kv_tiers(
         recompute_fn=recompute_fn,
         cross_node_need=cross_node_need,
         e2e_latency_s=e2e_latency_s,
+        kv_fp8=kv_fp8,
     )
 
 
@@ -224,6 +227,7 @@ def _plan(
     recompute_fn: Optional[Callable[[int], Optional[float]]] = None,
     cross_node_need: bool = False,
     e2e_latency_s: Optional[float] = None,
+    kv_fp8: Optional[bool] = None,
 ) -> KVTierPlan:
     plan = KVTierPlan(workload_profile=workload.profile)
     decisions = plan.decisions
@@ -248,8 +252,12 @@ def _plan(
     plan.routing = routing_policy(workload.profile)
 
     # -- 2. dtype (FR-QUANT-2)
-    plan.kv_cache_dtype, why = choose_kv_dtype(
-        model_config, device_generation, frozenset(engine.validated_kv_dtypes or ())
+    plan.kv_cache_dtype, why, plan.skip_layers_sliding_window = choose_kv_dtype(
+        model_config,
+        device_generation,
+        frozenset(engine.validated_kv_dtypes or ()),
+        requested=kv_fp8,
+        features=features,
     )
     decisions.append(why)
     kv_precision = "fp8" if plan.kv_cache_dtype == "fp8" else precision
@@ -312,13 +320,27 @@ def _plan(
         e2e_latency_s=e2e_latency_s,
         model_id=model_id,
     )
-    ctx.working_set_gib = workload.working_set_tokens * geometry.bytes_per_token_rank / GIB
+    working_tokens = ctx.working_set_tokens
+    ctx.working_set_gib = working_tokens * geometry.bytes_per_token_rank / GIB
     plan.working_set_gib = _round_gib(ctx.working_set_gib)
-    decisions.append(
-        f"working set: {workload.working_set_tokens} tokens ({plan.working_set_gib} GiB per rank)"
-        f" from {workload.concurrency} x {workload.sessions_per_slot:g} sessions"
-        f" x {workload.reusable_prefix_tokens} reusable tokens"
-    )
+    curve = ctx.curve
+    if curve is not None:
+        decisions.append(
+            f"working set: {working_tokens} tokens ({plan.working_set_gib} GiB per rank),"
+            " the cache holding"
+            f" {c.REUSE_TARGET:.0%} of {curve.name}'s reachable hit ({curve.ceiling:.0%}):"
+            f" {curve.seconds_for(c.REUSE_TARGET):.0f} s of traffic"
+            f" at {ctx.traffic_rate():.2f} req/s"
+            f" x {workload.input_tokens} prompt tokens"
+        )
+    else:
+        if workload.curve:
+            decisions.append(f"reuse curve {workload.curve} unused: the request rate is unknown")
+        decisions.append(
+            f"working set: {working_tokens} tokens ({plan.working_set_gib} GiB per rank)"
+            f" from {workload.concurrency} x {workload.sessions_per_slot:g} sessions"
+            f" x {workload.reusable_prefix_tokens} reusable tokens"
+        )
 
     # -- 4. T0
     ctx.pool_gib = plan_t0(ctx)
@@ -330,6 +352,7 @@ def _plan(
     else:
         plan_t1(ctx)
         plan_t2(ctx)
+        check_write_through(ctx)  # T1's stores against what T1 and T2 save; may take both back out
         plan_t3(ctx)
 
     # -- 9. prefill/decode (withheld above the release ceiling like any tier)

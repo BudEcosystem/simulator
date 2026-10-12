@@ -201,6 +201,10 @@ class TierLink:
     scope: str  # rank: per GPU (T1); total: the node's ranks share it (T2, T3)
     source: str
     efficiency: float = 1.0  # effective = measured x efficiency (connector or copy overhead)
+    # GB/s the link sustains with many transfers in flight, for the utilisation check; None:
+    # ``gbps``. A disk read by several threads moves more than one stream does (TCS: 3.1 GB/s single
+    # stream, 5.0 with 8 readers), while one load's latency still sees the single-stream rate.
+    throughput_gbps: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -270,8 +274,9 @@ def break_even(
     """
     link_s = link.floor_ms / 1e3 + nbytes / (link.gbps * GB) if link.gbps > 0 else math.inf
     service_s = link_s + staged_ms / 1e3
-    if link.gbps > 0:
-        demand = (load_rate_per_s * nbytes + max(write_bytes_per_s, 0.0)) / (link.gbps * GB)
+    capacity_gbps = link.throughput_gbps or link.gbps
+    if capacity_gbps > 0:
+        demand = (load_rate_per_s * nbytes + max(write_bytes_per_s, 0.0)) / (capacity_gbps * GB)
     else:
         demand = math.inf
     utilisation = max(0.0, demand)

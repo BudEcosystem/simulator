@@ -95,8 +95,12 @@ class StorageClassFacts:
 
     name: str
     node_local: Optional[bool] = None
-    read_gbps: Optional[float] = None  # GB/s, measured by the T2 health gate
+    read_gbps: Optional[float] = (
+        None  # GB/s, measured by the T2 health gate (one stream: a load's latency)
+    )
+    parallel_read_gbps: Optional[float] = None  # GB/s with the fs tier's readers in flight together
     capacity_gib: Optional[float] = None
+    free_gib: Optional[float] = None  # free when the class was measured
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> Optional["StorageClassFacts"]:
@@ -107,7 +111,9 @@ class StorageClassFacts:
             name=name,
             node_local=_flag(record, "node_local"),
             read_gbps=_number(record, "kv_read_gbps") or _number(record, "read_gbps"),
+            parallel_read_gbps=_number(record, "kv_read_gbps_parallel"),
             capacity_gib=_number(record, "capacity_gib"),
+            free_gib=_number(record, "free_gib"),
         )
 
 
@@ -175,9 +181,7 @@ class ClusterKVFacts:
         """The class T2 uses, or None (see ``kv_storage_choice``)."""
         return self.kv_storage_choice(min_read_gbps)[0]
 
-    def kv_storage_choice(
-        self, min_read_gbps: float
-    ) -> Tuple[Optional[StorageClassFacts], str]:
+    def kv_storage_choice(self, min_read_gbps: float) -> Tuple[Optional[StorageClassFacts], str]:
         """The class T2 uses and how it was chosen, or None and why not.
 
         The setting is off: none. It names a class: that class (FR-SET-4: the admin's choice,

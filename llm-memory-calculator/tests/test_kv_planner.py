@@ -31,6 +31,7 @@ from llm_memory_calculator.kv.cost import (
     prefill_seconds,
 )
 from llm_memory_calculator.kv.namespace import kv_namespace
+from llm_memory_calculator.kv.reuse import CURVES
 from llm_memory_calculator.parameter_counter import UniversalParameterCounter
 
 GIB = 1 << 30
@@ -131,6 +132,25 @@ def _plan(deploy=None, group=None, infra=None, features=FEATURES, ms_per_token=0
         infra or _infra(),
         recompute_fn=flat(ms_per_token),
         **kw,
+    )
+
+
+def _analytic(deploy, profile=None):
+    """The pre-1.9 analytic workload for ``deploy`` (PROFILE_REUSE / PROFILE_USES). The mechanics
+    tests below were built on its sizes; since 1.9 chat and agentic plan from measured curves, and
+    RAG is never inferred, so these tests pass it explicitly (``plan_kv(workload=...)``, as the
+    calibration benches do)."""
+    profile = profile or KVWorkload.from_spec(deploy).profile
+    sessions, share = constants.PROFILE_REUSE[profile]
+    return KVWorkload(
+        profile,
+        deploy.input_tokens,
+        deploy.output_tokens,
+        deploy.concurrency,
+        sessions,
+        share,
+        "analytic (pre-1.9)",
+        uses_per_prefix=constants.PROFILE_USES[profile],
     )
 
 
@@ -401,6 +421,23 @@ def test_a_moe_model_recomputes_with_its_active_parameters():
     assert prefill_seconds(moe, 4096, 989.5) < dense_equivalent / 5
 
 
+def test_a_full_node_is_not_reported_as_unknown_host_memory(released_all):
+    """A node whose running pods take its RAM drops T1 for that reason, not as an unknown fact (the
+    accubits01 plan made while another engine held 20 GB said "unknown")."""
+    full = _plan(infra=_infra(host_gb=0.0))
+    assert full.tier("T1") is None
+    assert any(
+        d["tier"] == "T1" and d["reason"] == "no free host memory on the node" for d in full.dropped
+    )
+    bare = InfraSnapshot(
+        node={"name": "n1", "kv_capabilities": BARE_METAL, "devices": []}, cluster={"id": "c1"}
+    )
+    unknown = _plan(infra=bare)
+    assert any(
+        d["tier"] == "T1" and d["reason"] == "free host memory unknown" for d in unknown.dropped
+    )
+
+
 def test_unknown_or_malformed_facts_read_as_unknown():
     facts = NodeKVFacts.from_capabilities(
         {"pinned_offload_ok": "yes", "pinned_copy_gbps": -1, "rdma_nics": True}
@@ -484,8 +521,9 @@ def test_without_a_node_nothing_that_needs_its_facts_is_planned():
 
 
 def test_every_dropped_tier_is_on_the_wire_with_its_reason():
+    deploy = _deploy(cross_node_need=True)
     wire = _plan(
-        deploy=_deploy(cross_node_need=True), infra=_infra(cluster={"t3": TCP_POOL})
+        deploy=deploy, infra=_infra(cluster={"t3": TCP_POOL}), workload=_analytic(deploy)
     ).to_wire()
     t3 = next(d for d in wire["dropped"] if d["tier"] == "T3")
     assert "loses break-even" in t3["reason"] and t3["reload_ms"] > t3["recompute_ms"] * 0.8
@@ -497,10 +535,10 @@ def test_every_dropped_tier_is_on_the_wire_with_its_reason():
 def test_tiers_above_the_release_ceiling_are_planned_but_withheld():
     """This release returns T1 and T2; T3 (the Mooncake pool) is planned but withheld until
     budcluster renders it."""
+    deploy = _deploy(input_tokens=32000, output_tokens=2000, cross_node_need=True, concurrency=64)
     plan = _plan(
-        deploy=_deploy(
-            input_tokens=32000, output_tokens=2000, cross_node_need=True, concurrency=64
-        ),
+        deploy=deploy,
+        workload=_analytic(deploy, "rag"),
         group=_group(replicas=4),
         infra=_infra(caps=RDMA_NODE, cluster={**FAST_STORAGE, "t3": RDMA_POOL}),
         ms_per_token=0.05,
@@ -562,9 +600,17 @@ def test_a_vgpu_node_gets_no_disk_tier_behind_an_alloc_mode_t1(released_all):
 
 
 def test_per_copy_transfers_let_a_vgpu_node_run_the_disk_tier(released_all):
+    """Per-copy transfers put a vGPU node's T1 in register mode, which vLLM's tiering needs. The
+    workload is the analytic agentic one, whose hits pay for per-copy stores; on the measured agent
+    curve past its hot set they don't
+    (test_per_copy_stores_that_cost_more_than_they_save_drop_t1_and_t2)."""
+    deploy = _deploy(tool_calling=True, input_tokens=24000, output_tokens=1000)
     plan = _plan(
-        deploy=_deploy(tool_calling=True, input_tokens=24000, output_tokens=1000),
-        infra=_infra(caps={**TCS_VGPU, "local_nvme_gib": 500.0}, cluster=STORAGE, host_gb=RAM_LIMITED),
+        deploy=deploy,
+        workload=_analytic(deploy),
+        infra=_infra(
+            caps={**TCS_VGPU, "local_nvme_gib": 500.0}, cluster=STORAGE, host_gb=RAM_LIMITED
+        ),
         features=FEATURES + [constants.T1_PER_COPY_FEATURE],
     )
     assert plan.tier("T1")["params"]["host_memory"] == "register" and plan.tier("T2")
@@ -602,17 +648,14 @@ def test_t2_is_kept_for_throughput_unless_ttft_binds(released_all):
     }
     # 24K-token agentic prompts: a working set past the GPU pool and T1, so T2 holds something
     deploy = _deploy(tool_calling=True, concurrency=16, input_tokens=24000, output_tokens=1000)
-    agentic = _plan(deploy=deploy, infra=_infra(cluster=slow, host_gb=RAM_LIMITED))
+    workload = _analytic(deploy)
+    agentic = _plan(
+        deploy=deploy, infra=_infra(cluster=slow, host_gb=RAM_LIMITED), workload=workload
+    )
     verdict = agentic.evaluations["T2"]
     assert verdict.reload_idle_ms > verdict.recompute_ms and verdict.utilisation < 0.8
     assert agentic.tier("T2") is not None
     assert any(d.startswith("T2 kept for throughput") for d in agentic.decisions)
-    workload = KVWorkload.from_deployment(
-        input_tokens=deploy.input_tokens,
-        output_tokens=deploy.output_tokens,
-        concurrency=deploy.concurrency,
-        enable_tool_calling=True,
-    )
     interactive = _plan(
         deploy=deploy,
         infra=_infra(cluster=slow, host_gb=RAM_LIMITED),
@@ -628,12 +671,13 @@ def test_t2_is_kept_for_throughput_unless_ttft_binds(released_all):
 def test_t2_is_dropped_when_it_would_only_copy_t1(released_all):
     """With T1 as large as the working set, the disk tier would hold only T1's blocks (it stores
     every one of them) and add none: dropped, so the node isn't written for nothing."""
-    plan = _plan(infra=_infra(cluster=STORAGE))
+    analytic = _analytic(_deploy())
+    plan = _plan(infra=_infra(cluster=STORAGE), workload=analytic)
     assert plan.tier("T1") is not None and plan.tier("T2") is None
     assert any(
         d["tier"] == "T2" and "only copies" in d["reason"] for d in plan.dropped
     ), plan.dropped
-    limited = _plan(infra=_infra(cluster=STORAGE, host_gb=RAM_LIMITED))
+    limited = _plan(infra=_infra(cluster=STORAGE, host_gb=RAM_LIMITED), workload=analytic)
     assert limited.tier("T2")["size_gib"] > limited.tier("T1")["size_gib"]
 
 
@@ -819,10 +863,10 @@ FAST_STORAGE = {
 
 def test_s_d_long_context_rag_on_rdma_plans_every_tier(released_all):
     """Four replicas of long-context RAG on an RDMA node with a 4-drive storage class."""
+    deploy = _deploy(input_tokens=32000, output_tokens=2000, cross_node_need=True, concurrency=64)
     plan = _plan(
-        deploy=_deploy(
-            input_tokens=32000, output_tokens=2000, cross_node_need=True, concurrency=64
-        ),
+        deploy=deploy,
+        workload=_analytic(deploy, "rag"),
         group=_group(replicas=4),
         infra=_infra(caps=RDMA_NODE, cluster={**FAST_STORAGE, "t3": RDMA_POOL}),
         ms_per_token=0.05,
@@ -835,15 +879,18 @@ def test_one_nvme_drive_cant_absorb_a_rag_deployments_write_stream(released_all)
     each running as many 34K-token RAG requests as its GPU pool holds (~12), write more new KV than
     a
     single 12 GB/s drive takes; four replicas keep it ~70% busy, under the link limit."""
+    deploy = _deploy(input_tokens=32000, output_tokens=2000, concurrency=64)
     four = _plan(
-        deploy=_deploy(input_tokens=32000, output_tokens=2000, concurrency=64),
+        deploy=deploy,
+        workload=_analytic(deploy, "rag"),
         group=_group(replicas=4),
         infra=_infra(caps=RDMA_NODE, cluster=STORAGE),
         ms_per_token=0.05,
     )
     assert four.tier("T2") and four.evaluations["T2"].utilisation < constants.MAX_LINK_UTILISATION
     plan = _plan(
-        deploy=_deploy(input_tokens=32000, output_tokens=2000, concurrency=64),
+        deploy=deploy,
+        workload=_analytic(deploy, "rag"),
         group=_group(replicas=8),
         infra=_infra(caps=RDMA_NODE, cluster=STORAGE),
         ms_per_token=0.05,
@@ -1021,12 +1068,12 @@ def test_the_first_use_of_a_prefix_caps_the_predicted_hit_rate():
         ).to_wire()["predicted"]["hit_rate"]
 
     assert hit(8) == pytest.approx(hit(0) * 7 / 8, abs=0.002)
-    assert (
-        KVWorkload.from_deployment(
-            input_tokens=4096, output_tokens=512, concurrency=8
-        ).uses_per_prefix
-        > 1
-    )
+    # Analytic profiles keep the first-use term; a measured curve already counts every first use as
+    # a miss, so its ceiling is below the share of a prompt that repeats.
+    assert constants.PROFILE_USES["rag"] > 1
+    chat = KVWorkload.from_deployment(input_tokens=4096, output_tokens=512, concurrency=8)
+    assert chat.curve == "conversation@1" and chat.uses_per_prefix == 0
+    assert CURVES["conversation@1"].ceiling < 1
 
 
 def test_alloc_mode_t1_uses_its_own_measured_load_cost():
@@ -1082,3 +1129,236 @@ def test_a_measured_bench_workload_can_replace_the_inferred_profile():
 
 def test_qwen3_06b_is_in_the_calibration_set():
     assert QWEN3_06B["num_hidden_layers"] == 28
+
+
+# ------------------------------------------------------------------- measured reuse curves (1.9)
+
+
+def test_the_curves_are_well_formed():
+    """Hit share rises with retained seconds, starts at zero and never passes the ceiling, which is
+    below 1."""
+    for curve in CURVES.values():
+        seconds = [p[0] for p in curve.points]
+        hits = [p[1] for p in curve.points]
+        assert seconds[0] == 0 and seconds == sorted(seconds)
+        assert hits[0] == 0 and all(b >= a for a, b in zip(hits, hits[1:]))
+        assert hits[-1] <= curve.ceiling + 1e-9 < 1
+        assert 0 < curve.reused_prefix_share <= 1
+        for fraction in (0.25, 0.5, 0.9):
+            assert curve.hit(curve.seconds_for(fraction)) == pytest.approx(
+                fraction * curve.ceiling, rel=1e-6
+            )
+
+
+def test_chat_and_agents_infer_their_curves_and_rag_is_never_inferred():
+    """Long histories with short answers are chat or an agent, not RAG (both production traces are
+    35-47:1)."""
+    chat = KVWorkload.from_deployment(input_tokens=12000, output_tokens=340, concurrency=8)
+    agent = KVWorkload.from_deployment(
+        input_tokens=8600, output_tokens=180, concurrency=8, enable_tool_calling=True
+    )
+    interactive = KVWorkload.from_deployment(
+        input_tokens=2000, output_tokens=500, concurrency=8, target_ttft_ms=300.0
+    )
+    assert (chat.profile, chat.curve) == ("chat", "conversation@1")
+    assert (agent.profile, agent.curve) == ("agentic", "agent@1")
+    assert (interactive.profile, interactive.curve) == ("interactive", "conversation@1")
+    # the break-even prefix is what the curve's hits reuse, not the analytic share
+    assert chat.reusable_share == CURVES["conversation@1"].reused_prefix_share
+
+
+def test_the_working_set_follows_the_curve_at_the_request_rate():
+    """The curve is in seconds of traffic, so half the request rate (twice the latency) needs half
+    the cache for the same hit; the decision names the curve and the target."""
+    fast = _plan(deploy=_deploy(e2e_latency_s=10.0))
+    slow = _plan(deploy=_deploy(e2e_latency_s=20.0))
+    assert fast.working_set_gib == pytest.approx(2 * slow.working_set_gib, rel=0.01)
+    line = next(d for d in fast.decisions if d.startswith("working set"))
+    assert "conversation@1" in line and f"{constants.REUSE_TARGET:.0%}" in line
+
+
+def test_the_predicted_hit_rate_never_passes_the_curve():
+    """However large the tiers, a chat deployment can't be predicted above what an unbounded cache
+    served in the trace; the old analytic model predicted 0.667 for chat."""
+    plan = _plan(infra=_infra(cluster=STORAGE, host_gb=4000.0))
+    assert plan.tier("T1") is not None
+    assert 0 < plan.to_wire()["predicted"]["hit_rate"] <= CURVES["conversation@1"].ceiling + 1e-6
+
+
+def test_an_agents_hot_set_is_served_from_the_gpu_pool():
+    """Half of an agent trace's hits are shared system and tool prompts reused within a second: a
+    GPU pool holding a few seconds of traffic already serves most of the agent curve's early hits.
+    """
+    deploy = _deploy(tool_calling=True, input_tokens=8600, output_tokens=180, concurrency=8)
+    plan = _plan(deploy=deploy)
+    curve = CURVES["agent@1"]
+    assert plan.workload_profile == "agentic"
+    assert plan.to_wire()["predicted"]["hit_rate"] >= curve.hit(1.0)
+
+
+def test_budsim_passes_tool_calling_known_at_deploy_time():
+    """budcluster sends the deployment's tool calling and reasoning at deploy time (FR-PLAN-3, 1.9
+    B1): the agentic curve is used and the plan no longer says tool calling is unknown. Without
+    them, it says so."""
+    from llm_memory_calculator.kv.budsim import deployment_from_budsim
+
+    group = {"labels": {"concurrency": "8"}, "e2e_latency": 10.0}
+    row = {"input_tokens": 8600, "output_tokens": 180, "model_name": "m"}
+    assert deployment_from_budsim(group, row, {}, tool_calling=True).tool_calling is True
+    assert deployment_from_budsim(group, row, {}).tool_calling is False
+    row_says = {**row, "enable_tool_calling": True}
+    assert deployment_from_budsim(group, row_says, {}, tool_calling=False).tool_calling is False
+
+
+# ---------------------------------------------- the hardware rounds' follow-ups (Bud
+# IMPLEMENTATION_PLAN 1.9 D1/D2)
+
+
+def _d1_deploy(tool_calling=False):
+    """TCS D1's load: Qwen3-8B serving a 1/4-scale Mooncake window at the trace's own rate, one
+    output token."""
+    rate, prompt = (6.675, 2116) if tool_calling else (3.401, 2871)
+    return _deploy(
+        input_tokens=prompt,
+        output_tokens=1,
+        concurrency=4,
+        e2e_latency_s=4 / rate,
+        tool_calling=tool_calling,
+    )
+
+
+def test_t1_holds_the_gpu_pools_blocks_and_serves_whole_blocks(released_all):
+    """The hit of a T1 plan is the curve at what T1 holds (it holds the pool's blocks too), with
+    what T1 adds over the pool at the offloaded share: TCS D1 measured 0.1435 where pool + T1
+    predicted 0.212 and T1 alone 0.146.
+    """
+    deploy = _d1_deploy()
+    plan = _plan(deploy=deploy, infra=_infra(host_gb=300.0))
+    t1 = plan.tier("T1")
+    assert t1 is not None
+    curve, per_token, rate = (
+        CURVES["conversation@1"],
+        36 * 8 * 128 * 2 * 2,
+        4 / deploy.e2e_latency_s,
+    )
+    flow = rate * deploy.input_tokens
+
+    def hit(gib):
+        return curve.hit(gib * GIB / per_token / flow)
+
+    pool = plan.gpu_pool_gib
+    usable = 1 - 128 / deploy.input_tokens  # half of a 256-token block, against the prompt
+    inclusive = hit(pool) + usable * (hit(max(pool, t1["size_gib"])) - hit(pool))
+    assert plan.predicted_hit_rate == pytest.approx(inclusive, abs=0.002)
+    assert (
+        plan.predicted_hit_rate < hit(pool + t1["size_gib"]) - 0.02
+    )  # not the pool and T1 side by side
+
+
+def test_per_copy_stores_that_cost_more_than_they_save_drop_t1_and_t2(released_all):
+    """TCS D1: per-copy T1 stores every computed block with the request waiting, 10-20 ms a request,
+    against 4-7 ms of prefill its hits saved; T1 raised TTFT 28-37%. Batched copies on bare metal
+    overlap the step and keep T1.
+    """
+    for tool_calling in (False, True):
+        deploy = _d1_deploy(tool_calling)
+        per_copy = _plan(
+            deploy=deploy,
+            infra=_infra(caps={**TCS_VGPU, "pinned_copy_gbps": 55.0}, host_gb=247.6),
+            features=FEATURES + [constants.T1_PER_COPY_FEATURE],
+        )
+        assert per_copy.tier("T1") is None
+        assert any(d["tier"] == "T1" and "write-through" in d["reason"] for d in per_copy.dropped)
+        bare = _plan(deploy=deploy, infra=_infra(host_gb=247.6))
+        assert bare.tier("T1") is not None
+        assert any(d.startswith("T1 store:") for d in bare.decisions)
+
+
+def test_t2_keeps_the_disk_under_its_fill_limit(released_all):
+    """TCS's node disk was 79% full: 25% of its capacity would have filled it. The class's free
+    space caps T2 at what keeps the disk under T2_DISK_MAX_USED, and a disk already past it gets no
+    T2."""
+    deploy = _deploy(tool_calling=True, input_tokens=24000, output_tokens=1000)
+
+    def plan(free):
+        disk = {
+            "name": "nvme",
+            "node_local": True,
+            "kv_read_gbps": 12.0,
+            "capacity_gib": 900.0,
+            "free_gib": free,
+        }
+        cluster = {"storage_classes": [disk], "kv_storage": {"class": "nvme", "enabled": True}}
+        return _plan(
+            deploy=deploy,
+            workload=_analytic(deploy),
+            infra=_infra(cluster=cluster, host_gb=RAM_LIMITED),
+        )
+
+    roomy = plan(None)  # free space unknown: 25% of capacity
+    assert roomy.tier("T2")["size_gib"] == pytest.approx(225.0)
+    tight = plan(330.0)  # 330 - 20% of 900 = 150 GiB before the disk passes 80%
+    assert tight.tier("T2")["size_gib"] == pytest.approx(150.0)
+    assert any("the disk's free space" in d for d in tight.decisions)
+    full = plan(175.0)  # 81% full already
+    assert full.tier("T2") is None
+    assert any(d["tier"] == "T2" and "past 80%" in d["reason"] for d in full.dropped)
+
+
+def test_t2_link_capacity_counts_the_tiers_parallel_readers(released_all):
+    """One load sees the disk's single-stream rate; the tier's 8 readers together move more (TCS:
+    3.1 and 5.0 GB/s), which is what the link check needs: the disk-tier round's Qwen3-8B 4K c16
+    cell gained 14% at about 1.0x the single-stream rate."""
+    deploy = _deploy(tool_calling=True, input_tokens=24000, output_tokens=1000)
+
+    def t2(record):
+        cluster = {"storage_classes": [record], "kv_storage": {"class": "nvme", "enabled": True}}
+        plan = _plan(
+            deploy=deploy,
+            workload=_analytic(deploy),
+            infra=_infra(cluster=cluster, host_gb=RAM_LIMITED),
+        )
+        return plan.evaluations["T2"]
+
+    single = {"name": "nvme", "node_local": True, "kv_read_gbps": 3.1}
+    measured = t2({**single, "kv_read_gbps_parallel": 5.0})
+    assumed = t2(single)
+    assert measured.reload_idle_ms == pytest.approx(assumed.reload_idle_ms)  # one load: one stream
+    assert measured.link.throughput_gbps == 5.0
+    assert assumed.link.throughput_gbps == pytest.approx(3.1 * constants.T2_PARALLEL_READ_FACTOR)
+
+
+def test_predicted_ttft_counts_queueing_for_the_gpu(released_all):
+    """TTFT is the request's own prefill and loads plus an M/G/1 wait for the GPU at the
+    deployment's request rate; past TTFT_MAX_UTILISATION the plan says the queue grows instead of
+    giving a number."""
+    deploy = _d1_deploy()
+    plan = _plan(
+        deploy=deploy, ms_per_token=0.026
+    )  # ~75 ms for the 2,871-token prompt, as TCS measured alone
+    line = next(d for d in plan.decisions if d.startswith("predicted TTFT"))
+    alone = float(line.split("(")[1].split(" ms alone")[0])
+    assert plan.predicted_ttft_ms > alone and "queueing" in line
+    busy = _plan(deploy=dataclasses.replace(deploy, e2e_latency_s=0.05), ms_per_token=0.026)
+    assert busy.predicted_ttft_ms is None
+    assert any("queues grow" in d for d in busy.decisions)
+
+
+def test_a_slower_deployment_sees_the_traces_bursts_thinned(released_all):
+    """The trace's arrivals are bursty at its own rate (conversation: 7.9x Poisson's variance per
+    second at 3.4 req/s). A deployment taking a tenth of that rate sees a random tenth of the
+    bursts: 1 + 0.1 x 6.9.
+    """
+
+    def arrivals(e2e):
+        plan = _plan(
+            deploy=dataclasses.replace(_d1_deploy(), e2e_latency_s=e2e), ms_per_token=0.026
+        )
+        line = next(d for d in plan.decisions if d.startswith("predicted TTFT"))
+        return float(line.split("arrivals ")[1].split("x")[0])
+
+    curve = CURVES["conversation@1"]
+    assert arrivals(4 / curve.arrival_rate) == pytest.approx(curve.arrival_cv2, abs=0.05)
+    assert arrivals(40 / curve.arrival_rate) == pytest.approx(
+        1 + 0.1 * (curve.arrival_cv2 - 1), abs=0.05
+    )

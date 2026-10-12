@@ -59,11 +59,42 @@ def plan_t2(ctx: PlanContext) -> float:
 
     per_token = ctx.geometry.bytes_per_token_rank * ctx.tp
     wanted = ctx.replicas * ctx.working_set_gib * ctx.tp
-    cap = c.T2_DISK_SHARE * capacity
+    cap, cap_by = c.T2_DISK_SHARE * capacity, f"{c.T2_DISK_SHARE:.0%} of the local disk"
+    free = storage.free_gib
+    if free is not None and storage.capacity_gib:
+        # what the class can take before the disk passes T2_DISK_MAX_USED (kubelet's image GC starts
+        # at 85%)
+        headroom = free - (1.0 - c.T2_DISK_MAX_USED) * storage.capacity_gib
+        if headroom <= 0:
+            used = 1.0 - free / storage.capacity_gib
+            return drop(
+                f"storage class '{storage.name}' is {used:.0%} full"
+                f" ({free:g} of {storage.capacity_gib:g} GiB free):"
+                f" a disk tier would push it past {c.T2_DISK_MAX_USED:.0%}"
+            )
+        if headroom < cap:
+            cap = headroom
+            cap_by = (
+                f"the disk's free space ({free:g} GiB free;"
+                f" the disk stays under {c.T2_DISK_MAX_USED:.0%})"
+            )
     size = math.floor(min(max(wanted, ctx.tier_gib["T1"]), cap) * 4) / 4
     if size <= 0 or per_token <= 0:
         return drop("no disk room for the working set")
-    if ctx.served_share("T2", size) <= c.T2_MIN_SERVED_SHARE:
+    served = ctx.served_share("T2", size)
+    if served <= c.T2_MIN_SERVED_SHARE:
+        t1 = ctx.tier_gib["T1"]
+        if wanted > t1 >= size:  # the disk cap, not the working set, bounds T2
+            return drop(
+                f"T2 can't be larger than T1: {size:g} GiB (capped by {cap_by})"
+                f" against T1's {t1:g} GiB, and"
+                " every block T1 stores is written through to it"
+            )
+        if ctx.curve is not None:
+            return drop(
+                f"the {size - t1:g} GiB beyond T1 adds {served:.1%} hit on {ctx.curve.name}"
+                f" (minimum {c.T2_MIN_SERVED_SHARE:.1%})"
+            )
         return drop(
             "the working set fits in the GPU pool and T1; T2 would hold only copies of their"
             " blocks (every block T1 stores is written through to it)"
@@ -75,6 +106,7 @@ def plan_t2(ctx: PlanContext) -> float:
         floor_ms=c.T2_FLOOR_MS,
         scope="total",
         source=f"class {storage.name} measured",
+        throughput_gbps=storage.parallel_read_gbps or storage.read_gbps * c.T2_PARALLEL_READ_FACTOR,
     )
     block = ctx.geometry.offload_block(c.T1_BLOCK_SIZE)
     tokens, nbytes = ctx.geometry.prefix_bytes(
@@ -116,7 +148,7 @@ def plan_t2(ctx: PlanContext) -> float:
     }
     ctx.tier_gib["T2"] = size
     if max(wanted, ctx.tier_gib["T1"]) > cap:
-        limit = f"{c.T2_DISK_SHARE:.0%} of the local disk"
+        limit = cap_by
     elif ctx.tier_gib["T1"] > wanted:
         limit = "T1's size (the tier stages every load through T1)"
     else:

@@ -3,6 +3,7 @@
 import pytest
 
 from llm_memory_calculator import kv_tiering as kt
+from llm_memory_calculator.kv.constants import PROFILE_USES
 from llm_memory_calculator.kv_tiering import KVWorkload, plan_kv_tiers
 
 QWEN3_8B = {
@@ -69,6 +70,23 @@ def _chat(concurrency=16, input_tokens=8000, output_tokens=2000, **over):
     )
 
 
+def _analytic_chat(concurrency=16, input_tokens=8000, output_tokens=2000):
+    """Chat as the planner modelled it before the measured curves (1.9): PROFILE_REUSE's sessions x
+    share. Kept for the tests of the analytic path, which RAG and the calibration benches still use.
+    """
+    sessions, share = kt.PROFILE_REUSE["chat"]
+    return KVWorkload(
+        "chat",
+        input_tokens,
+        output_tokens,
+        concurrency,
+        sessions,
+        share,
+        "analytic",
+        uses_per_prefix=PROFILE_USES["chat"],
+    )
+
+
 def _plan(**over):
     args = dict(
         model_config=QWEN3_8B,
@@ -103,7 +121,9 @@ def _t1(plan):
     [
         ({"is_embedding": True}, "off"),
         ({"enable_tool_calling": True}, "agentic"),
-        ({"input_tokens": 10000, "output_tokens": 500}, "rag"),
+        # input:output >= 8 is no longer read as RAG (1.9 A4): production chat and agent traces are
+        # 35-47:1.
+        ({"input_tokens": 10000, "output_tokens": 500}, "chat"),
         ({"target_ttft_ms": 300.0}, "interactive"),
         ({}, "chat"),
     ],
@@ -116,7 +136,7 @@ def test_profile_is_inferred_from_deployment_fields(fields, profile):
 
 def test_working_set_is_sessions_times_reusable_prefix():
     """Count concurrency x sessions per slot x the reusable part of each prompt."""
-    workload = _chat(concurrency=10, input_tokens=1000)
+    workload = _analytic_chat(concurrency=10, input_tokens=1000)
     sessions, share = kt.PROFILE_REUSE["chat"]
     assert workload.working_set_tokens == int(10 * sessions * int(1000 * share))
 
@@ -235,7 +255,10 @@ def test_tcs_vgpu_plans_no_t1_on_an_engine_without_alloc_mode():
 def test_an_unprobed_vgpu_node_is_planned_alloc():
     """Treat an unprobed vGPU node as unable to use registered memory."""
     node = {"pinned_offload_ok": True, "vgpu": True}
-    assert _t1(_plan(node=node, engine_kv_features=ALLOC))["params"]["host_memory"] == "alloc"
+    # The mode is the point here: whether alloc-mode T1 then pays for its stores is
+    # test_kv_planner's subject.
+    alloc = _plan(node=node, engine_kv_features=ALLOC)
+    assert any(d.startswith("T1 mode: alloc") for d in alloc.decisions)
     assert _t1(_plan(node=node, engine_kv_features=REGISTER)) is None
 
 
@@ -334,7 +357,94 @@ def test_fp8_only_where_validated():
     """Keep the model's KV dtype unless (model family, GPU generation) is validated (FR-QUANT-2)."""
     assert _plan(device_generation="hopper").kv_cache_dtype == "auto"
     validated = frozenset({("qwen3", "hopper")})
-    assert _plan(device_generation="hopper", validated_kv_dtypes=validated).kv_cache_dtype == "fp8"
+    fp8 = REGISTER + ["kv_fp8"]  # and only on an engine build that verified fp8 KV
+    assert (
+        _plan(
+            device_generation="hopper", validated_kv_dtypes=validated, engine_kv_features=fp8
+        ).kv_cache_dtype
+        == "fp8"
+    )
+    assert _plan(device_generation="hopper", validated_kv_dtypes=validated).kv_cache_dtype == "auto"
+
+
+FP8 = REGISTER + ["kv_fp8"]
+SCALES_CT = {
+    "quantization_config": {
+        "quant_method": "compressed-tensors",
+        "kv_cache_scheme": {"num_bits": 8},
+    }
+}
+SCALES_MODELOPT = {
+    "quantization_config": {"quant_method": "modelopt", "kv_cache_quant_algo": "FP8"}
+}
+
+
+@pytest.mark.parametrize(
+    ("config", "features", "eligible", "recommended", "skip"),
+    [
+        ({}, REGISTER, False, False, False),  # the engine build hasn't verified fp8 KV
+        ({}, FP8, True, False, False),  # no calibrated scales: offered, default off
+        (SCALES_CT, FP8, True, True, False),  # compressed-tensors kv_cache_scheme: default on
+        (SCALES_MODELOPT, FP8, True, True, False),  # ModelOpt kv_cache_quant_algo: default on
+        (
+            {"kv_lora_rank": 512},
+            FP8,
+            False,
+            False,
+            False,
+        ),  # MLA: vLLM's own fp8 format, not offered yet
+        (
+            {"layer_types": ["linear_attention", "full_attention"]},
+            FP8,
+            False,
+            False,
+            False,
+        ),  # hybrid
+        ({"layer_types": ["sliding_attention", "full_attention"]}, FP8, True, False, True),
+        (
+            {"text_config": {**QWEN3_8B, **SCALES_CT}},
+            FP8,
+            True,
+            True,
+            False,
+        ),  # a VL model's text config
+    ],
+)
+def test_the_deployment_form_offers_fp8_kv_from_the_config_and_the_engine(
+    config, features, eligible, recommended, skip
+):
+    """The form offers fp8 KV when the engine build verified it and the architecture allows it, and
+    defaults it on only when the checkpoint ships calibrated KV scales."""
+    from llm_memory_calculator.kv.dtype import kv_fp8_support
+
+    support = kv_fp8_support({**QWEN3_8B, **config}, frozenset(features))
+    assert (support["eligible"], support["recommended"], support["skip_layers_sliding_window"]) == (
+        eligible,
+        recommended,
+        skip,
+    )
+    assert support["kv_cache_dtype"] == ("fp8" if eligible else None) and support["reason"]
+
+
+def test_fp8_kv_asked_for_at_deploy_halves_every_tier_s_bytes():
+    """Asked for and allowed, fp8 KV halves the bytes per token: the same working set is half the
+    GiB. Asked for where the engine hasn't verified it, or turned off, the model's dtype stays, and
+    the plan says why.
+    """
+    asked = _plan(engine_kv_features=FP8, kv_fp8=True)
+    plain = _plan(engine_kv_features=FP8)
+    assert asked.kv_cache_dtype == "fp8" and plain.kv_cache_dtype == "auto"
+    assert asked.working_set_gib == pytest.approx(plain.working_set_gib / 2, rel=0.01)
+    unverified = _plan(kv_fp8=True)
+    assert unverified.kv_cache_dtype == "auto"
+    assert any("fp8 KV asked for, but" in d for d in unverified.decisions)
+    assert _plan(engine_kv_features=FP8, kv_fp8=False).kv_cache_dtype == "auto"
+    sliding = _plan(
+        model_config={**QWEN3_8B, "layer_types": ["sliding_attention", "full_attention"] * 18},
+        engine_kv_features=FP8,
+        kv_fp8=True,
+    )
+    assert sliding.to_wire()["skip_layers_sliding_window"] is True
 
 
 # ------------------------------------------------------------------------------------------------
@@ -453,12 +563,18 @@ def test_the_t1_decision_names_what_sized_it():
     # Qwen3-8B on an 80 GiB card: a ~56 GiB pool; the working set is ~5.3 GiB per unit of
     # concurrency.
     assert (
-        sized_by(_plan(workload=_chat(concurrency=64), host_free_gib=2000.0)) == "the working set"
-    )
-    assert sized_by(_plan(workload=_chat(concurrency=64), host_free_gib=400.0)) == "the host memory"
-    assert (
-        sized_by(_plan(workload=_chat(concurrency=256), host_free_gib=4000.0)) == "10x the GPU pool"
+        sized_by(_plan(workload=_analytic_chat(concurrency=64), host_free_gib=2000.0))
+        == "the working set"
     )
     assert (
-        sized_by(_plan(workload=_chat(concurrency=16), host_free_gib=2000.0)) == "3x the GPU pool"
+        sized_by(_plan(workload=_analytic_chat(concurrency=64), host_free_gib=400.0))
+        == "the host memory"
+    )
+    assert (
+        sized_by(_plan(workload=_analytic_chat(concurrency=256), host_free_gib=4000.0))
+        == "10x the GPU pool"
+    )
+    assert (
+        sized_by(_plan(workload=_analytic_chat(concurrency=16), host_free_gib=2000.0))
+        == "3x the GPU pool"
     )

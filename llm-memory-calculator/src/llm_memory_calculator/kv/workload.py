@@ -3,11 +3,12 @@
 Every input is a field the deployment already has. The reuse profile and its assumptions are
 inferred from those fields; there is no KV option on a deployment.
 
-**Working set.** Estimated analytically from per-profile reuse assumptions (``PROFILE_REUSE``):
-sessions alive per concurrency slot times the reusable part of each prompt. GenZ's ``RadixCache``
-can't model it yet (it stops inserting when full instead of evicting), so a trace simulation is a
-later refinement. The assumptions are defaults to be measured, and measured hit rates don't feed
-back yet (FRD §12).
+**Working set.** Chat, interactive and agentic workloads read a measured reuse curve (``reuse.py``,
+IMPLEMENTATION_PLAN 1.9): the cache that holds ``REUSE_TARGET`` of the curve's reachable hit, at the
+deployment's request rate (``PlanContext.working_set_tokens``). Profiles without a curve (RAG, the
+calibration benches) keep the analytic estimate from ``PROFILE_REUSE``: sessions alive per
+concurrency slot times the reusable part of each prompt. Measured hit rates don't feed back yet (FRD
+§12; 1.9 stage C).
 """
 
 from __future__ import annotations
@@ -15,7 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional
 
-from .constants import INTERACTIVE_TTFT_MS, PREFIX_HEAVY_RATIO, PROFILE_REUSE, PROFILE_USES
+from .constants import INTERACTIVE_TTFT_MS, PROFILE_CURVE, PROFILE_REUSE, PROFILE_USES
+from .reuse import CURVES
 
 
 @dataclass(frozen=True)
@@ -41,6 +43,9 @@ class DeploymentSpec:
     # deployments of the same model in the project, or durability across node loss.
     cross_node_need: bool = False
     autoscale_max_replicas: Optional[int] = None
+    # fp8 KV, as the deployment form set it (dtype.kv_fp8_support): True asks for it, False keeps
+    # the model's dtype, None wasn't asked.
+    kv_fp8: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +61,10 @@ class KVWorkload:
     reason: str = ""
     # Uses of a reusable prefix over its life; its first use misses. 0: unknown, no adjustment.
     uses_per_prefix: float = 0.0
+    # A measured reuse curve (kv/reuse.py) by name. When set, the working set, coverage and hit rate
+    # come from it, and sessions_per_slot / uses_per_prefix are unused; reusable_share is the
+    # curve's reused-prefix share.
+    curve: Optional[str] = None
 
     @classmethod
     def from_deployment(
@@ -79,12 +88,26 @@ class KVWorkload:
                 "agentic",
                 "tool calling on: tool definitions and history are a shared prefix",
             )
-        elif output_tokens and input_tokens / output_tokens >= PREFIX_HEAVY_RATIO:
-            profile, reason = "rag", f"input:output {input_tokens}:{output_tokens} is prefix-heavy"
         elif target_ttft_ms is not None and target_ttft_ms <= INTERACTIVE_TTFT_MS:
             profile, reason = "interactive", f"TTFT target {target_ttft_ms:g} ms"
         else:
+            # Not "input:output >= 8 means RAG": both production traces pass that test (1.9 A4), and
+            # nothing in a deployment's fields tells a RAG prompt from a long conversation. RAG is
+            # reached only by an explicit profile, never inferred (user decision, 2026-10-09).
             profile, reason = "chat", "default profile"
+        curve_name = PROFILE_CURVE.get(profile)
+        if curve_name:
+            curve = CURVES[curve_name]
+            return cls(
+                profile,
+                input_tokens,
+                output_tokens,
+                concurrency,
+                0.0,
+                curve.reused_prefix_share,
+                reason,
+                curve=curve_name,
+            )
         sessions, share = PROFILE_REUSE.get(profile, (0.0, 0.0))
         return cls(
             profile,

@@ -132,6 +132,62 @@ def keep_on_throughput(
     return True
 
 
+def _retract(ctx: PlanContext, tier: str, reason: str) -> None:
+    """Take a planned tier back out of the plan, with the reason."""
+    plan = ctx.plan
+    plan.tiers = [t for t in plan.tiers if t["tier"] != tier]
+    plan.withheld = [t for t in plan.withheld if t["tier"] != tier]
+    ctx.tier_gib.pop(tier, None)
+    if tier == "T1":
+        plan.host_memory_gib = 0.0
+        plan.shm_gib = 0.0
+        ctx.t1_mode = None
+        ctx.t1_store_ms_per_token = 0.0
+    plan.decisions.append(f"{tier} dropped: {reason}")
+    plan.drop(tier, reason)
+
+
+def check_write_through(ctx: PlanContext) -> None:
+    """T1 writes every block a request computes through to host memory, and ``T1_STORE_BLOCKING_*``
+    of that copy time lands on the request (and the GPU's step). T2 needs T1 (it stages every load
+    through T1 and stores what T1 stores), so they're judged together, after both are planned: keep
+    them only if, per request, their hits save more prefill than the stores cost, within
+    ``T1_STORE_TIE``. TCS D1 (per-copy T1, Qwen3-8B, Mooncake windows): stores cost 10-20 ms a
+    request against 4-7 ms saved, and T1 raised TTFT 28-37%."""
+    t1 = ctx.tier_gib.get("T1")
+    per_token_ms = ctx.t1_store_ms_per_token
+    if not t1 or per_token_ms <= 0:
+        return
+    t2 = ctx.tier_gib.get("T2", 0.0)
+    prompt = ctx.workload.input_tokens
+    computed = prompt * (1.0 - ctx.hit_share_with("T2" if t2 else "T1", t2 or t1))
+    store_ms = per_token_ms * computed
+    share = ctx.served_share("T1", t1) + (ctx.served_share("T2", t2) if t2 else 0.0)
+    served = int(prompt * share)
+    saved_ms = ctx.recompute.batched_ms(served) if served > 0 else 0.0
+    if saved_ms is None:
+        saved_ms, _ = ctx.recompute.ms(served)
+    if saved_ms is None:
+        return
+    tiers = "T1 and T2" if t2 else "T1"
+    copies = ctx.t1_store_copies
+    if store_ms > c.T1_STORE_TIE * saved_ms:
+        reason = (
+            f"its write-through costs {store_ms:.0f} ms a request ({computed:.0f} computed tokens"
+            f" stored by {copies}),"
+            f" over {c.T1_STORE_TIE:g}x the {saved_ms:.0f} ms of prefill {tiers} save a request"
+            f" ({served} tokens)"
+        )
+        if t2:
+            _retract(ctx, "T2", "it needs T1, dropped below for its write-through cost")
+        _retract(ctx, "T1", reason)
+        return
+    ctx.plan.decisions.append(
+        f"T1 store: {store_ms:.0f} ms a request ({copies}) against {saved_ms:.0f} ms of prefill"
+        f" {tiers} save"
+    )
+
+
 def plan_t1(ctx: PlanContext) -> float:
     """Plan T1: its size in GiB, total across ranks, or 0 with the reason."""
     plan, decisions = ctx.plan, ctx.plan.decisions
@@ -165,9 +221,17 @@ def plan_t1(ctx: PlanContext) -> float:
         plan.drop("T1", why.replace("T1 dropped: ", ""))
         return 0.0
     host_free = ctx.host_free_gib
-    if not host_free or host_free <= 0:
+    if host_free is None:
         decisions.append("T1 dropped: the node's free host memory is unknown")
         plan.drop("T1", "free host memory unknown")
+        return 0.0
+    if host_free <= 0:
+        # The node's requests (and the RSS allowance for its running GPU engines) already take its
+        # RAM.
+        decisions.append(
+            "T1 dropped: the node has no free host memory once its running pods are counted"
+        )
+        plan.drop("T1", "no free host memory on the node")
         return 0.0
 
     pool_total = ctx.pool_gib * ctx.tp
@@ -198,12 +262,15 @@ def plan_t1(ctx: PlanContext) -> float:
     bandwidth, source = facts.pinned_gbps()
     if mode == "alloc":
         efficiency, floor = c.T1_ALLOC_LOAD_EFFICIENCY, c.T1_ALLOC_FLOOR_MS
+        blocking, copies = c.T1_STORE_BLOCKING_ALLOC, "alloc-mode copies"
     elif (
         facts.host_pointer_for_registered_mem is False
     ):  # register mode only via per-copy transfers
         efficiency, floor = c.T1_PER_COPY_LOAD_EFFICIENCY, c.T1_PER_COPY_FLOOR_MS
+        blocking, copies = c.T1_STORE_BLOCKING_PER_COPY, "per-copy transfers"
     else:
         efficiency, floor = c.T1_LOAD_EFFICIENCY, c.T1_FLOOR_MS
+        blocking, copies = c.T1_STORE_BLOCKING_REGISTER, "batched copies"
     link = TierLink(
         tier="T1",
         gbps=round(bandwidth * efficiency, 3),
@@ -236,6 +303,13 @@ def plan_t1(ctx: PlanContext) -> float:
     saved = ctx.recompute.batched_ms(tokens)
     if not keep_on_throughput(ctx, "T1", verdict, saved, recompute_source):
         return 0.0
+    # T1's own stores, judged with T2 once it is planned (check_write_through)
+    ctx.t1_store_ms_per_token = (
+        blocking * ctx.geometry.bytes_per_token_rank / (link.gbps * c.GB) * 1e3
+        if link.gbps > 0
+        else 0.0
+    )
+    ctx.t1_store_copies = f"{copies}, {blocking:.0%} of the copy time on the request's path"
 
     entry = {
         "tier": "T1",
