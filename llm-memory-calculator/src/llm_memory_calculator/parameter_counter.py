@@ -369,17 +369,21 @@ class UniversalParameterCounter:
                      or 'gelu').lower()
         return any(variant in act_fn for variant in self.glu_variants)
 
+    @staticmethod
+    def _num_moe_layers(config: Dict[str, Any], num_layers: int) -> int:
+        """Layers holding routed experts. DeepSeek keeps its first ``first_k_dense_replace`` layers
+        dense (V2-Lite: 1 of 27, V3: 3 of 61); counting them as MoE put V3 at 701B, not 671B."""
+        n_routed_experts = config.get('n_routed_experts', config.get('num_experts', 1)) or 1
+        moe_layer_freq = config.get('moe_layer_freq', 1)
+        if n_routed_experts <= 1 or not moe_layer_freq or moe_layer_freq <= 0:
+            return 0
+        first_dense = int(config.get('first_k_dense_replace') or 0)
+        return max(0, num_layers - first_dense) // moe_layer_freq
+
     def _calculate_ffn_params(self, config: Dict[str, Any], num_layers: int, hidden_size: int) -> int:
         """Calculate FFN parameters."""
-        # Check if using MoE layers
-        n_routed_experts = config.get('n_routed_experts', config.get('num_experts', 1))
-        moe_layer_freq = config.get('moe_layer_freq', 1)
-
-        if n_routed_experts > 1 and moe_layer_freq > 0:
-            # MoE layers are handled separately
-            non_moe_layers = num_layers - (num_layers // moe_layer_freq if moe_layer_freq > 0 else 0)
-        else:
-            non_moe_layers = num_layers
+        # MoE layers are handled separately; the rest carry a dense FFN
+        non_moe_layers = num_layers - self._num_moe_layers(config, num_layers)
 
         # Intermediate size
         intermediate_size = config.get('intermediate_size', config.get('ffn_dim', hidden_size * 4))
@@ -394,14 +398,9 @@ class UniversalParameterCounter:
     def _calculate_moe_params(self, config: Dict[str, Any], num_layers: int, hidden_size: int) -> int:
         """Calculate MoE-specific parameters."""
         n_routed_experts = config.get('n_routed_experts', config.get('num_experts', 1))
-        if n_routed_experts <= 1:
+        num_moe_layers = self._num_moe_layers(config, num_layers)
+        if num_moe_layers == 0:
             return 0
-        
-        moe_layer_freq = config.get('moe_layer_freq', 1)
-        if moe_layer_freq <= 0:
-            return 0
-        
-        num_moe_layers = num_layers // moe_layer_freq
         moe_intermediate_size = config.get('moe_intermediate_size', hidden_size * 4)
         
         # Router parameters

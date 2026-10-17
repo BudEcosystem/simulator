@@ -30,6 +30,18 @@ _MAX_TFLOPS_PER_WATT = (
 )
 
 
+def _perf_per_watt_excess(hw: HardwareSpec) -> float:
+    """How far (in TFLOPS/W) a swept HardwareSpec lies above the B200 perf/watt ceiling.
+
+    <= 0 for a physically plausible design, > 0 otherwise. This is the ceiling in
+    pymoo's inequality-constraint form (G <= 0 is satisfied). A design with no power
+    budget at all gets a large finite excess, so pymoo's violation sums stay finite.
+    """
+    if hw.tdp_watts <= 0:
+        return 1e9
+    return hw.flops_tflops / hw.tdp_watts - _MAX_TFLOPS_PER_WATT
+
+
 def _is_perf_per_watt_infeasible(hw: HardwareSpec) -> bool:
     """True if a swept HardwareSpec exceeds the B200 perf/watt ceiling.
 
@@ -37,9 +49,24 @@ def _is_perf_per_watt_infeasible(hw: HardwareSpec) -> bool:
     physically implausible; such candidates are marked infeasible rather than
     rewarded with a free power objective.
     """
-    if hw.tdp_watts <= 0:
-        return True
-    return (hw.flops_tflops / hw.tdp_watts) > _MAX_TFLOPS_PER_WATT
+    return _perf_per_watt_excess(hw) > 0
+
+
+def _flops_search_bounds(search_space: HardwareSearchSpace) -> Tuple[float, float]:
+    """FLOPS bounds to search, without the part no design can use.
+
+    Above the perf/W ceiling times the largest swept TDP, every design is infeasible
+    whatever TDP it is given, and explore() discards it. The default space reaches
+    10000 TFLOPS against a 2250 TFLOPS cap (2.25 TFLOPS/W x 1000 W), which left about
+    85% of uniformly sampled designs infeasible. Clamping the upper bound removes no
+    feasible design. When even the lower bound is over the cap, every design is
+    infeasible anyway and the bounds are returned unchanged.
+    """
+    lo, hi = search_space.flops_range
+    cap = _MAX_TFLOPS_PER_WATT * search_space.tdp_range[1]
+    if cap <= lo:
+        return lo, hi
+    return lo, min(hi, cap)
 
 
 class HardwareExplorer:
@@ -299,8 +326,10 @@ class HardwareExplorer:
 
         Defines a continuous-variable problem over the 7 hardware parameters
         (FLOPS, memory BW, memory size, on-chip memory, on-chip BW,
-        interchip BW, frequency) and uses BudSimEvaluator.evaluate_hardware
-        as the objective function.
+        interchip BW, frequency) plus the swept TDP and cost, and uses
+        BudSimEvaluator.evaluate_hardware as the objective function. The
+        perf/W ceiling and evaluation failure are inequality constraints, so
+        the search stays among the designs explore() keeps.
 
         Args:
             search_space: HardwareSearchSpace with parameter bounds.
@@ -322,13 +351,25 @@ class HardwareExplorer:
         model = self._model
         all_results = []
         n_obj = len(objectives)
+        xl = np.array(search_space.xl, dtype=float)
+        xu = np.array(search_space.xu, dtype=float)
+        xu[0] = _flops_search_bounds(search_space)[1]  # x[0] is flops_tflops
 
+        # explore() discards every candidate that is not feasible, so NSGA-II has to be told
+        # which ones those are. Otherwise a design above the perf/W ceiling looks strictly better
+        # to it (more FLOPS, so more throughput, at the same swept TDP and cost), and the search
+        # drifts out of the feasible region: with pymoo 0.6.2 and seed=42, only 3 of 48 evaluated
+        # designs survived and the Pareto front collapsed to a single point. As constraints,
+        # pymoo's constraint-domination ranks every feasible design above every infeasible one.
         class HWProblem(ElementwiseProblem):
             def __init__(self):
                 super().__init__(
-                    n_var=search_space.n_var, n_obj=n_obj,
-                    xl=np.array(search_space.xl),
-                    xu=np.array(search_space.xu),
+                    n_var=search_space.n_var,
+                    n_obj=n_obj,
+                    # G[0]: perf/W above the B200 ceiling. G[1]: GenZ evaluation failed.
+                    n_ieq_constr=2,
+                    xl=xl,
+                    xu=xu,
                 )
 
             def _evaluate(self, x, out, *args, **kwargs):
@@ -346,8 +387,10 @@ class HardwareExplorer:
                     input_tokens=input_tokens, output_tokens=output_tokens,
                     batch_size=batch_size,
                 )
+                evaluation_failed = not result.feasible
                 # R2-BE3: reject physically implausible designs (perf/W above the B200 anchor).
-                if _is_perf_per_watt_infeasible(hw):
+                ppw_excess = _perf_per_watt_excess(hw)
+                if ppw_excess > 0:
                     result.feasible = False
                 # Surface the swept cost/power so best_per_objective['cost'/'power'] vary.
                 if result.config is not None:
@@ -368,6 +411,7 @@ class HardwareExplorer:
                     else:
                         obj_vals.append(-result.throughput_rps)
                 out["F"] = np.array(obj_vals)
+                out["G"] = np.array([ppw_excess, 1.0 if evaluation_failed else 0.0])
 
         problem = HWProblem()
         algorithm = NSGA2(pop_size=pop_size)
@@ -393,7 +437,7 @@ class HardwareExplorer:
         results = []
         # R2-BE3: sweep tdp/cost in the fallback too, so the cost/power objectives vary even
         # without pymoo (they would otherwise pin to the dataclass defaults).
-        for flops in np.linspace(*search_space.flops_range, 5):
+        for flops in np.linspace(*_flops_search_bounds(search_space), 5):
             for bw in np.linspace(*search_space.mem_bw_range, 3):
                 for tdp in np.linspace(*search_space.tdp_range, 3):
                     for cost in np.linspace(*search_space.cost_range, 3):

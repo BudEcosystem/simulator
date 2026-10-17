@@ -278,7 +278,8 @@ class ConfigNormalizer:
             Parsed quantization metadata
         """
         quant_method = quant_config.get('quant_method', 'none').lower()
-        modules_skip = quant_config.get('modules_to_not_convert', [])
+        # AWQ checkpoints write `"modules_to_not_convert": null` when nothing is skipped.
+        modules_skip = quant_config.get('modules_to_not_convert') or []
         
         # Get bytes per parameter for this quantization method
         bytes_per_param = ConfigNormalizer.QUANT_METHODS.get(quant_method, 2.0)

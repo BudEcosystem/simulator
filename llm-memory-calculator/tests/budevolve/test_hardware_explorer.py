@@ -204,6 +204,84 @@ def test_nsga2_pareto_front_is_non_degenerate():
         assert d["power_w"] <= 0.75 * space.tdp_range[1] + 1e-6
 
 
+class _FlopsHungryEvaluator:
+    """Stand-in for BudSimEvaluator: throughput rises with FLOPS without limit, and
+    designs under 4000 GB/s fail to evaluate. A search that cannot see the perf/W
+    ceiling is rewarded for leaving the region explore() keeps."""
+
+    def __init__(self):
+        self.evaluated = []
+
+    def evaluate_hardware(self, hw, **kwargs):
+        if hw.offchip_mem_bw_gbps < 4000:
+            result = EvalResult(feasible=False, config={"error": "forced failure"})
+        else:
+            result = EvalResult(
+                throughput_rps=float(hw.flops_tflops),
+                power_w=hw.tdp_watts * 0.75,
+                feasible=True,
+                config={
+                    "flops_tflops": hw.flops_tflops,
+                    "tdp_watts": hw.tdp_watts,
+                    "estimated_cost_usd": hw.estimated_cost_usd,
+                },
+            )
+        self.evaluated.append(result)
+        return result
+
+
+def test_nsga2_problem_constrains_what_explore_discards():
+    """pymoo must see the same feasibility explore() applies afterwards. With no
+    constraints declared, NSGA-II ranked over-ceiling designs best (more FLOPS, same
+    TDP and cost) and spent the search on designs that were then thrown away, which
+    left one surviving point on the front."""
+    import numpy as np
+    from llm_memory_calculator.budevolve.numeric.hardware_explorer import HardwareExplorer
+
+    captured = {}
+
+    def _capture(problem, *args, **kwargs):
+        captured["problem"] = problem
+
+    explorer = HardwareExplorer(model="m", evaluator=_FlopsHungryEvaluator())
+    with patch("pymoo.optimize.minimize", side_effect=_capture):
+        explorer._run_pymoo_hw(
+            HardwareSearchSpace(), ["throughput", "cost", "power"], 1, 4, 128, 32, 8
+        )
+    problem = captured["problem"]
+    assert problem.n_ieq_constr == 2
+    # No design above 2.25 TFLOPS/W x 1000 W is feasible, so none is sampled.
+    assert problem.xu[0] == pytest.approx(2250.0)
+
+    def design(flops, bw):
+        # flops, bw, mem, on-chip mem, on-chip bw, link bw, GHz, tdp, cost
+        return [flops, bw, 80.0, 40.0, 18000.0, 150.0, 1.0, 400.0, 20000.0]
+
+    at_ceiling = design(900.0, 8000.0)  # exactly 2.25 TFLOPS/W at 400 W
+    over_ceiling = design(2000.0, 8000.0)
+    eval_fails = design(900.0, 1000.0)  # under the fake's 4000 GB/s
+    G = problem.evaluate(np.array([at_ceiling, over_ceiling, eval_fails]), return_values_of=["G"])
+    assert (G[0] <= 0).all()
+    assert G[1][0] > 0 and G[1][1] <= 0
+    assert G[2][0] <= 0 and G[2][1] > 0
+
+
+def test_nsga2_search_stays_where_explore_keeps_designs():
+    """Behavioural check of the same fix: over a longer search, most evaluated designs
+    stay feasible. Unconstrained, the late generations were almost all over the
+    ceiling (0 of the last 100 kept at seed 42); constrained, about 85 are."""
+    from llm_memory_calculator.budevolve.numeric.hardware_explorer import HardwareExplorer
+
+    evaluator = _FlopsHungryEvaluator()
+    result = HardwareExplorer(model="m", evaluator=evaluator).explore(
+        objectives=["throughput", "cost", "power"], n_generations=10, pop_size=20
+    )
+    late = evaluator.evaluated[100:]
+    kept = sum(r.feasible for r in late)
+    assert kept >= 50, f"only {kept} of the last {len(late)} evaluated designs were kept"
+    assert len(result.pareto_front) > 1
+
+
 @pytest.mark.slow
 def test_grid_fallback_still_works_and_is_disclosed():
     """Golden: when pymoo import fails, explore() falls back to the grid search,
