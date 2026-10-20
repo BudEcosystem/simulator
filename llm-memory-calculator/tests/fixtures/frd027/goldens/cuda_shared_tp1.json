@@ -1,0 +1,87 @@
+{
+ "context": {
+  "enable_reasoning": false,
+  "enable_tool_calling": false,
+  "input_tokens": 1280,
+  "model_max_context_length": 40960,
+  "namespace": "bud-kv-golden",
+  "output_tokens": 1280
+ },
+ "expected": {
+  "args": [
+   "--model=/data/models-registry/qwen3-0.6b",
+   "--tensor-parallel-size=1",
+   "--enable-chunked-prefill",
+   "--block-size=16",
+   "--served-model-name=bud-kv-golden",
+   "--max-num-seqs=10",
+   "--max-model-len=2816",
+   "--max-num-batched-tokens=2816",
+   "--gpu-memory-utilization=0.83",
+   "--trust-remote-code"
+  ],
+  "concurrency": 10,
+  "envs": {
+   "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+   "VLLM_LOGGING_LEVEL": "INFO",
+   "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "1",
+   "VLLM_TARGET_DEVICE": "cuda"
+  },
+  "gpu_memory_mb": 9274,
+  "hardware_mode": "shared",
+  "host_memory_request": null,
+  "image": "budstudio/vllm-cuda:0.9.0",
+  "memory_mib": 9370,
+  "node_selector": {
+   "nvidia.com/gpu.product": "NVIDIA H100 80GB HBM3"
+  },
+  "replicas": 1,
+  "shm_mib": null,
+  "tp_size": 1
+ },
+ "group": {
+  "activation_memory_gb": 0.5767168,
+  "args": {
+   "block-size": 16,
+   "disable-custom-all-reduce": false,
+   "enable-chunked-prefill": true,
+   "enable-prefix-caching": false,
+   "gpu-memory-utilization": 0.83,
+   "max-model-len": 2816,
+   "max-num-batched-tokens": 2816,
+   "max-num-seqs": 10,
+   "model": "/data/models-registry/qwen3-0.6b",
+   "served-model-name": "bud-kv-golden",
+   "tensor-parallel-size": 1,
+   "trust-remote-code": true
+  },
+  "config_id": "cfg-kv",
+  "cores": 96,
+  "device_name": "NVIDIA-H100-80GB-HBM3",
+  "device_total_memory_gb": 80.0,
+  "engine_type": "vllm",
+  "engine_version": "0.9.0",
+  "envs": {
+   "VLLM_TARGET_DEVICE": "cuda"
+  },
+  "hardware_mode": "shared",
+  "image": "budstudio/vllm-cuda:0.9.0",
+  "is_embedding": false,
+  "kv_cache_memory_gb": 3.22961408,
+  "labels": {
+   "concurrency": "10"
+  },
+  "name": "NVIDIA-H100-80GB-HBM3",
+  "pp_size": 1,
+  "raw_name": "NVIDIA H100 80GB HBM3",
+  "replicas": 1,
+  "sampler_logits_gb": 0.0303872,
+  "sliding_window": null,
+  "sliding_window_probed": true,
+  "state_memory_gb": 0.0,
+  "supports_lora": false,
+  "tp_size": 1,
+  "type": "cuda",
+  "weight_memory_gb": 1.503367168
+ }
+}

@@ -1,0 +1,536 @@
+{
+ "inherit": {
+  "bud-vllm@0.10.0": "vllm@0.31.0"
+ },
+ "records": [
+  {
+   "evidence": {
+    "baseline": 92.95,
+    "baseline_config": "8b-f-wbf16-spnone-kva",
+    "config": "val-8b-bud-best-u085",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9225,
+    "gsm8k_zeroshot": 92.49,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 92.5 vs baseline 92.9",
+   "record": "bud-vllm@0.9.0-481e481be",
+   "result": "pass",
+   "setting": "kv.dtype=fp8",
+   "target": "family:Qwen3-8B"
+  },
+  {
+   "evidence": {
+    "baseline": 92.95,
+    "baseline_config": "8b-f-wbf16-spnone-kva",
+    "config": "val-8b-bud-best-u085",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9225,
+    "gsm8k_zeroshot": 92.49,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 92.5 vs baseline 92.9",
+   "record": "bud-vllm@0.9.0-481e481be",
+   "result": "pass",
+   "setting": "spec.method=eagle3",
+   "target": "family:Qwen3-8B"
+  },
+  {
+   "evidence": {
+    "baseline": 92.95,
+    "baseline_config": "8b-f-wbf16-spnone-kva",
+    "config": "val-8b-bud-best-u085",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9225,
+    "gsm8k_zeroshot": 92.49,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 92.5 vs baseline 92.9",
+   "record": "bud-vllm@0.9.0-481e481be",
+   "result": "pass",
+   "setting": "weights.format=fp8",
+   "target": "family:Qwen3-8B"
+  },
+  {
+   "evidence": {
+    "baseline": 92.95,
+    "baseline_config": "8b-f-wbf16-spnone-kva",
+    "config": "8b-f-wbf16-spnone-kv8",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9275,
+    "gsm8k_zeroshot": 92.8,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 92.8 vs baseline 92.9",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "kv.dtype=fp8",
+   "target": "family:Qwen3-8B"
+  },
+  {
+   "evidence": {
+    "baseline": 92.95,
+    "baseline_config": "8b-f-wbf16-spnone-kva",
+    "config": "8b-f-wbf16-speagle3-kva",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9375,
+    "gsm8k_zeroshot": 92.95,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 92.9 vs baseline 92.9",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "spec.method=eagle3",
+   "target": "family:Qwen3-8B"
+  },
+  {
+   "evidence": {
+    "baseline": 92.95,
+    "baseline_config": "8b-f-wbf16-spnone-kva",
+    "config": "8b-f-wbf16-spngram-kva",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9425,
+    "gsm8k_zeroshot": 92.65,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 92.6 vs baseline 92.9",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "spec.method=ngram",
+   "target": "family:Qwen3-8B"
+  },
+  {
+   "evidence": {
+    "baseline": 92.95,
+    "baseline_config": "8b-f-wbf16-spnone-kva",
+    "config": "8b-f-wfp8-spnone-kva",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.93,
+    "gsm8k_zeroshot": 92.57,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 92.6 vs baseline 92.9",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "weights.format=fp8",
+   "target": "family:Qwen3-8B"
+  },
+  {
+   "evidence": {
+    "baseline": 92.95,
+    "baseline_config": "8b-f-wbf16-spnone-kva",
+    "config": "8b-s-fp8w-online",
+    "garbage": 0,
+    "gsm8k_fewshot": null,
+    "gsm8k_zeroshot": 92.49,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 92.5 vs baseline 92.9",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "weights.online=fp8",
+   "target": "family:Qwen3-8B"
+  },
+  {
+   "evidence": {
+    "baseline": 95.3,
+    "baseline_config": "f-wbf16-m0-kva-ss32",
+    "config": "val-27b-bud-best",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9725,
+    "gsm8k_zeroshot": 95.22,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "GSM8K within tolerance, but a hybrid needs the 128K needle-in-a-haystack record on this build before fp8 KV is eligible (FRD-027 \u00a710.7)",
+   "record": "bud-vllm@0.9.0-481e481be",
+   "result": "fail",
+   "setting": "kv.dtype=fp8",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 95.3,
+    "baseline_config": "f-wbf16-m0-kva-ss32",
+    "config": "val-27b-bud-best",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9725,
+    "gsm8k_zeroshot": 95.22,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 95.2 vs baseline 95.3",
+   "record": "bud-vllm@0.9.0-481e481be",
+   "result": "pass",
+   "setting": "spec.method=mtp",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 95.3,
+    "baseline_config": "f-wbf16-m0-kva-ss32",
+    "config": "val-27b-bud-best",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9725,
+    "gsm8k_zeroshot": 95.22,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 95.2 vs baseline 95.3",
+   "record": "bud-vllm@0.9.0-481e481be",
+   "result": "pass",
+   "setting": "state.dtype=bfloat16",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 95.3,
+    "baseline_config": "f-wbf16-m0-kva-ss32",
+    "config": "val-27b-bud-best",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9725,
+    "gsm8k_zeroshot": 95.22,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 95.2 vs baseline 95.3",
+   "record": "bud-vllm@0.9.0-481e481be",
+   "result": "pass",
+   "setting": "weights.format=fp8",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 95.3,
+    "baseline_config": "f-wbf16-m0-kva-ss32",
+    "config": "f-wbf16-m0-kv8-ss32",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.97,
+    "gsm8k_zeroshot": 94.62,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "GSM8K within tolerance, but a hybrid needs the 128K needle-in-a-haystack record on this build before fp8 KV is eligible (FRD-027 \u00a710.7)",
+   "record": "vllm@0.30.0",
+   "result": "fail",
+   "setting": "kv.dtype=fp8",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 95.3,
+    "baseline_config": "f-wbf16-m0-kva-ss32",
+    "config": "f-wbf16-m1-kva-ss32",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.975,
+    "gsm8k_zeroshot": 95.0,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 95.0 vs baseline 95.3",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "spec.method=mtp",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 95.3,
+    "baseline_config": "f-wbf16-m0-kva-ss32",
+    "config": "f-wbf16-m0-kva-ss16",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9725,
+    "gsm8k_zeroshot": 94.92,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 94.9 vs baseline 95.3",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "state.dtype=bfloat16",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 95.3,
+    "baseline_config": "f-wbf16-m0-kva-ss32",
+    "config": "f-wfp8-m0-kva-ss32",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9725,
+    "gsm8k_zeroshot": 95.07,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 95.1 vs baseline 95.3",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "weights.format=fp8",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 95.3,
+    "baseline_config": "f-wbf16-m0-kva-ss32",
+    "config": "s-fp8w-online",
+    "garbage": 0,
+    "gsm8k_fewshot": null,
+    "gsm8k_zeroshot": 95.38,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 95.4 vs baseline 95.3",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "weights.online=fp8",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 95.3,
+    "baseline_config": "f-wbf16-m0-kva-ss32",
+    "config": "s-fp8w-block",
+    "garbage": 0,
+    "gsm8k_fewshot": null,
+    "gsm8k_zeroshot": 94.84,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 94.8 vs baseline 95.3",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "weights.online=fp8_per_block",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 95.3,
+    "baseline_config": "f-wbf16-m0-kva-ss32",
+    "config": "s-fp8w-channel",
+    "garbage": 0,
+    "gsm8k_fewshot": null,
+    "gsm8k_zeroshot": 95.15,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 95.1 vs baseline 95.3",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "weights.online=fp8_per_channel",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 94.47,
+    "baseline_config": "oss-f2-wmxfp4-spnone-kva",
+    "config": "oss-f-wmxfp4-spnone-kv8",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9325,
+    "gsm8k_zeroshot": 94.01,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 94.0 vs baseline 94.5",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "kv.dtype=fp8",
+   "target": "family:gpt-oss-20b"
+  },
+  {
+   "evidence": {
+    "baseline": 94.47,
+    "baseline_config": "oss-f2-wmxfp4-spnone-kva",
+    "config": "oss-f2-wmxfp4-speagle3-kva",
+    "garbage": 0,
+    "gsm8k_fewshot": 0.9425,
+    "gsm8k_zeroshot": 94.24,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 94.2 vs baseline 94.5",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "spec.method=eagle3",
+   "target": "family:gpt-oss-20b"
+  },
+  {
+   "evidence": {
+    "baseline": 94.47,
+    "baseline_config": "oss-f2-wmxfp4-spnone-kva",
+    "config": "oss-f2-wbf16-spnone-kva",
+    "garbage": 1,
+    "gsm8k_fewshot": 0.9425,
+    "gsm8k_zeroshot": 94.24,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "accuracy 94.2 vs baseline 94.5",
+   "record": "vllm@0.30.0",
+   "result": "pass",
+   "setting": "weights.format=bf16",
+   "target": "family:gpt-oss-20b"
+  },
+  {
+   "evidence": {
+    "baseline": 94.47,
+    "baseline_config": "oss-f2-wmxfp4-spnone-kva",
+    "config": "oss-s-fp8w-online",
+    "garbage": 1156,
+    "gsm8k_fewshot": null,
+    "gsm8k_zeroshot": 0.45,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "1156 garbage outputs",
+   "record": "vllm@0.30.0",
+   "result": "fail",
+   "setting": "weights.online=fp8",
+   "target": "family:gpt-oss-20b"
+  },
+  {
+   "evidence": {
+    "baseline": 94.47,
+    "baseline_config": "oss-f2-wmxfp4-spnone-kva",
+    "config": "oss-w-fp8w-channel",
+    "garbage": 1187,
+    "gsm8k_fewshot": null,
+    "gsm8k_zeroshot": 0.23,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-16",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "study-2026-10-15"
+   },
+   "reason": "1187 garbage outputs",
+   "record": "vllm@0.30.0",
+   "result": "fail",
+   "setting": "weights.online=fp8_per_channel",
+   "target": "family:gpt-oss-20b"
+  }
+ ],
+ "version": "2026-10-18.1"
+}

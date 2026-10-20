@@ -1,0 +1,64 @@
+{
+ "records": [
+  {
+   "evidence": {
+    "baseline": 92.95,
+    "baseline_config": "8b-f-wbf16-spnone-kva",
+    "baseline_fewshot": 0.9375,
+    "config": "acc-8b-fp8-frd027",
+    "errors": 0,
+    "garbage": 0,
+    "gsm8k_fewshot": 0.93,
+    "gsm8k_zeroshot": 93.1,
+    "n": 1319,
+    "n_fewshot": 400
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-18",
+    "deployment": "budcluster RUNTIME_SPEC_MODE=on, namespace bud-frd-8b-fp8-270204a9",
+    "harness": "study-harness@2026-10-16",
+    "run_id": "tcs-acceptance-2026-10-18"
+   },
+   "reason": "accuracy 93.1 vs baseline 93.0 (zero-shot); 93.0 vs 93.8 (16-shot); no garbage",
+   "record": "bud-vllm@0.9.0-481e481be",
+   "result": "pass",
+   "setting": "weights.online=fp8",
+   "target": "family:Qwen3-8B"
+  },
+  {
+   "target": "family:Qwen3.8-27B",
+   "record": "vllm@0.30.0",
+   "setting": "kv.dtype=fp8",
+   "result": "pass",
+   "evidence": {
+    "config": "acc-27b-mtp3-kv8-val",
+    "baseline_config": "acc-27b-mtp3-up",
+    "gsm8k_zeroshot": 95.0,
+    "gsm8k_fewshot": 0.9775,
+    "baseline": 94.54,
+    "baseline_fewshot": 0.9675,
+    "original_precision_baseline": 95.3,
+    "original_precision_config": "f-wbf16-m0-kva-ss32",
+    "n": 1319,
+    "n_fewshot": 400,
+    "garbage": 0,
+    "errors": 0,
+    "niah_128k_recall": 1.0,
+    "niah_trials": 55,
+    "niah_max_tokens": 126172,
+    "niah_baseline_recall": 1.0,
+    "kv_scale": "1.0 (uncalibrated)"
+   },
+   "reason": "accuracy 95.0 vs baseline 94.5 on the same engine (95.3 original precision); 128K needle recall 100% (55 trials, 16K-126K tokens); no garbage",
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-18",
+    "harness": "study-harness@2026-10-16 + acceptance/niah.py",
+    "run_id": "tcs-acceptance-2026-10-18",
+    "deployment": "Bud-planned online FP8 + MTP k=3 (namespace bud-frd-27b-mtp3-4c57a676) restarted with --kv-cache-dtype=fp8 for the validation run"
+   }
+  }
+ ],
+ "version": "2026-10-18.tcs"
+}

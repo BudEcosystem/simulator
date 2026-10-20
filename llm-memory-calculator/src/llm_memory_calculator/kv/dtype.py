@@ -8,9 +8,10 @@ twice the tokens and every load and store moves half the bytes. What decides it:
   on each GPU generation it serves: a 128K needle-in-haystack recall above 90% (ARCHITECTURE §13;
   the Hopper accumulation bug shows as recall below 50%). A kernel property, checked per build, not
   per model.
-- **The model's architecture**, from its config: MLA latents need vLLM's own fp8 format, and
-  recurrent (Mamba or linear-attention) state isn't KV, so neither is offered yet; sliding-window
-  layers keep the model's dtype (``skip_layers_sliding_window``).
+- **The model's architecture**, from its config: MLA latents need vLLM's own fp8 format, so they are
+  not offered yet. A hybrid (Mamba or linear-attention layers) is offered once its family's 128K
+  needle record passes on the build (FRD-027 §10.7, ``hybrid_validated``); its recurrent state keeps
+  its dtype. Sliding-window layers keep the model's dtype (``skip_layers_sliding_window``).
 - **Calibration.** A checkpoint that ships calibrated KV scales (compressed-tensors
   ``kv_cache_scheme``, ModelOpt ``kv_cache_quant_algo``) was calibrated and checked by its
   publisher: fp8 is recommended. Without them vLLM uses a scale of 1.0, usually within 1-2 points on
@@ -69,9 +70,14 @@ def _recurrent_layers(text: Mapping[str, Any]) -> bool:
     return any(text.get(key) is not None for key in RECURRENT_CONFIG_KEYS)
 
 
-def kv_fp8_support(model_config: Mapping[str, Any], features: FrozenSet[str]) -> Dict[str, Any]:
+def kv_fp8_support(
+    model_config: Mapping[str, Any], features: FrozenSet[str], *, hybrid_validated: bool = False
+) -> Dict[str, Any]:
     """Whether the deployment form may offer fp8 KV, whether to default it on, the dtype vLLM takes,
     and why.
+
+    ``hybrid_validated``: a 128K needle-in-a-haystack record passes for this model's family on this
+    engine build (FRD-027 §10.7), which makes a hybrid (recurrent-layer) model eligible.
 
     ``{"eligible", "recommended", "kv_cache_dtype", "skip_layers_sliding_window", "reason"}``.
     """
@@ -96,12 +102,17 @@ def kv_fp8_support(model_config: Mapping[str, Any], features: FrozenSet[str]) ->
         )
     if text.get("kv_lora_rank"):
         return out(False, "MLA latents need vLLM's own fp8 format, which isn't offered yet")
-    if _recurrent_layers(text):
+    hybrid = _recurrent_layers(text)
+    if hybrid and not hybrid_validated:
         return out(
-            False, "a hybrid model's recurrent state isn't KV cache; fp8 isn't offered for it yet"
+            False,
+            "a hybrid model needs a passing 128K needle-in-a-haystack record for its family on this"
+            " engine build before fp8 KV is offered (FRD-027 §10.7)",
         )
     skip = _sliding_window_layers(text)
     note = " Sliding-window layers keep the model's dtype." if skip else ""
+    if hybrid:
+        note += " The family's 128K needle record passes on this build; the recurrent state keeps its dtype."
     if calibrated_kv_scales(model_config):
         return out(
             True,
@@ -124,6 +135,7 @@ def choose_kv_dtype(
     *,
     requested: Optional[bool] = None,
     features: FrozenSet[str] = frozenset(),
+    hybrid_validated: bool = False,
 ) -> Tuple[str, str, bool]:
     """Return ``(kv_cache_dtype, decision, skip_layers_sliding_window)``.
 
@@ -135,7 +147,7 @@ def choose_kv_dtype(
     if requested is not None:
         if not requested:
             return "auto", "dtype: model default (fp8 KV off for this deployment)", False
-        support = kv_fp8_support(model_config, features)
+        support = kv_fp8_support(model_config, features, hybrid_validated=hybrid_validated)
         if not support["eligible"]:
             return (
                 "auto",

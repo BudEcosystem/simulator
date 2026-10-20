@@ -208,8 +208,9 @@ PCI_ARCHITECTURE_MAP = {
     '10de:2757': {'arch': 'ADA_LOVELACE', 'model': 'RTX4090', 'variant': 'Mobile'},
     '10de:2782': {'arch': 'ADA_LOVELACE', 'model': 'RTX4080', 'variant': 'GeForce'},
     '10de:27b8': {'arch': 'ADA_LOVELACE', 'model': 'L4', 'variant': 'Tesla'},
-    '10de:26b9': {'arch': 'ADA_LOVELACE', 'model': 'L40', 'variant': 'Professional'},
-    '10de:26ba': {'arch': 'ADA_LOVELACE', 'model': 'L40S', 'variant': 'Professional'},
+    '10de:26b5': {'arch': 'ADA_LOVELACE', 'model': 'L40', 'variant': 'Professional'},
+    '10de:26b9': {'arch': 'ADA_LOVELACE', 'model': 'L40S', 'variant': 'Professional'},
+    '10de:26ba': {'arch': 'ADA_LOVELACE', 'model': 'L20', 'variant': 'Professional'},
     
     # NVIDIA Hopper
     '10de:2330': {'arch': 'HOPPER', 'model': 'H100', 'variant': 'SXM5'},

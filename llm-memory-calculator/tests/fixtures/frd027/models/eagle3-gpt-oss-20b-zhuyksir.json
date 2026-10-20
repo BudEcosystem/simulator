@@ -1,0 +1,23 @@
+{
+ "architectures": [
+  "LlamaForCausalLMEagle3"
+ ],
+ "model_type": "llama",
+ "hidden_size": 2880,
+ "intermediate_size": 20480,
+ "num_attention_heads": 64,
+ "num_key_value_heads": 8,
+ "head_dim": 64,
+ "num_hidden_layers": 1,
+ "vocab_size": 201088,
+ "draft_vocab_size": 32000,
+ "max_position_embeddings": 131072,
+ "share_embedding": true,
+ "speculators_config": {
+  "algorithm": "eagle3",
+  "verifier": {
+   "name_or_path": "openai/gpt-oss-20b"
+  }
+ },
+ "torch_dtype": "bfloat16"
+}
