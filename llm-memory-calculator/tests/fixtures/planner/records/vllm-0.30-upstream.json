@@ -1,0 +1,258 @@
+{
+ "build": "upstream",
+ "conflicts": [
+  {
+   "id": "mtp-context-262144",
+   "reason": "vLLM refuses MTP at max-model-len 262144: one request's KV and draft state exceed the pool (study s-mtp1..3)",
+   "requires": {
+    "context.max_tokens": "< 262144"
+   },
+   "when": {
+    "spec.method": "mtp"
+   }
+  },
+  {
+   "id": "spec-prefix-cache",
+   "reason": "speculative decoding with prefix caching can corrupt output on this build (vLLM #53912)",
+   "unless_feature": "spec_prefix_cache_safe",
+   "unless_for": [
+    {
+     "feature": "spec_prefix_cache_safe_full_attention",
+     "model": "full_attention"
+    }
+   ],
+   "when": {
+    "prefix_cache.enabled": true,
+    "spec.method": "*"
+   }
+  }
+ ],
+ "engine": "vllm",
+ "features": [
+  "cache_salt",
+  "chunked_prefill",
+  "cpu_offload_host_alloc",
+  "cpu_offload_shm",
+  "fused_gdn_mtp",
+  "kernel_warmup",
+  "kv_events",
+  "kv_fp8",
+  "language_model_only",
+  "lora",
+  "mamba_state_bf16",
+  "mxfp4_triton",
+  "online_fp8",
+  "prefix_caching",
+  "reasoning",
+  "spec_eagle3",
+  "spec_mtp",
+  "spec_ngram",
+  "spec_prefix_cache_safe_full_attention",
+  "tool_calling"
+ ],
+ "id": "vllm@0.30.0",
+ "images": {
+  "cuda": "vllm/vllm-openai:v0.30.0"
+ },
+ "limits": {
+  "cudagraph_capture_max": 512,
+  "default_gpu_memory_utilization": {
+   "cuda": 0.92
+  },
+  "default_max_num_batched_tokens": {
+   "cpu": 4096,
+   "cuda": 8192
+  },
+  "default_max_num_seqs": 256,
+  "devices": [
+   "cuda",
+   "cpu"
+  ],
+  "engine_default_large_memory_gib": 70,
+  "engine_default_max_num_seqs": {
+   "cuda": 1024,
+   "cuda_small": 256
+  },
+  "max_gpu_memory_utilization": {
+   "cuda": 0.95,
+   "h100xm-80c-vgpu": 0.95
+  },
+  "max_lora_rank": 64,
+  "max_loras": 8,
+  "max_spec_tokens": {
+   "eagle3": 5,
+   "mtp": 3,
+   "ngram": 5
+  },
+  "max_tp": 8,
+  "max_tp_by_virtualization": {
+   "vgpu_no_vmm": 1
+  }
+ },
+ "reasoning_parsers": [
+  "deepseek_r1",
+  "qwen3"
+ ],
+ "runner": "v2",
+ "runtime": {
+  "args": {
+   "bool": "flag",
+   "json": "inline",
+   "style": "--{key}={value}",
+   "trailing": [
+    "--uvicorn-log-level",
+    "warning"
+   ]
+  },
+  "base_args": {
+   "model": "$(BUD_MODEL_PATH)",
+   "served-model-name": "$(BUD_SERVED_NAME)"
+  },
+  "boot_failure_patterns": {
+   "oom": [
+    "CUDA out of memory",
+    "OutOfMemoryError",
+    "OOMKilled",
+    "exit code 137"
+   ],
+   "refused": [
+    "ValueError: ",
+    "exceeds available Mamba cache blocks",
+    "larger than the available KV cache memory",
+    "No available memory for the cache blocks"
+   ]
+  },
+  "env_defaults": {
+   "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+   "VLLM_LOGGING_LEVEL": "INFO"
+  },
+  "launch": {
+   "multi_node": {
+    "command": [
+     "vllm",
+     "serve"
+    ],
+    "extra_args": [
+     "--distributed-executor-backend",
+     "ray"
+    ],
+    "kind": "ray"
+   },
+   "single_node": [
+    "python3",
+    "-m",
+    "vllm.entrypoints.openai.api_server"
+   ]
+  },
+  "metrics": {
+   "kv_usage": "vllm:kv_cache_usage_perc",
+   "queue_depth": "vllm:num_requests_waiting",
+   "running": "vllm:num_requests_running"
+  },
+  "ports": {
+   "kv_events": {
+    "publish": 5557,
+    "replay": 5558
+   },
+   "metrics": {
+    "path": "/metrics",
+    "port": "serve"
+   },
+   "serve": {
+    "container_port": 8000,
+    "path_prefix": "/v1"
+   }
+  },
+  "probes": {
+   "health": {
+    "path": "/health",
+    "port": "serve"
+   },
+   "liveness": {
+    "failure_threshold": 20,
+    "initial_delay_s": 120,
+    "period_s": 30
+   },
+   "readiness": {
+    "initial_delay_s": 60,
+    "period_s": 5
+   },
+   "startup": {
+    "failure_threshold": 200,
+    "initial_delay_s": 0,
+    "period_s": 30,
+    "timeout_s": 1
+   }
+  }
+ },
+ "settings": {
+  "batch.max_running": {
+   "arg": "max-num-seqs"
+  },
+  "batch.prefill_chunk_tokens": {
+   "arg": "max-num-batched-tokens"
+  },
+  "context.max_tokens": {
+   "arg": "max-model-len"
+  },
+  "kv.dtype": {
+   "arg": "kv-cache-dtype"
+  },
+  "lora.max_adapters": {
+   "arg": "max-loras",
+   "implies": {
+    "enable-lora": true
+   }
+  },
+  "lora.max_rank": {
+   "arg": "max-lora-rank"
+  },
+  "memory.device_fraction": {
+   "arg": "gpu-memory-utilization"
+  },
+  "mm.limits": {
+   "arg": "limit-mm-per-prompt"
+  },
+  "mm.text_only": {
+   "arg": "language-model-only"
+  },
+  "parallel.pipeline": {
+   "arg": "pipeline-parallel-size"
+  },
+  "parallel.tensor": {
+   "arg": "tensor-parallel-size"
+  },
+  "prefix_cache.enabled": {
+   "arg": "enable-prefix-caching",
+   "negated_arg": "no-enable-prefix-caching"
+  },
+  "spec.draft": {
+   "arg": "speculative-config",
+   "json_key": "model"
+  },
+  "spec.method": {
+   "arg": "speculative-config",
+   "json_key": "method"
+  },
+  "spec.tokens": {
+   "arg": "speculative-config",
+   "json_key": "num_speculative_tokens"
+  },
+  "state.dtype": {
+   "arg": "mamba-ssm-cache-dtype"
+  },
+  "weights.format": {
+   "arg": "quantization",
+   "when": "online"
+  }
+ },
+ "tool_parsers": [
+  "hermes",
+  "llama3_json",
+  "mistral",
+  "qwen3_coder",
+  "openai"
+ ],
+ "upstream_vllm": "0.30.0",
+ "version": "0.30.0"
+}

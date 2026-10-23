@@ -1,0 +1,19 @@
+{
+ "architectures": [
+  "WhisperForConditionalGeneration"
+ ],
+ "model_type": "whisper",
+ "d_model": 1280,
+ "encoder_layers": 32,
+ "decoder_layers": 32,
+ "encoder_attention_heads": 20,
+ "decoder_attention_heads": 20,
+ "encoder_ffn_dim": 5120,
+ "decoder_ffn_dim": 5120,
+ "vocab_size": 51866,
+ "max_source_positions": 1500,
+ "max_target_positions": 448,
+ "num_mel_bins": 128,
+ "is_encoder_decoder": true,
+ "torch_dtype": "float16"
+}

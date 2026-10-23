@@ -1,0 +1,857 @@
+{
+ "$defs": {
+  "Alternative": {
+   "properties": {
+    "decision": {
+     "title": "Decision",
+     "type": "string"
+    },
+    "patch": {
+     "additionalProperties": true,
+     "title": "Patch",
+     "type": "object"
+    },
+    "predicted_margin_bytes": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Predicted Margin Bytes"
+    },
+    "rung": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Rung"
+    },
+    "settings": {
+     "additionalProperties": true,
+     "title": "Settings",
+     "type": "object"
+    },
+    "stock_equivalent": {
+     "default": false,
+     "title": "Stock Equivalent",
+     "type": "boolean"
+    },
+    "when": {
+     "additionalProperties": true,
+     "title": "When",
+     "type": "object"
+    }
+   },
+   "required": [
+    "when",
+    "decision"
+   ],
+   "title": "Alternative",
+   "type": "object"
+  },
+  "Check": {
+   "additionalProperties": true,
+   "properties": {
+    "kind": {
+     "enum": [
+      "node_memory",
+      "pin_node",
+      "hami_slice",
+      "device_count",
+      "storage_access_mode",
+      "crd_present",
+      "boot_failed"
+     ],
+     "title": "Kind",
+     "type": "string"
+    }
+   },
+   "required": [
+    "kind"
+   ],
+   "title": "Check",
+   "type": "object"
+  },
+  "Container": {
+   "properties": {
+    "args": {
+     "additionalProperties": true,
+     "title": "Args",
+     "type": "object"
+    },
+    "command": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Command",
+     "type": "array"
+    },
+    "env": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "title": "Env",
+     "type": "object"
+    },
+    "image": {
+     "title": "Image",
+     "type": "string"
+    },
+    "image_pull_policy": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Image Pull Policy"
+    },
+    "mounts": {
+     "items": {
+      "$ref": "#/$defs/Mount"
+     },
+     "title": "Mounts",
+     "type": "array"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "ports": {
+     "items": {
+      "$ref": "#/$defs/Port"
+     },
+     "title": "Ports",
+     "type": "array"
+    },
+    "positional": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Positional",
+     "type": "array"
+    },
+    "probes": {
+     "additionalProperties": {
+      "$ref": "#/$defs/Probe"
+     },
+     "title": "Probes",
+     "type": "object"
+    },
+    "raw_args": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Raw Args",
+     "type": "array"
+    },
+    "resources": {
+     "$ref": "#/$defs/Resources"
+    },
+    "role": {
+     "enum": [
+      "engine",
+      "sidecar"
+     ],
+     "title": "Role",
+     "type": "string"
+    }
+   },
+   "required": [
+    "role",
+    "name",
+    "image"
+   ],
+   "title": "Container",
+   "type": "object"
+  },
+  "EngineRef": {
+   "properties": {
+    "arg_style": {
+     "default": "--{key}={value}",
+     "title": "Arg Style",
+     "type": "string"
+    },
+    "bool_style": {
+     "default": "flag",
+     "title": "Bool Style",
+     "type": "string"
+    },
+    "boot_failure_patterns": {
+     "anyOf": [
+      {
+       "additionalProperties": {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "type": "object"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Boot Failure Patterns"
+    },
+    "image": {
+     "title": "Image",
+     "type": "string"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "pull_policy": {
+     "default": "IfNotPresent",
+     "title": "Pull Policy",
+     "type": "string"
+    },
+    "record": {
+     "title": "Record",
+     "type": "string"
+    },
+    "trailing_args": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Trailing Args",
+     "type": "array"
+    },
+    "version": {
+     "title": "Version",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "version",
+    "record",
+    "image"
+   ],
+   "title": "EngineRef",
+   "type": "object"
+  },
+  "Mount": {
+   "properties": {
+    "path": {
+     "title": "Path",
+     "type": "string"
+    },
+    "read_only": {
+     "default": false,
+     "title": "Read Only",
+     "type": "boolean"
+    },
+    "volume": {
+     "title": "Volume",
+     "type": "string"
+    }
+   },
+   "required": [
+    "volume",
+    "path"
+   ],
+   "title": "Mount",
+   "type": "object"
+  },
+  "Mutable": {
+   "properties": {
+    "adapters": {
+     "anyOf": [
+      {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Adapters"
+    },
+    "replicas": {
+     "anyOf": [
+      {
+       "additionalProperties": {
+        "type": "integer"
+       },
+       "type": "object"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Replicas"
+    }
+   },
+   "title": "Mutable",
+   "type": "object"
+  },
+  "Pod": {
+   "properties": {
+    "affinity": {
+     "anyOf": [
+      {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Affinity"
+    },
+    "annotations": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "title": "Annotations",
+     "type": "object"
+    },
+    "labels": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "title": "Labels",
+     "type": "object"
+    },
+    "node_selector": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "title": "Node Selector",
+     "type": "object"
+    },
+    "pin_to_node": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Pin To Node"
+    },
+    "runtime_class": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Runtime Class"
+    },
+    "scheduler": {
+     "default": "default",
+     "title": "Scheduler",
+     "type": "string"
+    },
+    "service_account": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Service Account"
+    },
+    "volumes": {
+     "items": {
+      "$ref": "#/$defs/Volume"
+     },
+     "title": "Volumes",
+     "type": "array"
+    }
+   },
+   "title": "Pod",
+   "type": "object"
+  },
+  "Port": {
+   "properties": {
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "port": {
+     "title": "Port",
+     "type": "integer"
+    },
+    "protocol": {
+     "default": "TCP",
+     "title": "Protocol",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "port"
+   ],
+   "title": "Port",
+   "type": "object"
+  },
+  "Predicted": {
+   "properties": {
+    "boot_s": {
+     "items": {
+      "type": "number"
+     },
+     "title": "Boot S",
+     "type": "array"
+    },
+    "concurrency": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Concurrency"
+    },
+    "levels": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "title": "Levels",
+     "type": "object"
+    },
+    "notes": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Notes",
+     "type": "array"
+    },
+    "penalty_vs_dedicated": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Penalty Vs Dedicated"
+    },
+    "point": {
+     "additionalProperties": {
+      "type": "number"
+     },
+     "title": "Point",
+     "type": "object"
+    },
+    "throughput_tok_s": {
+     "items": {
+      "type": "number"
+     },
+     "title": "Throughput Tok S",
+     "type": "array"
+    },
+    "tpot_ms": {
+     "items": {
+      "type": "number"
+     },
+     "title": "Tpot Ms",
+     "type": "array"
+    },
+    "ttft_ms": {
+     "items": {
+      "type": "number"
+     },
+     "title": "Ttft Ms",
+     "type": "array"
+    },
+    "ungrounded": {
+     "default": false,
+     "title": "Ungrounded",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "ttft_ms",
+    "tpot_ms",
+    "throughput_tok_s",
+    "boot_s"
+   ],
+   "title": "Predicted",
+   "type": "object"
+  },
+  "PredictorRef": {
+   "properties": {
+    "grounding": {
+     "title": "Grounding",
+     "type": "string"
+    },
+    "version": {
+     "title": "Version",
+     "type": "string"
+    }
+   },
+   "required": [
+    "version",
+    "grounding"
+   ],
+   "title": "PredictorRef",
+   "type": "object"
+  },
+  "Probe": {
+   "properties": {
+    "exec": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Exec"
+    },
+    "failure_threshold": {
+     "default": 3,
+     "title": "Failure Threshold",
+     "type": "integer"
+    },
+    "http": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Http"
+    },
+    "initial_delay_s": {
+     "default": 0,
+     "title": "Initial Delay S",
+     "type": "integer"
+    },
+    "period_s": {
+     "default": 10,
+     "title": "Period S",
+     "type": "integer"
+    },
+    "port": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Port"
+    },
+    "success_threshold": {
+     "default": 1,
+     "title": "Success Threshold",
+     "type": "integer"
+    },
+    "timeout_s": {
+     "default": 1,
+     "title": "Timeout S",
+     "type": "integer"
+    }
+   },
+   "title": "Probe",
+   "type": "object"
+  },
+  "Resources": {
+   "properties": {
+    "limits": {
+     "additionalProperties": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "string"
+       }
+      ]
+     },
+     "title": "Limits",
+     "type": "object"
+    },
+    "requests": {
+     "additionalProperties": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "string"
+       }
+      ]
+     },
+     "title": "Requests",
+     "type": "object"
+    }
+   },
+   "title": "Resources",
+   "type": "object"
+  },
+  "Topology": {
+   "properties": {
+    "kind": {
+     "default": "single",
+     "enum": [
+      "single",
+      "multi_node",
+      "prefill_decode"
+     ],
+     "title": "Kind",
+     "type": "string"
+    }
+   },
+   "title": "Topology",
+   "type": "object"
+  },
+  "Volume": {
+   "properties": {
+    "claim": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Claim"
+    },
+    "config_map": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Config Map"
+    },
+    "default_mode": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Default Mode"
+    },
+    "kind": {
+     "enum": [
+      "emptyDir",
+      "pvc",
+      "model_store",
+      "configMap",
+      "secret",
+      "hostPath"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "medium": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Medium"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "path": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Path"
+    },
+    "size_mib": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Size Mib"
+    }
+   },
+   "required": [
+    "name",
+    "kind"
+   ],
+   "title": "Volume",
+   "type": "object"
+  }
+ },
+ "$id": "https://bud.studio/schemas/runtime-spec/v1.json",
+ "properties": {
+  "alternatives": {
+   "items": {
+    "$ref": "#/$defs/Alternative"
+   },
+   "title": "Alternatives",
+   "type": "array"
+  },
+  "autoscaling": {
+   "additionalProperties": true,
+   "title": "Autoscaling",
+   "type": "object"
+  },
+  "checks": {
+   "items": {
+    "$ref": "#/$defs/Check"
+   },
+   "title": "Checks",
+   "type": "array"
+  },
+  "containers": {
+   "items": {
+    "$ref": "#/$defs/Container"
+   },
+   "title": "Containers",
+   "type": "array"
+  },
+  "decisions": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Decisions",
+   "type": "array"
+  },
+  "engine": {
+   "$ref": "#/$defs/EngineRef"
+  },
+  "inputs_digest": {
+   "default": "",
+   "title": "Inputs Digest",
+   "type": "string"
+  },
+  "mutable": {
+   "$ref": "#/$defs/Mutable"
+  },
+  "pod": {
+   "$ref": "#/$defs/Pod"
+  },
+  "predicted": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/Predicted"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "predictor": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/PredictorRef"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "provenance": {
+   "additionalProperties": {
+    "type": "string"
+   },
+   "title": "Provenance",
+   "type": "object"
+  },
+  "replicas": {
+   "default": 1,
+   "title": "Replicas",
+   "type": "integer"
+  },
+  "requires": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Requires",
+   "type": "array"
+  },
+  "settings": {
+   "additionalProperties": true,
+   "title": "Settings",
+   "type": "object"
+  },
+  "topology": {
+   "$ref": "#/$defs/Topology"
+  },
+  "version": {
+   "const": 1,
+   "default": 1,
+   "title": "Version",
+   "type": "integer"
+  }
+ },
+ "required": [
+  "engine",
+  "containers"
+ ],
+ "title": "Bud runtime spec v1 (FRD-025)",
+ "type": "object"
+}

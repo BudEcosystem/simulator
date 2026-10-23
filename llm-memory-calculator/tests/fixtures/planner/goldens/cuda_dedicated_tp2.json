@@ -1,0 +1,98 @@
+{
+ "context": {
+  "enable_reasoning": false,
+  "enable_tool_calling": false,
+  "input_tokens": 1280,
+  "model_max_context_length": 40960,
+  "namespace": "bud-kv-golden",
+  "output_tokens": 1280
+ },
+ "expected": {
+  "args": [
+   "--model=/data/models-registry/llama-3.1-8b",
+   "--tensor-parallel-size=2",
+   "--enable-chunked-prefill",
+   "--enable-prefix-caching",
+   "--disable-custom-all-reduce",
+   "--served-model-name=bud-kv-golden",
+   "--max-num-seqs=16",
+   "--max-model-len=2816",
+   "--max-num-batched-tokens=2816",
+   "--gpu-memory-utilization=0.3",
+   "--max-loras=4",
+   "--max-lora-rank=64",
+   "--enable-lora",
+   "--trust-remote-code"
+  ],
+  "concurrency": 16,
+  "envs": {
+   "CUDA_DISABLE_CONTROL": "true",
+   "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+   "VLLM_ALLOW_RUNTIME_LORA_UPDATING": "True",
+   "VLLM_LOGGING_LEVEL": "INFO",
+   "VLLM_TARGET_DEVICE": "cuda"
+  },
+  "gpu_memory_mb": null,
+  "hardware_mode": "dedicated",
+  "host_memory_request": null,
+  "image": "budstudio/vllm-cuda:0.9.0",
+  "memory_mib": 12800,
+  "node_selector": {
+   "nvidia.com/gpu.product": "NVIDIA A100-SXM4-40GB"
+  },
+  "replicas": 1,
+  "shm_mib": null,
+  "tp_size": 2
+ },
+ "group": {
+  "activation_memory_gb": 1.1,
+  "args": {
+   "disable-custom-all-reduce": true,
+   "enable-chunked-prefill": true,
+   "enable-lora": true,
+   "enable-prefix-caching": true,
+   "gpu-memory-utilization": 0.3,
+   "max-lora-rank": 64,
+   "max-loras": 4,
+   "max-model-len": 2816,
+   "max-num-batched-tokens": 2816,
+   "max-num-seqs": 16,
+   "model": "/data/models-registry/llama-3.1-8b",
+   "served-model-name": "bud-kv-golden",
+   "tensor-parallel-size": 2,
+   "trust-remote-code": true
+  },
+  "config_id": "cfg-kv",
+  "cores": 96,
+  "device_name": "NVIDIA-A100-SXM4-40GB",
+  "device_total_memory_gb": 40.0,
+  "engine_type": "vllm",
+  "engine_version": "0.9.0",
+  "envs": {
+   "VLLM_TARGET_DEVICE": "cuda"
+  },
+  "hardware_mode": "dedicated",
+  "image": "budstudio/vllm-cuda:0.9.0",
+  "is_embedding": false,
+  "kv_cache_memory_gb": 6.2,
+  "labels": {
+   "concurrency": "16"
+  },
+  "lora_prefill_scratch_gb": 0.0,
+  "lora_scratch_zero_by_device": true,
+  "max_lora_rank": 64,
+  "max_loras": 4,
+  "name": "NVIDIA-A100-SXM4-40GB",
+  "pp_size": 1,
+  "raw_name": "NVIDIA A100-SXM4-40GB",
+  "replicas": 1,
+  "sampler_logits_gb": 0.08,
+  "sliding_window": null,
+  "sliding_window_probed": true,
+  "state_memory_gb": 0.0,
+  "supports_lora": true,
+  "tp_size": 2,
+  "type": "cuda",
+  "weight_memory_gb": 4.015
+ }
+}

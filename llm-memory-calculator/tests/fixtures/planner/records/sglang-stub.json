@@ -1,0 +1,134 @@
+{
+ "build": "stub",
+ "conflicts": [],
+ "engine": "sglang",
+ "features": [
+  "chunked_prefill",
+  "prefix_caching"
+ ],
+ "id": "sglang@0.5.0",
+ "images": {
+  "cuda": "lmsysorg/sglang:v0.5.0"
+ },
+ "limits": {
+  "default_max_num_batched_tokens": {
+   "cuda": 8192
+  },
+  "default_max_num_seqs": 256,
+  "max_tp": 8
+ },
+ "runner": "sglang",
+ "runtime": {
+  "args": {
+   "bool": "flag",
+   "json": "inline",
+   "style": "--{key} {value}"
+  },
+  "base_args": {
+   "model-path": "$(BUD_MODEL_PATH)",
+   "served-model-name": "$(BUD_SERVED_NAME)"
+  },
+  "boot_failure_patterns": {
+   "oom": [
+    "CUDA out of memory",
+    "OutOfMemoryError",
+    "OOMKilled",
+    "exit code 137"
+   ],
+   "refused": [
+    "ValueError: ",
+    "exceeds available Mamba cache blocks",
+    "larger than the available KV cache memory",
+    "No available memory for the cache blocks"
+   ]
+  },
+  "env_defaults": {
+   "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+   "VLLM_LOGGING_LEVEL": "INFO"
+  },
+  "launch": {
+   "single_node": [
+    "python3",
+    "-m",
+    "sglang.launch_server"
+   ]
+  },
+  "metrics": {
+   "kv_usage": "vllm:kv_cache_usage_perc",
+   "queue_depth": "vllm:num_requests_waiting",
+   "running": "vllm:num_requests_running"
+  },
+  "ports": {
+   "kv_events": {
+    "publish": 5557,
+    "replay": 5558
+   },
+   "metrics": {
+    "path": "/metrics",
+    "port": "serve"
+   },
+   "serve": {
+    "container_port": 8000,
+    "path_prefix": "/v1"
+   }
+  },
+  "probes": {
+   "health": {
+    "path": "/health",
+    "port": "serve"
+   },
+   "liveness": {
+    "failure_threshold": 20,
+    "initial_delay_s": 120,
+    "period_s": 30
+   },
+   "readiness": {
+    "initial_delay_s": 60,
+    "period_s": 5
+   },
+   "startup": {
+    "failure_threshold": 200,
+    "initial_delay_s": 0,
+    "period_s": 30,
+    "timeout_s": 1
+   }
+  }
+ },
+ "settings": {
+  "batch.max_running": {
+   "arg": "max-running-requests"
+  },
+  "batch.prefill_chunk_tokens": {
+   "arg": "chunked-prefill-size"
+  },
+  "context.max_tokens": {
+   "arg": "context-length"
+  },
+  "kv.dtype": {
+   "arg": "kv-cache-dtype"
+  },
+  "memory.device_fraction": {
+   "arg": "mem-fraction-static"
+  },
+  "parallel.tensor": {
+   "arg": "tp-size"
+  },
+  "prefix_cache.enabled": {
+   "arg": "disable-radix-cache",
+   "invert": true
+  },
+  "spec.draft": {
+   "unsupported": true
+  },
+  "spec.method": {
+   "unsupported": true
+  },
+  "spec.tokens": {
+   "unsupported": true
+  },
+  "state.dtype": {
+   "unsupported": true
+  }
+ },
+ "version": "0.5.0"
+}

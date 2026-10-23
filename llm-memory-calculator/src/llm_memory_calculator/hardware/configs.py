@@ -416,7 +416,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'memory_type': 'GDDR6',
         'interconnect': 'pcie4',
         'interconnect_bandwidth_gbps': 64,
-        'pci_ids': ['26ba'],
+        'pci_ids': ['26b9'],
         'aliases': ['L40S', 'L40S-48GB', 'NVIDIA L40S', 'NVIDIA-L40S', 'L40S 48GB'],
         'cost': {
             'aws_on_demand': 1.98,
@@ -426,6 +426,33 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
             'runpod': 0.99,
             'purchase_price_usd': 8000,
             'tdp_watts': 350,
+        },
+    },
+    'L20_48GB_GPU': {
+        # Ada AD102 for export markets; NVIDIA publishes no datasheet, so the figures are the board partners' (PNY)
+        # and flopper.io's: 119.5 TFLOPS dense FP16/BF16 tensor (239 FP8), 48 GB GDDR6 at 864 GB/s, PCIe 4, 275 W
+        'name': 'L20_48GB_GPU',
+        'Flops': 119.5,
+        'Memory_size': 48,
+        'Memory_BW': 864,
+        'ICN': 64,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'ADA_LOVELACE',
+        'generation': 'Professional Data Center GPU',
+        'compute_capability': '8.9',
+        'release_year': 2024,
+        'tensor_cores': 'gen4',
+        'memory_type': 'GDDR6',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 64,
+        'pci_ids': ['26ba'],
+        'aliases': ['L20', 'L20-48GB', 'NVIDIA L20', 'NVIDIA-L20', 'L20 48GB'],
+        'cost': {
+            # street price, 2026-10: $4,299 (Viperatech) to $4,550 (eBay); server-vendor parts list at $13-15K
+            'purchase_price_usd': 4500,
+            'tdp_watts': 275,
         },
     },
 

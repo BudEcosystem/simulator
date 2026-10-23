@@ -48,6 +48,7 @@ def deployment_from_budsim(
     tool_calling: Optional[bool] = None,
     reasoning: Optional[bool] = None,
     kv_fp8: Optional[bool] = None,
+    kv_fp8_hybrid_validated: bool = False,
 ) -> DeploymentSpec:
     """The deployment's own fields as budsim holds them.
 
@@ -76,17 +77,24 @@ def deployment_from_budsim(
         is_embedding=bool(_get(group, "is_embedding")),
         e2e_latency_s=e2e if e2e and e2e > 0 else None,
         kv_fp8=kv_fp8,
+        kv_fp8_hybrid_validated=bool(kv_fp8_hybrid_validated),
     )
 
 
 def kv_fp8_option(
-    engine_type: Optional[str], kv_features: Any, model_config: Mapping[str, Any]
+    engine_type: Optional[str],
+    kv_features: Any,
+    model_config: Mapping[str, Any],
+    *,
+    hybrid_validated: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """The deployment form's fp8 KV option for one simulation result (``dtype.kv_fp8_support``), or
     None for an engine the planner doesn't plan (not vLLM)."""
     if str(engine_type or "") != "vllm":
         return None
-    return kv_fp8_support(model_config or {}, frozenset(kv_features or ()))
+    return kv_fp8_support(
+        model_config or {}, frozenset(kv_features or ()), hybrid_validated=hybrid_validated
+    )
 
 
 def plan_node_group(
@@ -99,6 +107,7 @@ def plan_node_group(
     tool_calling: Optional[bool] = None,
     reasoning: Optional[bool] = None,
     kv_fp8: Optional[bool] = None,
+    kv_fp8_hybrid_validated: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Plan one node group and return the ``kv_plan`` wire dict, or None when no plan can be made.
 
@@ -125,6 +134,7 @@ def plan_node_group(
             tool_calling=tool_calling,
             reasoning=reasoning,
             kv_fp8=kv_fp8,
+            kv_fp8_hybrid_validated=kv_fp8_hybrid_validated,
         )
         infra = InfraSnapshot.from_cluster_info(
             cluster_info, _get(row, "cluster_id"), _get(group, "target_node_name")

@@ -426,6 +426,33 @@ def test_the_deployment_form_offers_fp8_kv_from_the_config_and_the_engine(
     assert support["kv_cache_dtype"] == ("fp8" if eligible else None) and support["reason"]
 
 
+def test_a_hybrid_is_offered_fp8_kv_once_its_needle_record_passes():
+    """FRD-027 §10.7: a hybrid becomes eligible per family once the 128K needle-in-a-haystack record passes on the
+    engine build. Without it the form refuses as before; with it the form offers fp8 (not recommended: no calibrated
+    scales), and a deploy-time request is granted."""
+    from llm_memory_calculator.kv.dtype import choose_kv_dtype, kv_fp8_support
+
+    hybrid = {**QWEN3_8B, "layer_types": ["linear_attention", "full_attention"]}
+    refused = kv_fp8_support(hybrid, frozenset(FP8))
+    assert not refused["eligible"] and "needle" in refused["reason"]
+    offered = kv_fp8_support(hybrid, frozenset(FP8), hybrid_validated=True)
+    assert offered["eligible"] and not offered["recommended"] and offered["kv_cache_dtype"] == "fp8"
+    assert "needle" in offered["reason"]
+    assert choose_kv_dtype(hybrid, "hopper", requested=True, features=frozenset(FP8))[0] == "auto"
+    dtype, why, _ = choose_kv_dtype(
+        hybrid, "hopper", requested=True, features=frozenset(FP8), hybrid_validated=True
+    )
+    assert dtype == "fp8" and "needle" in why
+    # not asked: the model's dtype, record or not
+    assert choose_kv_dtype(hybrid, "hopper", features=frozenset(FP8), hybrid_validated=True)[0] == "auto"
+    # the record covers the recurrent state question only; MLA and an unverified build still refuse
+    assert not kv_fp8_support(hybrid, frozenset(REGISTER), hybrid_validated=True)["eligible"]
+    plan = _plan(
+        model_config=hybrid, engine_kv_features=FP8, kv_fp8=True, kv_fp8_hybrid_validated=True
+    )
+    assert plan.kv_cache_dtype == "fp8"
+
+
 def test_fp8_kv_asked_for_at_deploy_halves_every_tier_s_bytes():
     """Asked for and allowed, fp8 KV halves the bytes per token: the same working set is half the
     GiB. Asked for where the engine hasn't verified it, or turned off, the model's dtype stays, and

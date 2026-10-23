@@ -46,6 +46,9 @@ class DeploymentSpec:
     # fp8 KV, as the deployment form set it (dtype.kv_fp8_support): True asks for it, False keeps
     # the model's dtype, None wasn't asked.
     kv_fp8: Optional[bool] = None
+    # A 128K needle record passes for the model's family on this engine build (FRD-027 §10.7): a
+    # hybrid model may then take fp8 KV.
+    kv_fp8_hybrid_validated: bool = False
 
 
 @dataclass(frozen=True)

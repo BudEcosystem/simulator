@@ -114,6 +114,7 @@ def plan_kv(
         cross_node_need=deployment.cross_node_need,
         e2e_latency_s=deployment.e2e_latency_s,
         kv_fp8=deployment.kv_fp8,
+        kv_fp8_hybrid_validated=deployment.kv_fp8_hybrid_validated,
     )
 
 
@@ -149,6 +150,7 @@ def plan_kv_tiers(
     cross_node_need: bool = False,
     e2e_latency_s: Optional[float] = None,
     kv_fp8: Optional[bool] = None,
+    kv_fp8_hybrid_validated: bool = False,
 ) -> KVTierPlan:
     """Plan a deployment's KV tiers from already-derived inputs (the Phase 1 API budsim calls).
 
@@ -193,6 +195,7 @@ def plan_kv_tiers(
         cross_node_need=cross_node_need,
         e2e_latency_s=e2e_latency_s,
         kv_fp8=kv_fp8,
+        kv_fp8_hybrid_validated=kv_fp8_hybrid_validated,
     )
 
 
@@ -228,6 +231,7 @@ def _plan(
     cross_node_need: bool = False,
     e2e_latency_s: Optional[float] = None,
     kv_fp8: Optional[bool] = None,
+    kv_fp8_hybrid_validated: bool = False,
 ) -> KVTierPlan:
     plan = KVTierPlan(workload_profile=workload.profile)
     decisions = plan.decisions
@@ -258,6 +262,7 @@ def _plan(
         frozenset(engine.validated_kv_dtypes or ()),
         requested=kv_fp8,
         features=features,
+        hybrid_validated=kv_fp8_hybrid_validated,
     )
     decisions.append(why)
     kv_precision = "fp8" if plan.kv_cache_dtype == "fp8" else precision

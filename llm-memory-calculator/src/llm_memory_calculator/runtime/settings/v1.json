@@ -1,0 +1,280 @@
+{
+ "$defs": {
+  "vocabulary": {
+   "batch.max_running": {
+    "minimum": 1,
+    "semantics": "sequences decoded concurrently (the engine's batch limit, not the planned concurrency)",
+    "type": "integer",
+    "unit": "sequences"
+   },
+   "batch.prefill_chunk_tokens": {
+    "minimum": 1,
+    "semantics": "tokens one scheduler step may process (chunked prefill budget)",
+    "type": "integer",
+    "unit": "tokens"
+   },
+   "context.max_tokens": {
+    "minimum": 1,
+    "semantics": "longest request (prompt + output)",
+    "type": "integer",
+    "unit": "tokens"
+   },
+   "kv.dtype": {
+    "enum": [
+     "auto",
+     "fp8",
+     "fp8_e4m3",
+     "fp8_e5m2"
+    ],
+    "semantics": "KV-cache dtype",
+    "type": "string"
+   },
+   "lora.max_adapters": {
+    "minimum": 0,
+    "semantics": "adapter slots resident at once",
+    "type": "integer",
+    "unit": "adapters"
+   },
+   "lora.max_rank": {
+    "minimum": 1,
+    "semantics": "largest adapter rank a slot holds",
+    "type": "integer"
+   },
+   "memory.device_fraction": {
+    "exclusiveMinimum": 0,
+    "maximum": 1,
+    "semantics": "device memory the engine may use; per-engine semantics live in the engine layer (vLLM: of the visible memory, or of the HAMi slice in shared mode)",
+    "type": "number",
+    "unit": "fraction"
+   },
+   "mm.encoder_cache": {
+    "minimum": 0,
+    "semantics": "encoder cache budget",
+    "type": "integer",
+    "unit": "tokens"
+   },
+   "mm.limits": {
+    "semantics": "multimodal items per request, by modality",
+    "type": "object"
+   },
+   "mm.text_only": {
+    "semantics": "serve a multimodal checkpoint for text only (skip the encoders)",
+    "type": "boolean"
+   },
+   "parallel.pipeline": {
+    "minimum": 1,
+    "semantics": "pipeline-parallel degree",
+    "type": "integer"
+   },
+   "parallel.tensor": {
+    "minimum": 1,
+    "semantics": "tensor-parallel degree",
+    "type": "integer"
+   },
+   "prefix_cache.enabled": {
+    "semantics": "prefix (radix) cache on",
+    "type": "boolean"
+   },
+   "spec.draft": {
+    "semantics": "draft model path (EAGLE3 / draft-model methods)",
+    "type": "string"
+   },
+   "spec.method": {
+    "enum": [
+     "mtp",
+     "eagle3",
+     "ngram",
+     "draft"
+    ],
+    "semantics": "speculative decoding method",
+    "type": "string"
+   },
+   "spec.tokens": {
+    "minimum": 1,
+    "semantics": "speculative tokens per step (k)",
+    "type": "integer",
+    "unit": "tokens"
+   },
+   "state.dtype": {
+    "enum": [
+     "auto",
+     "float32",
+     "bfloat16",
+     "float16"
+    ],
+    "semantics": "recurrent (Mamba/linear-attention) state dtype",
+    "type": "string"
+   },
+   "weights.format": {
+    "enum": [
+     "bf16",
+     "fp16",
+     "fp8",
+     "int8",
+     "int4",
+     "awq",
+     "gptq",
+     "mxfp4",
+     "nvfp4"
+    ],
+    "semantics": "weight format served: the checkpoint's own, a registry variant, or an online conversion",
+    "type": "string"
+   },
+   "weights.online": {
+    "semantics": "true when weights.format is an online conversion of the checkpoint",
+    "type": "boolean"
+   },
+   "weights.variant": {
+    "semantics": "registry id of the checkpoint variant served (changes the model path)",
+    "type": "string"
+   }
+  }
+ },
+ "$id": "https://bud.studio/schemas/runtime-settings/v1.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "properties": {
+  "conflicts": {
+   "items": {
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "reason": {
+      "type": "string"
+     },
+     "requires": {
+      "propertyNames": {
+       "enum": [
+        "batch.max_running",
+        "batch.prefill_chunk_tokens",
+        "context.max_tokens",
+        "kv.dtype",
+        "lora.max_adapters",
+        "lora.max_rank",
+        "memory.device_fraction",
+        "mm.encoder_cache",
+        "mm.limits",
+        "mm.text_only",
+        "parallel.pipeline",
+        "parallel.tensor",
+        "prefix_cache.enabled",
+        "spec.draft",
+        "spec.method",
+        "spec.tokens",
+        "state.dtype",
+        "weights.format",
+        "weights.online",
+        "weights.variant"
+       ]
+      },
+      "type": "object"
+     },
+     "unless_feature": {
+      "type": "string"
+     },
+     "when": {
+      "propertyNames": {
+       "enum": [
+        "batch.max_running",
+        "batch.prefill_chunk_tokens",
+        "context.max_tokens",
+        "kv.dtype",
+        "lora.max_adapters",
+        "lora.max_rank",
+        "memory.device_fraction",
+        "mm.encoder_cache",
+        "mm.limits",
+        "mm.text_only",
+        "parallel.pipeline",
+        "parallel.tensor",
+        "prefix_cache.enabled",
+        "spec.draft",
+        "spec.method",
+        "spec.tokens",
+        "state.dtype",
+        "weights.format",
+        "weights.online",
+        "weights.variant"
+       ]
+      },
+      "type": "object"
+     }
+    },
+    "required": [
+     "id",
+     "when"
+    ],
+    "type": "object"
+   },
+   "type": "array"
+  },
+  "settings": {
+   "additionalProperties": {
+    "additionalProperties": false,
+    "properties": {
+     "arg": {
+      "type": "string"
+     },
+     "env": {
+      "type": "string"
+     },
+     "implies": {
+      "type": "object"
+     },
+     "invert": {
+      "type": "boolean"
+     },
+     "json_key": {
+      "type": "string"
+     },
+     "negated_arg": {
+      "type": "string"
+     },
+     "note": {
+      "type": "string"
+     },
+     "transform": {
+      "type": "string"
+     },
+     "unsupported": {
+      "type": "boolean"
+     },
+     "when": {
+      "enum": [
+       "online"
+      ],
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "propertyNames": {
+    "enum": [
+     "batch.max_running",
+     "batch.prefill_chunk_tokens",
+     "context.max_tokens",
+     "kv.dtype",
+     "lora.max_adapters",
+     "lora.max_rank",
+     "memory.device_fraction",
+     "mm.encoder_cache",
+     "mm.limits",
+     "mm.text_only",
+     "parallel.pipeline",
+     "parallel.tensor",
+     "prefix_cache.enabled",
+     "spec.draft",
+     "spec.method",
+     "spec.tokens",
+     "state.dtype",
+     "weights.format",
+     "weights.online",
+     "weights.variant"
+    ]
+   },
+   "type": "object"
+  }
+ },
+ "title": "Engine-neutral settings v1 (FRD-027 \u00a75.1) and the engine record mapping",
+ "type": "object"
+}

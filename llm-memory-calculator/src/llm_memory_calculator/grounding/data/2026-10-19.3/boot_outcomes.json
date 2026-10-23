@@ -1,0 +1,370 @@
+[
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:Qwen3-8B"
+  },
+  "message": "To serve at least one request with the model's max seq len (40960), (5.62 GiB KV cache is needed, which is larger than the available KV cache memory (0.04 GiB). Based on the available memory, the estimated maximum model length is 304. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See https://d",
+  "outcome": "refused",
+  "predicted_margin_bytes": 0.0,
+  "provenance": {
+   "config": "8b-s-util024",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": false,
+   "predicted_failures": [
+    "one_request_fits"
+   ],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "memory.device_fraction": 0.24,
+   "weights.format": "bf16"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:bud-vllm@0.9.0-481e481be",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:Qwen3-8B"
+  },
+  "message": "CUDA out of memory. Tried to allocate 2.32 GiB. GPU 0 has a total capacity of 79.67 GiB of which 3.18 GiB is free.",
+  "outcome": "oom",
+  "predicted_margin_bytes": 2566347816.959993,
+  "provenance": {
+   "config": "val-8b-bud-best",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": true,
+   "predicted_failures": [],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "kv.dtype": "fp8",
+   "spec.draft": "/drafts/eagle3-RedHatAI_Qwen3-8B-speculator.eagle3",
+   "spec.method": "eagle3",
+   "spec.tokens": 3,
+   "weights.format": "fp8"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:bud-vllm@0.10.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:Qwen3.8-27B"
+  },
+  "message": "CUDA out of memory. Tried to allocate 18.00 MiB. GPU 0 has a total capacity of 79.67 GiB of which 2.25 GiB is free.",
+  "outcome": "oom",
+  "predicted_margin_bytes": 0.0,
+  "provenance": {
+   "config": "c-27b-010-stock",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": false,
+   "predicted_failures": [
+    "profiling_transient",
+    "sequence_ceiling"
+   ],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "weights.format": "bf16"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:Qwen3.8-27B"
+  },
+  "message": "To serve at least one request with the model's max seq len (262144), (16.32 GiB KV cache is needed, which is larger than the available KV cache memory (14.92 GiB). Based on the available memory, the estimated maximum model length is 239120. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See htt",
+  "outcome": "refused",
+  "predicted_margin_bytes": 2566347816.959993,
+  "provenance": {
+   "config": "s-mbt32k",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": true,
+   "predicted_failures": [],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "batch.max_running": 256,
+   "batch.prefill_chunk_tokens": 32768,
+   "weights.format": "bf16"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:Qwen3.8-27B"
+  },
+  "message": "To serve at least one request with the model's max seq len (262144), (17.48 GiB KV cache is needed, which is larger than the available KV cache memory (17.02 GiB). Based on the available memory, the estimated maximum model length is 254400. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See htt",
+  "outcome": "refused",
+  "predicted_margin_bytes": 0.0,
+  "provenance": {
+   "config": "s-mtp1",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": false,
+   "predicted_failures": [
+    "one_request_fits"
+   ],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "batch.max_running": 256,
+   "spec.method": "mtp",
+   "spec.tokens": 1,
+   "weights.format": "bf16"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:Qwen3.8-27B"
+  },
+  "message": "To serve at least one request with the model's max seq len (262144), (17.64 GiB KV cache is needed, which is larger than the available KV cache memory (16.75 GiB). Based on the available memory, the estimated maximum model length is 248000. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See htt",
+  "outcome": "refused",
+  "predicted_margin_bytes": 0.0,
+  "provenance": {
+   "config": "s-mtp2",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": false,
+   "predicted_failures": [
+    "one_request_fits"
+   ],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "batch.max_running": 256,
+   "spec.method": "mtp",
+   "spec.tokens": 2,
+   "weights.format": "bf16"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:Qwen3.8-27B"
+  },
+  "message": "To serve at least one request with the model's max seq len (262144), (17.79 GiB KV cache is needed, which is larger than the available KV cache memory (16.74 GiB). Based on the available memory, the estimated maximum model length is 245600. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See htt",
+  "outcome": "refused",
+  "predicted_margin_bytes": 0.0,
+  "provenance": {
+   "config": "s-mtp3",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": false,
+   "predicted_failures": [
+    "one_request_fits"
+   ],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "batch.max_running": 256,
+   "spec.method": "mtp",
+   "spec.tokens": 3,
+   "weights.format": "bf16"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:Qwen3.8-27B"
+  },
+  "message": "max_num_seqs (512) exceeds available Mamba cache blocks (392). Each decode sequence requires one Mamba cache block, so CUDA graph capture cannot proceed. Please lower max_num_seqs to at most 392 or increase gpu_memory_utilization.",
+  "outcome": "refused",
+  "predicted_margin_bytes": 0.0,
+  "provenance": {
+   "config": "s-seqs512-cg256",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": false,
+   "predicted_failures": [
+    "profiling_transient",
+    "sequence_ceiling"
+   ],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "batch.max_running": 512,
+   "weights.format": "bf16"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:Qwen3.8-27B"
+  },
+  "message": "CUDA out of memory. Tried to allocate 768.00 MiB. GPU 0 has a total capacity of 65.39 GiB of which 257.87 MiB is free.",
+  "outcome": "oom",
+  "predicted_margin_bytes": 0.0,
+  "provenance": {
+   "config": "s-slice66956",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": false,
+   "predicted_failures": [
+    "one_request_fits",
+    "profiling_transient",
+    "sequence_ceiling"
+   ],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "batch.max_running": 256,
+   "memory.device_fraction": 0.94,
+   "weights.format": "bf16"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:Qwen3.8-27B"
+  },
+  "message": "To serve at least one request with the model's max seq len (262144), (16.32 GiB KV cache is needed, which is larger than the available KV cache memory (8.03 GiB). Based on the available memory, the estimated maximum model length is 126224. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See http",
+  "outcome": "refused",
+  "predicted_margin_bytes": 0.0,
+  "provenance": {
+   "config": "s-slice66956-seqs64",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": false,
+   "predicted_failures": [
+    "one_request_fits"
+   ],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "batch.max_running": 64,
+   "memory.device_fraction": 0.94,
+   "weights.format": "bf16"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:Qwen3.8-27B"
+  },
+  "message": "CUDA out of memory. Tried to allocate 768.00 MiB. GPU 0 has a total capacity of 79.67 GiB of which 2.84 GiB is free.",
+  "outcome": "oom",
+  "predicted_margin_bytes": 0.0,
+  "provenance": {
+   "config": "s-util097",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": false,
+   "predicted_failures": [
+    "device_fraction"
+   ],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "batch.max_running": 256,
+   "memory.device_fraction": 0.97,
+   "weights.format": "bf16"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:Qwen3.8-27B"
+  },
+  "message": "CUDA out of memory. Tried to allocate 24.50 GiB. GPU 0 has a total capacity of 79.67 GiB of which 26.58 GiB is free.",
+  "outcome": "oom",
+  "predicted_margin_bytes": 0.0,
+  "provenance": {
+   "config": "v0b-noprofile",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": false,
+   "predicted_failures": [
+    "profiling_transient",
+    "sequence_ceiling"
+   ],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "weights.format": "bf16"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:gpt-oss-20b"
+  },
+  "message": "CUDA out of memory. Tried to allocate 1.54 GiB. GPU 0 has a total capacity of 79.67 GiB of which 3.31 GiB is free.",
+  "outcome": "oom",
+  "predicted_margin_bytes": 2566347816.959993,
+  "provenance": {
+   "config": "oss-s-perf-thr",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": true,
+   "predicted_failures": [],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "weights.format": "mxfp4"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:gpt-oss-20b"
+  },
+  "message": "No available memory for the cache blocks. Try increasing `gpu_memory_utilization` when initializing the engine (this flag also controls CPU memory reservation on the CPU backend, despite its name). See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.",
+  "outcome": "refused",
+  "predicted_margin_bytes": 0.0,
+  "provenance": {
+   "config": "oss-s-util020",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": false,
+   "predicted_failures": [
+    "weights_fit",
+    "one_request_fits"
+   ],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "memory.device_fraction": 0.2,
+   "weights.format": "mxfp4"
+  }
+ },
+ {
+  "key": {
+   "engine": "record:vllm@0.30.0",
+   "hardware": "sku:h100xm-80c-vgpu",
+   "model": "family:gpt-oss-20b"
+  },
+  "message": "The size of tensor a (2944) must match the size of tensor b (2880) at non-singleton dimension 2",
+  "outcome": "error",
+  "predicted_margin_bytes": 2566347816.959993,
+  "provenance": {
+   "config": "oss-w-fp8w-block",
+   "date": "2026-10-18",
+   "harness": "study-harness@2026-10-16",
+   "predicted_boots": true,
+   "predicted_failures": [],
+   "run_id": "study-2026-10-15"
+  },
+  "settings": {
+   "weights.format": "fp8_per_block",
+   "weights.online": true
+  }
+ }
+]

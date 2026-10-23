@@ -69,6 +69,8 @@ dependencies = [
     # front). Promote it to a core dependency so NSGA-II runs by default; the
     # grid fallback is retained for environments where pymoo is unavailable.
     "pymoo>=0.6.0",
+    # FRD-025 runtime spec models and the generated JSON schemas
+    "pydantic>=2.5",
 ]
 
 [project.optional-dependencies]
@@ -101,7 +103,16 @@ budsim-evolve = "llm_memory_calculator.budevolve.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-llm_memory_calculator = ["py.typed"]
+llm_memory_calculator = [
+    "py.typed",
+    # FRD-027 / FRD-025 data shipped with the package: the grounding store, vendored engine records, the runtime-spec
+    # and settings schemas, and the validation records (a pip install drops any file not listed here)
+    "grounding/data/*/*.json",
+    "runtime/records/*.json",
+    "runtime/schema/*.json",
+    "runtime/settings/*.json",
+    "runtime/validation_records/*.json",
+]
 
 [tool.black]
 line-length = 100

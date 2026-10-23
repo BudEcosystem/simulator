@@ -1,0 +1,118 @@
+{
+ "inherit": {
+  "bud-vllm@0.10.0": "vllm@0.31.0"
+ },
+ "records": [
+  {
+   "evidence": {
+    "baseline": 93.03,
+    "baseline_config": "c-8b-010-base",
+    "config": "c-8b-010-eagle3-pc-off",
+    "garbage": 0,
+    "gsm8k_fewshot": null,
+    "gsm8k_zeroshot": 92.8,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-18",
+    "harness": "round7@2026-10-18",
+    "run_id": "frd027-round7-tcs"
+   },
+   "reason": "accuracy 92.8 vs baseline 93.0",
+   "record": "bud-vllm@0.10.0",
+   "result": "pass",
+   "setting": "spec.method=eagle3",
+   "target": "family:Qwen3-8B"
+  },
+  {
+   "evidence": {
+    "baseline": 93.03,
+    "baseline_config": "c-8b-010-base",
+    "config": "c-8b-010-eagle3-pc-off",
+    "garbage": 0,
+    "gsm8k_fewshot": null,
+    "gsm8k_zeroshot": 92.8,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-18",
+    "harness": "round7@2026-10-18",
+    "run_id": "frd027-round7-tcs"
+   },
+   "reason": "accuracy 92.8 vs baseline 93.0",
+   "record": "bud-vllm@0.10.0",
+   "result": "pass",
+   "setting": "weights.online=fp8",
+   "target": "family:Qwen3-8B"
+  },
+  {
+   "evidence": {
+    "baseline": 94.84,
+    "baseline_config": "c-27b-010-base",
+    "config": "c-27b-010-mtp3-pc-off",
+    "garbage": 0,
+    "gsm8k_fewshot": null,
+    "gsm8k_zeroshot": 95.45,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-18",
+    "harness": "round7@2026-10-18",
+    "run_id": "frd027-round7-tcs"
+   },
+   "reason": "accuracy 95.5 vs baseline 94.8",
+   "record": "bud-vllm@0.10.0",
+   "result": "pass",
+   "setting": "spec.method=mtp",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 94.84,
+    "baseline_config": "c-27b-010-base",
+    "config": "c-27b-010-mtp3-pc-off",
+    "garbage": 0,
+    "gsm8k_fewshot": null,
+    "gsm8k_zeroshot": 95.45,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-18",
+    "harness": "round7@2026-10-18",
+    "run_id": "frd027-round7-tcs"
+   },
+   "reason": "accuracy 95.5 vs baseline 94.8",
+   "record": "bud-vllm@0.10.0",
+   "result": "pass",
+   "setting": "state.dtype=bfloat16",
+   "target": "family:Qwen3.8-27B"
+  },
+  {
+   "evidence": {
+    "baseline": 94.84,
+    "baseline_config": "c-27b-010-base",
+    "config": "c-27b-010-mtp3-pc-off",
+    "garbage": 0,
+    "gsm8k_fewshot": null,
+    "gsm8k_zeroshot": 95.45,
+    "n": 1319
+   },
+   "kernels_unchanged": [],
+   "provenance": {
+    "date": "2026-10-18",
+    "harness": "round7@2026-10-18",
+    "run_id": "frd027-round7-tcs"
+   },
+   "reason": "accuracy 95.5 vs baseline 94.8",
+   "record": "bud-vllm@0.10.0",
+   "result": "pass",
+   "setting": "weights.online=fp8",
+   "target": "family:Qwen3.8-27B"
+  }
+ ],
+ "version": "2026-10-18.round7"
+}
