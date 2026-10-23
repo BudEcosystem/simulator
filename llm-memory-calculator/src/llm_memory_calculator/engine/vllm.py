@@ -28,11 +28,11 @@ steps) by ``1 + accepted`` tokens.
 from __future__ import annotations
 
 import math
-import os
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..grounding.store import Found, GroundingStore, bucket_of, default_store
+from ..planner_env import planner_env
 from .base import (
     BootCheck,
     Estimate,
@@ -163,7 +163,7 @@ class VLLMEngine:
         self.record = record
         self._store = store
         # FRD-027 Revision 2: measured step profiles; a configuration with one is predicted from it (opt-in until the
-        # §20.7 acceptance: ``profiles`` given, or FRD027_PREDICTOR_VERSION=r2 for the package's profiles), and its
+        # §20.7 acceptance: ``profiles`` given, or PLANNER_PREDICTOR_VERSION=r2 for the package's profiles), and its
         # outputs are grounded by L5's corrections (``perf.residual``; the package's with r2)
         self._profiles = profiles
         self._corrections = corrections
@@ -724,7 +724,7 @@ class VLLMEngine:
     def profiles(self) -> Any:
         if self._profiles is not None:
             return self._profiles
-        if os.environ.get("FRD027_PREDICTOR_VERSION", "").lower() == "r2":
+        if planner_env("PREDICTOR_VERSION").lower() == "r2":
             from ..perf.store import default_profiles
 
             return default_profiles()
@@ -733,7 +733,7 @@ class VLLMEngine:
     def corrections(self) -> Any:
         if self._corrections is not None:
             return self._corrections
-        if self._profiles is None and os.environ.get("FRD027_PREDICTOR_VERSION", "").lower() == "r2":
+        if self._profiles is None and planner_env("PREDICTOR_VERSION").lower() == "r2":
             from ..perf.residual import default_corrections
 
             return default_corrections()
@@ -745,7 +745,8 @@ class VLLMEngine:
         self.check_supported(settings)
         profiles = self.profiles()
         if profiles is not None:
-            from ..perf.predict import find_profile, predict as profile_predict
+            from ..perf.predict import find_profile
+            from ..perf.predict import predict as profile_predict
 
             profile = find_profile(self, profiles, settings, model, device)
             if profile is not None:

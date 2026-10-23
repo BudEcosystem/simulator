@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 from .engine import EngineRecord, Estimate, Limits, Prediction, Refusal, Workload, engine_for
 from .grounding.store import GroundingStore, default_store
 
-PREDICTOR_VERSION = "lmc-0.1.0+frd027.1"
+PREDICTOR_VERSION = "lmc-0.1.0+planner.1"
 
 
 def versions(store: Optional[GroundingStore] = None) -> Dict[str, str]:

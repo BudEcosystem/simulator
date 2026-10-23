@@ -9,7 +9,7 @@ tower and the MTP head apart from the decoder so they are charged only when load
 
 Parameters are counted by role from the config, so that a precision choice can change exactly the roles a
 quantizer converts. The counts are checked against ``UniversalParameterCounter`` and against the weights
-vLLM reported loading in the FRD-027 study (tests/frd027/test_model_facts.py).
+vLLM reported loading in the FRD-027 study (tests/planner/test_model_facts.py).
 """
 
 from __future__ import annotations

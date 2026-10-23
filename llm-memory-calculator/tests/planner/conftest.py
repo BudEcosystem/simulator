@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "frd027"
+FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "planner"
 
 
 def load_model(name: str) -> dict:

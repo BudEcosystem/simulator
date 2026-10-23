@@ -23,7 +23,7 @@ from llm_memory_calculator.runtime.context import (
     SpeculativeIntent,
     Value,
 )
-from llm_memory_calculator.runtime.modules import FRD027, FRD027_CAPACITY, LEGACY, PlanError, build
+from llm_memory_calculator.runtime.modules import PLANNER, PLANNER_CAPACITY, LEGACY, PlanError, build
 from llm_memory_calculator.runtime.modules.base import Module
 from llm_memory_calculator.runtime.records import record as vendored_record, record_from_budconnect
 from llm_memory_calculator.runtime.spec import RuntimeSpec, flatten_args
@@ -342,10 +342,10 @@ def test_order_is_topological_then_by_name_and_cycles_fail():
         order([_X(), _Y()])
 
 
-def test_frd027_module_order():
-    mods = order([m for m in build(FRD027) if m.stage == "numerics"])
+def test_planner_module_order():
+    mods = order([m for m in build(PLANNER) if m.stage == "numerics"])
     assert [m.name for m in mods] == ["weights.precision", "spec_decode", "state.dtype", "kv.dtype"]
-    cap = [m.name for m in order([m for m in build(FRD027) if m.stage == "capacity"])]
+    cap = [m.name for m in order([m for m in build(PLANNER) if m.stage == "capacity"])]
     for a, b in (
         ("memory.gpu", "context.batching"),
         ("context.batching", "lora"),
@@ -399,7 +399,7 @@ def _spec(
     model="qwen3-8b",
     record=UP,
     device=VGPU,
-    versions=FRD027,
+    versions=PLANNER,
     conc=16,
     mode="dedicated",
     group=None,
@@ -453,7 +453,7 @@ def test_cap_max_running():
     spec, _ = _spec(
         "qwen3.8-27b",
         conc=400,
-        versions={**FRD027, "state.dtype": "off"},
+        versions={**PLANNER, "state.dtype": "off"},
         weight_precision="original",
     )
     assert (
@@ -536,7 +536,7 @@ def test_cap_lora():
 @pytest.mark.parametrize("model, conc, fraction", [("qwen3.8-27b", 2, 0.94), ("qwen3-8b", 1, 0.24)])
 def test_v2_changes_only_the_intended_keys(model, conc, fraction):
     legacy, _ = _spec(model, versions=LEGACY, conc=conc)
-    tuned, _ = _spec(model, versions=FRD027_CAPACITY, conc=conc)
+    tuned, _ = _spec(model, versions=PLANNER_CAPACITY, conc=conc)
     a, b = legacy.engine_container().args, tuned.engine_container().args
     changed = {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
     assert changed <= {
@@ -591,7 +591,7 @@ def _rungs(spec):
 def test_fallback_ladder_composition():
     spec, _ = _spec("qwen3.8-27b", speculative=SpeculativeIntent(enabled=True, method="mtp"))
     assert _rungs(spec)[0] == 2 and 5 in _rungs(spec)
-    capacity_only, _ = _spec("qwen3-8b", versions=FRD027_CAPACITY)
+    capacity_only, _ = _spec("qwen3-8b", versions=PLANNER_CAPACITY)
     assert _rungs(capacity_only) == [4, 5]
     assert (
         any(c.kind == "boot_failed" for c in spec.checks) and "check.boot_failed" in spec.requires
@@ -949,10 +949,10 @@ def test_newer_evidence_supersedes_an_older_record():
 
 
 def test_fault_injection_is_off_by_default_and_corrected_by_the_ladder():
-    spec, _ = _spec("qwen3-8b", versions=FRD027_CAPACITY)
+    spec, _ = _spec("qwen3-8b", versions=PLANNER_CAPACITY)
     assert spec.settings["memory.device_fraction"] == UP.default_fraction(VGPU)
     ctx = _ctx("qwen3-8b", concurrency=16)
-    ctx.module_versions = {**FRD027_CAPACITY, "test.fault_inject": "on"}
+    ctx.module_versions = {**PLANNER_CAPACITY, "test.fault_inject": "on"}
     ctx.cluster["fault_inject"] = {"memory.device_fraction": 0.99}
     ctx.placement = _placement(VGPU)
     faulty = plan.spec(ctx)
@@ -966,7 +966,7 @@ def test_fault_injection_is_off_by_default_and_corrected_by_the_ladder():
 # ====================================================================== renderer contract (budcluster review)
 
 
-@pytest.mark.parametrize("versions", [LEGACY, FRD027], ids=["legacy", "frd027"])
+@pytest.mark.parametrize("versions", [LEGACY, PLANNER], ids=["legacy", "planner"])
 def test_served_name_stays_a_renderer_binding(versions):
     """budsim cannot know the namespace: a node group's served-model-name never replaces $(BUD_SERVED_NAME)."""
     group = {
@@ -1073,7 +1073,7 @@ TCS_8B_SHARED_GROUP = {
 def _shared_spec(model="qwen3-8b", record=FORK, **intent):
     """As budsim plans shared mode: the device is the whole card in shared mode; the slice is the plan's to size."""
     ctx = _ctx(model, record, VGPU, concurrency=16, hardware_mode="shared", **intent)
-    ctx.module_versions = dict(FRD027)
+    ctx.module_versions = dict(PLANNER)
     card = VGPU.with_mode(HardwareMode("shared", VGPU.memory_visible_bytes))
     ctx.device = card
     ctx.placement = _placement(card, conc=16, mode="shared", group=TCS_8B_SHARED_GROUP)
@@ -1123,7 +1123,7 @@ def test_a_slice_s_stock_equivalent_rung_still_boots_on_it():
     slice the context cap is what makes the pod fit, not a tuning choice: rung 5 keeps the largest one that boots.
     """
     ctx = _ctx("gpt-oss-20b", FORK, VGPU, concurrency=16, hardware_mode="shared")
-    ctx.module_versions = dict(FRD027)
+    ctx.module_versions = dict(PLANNER)
     card = VGPU.with_mode(HardwareMode("shared", VGPU.memory_visible_bytes))
     ctx.device = card
     ctx.placement = _placement(card, conc=16, mode="shared", group=TCS_OSS_SHARED_GROUP)
@@ -1157,13 +1157,13 @@ def test_tcs_quality_run_validates_online_fp8_on_the_fork():
     That record is the FR-VAL evidence. The explicit choice no longer warns; auto now offers the candidate and picks it
     for the 8B, whose predicted gain (TCS measured 1.39x at c16) separates; the 27B, with no record, keeps bf16.
     """
-    explicit, _ = _spec("qwen3-8b", record=FORK, versions=FRD027, weight_precision="online:fp8")
+    explicit, _ = _spec("qwen3-8b", record=FORK, versions=PLANNER, weight_precision="online:fp8")
     assert explicit.engine_container().args.get("quantization") == "fp8"
     assert not [d for d in explicit.decisions if "no validation record" in d]
-    auto, _ = _spec("qwen3-8b", record=FORK, versions=FRD027)
+    auto, _ = _spec("qwen3-8b", record=FORK, versions=PLANNER)
     assert auto.engine_container().args.get("quantization") == "fp8"
     (chosen,) = [d for d in auto.decisions if "online:fp8 chosen" in d]
     gain = float(chosen.split("predicted ")[1].split("x")[0])
     assert abs(gain / 1.39 - 1) <= 0.10  # TCS: 2477 vs 1789 tok/s at c16
-    big, _ = _spec("qwen3.8-27b", record=FORK, versions=FRD027)
+    big, _ = _spec("qwen3.8-27b", record=FORK, versions=PLANNER)
     assert "quantization" not in big.engine_container().args

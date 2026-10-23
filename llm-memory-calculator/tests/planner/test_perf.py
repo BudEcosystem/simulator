@@ -260,7 +260,7 @@ def test_the_band_combines_interpolation_and_measured_residual():
 
 
 def test_the_r2_switch_reads_the_package_profiles(monkeypatch):
-    """T-STEP-05: FRD027_PREDICTOR_VERSION=r2 turns the profile path on with the package's profiles; without it the
+    """T-STEP-05: PLANNER_PREDICTOR_VERSION=r2 turns the profile path on with the package's profiles; without it the
     engine keeps the fitted predictor (the switch stays off until the §20.7 acceptance)."""
     from llm_memory_calculator.device import catalogue
     from llm_memory_calculator.perf import store as pstore
@@ -268,7 +268,7 @@ def test_the_r2_switch_reads_the_package_profiles(monkeypatch):
     monkeypatch.setattr(pstore, "_DEFAULT", pstore.ProfileStore([_profile()]))
     vgpu = catalogue.get(VGPU_SKU)
     assert not any(n.startswith("predictor: step profile") for n in _engine().predict({}, _chat16(), _q8(), vgpu).notes)
-    monkeypatch.setenv("FRD027_PREDICTOR_VERSION", "r2")
+    monkeypatch.setenv("PLANNER_PREDICTOR_VERSION", "r2")
     assert any(n.startswith("predictor: step profile") for n in _engine().predict({}, _chat16(), _q8(), vgpu).notes)
 
 
@@ -657,7 +657,7 @@ def test_a_cluster_profile_takes_precedence_over_the_package_s(monkeypatch):
     from llm_memory_calculator.perf import store as pstore
 
     monkeypatch.setattr(pstore, "_DEFAULT", pstore.ProfileStore([_profile()]))
-    monkeypatch.setenv("FRD027_PREDICTOR_VERSION", "r2")
+    monkeypatch.setenv("PLANNER_PREDICTOR_VERSION", "r2")
     vgpu = catalogue.get(VGPU_SKU)
     before = _engine().predict({}, _chat16(), _q8(), vgpu)
     mine = _profile()

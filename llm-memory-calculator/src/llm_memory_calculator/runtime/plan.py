@@ -15,8 +15,8 @@ from ..engine.record import EngineRecord
 from ..model import ModelFacts
 from ..predict import Predictor
 from .compose import Composition, assemble, order, run_stage
-from .context import Intent, PlanContext, Placement
-from .modules import FRD027, build
+from .context import Intent, Placement, PlanContext
+from .modules import PLANNER, build
 from .spec import RuntimeSpec
 
 
@@ -73,7 +73,7 @@ def context(
         placement=placement,
         node=dict(node or {}),
         kv_plan=dict(kv_plan) if kv_plan else None,
-        module_versions=dict(versions or FRD027),
+        module_versions=dict(versions or PLANNER),
         validation=validation,
         drafts=dict(drafts or {}),
         cluster=dict(cluster or {}),

@@ -75,11 +75,11 @@ def slo_probability(
 
 
 def slo_confidence() -> float:
-    """The probability a plan's targets must hold with: FRD027_SLO_CONFIDENCE, default 0.9, within [0.5, 0.999]."""
-    import os
+    """The probability a plan's targets must hold with: PLANNER_SLO_CONFIDENCE, default 0.9, within [0.5, 0.999]."""
+    from ..planner_env import planner_env
 
     try:
-        value = float(os.environ.get("FRD027_SLO_CONFIDENCE", "0.9"))
+        value = float(planner_env("SLO_CONFIDENCE", "0.9"))
     except ValueError:
         return 0.9
     return min(max(value, 0.5), 0.999)

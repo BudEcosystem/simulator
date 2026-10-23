@@ -14,7 +14,7 @@ from .base import REGISTRY, Module, build
 from .capacity import PlanError
 
 #: The FRD-027 module set (v2 where it exists), the default for a tuned plan.
-FRD027 = {
+PLANNER = {
     "*": "v1",
     "weights.precision": "v2",
     "spec_decode": "v2",
@@ -29,7 +29,7 @@ FRD027 = {
     "plan.predicted": "v2",
 }
 #: Phase 1: FRD-027's capacity modules only (stage 1 off) -- the shadow diff C-GOLD-02 is defined on this set.
-FRD027_CAPACITY = {
+PLANNER_CAPACITY = {
     "*": "v1",
     "context.batching": "v2",
     "memory.gpu": "v2",
@@ -42,4 +42,4 @@ FRD027_CAPACITY = {
 #: Today's behaviour (FRD-025 M2: spec render == legacy render).
 LEGACY = {"*": "v1"}
 
-__all__ = ["FRD027", "FRD027_CAPACITY", "LEGACY", "REGISTRY", "Module", "PlanError", "build"]
+__all__ = ["LEGACY", "PLANNER", "PLANNER_CAPACITY", "REGISTRY", "Module", "PlanError", "build"]

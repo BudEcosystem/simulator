@@ -1,6 +1,6 @@
 """Print the runtime spec a plan composes, and the engine argv it renders (FRD-025 §11 "before deploy").
 
-    python -m llm_memory_calculator.runtime.render plan.json [--modules legacy|frd027-capacity|frd027] [--argv]
+    python -m llm_memory_calculator.runtime.render plan.json [--modules legacy|planner-capacity|planner] [--argv]
 
 ``plan.json``: ``{"model_config": {...} | "model_config_path": "...", "family": "...", "record": "vllm@0.30.0" |
 {BudConnect row}, "device": {cluster_info device row} | "sku": "h100xm-80c-vgpu", "intent": {Intent fields},
@@ -20,11 +20,14 @@ from ..device import HardwareMode, catalogue, facts_from_node
 from ..model import ModelFacts
 from . import plan
 from .context import Intent, Placement, PrecisionCandidate, SpeculativeIntent
-from .modules import FRD027, FRD027_CAPACITY, LEGACY
-from .records import record as vendored_record, record_from_budconnect
+from .modules import LEGACY, PLANNER, PLANNER_CAPACITY
+from .records import record as vendored_record
+from .records import record_from_budconnect
 from .spec import flatten_args
 
-PRESETS = {"legacy": LEGACY, "frd027-capacity": FRD027_CAPACITY, "frd027": FRD027}
+PRESETS = {"legacy": LEGACY, "planner-capacity": PLANNER_CAPACITY, "planner": PLANNER}
+#: Earlier preset names, still accepted.
+PRESET_ALIASES = {"frd027": "planner", "frd027-capacity": "planner-capacity"}
 
 
 def build(data: Dict[str, Any], preset: str):
@@ -63,7 +66,7 @@ def build(data: Dict[str, Any], preset: str):
         record,
         device,
         placement=placement,
-        versions=PRESETS[preset],
+        versions=PRESETS[PRESET_ALIASES.get(preset, preset)],
         kv_plan=data.get("kv_plan"),
     )
     return plan.spec(ctx)
@@ -74,7 +77,9 @@ def main(argv=None) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("plan", type=Path)
-    parser.add_argument("--modules", choices=sorted(PRESETS), default="frd027")
+    parser.add_argument(
+        "--modules", choices=sorted(PRESETS) + sorted(PRESET_ALIASES), default="planner"
+    )
     parser.add_argument("--argv", action="store_true", help="print only the engine argv")
     args = parser.parse_args(argv)
     spec = build(json.loads(args.plan.read_text()), args.modules)
