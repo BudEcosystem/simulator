@@ -10,9 +10,11 @@
 - 🚀 **Parallelism Optimization**: Built-in GenZ-LLM-Analyzer for optimal tensor/pipeline parallelism
 - 🏗️ **Architecture Support**: 
   - Transformers (MHA, MQA, GQA, MLA)
-  - State-Space Models (Mamba, S4)
+  - State-Space and recurrent models (Mamba-1/2, RWKV, xLSTM, RecurrentGemma)
   - Mixture of Experts (MoE)
-  - Hybrid Models (Jamba)
+  - Hybrid Models (Qwen3-Next / Qwen3.5 Gated DeltaNet, Jamba, Nemotron-H, granite-4.0-h,
+    Bamba, Zamba2, Falcon-H1, Hymba, LFM2, MiniMax, Kimi Linear) -- KV only on the layers that
+    hold one, read from the config's own keys ([layer kinds](docs/LAYER_KINDS.md))
   - Diffusion Models
   - Multimodal Models
 - 🤗 **HuggingFace Integration**: Analyze any model from HuggingFace Hub
@@ -248,9 +250,14 @@ The calculator supports all modern attention variants:
 The calculator provides detailed breakdown:
 
 - **Weight Memory**: Model parameters (divided by tensor parallelism)
-- **KV Cache**: Key-Value cache for attention (varies by attention type)
+- **KV Cache**: Key-Value cache, charged only on the layers that keep one and over the tokens
+  each keeps: full attention every token, sliding / chunked layers their window, cross-attention
+  the encoder's tokens, MLA one latent per layer; linear-attention, SSM, convolution and
+  FFN-only layers none. See [docs/LAYER_KINDS.md](docs/LAYER_KINDS.md) for every category, the
+  config keys read, and what is charged conservatively.
 - **Activation Memory**: Intermediate activations during forward pass
-- **State Memory**: SSM/Mamba state (constant regardless of sequence length)
+- **State Memory**: the fixed per-sequence state of recurrent layers (Gated DeltaNet, Mamba,
+  KDA, linear attention, short conv, RWKV, xLSTM, RG-LRU) -- constant in sequence length
 - **Image Memory**: Vision transformer image embeddings
 - **Extra/Overhead**: Framework overhead and temporary buffers
 
@@ -346,8 +353,11 @@ for hw_name in hardware_options:
 - **Decoder-only Transformers**: Llama, Mistral, GPT, Falcon, MPT
 - **Encoder-Decoder**: T5, BART, Marian
 - **Mixture of Experts**: Mixtral, DeepSeek-MoE, Grok
-- **State-Space Models**: Mamba, S4, RWKV
-- **Hybrid Models**: Jamba (Attention + Mamba)
+- **State-Space / recurrent Models**: Mamba, Mamba-2, S4, RWKV, xLSTM, RecurrentGemma
+- **Hybrid Models**: Qwen3-Next, Qwen3.5/3.6, Jamba, Nemotron-H, granite-4.0-h, Bamba, Zamba2,
+  Falcon-H1, Hymba, LFM2, MiniMax-Text-01, Kimi Linear (see [layer kinds](docs/LAYER_KINDS.md))
+- **Interleaved / bounded attention**: Gemma 2/3/3n (sliding + KV sharing), gpt-oss, Llama 4
+  (chunked), Mllama (cross-attention)
 - **Multimodal**: LLaVA, CLIP, Flamingo
 - **Diffusion**: Stable Diffusion, DALL-E
 - **Speech**: Whisper, Bark
