@@ -12,10 +12,19 @@ so the same script measures both trees.
 
     python kv_corpus.py --diff before.json after.json --report diff.md
 
-Corpus: every row of the BudSimulator database, every hybrid fixture, every config.json in
-the HuggingFace cache and the model folders that names a decoder geometry, every GGUF in the
-model folders (read through bud_component's GGUF reader), and every built-in GenZ model.
-Model folders and caches are only read.
+Corpus: every row of the BudSimulator database that carries a config (rows whose
+`config_json` is empty are counted and reported, not measured -- they would only measure the
+calculator's defaults), every hybrid fixture, every config.json in the HuggingFace cache and
+the model folders that names a decoder geometry, every GGUF in the model folders (read
+through bud_component's GGUF reader, beside the file's own tensor count), and every built-in
+GenZ model. Model folders and caches are only read.
+
+Figures, per config: the calculator's KV / state / weights / totals; the engine estimate
+(`estimate_memory_for_engine`, llama.cpp and generic, at 4k and 32k: KV, state, total,
+parameters); the FRD-027 `ModelFacts` layer counts; GenZ's per-layer attention and FFN kinds,
+its KV elements per token (`get_kv_size`, which the disaggregation KV transfer multiplies by
+2 bytes), its decode and chunked graphs' KV and weights; and the serving `MemoryModel`'s KV
+bytes per token.
 """
 
 import argparse
@@ -39,6 +48,9 @@ def _is_llm_config(cfg):
     return bool(n and h)
 
 
+EMPTY_DB_ROWS = []
+
+
 def collect(args):
     corpus = []
     if args.db and os.path.exists(args.db):
@@ -47,6 +59,9 @@ def collect(args):
             try:
                 cfg = json.loads(cfg_json)
             except Exception:
+                cfg = None
+            if not _is_llm_config(cfg):
+                EMPTY_DB_ROWS.append(model_id)
                 continue
             corpus.append(("db:" + model_id, cfg))
         con.close()
@@ -127,7 +142,37 @@ def measure_config(name, cfg, genz_data):
     except Exception as e:
         row["report_error"] = f"{type(e).__name__}: {e}"
     row.update(measure_genz(cfg, genz_data))
+    row.update(measure_engine_and_facts(cfg))
     return row
+
+
+def measure_engine_and_facts(cfg):
+    """The engine estimate and the FRD-027 facts, the two other callers of the layer kinds."""
+    out = {}
+    try:
+        from llm_memory_calculator.inference_engines import estimate_memory_for_engine
+
+        for engine in ("llamacpp", None):
+            for seq in SEQS:
+                em = estimate_memory_for_engine(dict(cfg), engine, batch_size=1, seq_length=seq,
+                                                weight_precision="fp16", runtime_precision="fp16")
+                tag = f"eng_{engine}_{seq}"
+                out[tag + "_kv_mb"] = round(em.kv_cache_bytes / 1e6, 6)
+                out[tag + "_state_mb"] = round(getattr(em, "state_bytes", 0.0) / 1e6, 6)
+                out[tag + "_total_mb"] = round(em.total_bytes / 1e6, 6)
+                out[tag + "_params"] = int(em.parameter_count)
+    except Exception as e:
+        out["eng_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    try:
+        from llm_memory_calculator.model.facts import ModelFacts
+
+        f = ModelFacts.from_config(dict(cfg))
+        layers = f.layers
+        out["facts_layers"] = [layers.full, layers.sliding, layers.recurrent, layers.sliding_window]
+        out["facts_full_attention"] = bool(f.full_attention)
+    except Exception as e:
+        out["facts_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    return out
 
 
 def measure_genz(cfg_or_name, genz_data):
@@ -146,6 +191,10 @@ def measure_genz(cfg_or_name, genz_data):
         for lt in mc.layer_type:
             kinds[lt[0]] = kinds.get(lt[0], 0) + reps
         out["genz_layer_kinds"] = {k: int(v) for k, v in sorted(kinds.items())}
+        ffn = {}
+        for lt in mc.layer_type:
+            ffn[lt[1]] = ffn.get(lt[1], 0) + reps
+        out["genz_ffn_kinds"] = {k: int(v) for k, v in sorted(ffn.items())}
         out["genz_kv_size"] = int(mc.get_kv_size())
         path = create_full_decode_model(
             name=mc, input_sequence_length=4096, output_gen_tokens=0, data_path=genz_data
@@ -156,6 +205,31 @@ def measure_genz(cfg_or_name, genz_data):
         out["genz_decode_weights_mb"] = round(float(st["Total Weights (MB)"].values[0]), 6)
     except Exception as e:
         out["genz_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    try:
+        # The chunked graph (chunked serving, speculative decoding, the simulation engine's
+        # chunked feature): one 512-token prefill chunk beside one sequence decoding at 4k.
+        from llm_memory_calculator.genz.Models.get_language_model import (
+            create_full_chunked_model,
+            get_configs,
+        )
+        from llm_memory_calculator.genz.analyse_model import get_model_df, get_summary_table
+
+        path = create_full_chunked_model(name=get_configs(cfg_or_name),
+                                         prefill_kv_sizes=[(0, 512)], decode_kv_sizes=[4096],
+                                         data_path=genz_data)
+        df = get_model_df(path, batch_size=1, data_path=genz_data, model_characterstics=True)
+        st = get_summary_table(df, model_characterstics=True)
+        out["genz_chunked_kv_mb"] = round(float(st["KV Cache (MB)"].values[0]), 6)
+    except Exception as e:
+        out["genz_chunked_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    try:
+        from llm_memory_calculator.genz.Models.get_language_model import get_configs
+        from llm_memory_calculator.genz.serving.memory_model import MemoryModel
+
+        mm = MemoryModel(get_configs(cfg_or_name), [], tensor_parallel=1, precision_bytes=2)
+        out["serving_bytes_per_token"] = int(mm.bytes_per_token_kv)
+    except Exception as e:
+        out["serving_error"] = f"{type(e).__name__}: {str(e)[:200]}"
     return out
 
 
@@ -167,6 +241,15 @@ def measure_gguf(path, repo_root, genz_data):
 
         cfg, _, _ = bud_component.gguf_to_hf_config(path)
         row["gguf_config_keys"] = sorted(k for k in cfg if k != "name")
+        try:
+            import gguf
+            import numpy as np
+
+            row["gguf_tensor_params"] = int(
+                sum(int(np.prod(t.shape)) for t in gguf.GGUFReader(path).tensors)
+            )
+        except Exception as e:
+            row["gguf_tensor_error"] = f"{type(e).__name__}: {e}"
         row.update(
             {k: v for k, v in measure_config(row["name"], cfg, genz_data).items() if k != "name"}
         )
@@ -195,7 +278,10 @@ def run(args):
             rows.append(row)
     except Exception:
         traceback.print_exc()
-    json.dump(rows, open(args.out, "w"), indent=1, sort_keys=True)
+    if EMPTY_DB_ROWS:
+        rows.append({"name": "_empty_db_rows", "count": len(EMPTY_DB_ROWS),
+                     "model_ids": sorted(EMPTY_DB_ROWS)})
+    json.dump(rows, open(args.out, "w"), indent=1, sort_keys=True, default=str)
     print(f"{len(rows)} rows -> {args.out}")
 
 

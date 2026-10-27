@@ -1,8 +1,10 @@
 # Proof: KV layer kinds -- before and after
 
-Branch `fix/hybrid-kv-layer-kinds`, measured against its merge base `1cc4f1e` (origin/main
-`c17ef89` plus the six finished commits of `fix/accuracy-remediation`). Generated on the shared
-GB10 box, 27 Oct 2026, with `scripts/kv_corpus.py`; no GPU used.
+Branch `fix/hybrid-kv-layer-kinds`, measured against **origin/main `c17ef89`** (what this branch
+lands on). Generated on the shared GB10 box, 27-28 Oct 2026, with `scripts/kv_corpus.py`; no GPU
+used. Two rounds: the fix itself, and the corrections an independent review asked for (the
+chunked graph, the state's bytes, MoE placement, unplaced windows, depth from a layer list,
+SambaY, the GGUF reader's Mamba-1 / RoPE / gating / tying, and this proof's own coverage).
 
 ## 1. The measured case
 
@@ -10,70 +12,73 @@ Qwen3.5-4B on the GB10 (llama.cpp and mistral.rs servers, 27 Oct 2026): the page
 the 8 `full_attention` layers only, 129 MiB at 4,096 tokens ("Allocating 129 MB for
 PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed state.
 
-| Path | Before | After | Truth |
+| Path | origin/main | This branch | Truth |
 |---|---|---|---|
-| calculator, HF config (`--config`, `calculate_memory`) | 128 MiB (already right on main) | 128 MiB | 129 MiB measured, 128 MiB + page rounding |
+| calculator, HF config (`calculate_memory`, engine estimate) | 128 MiB (already right) | 128 MiB | 129 MiB measured (128 MiB + page rounding) |
 | `bud_component.py --gguf` Qwen3.5-2B (6 of 24 layers attend) | 192 MiB (24 layers) | **48 MiB** (6 layers) | llama.cpp allocates 6 layers |
-| GenZ decode graph KV, Qwen3.5-4B | 512 MiB (32 layers) | 128 MiB growth + 25 MiB fixed state | 128 MiB |
-| GenZ `ModelConfig.get_kv_size`, Qwen3.5-4B | 65,536 elem/token | 16,384 | 8 x 2 x 4 x 256 = 16,384 |
-| serving `MemoryModel.bytes_per_token_kv` fallback | all decoder layers | KV-holding layers | -- |
+| GenZ decode graph KV, Qwen3.5-4B, 4,096 tokens | 512 MiB (32 layers) | 128 MiB + 49.1 MiB fixed state | 128 MiB KV; state 49.1 MiB (fp32 matrix, as the calculator) |
+| GenZ chunked graph KV (512-token chunk + one 4k decode) | 576 MiB (32 layers) | 242 MiB | 8 layers + state |
+| GenZ `get_kv_size` / disaggregation transfer (x 2 B) | 65,536 elem/token | 16,384 | 8 x 2 x 4 x 256 = 16,384 |
+| serving `MemoryModel.bytes_per_token_kv` | 131,072 | 32,768 | 32,768 |
+| engine estimate, state term | 0 | 51.5 MB in the total | 24 x (32x128x128 x 4 B + 24,576 x 2 B) |
 
 ## 2. Red first
 
-`tests/test_layer_kinds_by_category.py` (38 cases) run against the merge base: 25 fail, 13 pass
-(the 13 are the HF-config calculator cases upstream had already fixed). Against this branch: 38
-pass. The 25 that were red:
+`tests/test_layer_kinds_by_category.py`, 51 cases.
 
-- test_the_genz_graph_charges_kv_only_on_the_attention_layers
-- test_the_genz_decode_graph_holds_128_mib_of_kv_plus_the_fixed_state
-- test_bud_component_reads_the_same_layers_from_the_gguf
-- test_a_gguf_and_its_checkpoint_resolve_to_the_same_kv_and_state
-- test_gguf_per_layer_keys_resolve_each_hybrid_layout[meta0-8-expect0]
-- test_gguf_per_layer_keys_resolve_each_hybrid_layout[meta1-6-expect1]
-- test_gguf_per_layer_keys_resolve_each_hybrid_layout[meta2-4-expect2]
-- test_gguf_per_layer_keys_resolve_each_hybrid_layout[meta3-4-expect3]
-- test_a_gguf_window_without_a_pattern_is_not_applied_to_every_layer
-- test_a_gguf_window_pattern_marks_the_windowed_layers
-- test_a_dense_gguf_adds_nothing
-- test_gemma3_interleave_is_read_from_its_window_pattern
-- test_kv_shared_layers_hold_no_cache_of_their_own
-- test_chunked_attention_is_bounded_by_its_chunk
-- test_cross_attention_layers_hold_the_encoder_tokens_not_the_text
-- test_attention_free_recurrent_stacks_hold_no_kv[config0-rwkv]
-- test_attention_free_recurrent_stacks_hold_no_kv[config1-mlstm]
-- test_recurrentgemma_block_types_are_read
-- test_linear_attention_is_gdn_or_plain_linear_by_the_config_keys
-- test_an_unknown_layer_kind_is_charged_full_kv_and_said_so
-- test_the_table_covers_every_layer_kind_transformers_allows
-- test_no_name_containing_attention_is_counted_by_substring
-- test_the_recogniser_and_the_table_are_one_vocabulary
-- test_the_serving_memory_model_charges_only_attention_layers
-- test_engine_memory_counts_the_recurrent_state_in_the_total
+* Round 1 (38 cases) against the merge base `1cc4f1e`: 25 failed, 13 passed (the 13 are HF-config
+  calculator cases upstream had already fixed).
+* Round 2 (13 cases added for the review) against the round-1 head `51cc203`: 12 failed, 1 passed
+  (`test_a_dense_layer_of_an_moe_model_graphs_under_expert_parallelism` guards the new per-layer
+  MoE graph against expert parallelism; it could not fail before MoE was placed per layer):
+  - test_the_chunked_graph_charges_kv_only_on_the_attention_layers (512 MiB growth, not 128)
+  - test_the_chunked_graph_bounds_windowed_layers_by_their_window (288 MiB, not 144)
+  - test_the_genz_recurrent_state_is_priced_like_the_calculator (153.1 MiB, not 177.1)
+  - test_the_genz_graph_places_moe_only_on_the_layers_the_config_says (32 MoE, not 16)
+  - test_the_genz_jamba_weights_match_the_parameter_count
+  - test_a_window_without_a_stated_layout_follows_the_config_class
+  - test_a_window_on_an_unknown_model_type_is_charged_in_full_and_said_so
+  - test_depth_comes_from_the_per_layer_list_when_the_config_omits_it
+  - test_a_nemotron_pattern_reads_its_moe_slots
+  - test_a_mamba1_gguf_is_sized_as_mamba1
+  - test_the_qwen35_gguf_parameter_count_matches_its_tensors
+  - test_sambay_kv_is_never_below_its_one_shared_full_cache
+* This branch: 51 passed.
+* Two older SambaY tests in `tests/test_hybrid_layer_plan.py` pinned the all-windowed reading
+  ("every layer sliding", an "OVER-estimate"). That reading under-counts at long context, so they
+  now pin the upper bound -- one full layer, the window elsewhere, never below the published
+  design -- and keep their original guard: the window is never discarded (the 195x blow-up).
 
-## 2b. The whole suites, before and after
+## 3. The whole suites
 
-| Suite | Merge base `1cc4f1e` | This branch |
+| Suite | origin/main `c17ef89` | This branch |
 |---|---|---|
-| `llm-memory-calculator/tests` (pytest) | 2,106 tests: 2,091 passed, 14 skipped, 1 failed | 2,144 tests (38 new): 2,129 passed, 14 skipped, 1 failed |
+| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,142 passed, 14 skipped, 1 failed |
 | `BudSimulator/tests` (pytest) | 24 passed | 24 passed |
 
 The one failure is the same test on both sides and predates this work:
 `tests/planner/test_runtime_spec.py::test_committed_schemas_are_current` compares the committed
-FRD-027 JSON schemas with ones regenerated by the installed pydantic, and they differ on this
-machine's pydantic (2.13). After the last commit (`eba8dd7`, runtime breakdown) the GenZ-facing
-subset was re-run on its own: 585 passed, 5 skipped.
+FRD-027 JSON schemas with ones regenerated by the installed pydantic, which differ on this
+machine's pydantic (2.13).
 
-## 3. Corpus: every model config the simulator ships or this machine caches
+## 4. Corpus: every model config the simulator ships or this machine caches
 
-255 configs: the 89 rows of `BudSimulator/data/prepopulated.db`, the 26 fixtures under
-`tests/fixtures` (24 shipped hybrid `config.json` files plus DeepSeek-V2-Lite, Qwen3.6, Qwen3.5-4B,
-Qwen2.5-0.5B), the 43 decoder configs in the HuggingFace cache and model folders, 5 GGUFs read
-through `bud_component.gguf_to_hf_config`, and the 89 built-in GenZ models. For each: the
-calculator's KV at 4,096 and 32,768 tokens, its layer breakdown, the recurrent state,
-`calculate_memory`'s weights / params / total, GenZ's layer kinds, `get_kv_size`, and the
-decode graph's KV and weight MiB at 4,096 tokens.
+192 configs measured: the 26 rows of `BudSimulator/data/prepopulated.db` that carry a config, the
+28 fixtures under `tests/fixtures`, the 44 decoder configs in the HuggingFace cache and model
+folders, 5 GGUFs read through `bud_component.gguf_to_hf_config` (beside each file's own tensor
+count), and the 89 built-in GenZ models. The database's other **63 rows have `config_json = '{}'`**
+and are listed in the JSON (`_empty_db_rows`), not measured: they would only measure the
+calculator's defaults. Both trees were measured with the same script, the same committed database
+and the same fixtures.
 
-Reproduce (any tree; the first `PYTHONPATH` entry is the tree measured):
+Figures per config: the calculator's KV at 4,096 and 32,768 tokens, its layer breakdown, the
+recurrent state, `calculate_memory`'s weights / params / total; the engine estimate
+(`estimate_memory_for_engine`, llama.cpp and generic, 4k and 32k: KV, state, total, params); the
+FRD-027 `ModelFacts` layer counts; GenZ's attention and FFN kinds, `get_kv_size` (the
+disaggregation KV transfer is this x 2 B per token), the decode graph's KV and weights, the
+chunked graph's KV; and the serving `MemoryModel`'s bytes per token.
+
+Reproduce (the first `PYTHONPATH` entry is the tree measured):
 
     PYTHONPATH=<tree>/llm-memory-calculator/src python llm-memory-calculator/scripts/kv_corpus.py \
         --out after.json --db BudSimulator/data/prepopulated.db \
@@ -81,110 +86,259 @@ Reproduce (any tree; the first `PYTHONPATH` entry is the tree measured):
         --hf-cache ~/.cache/huggingface/hub --models /home/bud/models --repo-root <tree> --genz-data <scratch>
     python llm-memory-calculator/scripts/kv_corpus.py --diff before.json after.json --report diff.md
 
-**Result: 219 unchanged, 36 changed. No dense model moved.** Every change is a layer-kind
-correction:
+**Result: 141 unchanged, 51 changed** (192 configs, plus the empty-row marker). No uniform dense
+transformer's KV moved in any output. No config that measured before fails now; three that failed
+now measure (Jamba, Kimi Linear, DeepSeek-V2-Lite in GenZ). Every change, by cause:
 
-* **Memory calculator figures moved for exactly one config**: the Qwen3.5-2B GGUF (24 -> 6 KV
-  layers; KV 0.201 -> 0.050 GB at 4,096; state 0 -> 0.0195 GB; params 1.90B -> 2.09B because its
-  Gated DeltaNet mixers are now sized as mixers -- the GGUF-derived mixer count is within 0.4 % of
-  the HF config's GDN count for Qwen3.5-4B). Every HF-config hybrid's calculator figures were
-  already right on main and are byte-identical.
-* **GenZ graph, recurrent layers no longer graphed as attention** (Qwen3.5-4B/-Base and two
-  Qwen3.5 derivatives, Qwen3.6-27B x2, Qwen3-Next, LFM2, LFM2.5-Audio detokenizers, MiniMax-Text-01,
-  Kimi Linear): KV MiB falls to the attention layers plus the fixed state; weights rise slightly
-  because each mixer is now charged its own parameter count instead of an attention block's.
-* **GenZ graph, Mamba hybrids regain their attention layers** (Jamba, Bamba, granite-4.0-h,
-  Nemotron-H x2, Zamba2, Falcon-H1, Hymba): before, every layer was a Mamba layer and the KV was
-  under-counted; weights fall to the real parameter counts (Nemotron-H-8B 29,104 -> 14,427 MiB,
-  i.e. 7.6B params; Falcon-H1-34B 71,130 -> 61,617 MiB).
-* **GenZ graph, interleaved windows read** (Gemma-3 27B 1,984 -> 736 MiB, SmallThinker,
-  Phi-4-mini-flash 640 -> 80 MiB).
-* **GenZ `get_kv_size`, recurrent layers excluded** (pure Mamba / falcon-mamba -> 0; Jamba 1.5 /
-  v0.1 built-ins keep their 1-in-8 attention layers; Nemotron-51B drops DeciLM's linear-attention
-  replacement layers, which hold no KV).
-* **GenZ graph builds where it crashed**: Jamba ("More than 1 unique layers"), Kimi Linear and
-  DeepSeek-V2-Lite (MLA with a null `q_lora_rank`: NaN).
+* **Recurrent layers no longer charged a KV cache** (Qwen3.5-4B/-Base and two Qwen3.5
+  derivatives, Qwen3.6-27B x2, Qwen3-Next, LFM2 / LFM2.5-Audio, MiniMax-Text-01, Kimi Linear, the
+  Qwen3.5-2B GGUF): GenZ decode / chunked KV, `get_kv_size`, the serving bytes per token and the
+  disaggregation transfer fall to the attention layers; GenZ weights rise slightly because each
+  mixer is charged its own parameters instead of an attention block's. In the calculator only the
+  GGUF moves (24 -> 6 KV layers); every HF-config hybrid was already right there.
+* **Mamba hybrids regain their attention layers in GenZ** (Jamba, Bamba, granite-4.0-h,
+  Nemotron-H x2, Zamba2, Falcon-H1, Hymba, the built-in Jamba models): KV rises from "all Mamba"
+  to the attention layers plus state; weights fall to the real parameter counts (Nemotron-H-8B
+  29,104 -> 14,427 MiB = 7.6B params; Jamba now builds: 97,850 MiB = 51.3B params, real 51.6B).
+* **The recurrent state is counted**: the engine estimate's total now includes the state term for
+  every hybrid and SSM (falcon-mamba-7b +294 MB, Bamba-9B +123 MB, Qwen3.5-4B +51.5 MB); without it
+  removing the KV would have turned the over-count into an under-count. Pure SSMs' `get_kv_size`
+  and serving bytes fall to 0 (they hold no KV).
+* **MLA read as its latent** in the serving model and the chunked graph (DeepSeek-V3 / V3.2:
+  1,748,992 -> 70,272 B/token = 61 x 576 x 2 B; DeepSeek-V2 1,228,800 -> 69,120; DeepSeek-V2-Lite
+  221,184 -> 31,104; Kimi Linear 248,832 -> 8,064; the built-in DeepSeek-V3-Base 27,328 -> 70,272,
+  which was low).
+* **Per-layer attention read in the chunked graph and the KV counters** (Nemotron-51B, DeciLM:
+  54 of 80 layers attend, with 1-8 KV heads each; 18 are linear replacements and 8 no-ops):
+  `get_kv_size` 131,840 -> 94,976 elements per token, serving 327,680 -> 189,952 B/token, chunked
+  KV 1,440 -> 834.75 MiB. Its decode graph, which already read the per-layer configs, is
+  unchanged at 742 MiB -- the counters now agree with it.
+* **Windowed layers bounded in GenZ** (Gemma-3 27B decode 1,984 -> 736 MiB; SmallThinker;
+  gpt-oss chunked 216 -> 123 MiB) and in the FRD-027 facts (Gemma-3 27B [62 full] -> [10 full, 52
+  sliding, window 1,024]).
+* **MoE placed per layer in GenZ** (Jamba's dense even layers; the first `first_k_dense_replace`
+  layers of DeepSeek-V3 / V3.2 / V2-Lite / deepseek-moe-16b / Ling-flash / Kimi Linear): weights
+  fall by the experts those layers do not have (DeepSeek-V3 1,335,494 -> 1,273,240 MiB = 667.6B).
+* **The GGUF reader states what the file states**: RoPE, a gated FFN, tied embeddings. Parameter
+  counts against the files' own tensors: Qwen3.5-2B 1.901B -> 1.856B (truth 1.882B), gpt-oss-20b
+  1.99B -> 20.908B (truth 20.915B; the MoE geometry is the merged accuracy-remediation commits),
+  SmolVLM-500M 369.8M -> 409.25M (exact), nomic-embed-text-v1.5 110.0M -> 136.7M (truth 136.7M).
+  The calculator's KV moved for exactly two configs: this GGUF and SambaY below.
+* **SambaY (Phi-4-mini-flash)**: KV is now an upper bound (15 windowed layers + one full shared
+  cache) instead of 32 windowed layers, which under-counted at long context. With the default
+  engine capabilities -- no heterogeneous per-layer KV layout, the measured vLLM behaviour -- the
+  windowed layers are charged the full sequence, so the default figure is 0.336 GB at 4k and
+  2.68 GB at 32k (was 0.084 GB at both); with `heterogeneous_kv_layout` it is 15 x 512 + the
+  context. Its parameter count rises 4.33B -> 4.67B (real 3.85B): the 16 Mamba mixers are now
+  sized as mixers, from fallback geometry (the config states none; flagged as an ESTIMATE). The
+  residual over-count is older and separate: the config states no RoPE key, so the parameter
+  counter assumes a learned 262,144-row position table (671M); it is not changed here.
+* **Unplaced windows** (`stated_layer_types`): no config in this corpus carries a window without a
+  layout on a model type transformers does not know, and none takes its layout from a config class
+  -- so this rule moves no corpus figure; its tests are synthetic (Gemma-2 shape, unknown type).
 
 The full per-config table follows.
 
+## config:chaos-pressure/gpt-oss-20b/config.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 216.0 | 123.0 |
 
 ## config:models--Cloudflare--clef-flash/snapshots/17f0b0ad64efb65d273590632833508766b2aae6/config.json (multimodal)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 512.0 | 153.125 |
+| eng_None_32768_state_mb | 0.0 | 51.511296 |
+| eng_None_32768_total_mb | 21954.286067 | 22005.797363 |
+| eng_None_4096_state_mb | 0.0 | 51.511296 |
+| eng_None_4096_total_mb | 20652.374106 | 20703.885402 |
+| eng_llamacpp_32768_state_mb | 0.0 | 51.511296 |
+| eng_llamacpp_32768_total_mb | 21954.286067 | 22005.797363 |
+| eng_llamacpp_4096_state_mb | 0.0 | 51.511296 |
+| eng_llamacpp_4096_total_mb | 20652.374106 | 20703.885402 |
+| genz_chunked_kv_mb | 576.0 | 242.25 |
+| genz_decode_kv_mb | 512.0 | 177.125 |
 | genz_decode_weights_mb | 13716.0 | 14881.6875 |
 | genz_kv_size | 65536 | 16384 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
+| serving_bytes_per_token | 131072 | 32768 |
 
 ## config:models--LiquidAI--LFM2.5-Audio-1.5B-JP/snapshots/6c34b4d590f80563f8cb2939c2ebd7686d952394/audio_detokenizer/config.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
+| eng_None_32768_state_mb | 0.0 | 0.01536 |
+| eng_None_32768_total_mb | 325.305754 | 325.321114 |
+| eng_None_4096_state_mb | 0.0 | 0.01536 |
+| eng_None_4096_total_mb | 244.775117 | 244.790477 |
+| eng_llamacpp_32768_state_mb | 0.0 | 0.01536 |
+| eng_llamacpp_32768_total_mb | 325.305754 | 325.321114 |
+| eng_llamacpp_4096_state_mb | 0.0 | 0.01536 |
+| eng_llamacpp_4096_total_mb | 244.775117 | 244.790477 |
+| genz_chunked_kv_mb | 36.0 | 1.617188 |
 | genz_decode_kv_mb | 20.087891 | 0.102539 |
 | genz_decode_weights_mb | 128.0 | 130.514648 |
 | genz_kv_size | 4096 | 1536 |
 | genz_layer_kinds | {"MHA-global": 5, "MHA-local": 3} | {"MHA-local": 3, "Recurrent": 5} |
+| serving_bytes_per_token | 8192 | 3072 |
 
 ## config:models--LiquidAI--LFM2.5-Audio-1.5B/snapshots/c362a0625dfe45aa588dce5f0ada28a7e5707628/audio_detokenizer/config.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
+| eng_None_32768_state_mb | 0.0 | 0.01536 |
+| eng_None_32768_total_mb | 325.305754 | 325.321114 |
+| eng_None_4096_state_mb | 0.0 | 0.01536 |
+| eng_None_4096_total_mb | 244.775117 | 244.790477 |
+| eng_llamacpp_32768_state_mb | 0.0 | 0.01536 |
+| eng_llamacpp_32768_total_mb | 325.305754 | 325.321114 |
+| eng_llamacpp_4096_state_mb | 0.0 | 0.01536 |
+| eng_llamacpp_4096_total_mb | 244.775117 | 244.790477 |
+| genz_chunked_kv_mb | 36.0 | 1.617188 |
 | genz_decode_kv_mb | 20.087891 | 0.102539 |
 | genz_decode_weights_mb | 128.0 | 130.514648 |
 | genz_kv_size | 4096 | 1536 |
 | genz_layer_kinds | {"MHA-global": 5, "MHA-local": 3} | {"MHA-local": 3, "Recurrent": 5} |
+| serving_bytes_per_token | 8192 | 3072 |
 
 ## config:models--Qwen--Qwen3.5-4B-Base/snapshots/1001bb4d826a52d1f399e183466143f4da7b741b/config.json (multimodal)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 512.0 | 153.125 |
+| eng_None_32768_state_mb | 0.0 | 51.511296 |
+| eng_None_32768_total_mb | 11478.217318 | 11529.728614 |
+| eng_None_4096_state_mb | 0.0 | 51.511296 |
+| eng_None_4096_total_mb | 10282.001818 | 10333.513114 |
+| eng_llamacpp_32768_state_mb | 0.0 | 51.511296 |
+| eng_llamacpp_32768_total_mb | 11478.217318 | 11529.728614 |
+| eng_llamacpp_4096_state_mb | 0.0 | 51.511296 |
+| eng_llamacpp_4096_total_mb | 10282.001818 | 10333.513114 |
+| genz_chunked_kv_mb | 576.0 | 242.25 |
+| genz_decode_kv_mb | 512.0 | 177.125 |
 | genz_decode_weights_mb | 7132.5 | 7861.523438 |
 | genz_kv_size | 65536 | 16384 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
+| serving_bytes_per_token | 131072 | 32768 |
 
 ## config:models--Qwen--Qwen3.5-4B/snapshots/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a/config.json (multimodal)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 512.0 | 153.125 |
+| eng_None_32768_state_mb | 0.0 | 51.511296 |
+| eng_None_32768_total_mb | 11478.217318 | 11529.728614 |
+| eng_None_4096_state_mb | 0.0 | 51.511296 |
+| eng_None_4096_total_mb | 10282.001818 | 10333.513114 |
+| eng_llamacpp_32768_state_mb | 0.0 | 51.511296 |
+| eng_llamacpp_32768_total_mb | 11478.217318 | 11529.728614 |
+| eng_llamacpp_4096_state_mb | 0.0 | 51.511296 |
+| eng_llamacpp_4096_total_mb | 10282.001818 | 10333.513114 |
+| genz_chunked_kv_mb | 576.0 | 242.25 |
+| genz_decode_kv_mb | 512.0 | 177.125 |
 | genz_decode_weights_mb | 7132.5 | 7861.523438 |
 | genz_kv_size | 65536 | 16384 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
+| serving_bytes_per_token | 131072 | 32768 |
 
 ## config:models--internlm--Intern-Decision-4B/snapshots/0e5e6aa7d6d750e2b1504ba11a8136cb58aeb3cd/config.json (multimodal)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 512.0 | 153.125 |
+| eng_None_32768_state_mb | 0.0 | 51.511296 |
+| eng_None_32768_total_mb | 11478.217318 | 11529.728614 |
+| eng_None_4096_state_mb | 0.0 | 51.511296 |
+| eng_None_4096_total_mb | 10282.001818 | 10333.513114 |
+| eng_llamacpp_32768_state_mb | 0.0 | 51.511296 |
+| eng_llamacpp_32768_total_mb | 11478.217318 | 11529.728614 |
+| eng_llamacpp_4096_state_mb | 0.0 | 51.511296 |
+| eng_llamacpp_4096_total_mb | 10282.001818 | 10333.513114 |
+| genz_chunked_kv_mb | 576.0 | 242.25 |
+| genz_decode_kv_mb | 512.0 | 177.125 |
 | genz_decode_weights_mb | 7132.5 | 7861.523438 |
 | genz_kv_size | 65536 | 16384 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
+| serving_bytes_per_token | 131072 | 32768 |
+
+## config:models--openai--gpt-oss-120b/snapshots/b5c939de8f754692c1647ca79fbf85e8c1e70f8a/config.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 324.0 | 184.5 |
+
+## config:models--openai--gpt-oss-20b/snapshots/6cee5e81ee83917806bbde320786a8fb61efebee/config.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 216.0 | 123.0 |
+
+## db:deepseek-ai/DeepSeek-V3-Base (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 7686.0 | 171.5625 |
+| genz_decode_weights_mb | 1335494.375 | 1273239.875 |
+| genz_ffn_kinds | {"MoE": 61} | {"Dense": 3, "MoE": 58} |
+| serving_bytes_per_token | 1748992 | 70272 |
+
+## db:deepseek-ai/deepseek-moe-16b-base (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| genz_decode_weights_mb | 30871.0 | 29943.0 |
+| genz_ffn_kinds | {"MoE": 28} | {"Dense": 1, "MoE": 27} |
 
 ## db:tiiuae/falcon-mamba-7b (state-space)
 
 | figure | before | after |
 |---|---|---|
+| eng_None_32768_state_mb | 0.0 | 293.60128 |
+| eng_None_32768_total_mb | 109466.73705 | 109760.33833 |
+| eng_None_4096_state_mb | 0.0 | 293.60128 |
+| eng_None_4096_total_mb | 109184.879821 | 109478.481101 |
+| eng_llamacpp_32768_state_mb | 0.0 | 293.60128 |
+| eng_llamacpp_32768_total_mb | 109466.73705 | 109760.33833 |
+| eng_llamacpp_4096_state_mb | 0.0 | 293.60128 |
+| eng_llamacpp_4096_total_mb | 109184.879821 | 109478.481101 |
 | genz_kv_size | 524288 | 0 |
+| serving_bytes_per_token | 1048576 | 0 |
 
 ## fixture:LiquidAI_LFM2-2.6B.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
+| eng_None_32768_state_mb | 0.0 | 0.270336 |
+| eng_None_32768_total_mb | 6219.245158 | 6219.515494 |
+| eng_None_4096_state_mb | 0.0 | 0.270336 |
+| eng_None_4096_total_mb | 5477.692211 | 5477.962547 |
+| eng_llamacpp_32768_state_mb | 0.0 | 0.270336 |
+| eng_llamacpp_32768_total_mb | 6219.245158 | 6219.515494 |
+| eng_llamacpp_4096_state_mb | 0.0 | 0.270336 |
+| eng_llamacpp_4096_total_mb | 5477.692211 | 5477.962547 |
+| genz_chunked_kv_mb | 270.0 | 72.515625 |
 | genz_decode_kv_mb | 240.0 | 64.257812 |
 | genz_decode_weights_mb | 3376.0 | 3640.257812 |
 | genz_kv_size | 30720 | 8192 |
 | genz_layer_kinds | {"MHA-global": 30} | {"MHA-global": 8, "Recurrent": 22} |
+| serving_bytes_per_token | 61440 | 16384 |
 
 ## fixture:MiniMaxAI_MiniMax-Text-01.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 1280.0 | 300.0 |
+| eng_None_32768_state_mb | 0.0 | 293.60128 |
+| eng_None_32768_total_mb | 917067.869389 | 917361.470669 |
+| eng_None_4096_state_mb | 0.0 | 293.60128 |
+| eng_None_4096_total_mb | 915349.88247 | 915643.48375 |
+| eng_llamacpp_32768_state_mb | 0.0 | 293.60128 |
+| eng_llamacpp_32768_total_mb | 917067.869389 | 917361.470669 |
+| eng_llamacpp_4096_state_mb | 0.0 | 293.60128 |
+| eng_llamacpp_4096_total_mb | 915349.88247 | 915643.48375 |
+| genz_chunked_kv_mb | 1440.0 | 740.0 |
+| genz_decode_kv_mb | 1280.0 | 440.0 |
 | genz_decode_weights_mb | 849094.5 | 867574.5 |
 | genz_kv_size | 163840 | 20480 |
 | genz_layer_kinds | {"MHA-global": 80} | {"MHA-global": 10, "Recurrent": 70} |
+| serving_bytes_per_token | 327680 | 40960 |
 
 ## fixture:PowerInfer_SmallThinker-21BA3B-Instruct.json (decoder-only)
 
@@ -196,102 +350,253 @@ The full per-config table follows.
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 384.0 | 133.6875 |
+| eng_None_32768_state_mb | 0.0 | 77.266944 |
+| eng_None_32768_total_mb | 160595.413299 | 160672.680243 |
+| eng_None_4096_state_mb | 0.0 | 77.266944 |
+| eng_None_4096_total_mb | 159729.708954 | 159806.975898 |
+| eng_llamacpp_32768_state_mb | 0.0 | 77.266944 |
+| eng_llamacpp_32768_total_mb | 160595.413299 | 160672.680243 |
+| eng_llamacpp_4096_state_mb | 0.0 | 77.266944 |
+| eng_llamacpp_4096_total_mb | 159729.708954 | 159806.975898 |
+| genz_chunked_kv_mb | 432.0 | 255.375 |
+| genz_decode_kv_mb | 384.0 | 169.6875 |
 | genz_decode_weights_mb | 149873.5 | 150892.890625 |
 | genz_kv_size | 49152 | 12288 |
 | genz_layer_kinds | {"MHA-global": 48} | {"MHA-global": 12, "Recurrent": 36} |
+| serving_bytes_per_token | 98304 | 24576 |
 
 ## fixture:Qwen_Qwen3.5-4B.json (multimodal)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 512.0 | 153.125 |
+| eng_None_32768_state_mb | 0.0 | 51.511296 |
+| eng_None_32768_total_mb | 11478.217318 | 11529.728614 |
+| eng_None_4096_state_mb | 0.0 | 51.511296 |
+| eng_None_4096_total_mb | 10282.001818 | 10333.513114 |
+| eng_llamacpp_32768_state_mb | 0.0 | 51.511296 |
+| eng_llamacpp_32768_total_mb | 11478.217318 | 11529.728614 |
+| eng_llamacpp_4096_state_mb | 0.0 | 51.511296 |
+| eng_llamacpp_4096_total_mb | 10282.001818 | 10333.513114 |
+| genz_chunked_kv_mb | 576.0 | 242.25 |
+| genz_decode_kv_mb | 512.0 | 177.125 |
 | genz_decode_weights_mb | 7132.5 | 7861.523438 |
 | genz_kv_size | 65536 | 16384 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
+| serving_bytes_per_token | 131072 | 32768 |
 
 ## fixture:Qwen_Qwen3.6-27B.json (multimodal)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 1024.0 | 330.8125 |
+| eng_None_32768_state_mb | 0.0 | 153.944064 |
+| eng_None_32768_total_mb | 58973.596557 | 59127.540621 |
+| eng_None_4096_state_mb | 0.0 | 153.944064 |
+| eng_None_4096_total_mb | 56601.298214 | 56755.242278 |
+| eng_llamacpp_32768_state_mb | 0.0 | 153.944064 |
+| eng_llamacpp_32768_total_mb | 58973.596557 | 59127.540621 |
+| eng_llamacpp_4096_state_mb | 0.0 | 153.944064 |
+| eng_llamacpp_4096_total_mb | 56601.298214 | 56755.242278 |
+| genz_chunked_kv_mb | 1152.0 | 581.625 |
+| genz_decode_kv_mb | 1024.0 | 402.8125 |
 | genz_decode_weights_mb | 44025.0 | 47914.21875 |
 | genz_kv_size | 131072 | 32768 |
 | genz_layer_kinds | {"MHA-global": 64} | {"MHA-global": 16, "Recurrent": 48} |
+| serving_bytes_per_token | 262144 | 65536 |
 
 ## fixture:Zyphra_Zamba2-2.7B.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 35.859375 | 395.371582 |
+| eng_None_32768_state_mb | 0.0 | 72.479232 |
+| eng_None_32768_total_mb | 8264.260416 | 8336.739648 |
+| eng_None_4096_state_mb | 0.0 | 72.479232 |
+| eng_None_4096_total_mb | 5445.688128 | 5518.16736 |
+| eng_llamacpp_32768_state_mb | 0.0 | 72.479232 |
+| eng_llamacpp_32768_total_mb | 8264.260416 | 8336.739648 |
+| eng_llamacpp_4096_state_mb | 0.0 | 72.479232 |
+| eng_llamacpp_4096_total_mb | 5445.688128 | 5518.16736 |
+| genz_chunked_kv_mb | 2430.0 | 543.243164 |
+| genz_decode_kv_mb | 35.859375 | 429.121582 |
 | genz_decode_weights_mb | 9842.5 | 4714.521484 |
+| genz_ffn_kinds | {"Dense": 54} | {"no_op": 54} |
 | genz_kv_size | 276480 | 46080 |
 | genz_layer_kinds | {"Mamba": 54} | {"MHA-global": 9, "Recurrent": 45} |
+| serving_bytes_per_token | 552960 | 92160 |
 
 ## fixture:ai21labs_Jamba-v0.1.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | null | 72.3125 |
-| genz_decode_weights_mb | null | 178492.0625 |
+| eng_None_32768_state_mb | 0.0 | 16.05632 |
+| eng_None_32768_total_mb | 107731.409306 | 107747.465626 |
+| eng_None_4096_state_mb | 0.0 | 16.05632 |
+| eng_None_4096_total_mb | 106577.136845 | 106593.193165 |
+| eng_llamacpp_32768_state_mb | 0.0 | 16.05632 |
+| eng_llamacpp_32768_total_mb | 107731.409306 | 107747.465626 |
+| eng_llamacpp_4096_state_mb | 0.0 | 16.05632 |
+| eng_llamacpp_4096_total_mb | 106577.136845 | 106593.193165 |
+| genz_chunked_kv_mb | 576.0 | 102.625 |
+| genz_decode_kv_mb | null | 79.3125 |
+| genz_decode_weights_mb | null | 97850.0625 |
 | genz_error | "ValueError: More than 1 unique layers not supported. Work in progress" | null |
 | genz_kv_size | 65536 | 8192 |
 | genz_layer_kinds | {"Mamba": 32} | {"MHA-global": 4, "Recurrent": 28} |
+| serving_bytes_per_token | 131072 | 16384 |
+
+## fixture:deepseek-ai_DeepSeek-V3.2-Exp.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 7686.0 | 171.5625 |
+| genz_decode_weights_mb | 1335494.375 | 1273239.875 |
+| genz_ffn_kinds | {"MoE": 61} | {"Dense": 3, "MoE": 58} |
+| serving_bytes_per_token | 1748992 | 70272 |
 
 ## fixture:deepseek_v2_lite_chat_config.json (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| genz_chunked_kv_mb | 972.0 | 75.9375 |
 | genz_decode_kv_mb | null | 67.5 |
-| genz_decode_weights_mb | null | 29627.5 |
+| genz_decode_weights_mb | null | 28699.5 |
 | genz_error | "ValueError: cannot convert float NaN to integer" | null |
+| genz_ffn_kinds | {"MoE": 27} | {"Dense": 1, "MoE": 26} |
+| serving_bytes_per_token | 221184 | 31104 |
 
 ## fixture:ibm-ai-platform_Bamba-9B-v2.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 66.0 | 107.401855 |
+| eng_None_32768_state_mb | 0.0 | 123.104768 |
+| eng_None_32768_total_mb | 20768.962816 | 20892.067584 |
+| eng_None_4096_state_mb | 0.0 | 123.104768 |
+| eng_None_4096_total_mb | 20013.988096 | 20137.092864 |
+| eng_llamacpp_32768_state_mb | 0.0 | 123.104768 |
+| eng_llamacpp_32768_total_mb | 20768.962816 | 20892.067584 |
+| eng_llamacpp_4096_state_mb | 0.0 | 123.104768 |
+| eng_llamacpp_4096_total_mb | 20013.988096 | 20137.092864 |
+| genz_chunked_kv_mb | 576.0 | 288.803711 |
+| genz_decode_kv_mb | 66.0 | 165.401855 |
 | genz_decode_weights_mb | 18282.0 | 17651.945312 |
 | genz_kv_size | 65536 | 6144 |
 | genz_layer_kinds | {"Mamba": 32} | {"MHA-global": 3, "Recurrent": 29} |
+| serving_bytes_per_token | 131072 | 12288 |
 
 ## fixture:ibm-granite_granite-4.0-h-small.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 82.5 | 137.740234 |
+| eng_None_32768_state_mb | 0.0 | 152.819712 |
+| eng_None_32768_total_mb | 63985.84279 | 64138.662502 |
+| eng_None_4096_state_mb | 0.0 | 152.819712 |
+| eng_None_4096_total_mb | 63244.289843 | 63397.109555 |
+| eng_llamacpp_32768_state_mb | 0.0 | 152.819712 |
+| eng_llamacpp_32768_total_mb | 63985.84279 | 64138.662502 |
+| eng_llamacpp_4096_state_mb | 0.0 | 152.819712 |
+| eng_llamacpp_4096_total_mb | 63244.289843 | 63397.109555 |
+| genz_chunked_kv_mb | 720.0 | 363.480469 |
+| genz_decode_kv_mb | 82.5 | 209.740234 |
 | genz_decode_weights_mb | 60806.5 | 59990.15625 |
 | genz_kv_size | 81920 | 8192 |
 | genz_layer_kinds | {"Mamba": 40} | {"MHA-global": 4, "Recurrent": 36} |
+| serving_bytes_per_token | 163840 | 16384 |
+
+## fixture:inclusionAI_Ling-flash-2.0.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| genz_decode_weights_mb | 200204.0 | 194274.0 |
+| genz_ffn_kinds | {"MoE": 32} | {"Dense": 1, "MoE": 31} |
 
 ## fixture:microsoft_Phi-4-mini-flash-reasoning.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 640.0 | 80.0 |
-| genz_layer_kinds | {"MHA-global": 32} | {"MHA-local": 32} |
+| eng_None_32768_kv_mb | 83.88608 | 2684.35456 |
+| eng_None_32768_params | 4329313280 | 4674606080 |
+| eng_None_32768_state_mb | 0.0 | 5.7344 |
+| eng_None_32768_total_mb | 9296.160768 | 12592.949248 |
+| eng_None_4096_kv_mb | 83.88608 | 335.54432 |
+| eng_None_4096_params | 4329313280 | 4674606080 |
+| eng_None_4096_state_mb | 0.0 | 5.7344 |
+| eng_None_4096_total_mb | 9019.336704 | 9967.314944 |
+| eng_llamacpp_32768_kv_mb | 83.88608 | 2684.35456 |
+| eng_llamacpp_32768_params | 4329313280 | 4674606080 |
+| eng_llamacpp_32768_state_mb | 0.0 | 5.7344 |
+| eng_llamacpp_32768_total_mb | 9296.160768 | 12592.949248 |
+| eng_llamacpp_4096_kv_mb | 83.88608 | 335.54432 |
+| eng_llamacpp_4096_params | 4329313280 | 4674606080 |
+| eng_llamacpp_4096_state_mb | 0.0 | 5.7344 |
+| eng_llamacpp_4096_total_mb | 9019.336704 | 9967.314944 |
+| facts_layers | [0, 32, 0, 512] | [1, 15, 16, 512] |
+| genz_chunked_kv_mb | 720.0 | 108.4375 |
+| genz_decode_kv_mb | 640.0 | 62.96875 |
+| genz_decode_weights_mb | 6976.875 | 7635.46875 |
+| genz_kv_size | 81920 | 40960 |
+| genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 1, "MHA-local": 15, "Recurrent": 16} |
+| kv_free_layers | 0 | 16 |
+| kv_full_layers | 0 | 1 |
+| kv_gb@32768 | 0.08388608 | 2.68435456 |
+| kv_gb@4096 | 0.08388608 | 0.33554432 |
+| kv_sliding_layers | 32 | 15 |
+| report_kv_gb | 0.08388608 | 0.33554432 |
+| report_params | 4329313280 | 4674606080 |
+| report_state_gb | 0.0 | 0.0057344 |
+| report_total_gb | 9.091478733 | 10.090935501 |
+| report_weight_gb | 8.65862656 | 9.34921216 |
+| serving_bytes_per_token | 163840 | 81920 |
+| state_gb | 0.0 | 0.0057344 |
 
 ## fixture:mistralai_Mamba-Codestral-7B-v0.1.json (state-space)
 
 | figure | before | after |
 |---|---|---|
+| eng_None_32768_state_mb | 0.0 | 272.367616 |
+| eng_None_32768_total_mb | 15136.10281 | 15408.470426 |
+| eng_None_4096_state_mb | 0.0 | 272.367616 |
+| eng_None_4096_total_mb | 14854.245581 | 15126.613197 |
+| eng_llamacpp_32768_state_mb | 0.0 | 272.367616 |
+| eng_llamacpp_32768_total_mb | 15136.10281 | 15408.470426 |
+| eng_llamacpp_4096_state_mb | 0.0 | 272.367616 |
+| eng_llamacpp_4096_total_mb | 14854.245581 | 15126.613197 |
 | genz_kv_size | 262144 | 0 |
+| serving_bytes_per_token | 524288 | 0 |
 
 ## fixture:moonshotai_Kimi-Linear-48B-A3B-Instruct.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | null | 38.90625 |
-| genz_decode_weights_mb | null | 95955.693359 |
+| eng_None_32768_state_mb | 0.0 | 43.4176 |
+| eng_None_32768_total_mb | 98400.864307 | 98444.281907 |
+| eng_None_4096_state_mb | 0.0 | 43.4176 |
+| eng_None_4096_total_mb | 97920.511642 | 97963.929242 |
+| eng_llamacpp_32768_state_mb | 0.0 | 43.4176 |
+| eng_llamacpp_32768_total_mb | 98400.864307 | 98444.281907 |
+| eng_llamacpp_4096_state_mb | 0.0 | 43.4176 |
+| eng_llamacpp_4096_total_mb | 97920.511642 | 97963.929242 |
+| genz_chunked_kv_mb | 1093.5 | 102.5 |
+| genz_decode_kv_mb | null | 58.90625 |
+| genz_decode_weights_mb | null | 92620.068359 |
 | genz_error | "ValueError: cannot convert float NaN to integer" | null |
+| genz_ffn_kinds | {"MoE": 27} | {"Dense": 1, "MoE": 26} |
 | genz_kv_size | 15552 | 4032 |
 | genz_layer_kinds | {"MHA-global": 27} | {"MHA-global": 7, "Recurrent": 20} |
+| serving_bytes_per_token | 248832 | 8064 |
 
 ## fixture:nvidia_Hymba-1.5B-Base.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 3.90625 | 54.960938 |
+| eng_None_32768_state_mb | 0.0 | 7.168 |
+| eng_None_32768_total_mb | 4875.103206 | 4882.271206 |
+| eng_None_4096_state_mb | 0.0 | 7.168 |
+| eng_None_4096_total_mb | 3545.299123 | 3552.467123 |
+| eng_llamacpp_32768_state_mb | 0.0 | 7.168 |
+| eng_llamacpp_32768_total_mb | 4875.103206 | 4882.271206 |
+| eng_llamacpp_4096_state_mb | 0.0 | 7.168 |
+| eng_llamacpp_4096_total_mb | 3545.299123 | 3552.467123 |
+| genz_chunked_kv_mb | 180.0 | 84.921875 |
+| genz_decode_kv_mb | 3.90625 | 58.085938 |
 | genz_decode_weights_mb | 2692.971802 | 3072.463989 |
 | genz_layer_kinds | {"Mamba": 32} | {"MHA-global": 3, "MHA-local": 29} |
 
@@ -299,40 +604,96 @@ The full per-config table follows.
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 63.164062 | 133.398438 |
+| eng_None_32768_state_mb | 0.0 | 143.548416 |
+| eng_None_32768_total_mb | 20370.048768 | 20513.597184 |
+| eng_None_4096_state_mb | 0.0 | 143.548416 |
+| eng_None_4096_total_mb | 19459.8848 | 19603.433216 |
+| eng_llamacpp_32768_state_mb | 0.0 | 143.548416 |
+| eng_llamacpp_32768_total_mb | 20370.048768 | 20513.597184 |
+| eng_llamacpp_4096_state_mb | 0.0 | 143.548416 |
+| eng_llamacpp_4096_total_mb | 19459.8848 | 19603.433216 |
+| genz_chunked_kv_mb | 1008.0 | 345.796875 |
+| genz_decode_kv_mb | 63.164062 | 200.898438 |
 | genz_decode_weights_mb | 22925.0 | 15832.672119 |
+| genz_ffn_kinds | {"Dense": 56} | {"Dense": 25, "no_op": 31} |
 | genz_kv_size | 114688 | 8192 |
 | genz_layer_kinds | {"Mamba": 56} | {"MHA-global": 4, "Recurrent": 27, "no_op": 25} |
+| serving_bytes_per_token | 229376 | 16384 |
 
 ## fixture:nvidia_Nemotron-H-8B-Base-8K.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 107.25 | 113.40625 |
+| eng_None_32768_state_mb | 0.0 | 102.137856 |
+| eng_None_32768_total_mb | 17894.134989 | 17996.272845 |
+| eng_None_4096_state_mb | 0.0 | 102.137856 |
+| eng_None_4096_total_mb | 16880.791142 | 16982.928998 |
+| eng_llamacpp_32768_state_mb | 0.0 | 102.137856 |
+| eng_llamacpp_32768_total_mb | 17894.134989 | 17996.272845 |
+| eng_llamacpp_4096_state_mb | 0.0 | 102.137856 |
+| eng_llamacpp_4096_total_mb | 16880.791142 | 16982.928998 |
+| genz_chunked_kv_mb | 936.0 | 266.8125 |
+| genz_decode_kv_mb | 107.25 | 161.40625 |
 | genz_decode_weights_mb | 29104.0 | 14426.8125 |
+| genz_ffn_kinds | {"Dense": 52} | {"Dense": 24, "no_op": 28} |
 | genz_kv_size | 106496 | 8192 |
 | genz_layer_kinds | {"Mamba": 52} | {"MHA-global": 4, "Recurrent": 24, "no_op": 24} |
+| serving_bytes_per_token | 212992 | 16384 |
+
+## fixture:openai_gpt-oss-120b.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 324.0 | 184.5 |
 
 ## fixture:qwen3_8_27b_config.json (multimodal)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 1024.0 | 330.8125 |
+| eng_None_32768_state_mb | 0.0 | 153.944064 |
+| eng_None_32768_total_mb | 58973.596557 | 59127.540621 |
+| eng_None_4096_state_mb | 0.0 | 153.944064 |
+| eng_None_4096_total_mb | 56601.298214 | 56755.242278 |
+| eng_llamacpp_32768_state_mb | 0.0 | 153.944064 |
+| eng_llamacpp_32768_total_mb | 58973.596557 | 59127.540621 |
+| eng_llamacpp_4096_state_mb | 0.0 | 153.944064 |
+| eng_llamacpp_4096_total_mb | 56601.298214 | 56755.242278 |
+| genz_chunked_kv_mb | 1152.0 | 581.625 |
+| genz_decode_kv_mb | 1024.0 | 402.8125 |
 | genz_decode_weights_mb | 44025.0 | 47914.21875 |
 | genz_kv_size | 131072 | 32768 |
 | genz_layer_kinds | {"MHA-global": 64} | {"MHA-global": 16, "Recurrent": 48} |
+| serving_bytes_per_token | 262144 | 65536 |
 
 ## fixture:state-spaces_mamba-2.8b-hf.json (state-space)
 
 | figure | before | after |
 |---|---|---|
+| eng_None_32768_state_mb | 0.0 | 22.9376 |
+| eng_None_32768_total_mb | 5890.000896 | 5912.938496 |
+| eng_None_4096_state_mb | 0.0 | 22.9376 |
+| eng_None_4096_total_mb | 5713.840128 | 5736.777728 |
+| eng_llamacpp_32768_state_mb | 0.0 | 22.9376 |
+| eng_llamacpp_32768_total_mb | 5890.000896 | 5912.938496 |
+| eng_llamacpp_4096_state_mb | 0.0 | 22.9376 |
+| eng_llamacpp_4096_total_mb | 5713.840128 | 5736.777728 |
 | genz_kv_size | 327680 | 0 |
+| serving_bytes_per_token | 655360 | 0 |
 
 ## fixture:tiiuae_Falcon-H1-34B-Instruct.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 365.625 | 722.109375 |
+| eng_None_32768_state_mb | 0.0 | 304.201728 |
+| eng_None_32768_total_mb | 73265.91703 | 73570.118758 |
+| eng_None_4096_state_mb | 0.0 | 304.201728 |
+| eng_None_4096_total_mb | 68464.277811 | 68768.479539 |
+| eng_llamacpp_32768_state_mb | 0.0 | 304.201728 |
+| eng_llamacpp_32768_total_mb | 73265.91703 | 73570.118758 |
+| eng_llamacpp_4096_state_mb | 0.0 | 304.201728 |
+| eng_llamacpp_4096_total_mb | 68464.277811 | 68768.479539 |
+| genz_chunked_kv_mb | 648.0 | 1228.21875 |
+| genz_decode_kv_mb | 365.625 | 866.109375 |
 | genz_decode_weights_mb | 71130.0 | 61616.71875 |
 | genz_layer_kinds | {"Mamba": 72} | {"MHA-global": 72} |
 
@@ -340,6 +701,9 @@ The full per-config table follows.
 
 | figure | before | after |
 |---|---|---|
+| facts_full_attention | true | false |
+| facts_layers | [62, 0, 0, null] | [10, 52, 0, 1024] |
+| genz_chunked_kv_mb | 2232.0 | 984.0 |
 | genz_decode_kv_mb | 1984.0 | 736.0 |
 | genz_layer_kinds | {"MHA-global": 62} | {"MHA-global": 10, "MHA-local": 52} |
 
@@ -349,6 +713,7 @@ The full per-config table follows.
 |---|---|---|
 | genz_kv_size | 147456 | 18432 |
 | genz_layer_kinds | {"Mamba": 72} | {"MHA-global": 9, "Mamba": 63} |
+| serving_bytes_per_token | 294912 | 36864 |
 
 ## genz:ai21labs/AI21-Jamba-1.5-Mini (None)
 
@@ -356,6 +721,7 @@ The full per-config table follows.
 |---|---|---|
 | genz_kv_size | 65536 | 8192 |
 | genz_layer_kinds | {"Mamba": 32} | {"MHA-global": 4, "Mamba": 28} |
+| serving_bytes_per_token | 131072 | 16384 |
 
 ## genz:ai21labs/Jamba-v0.1 (None)
 
@@ -363,40 +729,89 @@ The full per-config table follows.
 |---|---|---|
 | genz_kv_size | 65536 | 8192 |
 | genz_layer_kinds | {"Mamba": 32} | {"MHA-global": 4, "Mamba": 28} |
+| serving_bytes_per_token | 131072 | 16384 |
+
+## genz:deepseek-ai/DeepSeek-V2 (None)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 5400.0 | 168.75 |
+| serving_bytes_per_token | 1228800 | 69120 |
+
+## genz:deepseek-ai/DeepSeek-V3-Base (None)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 120.09375 | 171.5625 |
+| serving_bytes_per_token | 27328 | 70272 |
+
+## genz:google/gemma-3-27B (None)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 2232.0 | 1008.0 |
+
+## genz:google/gemma-3-4B (None)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 382.5 | 172.5 |
 
 ## genz:nvidia/Llama-3_1-Nemotron-51B-Instruct (None)
 
 | figure | before | after |
 |---|---|---|
+| genz_chunked_kv_mb | 1440.0 | 834.75 |
 | genz_kv_size | 131840 | 94976 |
+| serving_bytes_per_token | 327680 | 189952 |
 
 ## genz:state-spaces/mamba-130m-hf (None)
 
 | figure | before | after |
 |---|---|---|
 | genz_kv_size | 36864 | 0 |
+| serving_bytes_per_token | 73728 | 0 |
 
 ## genz:state-spaces/mamba-2.8b-hf (None)
 
 | figure | before | after |
 |---|---|---|
 | genz_kv_size | 327680 | 0 |
+| serving_bytes_per_token | 655360 | 0 |
 
 ## genz:tiiuae/falcon-mamba-7b (None)
 
 | figure | before | after |
 |---|---|---|
 | genz_kv_size | 524288 | 0 |
+| serving_bytes_per_token | 1048576 | 0 |
 
 ## gguf:Qwen3.5-2B-Q4_K_M.gguf (hybrid)
 
 | figure | before | after |
 |---|---|---|
-| genz_decode_kv_mb | 192.0 | 57.632812 |
-| genz_decode_weights_mb | 2602.0 | 2963.265625 |
+| eng_None_32768_kv_mb | 1610.612736 | 402.653184 |
+| eng_None_32768_params | 1901268992 | 1855758390 |
+| eng_None_32768_state_mb | 0.0 | 19.53792 |
+| eng_None_32768_total_mb | 5775.538586 | 4496.09575 |
+| eng_None_4096_kv_mb | 201.326592 | 50.331648 |
+| eng_None_4096_params | 1901268992 | 1855758390 |
+| eng_None_4096_state_mb | 0.0 | 19.53792 |
+| eng_None_4096_total_mb | 4185.058509 | 3962.580281 |
+| eng_llamacpp_32768_kv_mb | 1610.612736 | 402.653184 |
+| eng_llamacpp_32768_params | 1901268992 | 1855758390 |
+| eng_llamacpp_32768_state_mb | 0.0 | 19.53792 |
+| eng_llamacpp_32768_total_mb | 5775.538586 | 4496.09575 |
+| eng_llamacpp_4096_kv_mb | 201.326592 | 50.331648 |
+| eng_llamacpp_4096_params | 1901268992 | 1855758390 |
+| eng_llamacpp_4096_state_mb | 0.0 | 19.53792 |
+| eng_llamacpp_4096_total_mb | 4185.058509 | 3962.580281 |
+| genz_chunked_kv_mb | 216.0 | 91.265625 |
+| genz_decode_kv_mb | 192.0 | 66.632812 |
+| genz_decode_weights_mb | 2602.0 | 3539.265625 |
 | genz_kv_size | 24576 | 6144 |
 | genz_layer_kinds | {"MHA-global": 24} | {"MHA-global": 6, "Recurrent": 18} |
-| gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_size", "intermediate_size", "layer_types", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "ssm_conv_kernel", "ssm_inner_size", "ssm_n_groups", "ssm_state_size", "time_step_rank", "vocab_size"] |
+| gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_act", "hidden_size", "intermediate_size", "layer_types", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "rope_theta", "ssm_conv_kernel", "ssm_inner_size", "ssm_n_groups", "ssm_state_size", "tie_word_embeddings", "time_step_rank", "vocab_size"] |
 | kv_free_layers | 0 | 18 |
 | kv_full_layers | 24 | 6 |
 | kv_gb@32768 | 1.610612736 | 0.402653184 |
@@ -404,9 +819,64 @@ The full per-config table follows.
 | kv_source | "uniform" | "layer_plan:layer_types" |
 | model_type | "decoder-only" | "hybrid" |
 | report_kv_gb | 0.201326592 | 0.050331648 |
-| report_params | 1901268992 | 2090639414 |
+| report_params | 1901268992 | 1855758390 |
 | report_state_gb | 0.0 | 0.01953792 |
-| report_total_gb | 4.261562614 | 4.482555029 |
-| report_weight_gb | 3.802537984 | 4.181278828 |
+| report_total_gb | 4.261562614 | 4.012792981 |
+| report_weight_gb | 3.802537984 | 3.71151678 |
+| serving_bytes_per_token | 49152 | 12288 |
 | state_gb | 0.0 | 0.01953792 |
+
+## gguf:SmolVLM-500M-Instruct-Q8_0.gguf (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| eng_None_32768_params | 369808320 | 409252800 |
+| eng_None_32768_total_mb | 2239.08032 | 2317.96928 |
+| eng_None_4096_params | 369808320 | 409252800 |
+| eng_None_4096_total_mb | 986.032 | 1064.92096 |
+| eng_llamacpp_32768_params | 369808320 | 409252800 |
+| eng_llamacpp_32768_total_mb | 2239.08032 | 2317.96928 |
+| eng_llamacpp_4096_params | 369808320 | 409252800 |
+| eng_llamacpp_4096_total_mb | 986.032 | 1064.92096 |
+| gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
+| report_params | 369808320 | 409252800 |
+| report_total_gb | 1.035315072 | 1.114204032 |
+| report_weight_gb | 0.73961664 | 0.8185056 |
+
+## gguf:gpt-oss-20b-MXFP4.gguf (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| eng_None_32768_params | 1992044160 | 20908068480 |
+| eng_None_32768_total_mb | 5945.764301 | 44049.60384 |
+| eng_None_4096_params | 1992044160 | 20908068480 |
+| eng_None_4096_total_mb | 4360.946534 | 42328.890624 |
+| eng_llamacpp_32768_params | 1992044160 | 20908068480 |
+| eng_llamacpp_32768_total_mb | 5945.764301 | 44049.60384 |
+| eng_llamacpp_4096_params | 1992044160 | 20908068480 |
+| eng_llamacpp_4096_total_mb | 4360.946534 | 42328.890624 |
+| genz_decode_weights_mb | 3078.984375 | 38773.828125 |
+| genz_ffn_kinds | {"Dense": 24} | {"MoE": 24} |
+| gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "moe_intermediate_size", "n_routed_experts", "num_attention_heads", "num_experts", "num_experts_per_tok", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
+| report_params | 1992044160 | 20908068480 |
+| report_total_gb | 4.436318177 | 42.431441357 |
+| report_weight_gb | 3.98408832 | 41.81613696 |
+
+## gguf:nomic-embed-text-v1.5.Q8_0.gguf (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| eng_None_32768_params | 109986816 | 136725504 |
+| eng_None_32768_total_mb | 1594.027622 | 1647.504998 |
+| eng_None_4096_params | 109986816 | 136725504 |
+| eng_None_4096_total_mb | 454.015795 | 507.493171 |
+| eng_llamacpp_32768_params | 109986816 | 136725504 |
+| eng_llamacpp_32768_total_mb | 1594.027622 | 1647.504998 |
+| eng_llamacpp_4096_params | 109986816 | 136725504 |
+| eng_llamacpp_4096_total_mb | 454.015795 | 507.493171 |
+| genz_decode_weights_mb | 206.709961 | 260.709961 |
+| gguf_config_keys | ["hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
+| report_params | 109986816 | 136725504 |
+| report_total_gb | 0.500824228 | 0.554301604 |
+| report_weight_gb | 0.219973632 | 0.273451008 |
 

@@ -402,10 +402,10 @@ def test_unknown_recurrent_family_is_flagged_not_silently_defaulted():
 def test_phi4flash_is_flagged_rather_than_silently_approximated():
     """SambaY shares one global KV across its YOCO layers, which a per-layer plan
     cannot express. It must announce that instead of quietly reporting a number
-    that looks as trustworthy as the others."""
+    that looks as trustworthy as the others -- and say which side it errs on."""
     plan = resolve_layer_plan(cfg("microsoft_Phi-4-mini-flash-reasoning"))
     assert plan["approximate"] is True
-    assert plan["notes"] and "OVER-estimate" in plan["notes"][0]
+    assert plan["notes"] and "UPPER BOUND" in plan["notes"][0]
 
 
 def test_phi4flash_approximation_keeps_its_sliding_window():
@@ -415,16 +415,25 @@ def test_phi4flash_approximation_keeps_its_sliding_window():
     "be conservative, over-count" reflex -- discards that clamp and inflates KV
     by 195x at 100k context. Regression caught by diffing every model's report
     against the pre-refactor tree.
+
+    Windowing EVERY layer is the opposite error: the YOCO cross-decoder reuses one
+    full-attention cache that grows with the context, so at 100k that reading was
+    ~6x low. The bound: a Mamba mixer every `mb_per_layer` layers, the window on
+    every other layer, and the context on the one layer that holds the shared cache.
     """
     c = cfg("microsoft_Phi-4-mini-flash-reasoning")
     window = c["sliding_window"]
     plan = resolve_layer_plan(c)
-    assert plan["num_sliding_layers"] == c["num_hidden_layers"]
-    assert plan["num_full_layers"] == 0
+    n = c["num_hidden_layers"]
+    assert plan["num_full_layers"] == 1
+    assert plan["num_sliding_layers"] == n // 2 - 1
 
     seq = 100_000
     kv = _kv("microsoft_Phi-4-mini-flash-reasoning", 5, seq)
-    expected = 2 * 20 * (2560 // 40) * 2 * 32 * window * 5 / 1e9
-    assert kv == pytest.approx(expected, rel=1e-9)
-    # Unclamped it would be seq/window = 195x larger.
+    per_layer_token = 2 * 20 * (2560 // 40) * 2 * 5 / 1e9
+    assert kv == pytest.approx(per_layer_token * ((n // 2 - 1) * window + seq), rel=1e-9)
+    # Never below the published design (8 windowed layers + one shared cache) ...
+    assert kv >= per_layer_token * (8 * window + seq)
+    # ... and nowhere near the window discarded on every attention layer.
+    assert kv < per_layer_token * (n // 2) * seq / 10
     assert seq / window == pytest.approx(195.3125, rel=1e-6)
