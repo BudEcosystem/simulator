@@ -327,6 +327,11 @@ class ModelConfig():
             view.intermediate_size = lc.intermediate_size
         elif lc.ffn_mult is not None:
             view.intermediate_size = int(self.hidden_size * lc.ffn_mult)
+        if lc.ffn_type == "Dense" and (self.num_experts or 1) > 1:
+            # A dense layer of an MoE model (Jamba's even layers, DeepSeek's first
+            # `first_k_dense_replace`) runs one FFN of `intermediate_size`, not the experts.
+            view.num_experts = 1
+            view.expert_top_k = 1
         return view
 
     def get_kv_size(self):

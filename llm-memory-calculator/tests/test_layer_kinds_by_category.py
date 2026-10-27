@@ -486,3 +486,218 @@ def test_a_hybrid_parameter_count_does_not_treat_linear_attention_as_attention()
     linear = dict(c, layer_types=["linear_attention", "full_attention"] * 2)
     attention = dict(c, layer_types=["full_attention"] * 4)
     assert pc.count_parameters(linear) != pc.count_parameters(attention)
+
+
+# ------------------------------------------------- review round 1: the paths and shapes still wrong
+
+
+def _genz_kv_mb(builder, tmp_path, **kwargs):
+    from llm_memory_calculator.genz.analyse_model import get_model_df, get_summary_table
+
+    for sub in ("model", "sparsity"):
+        (tmp_path / sub).mkdir(exist_ok=True)
+    path = builder(data_path=str(tmp_path), **kwargs)
+    df = get_model_df(path, batch_size=1, data_path=str(tmp_path), model_characterstics=True)
+    return float(get_summary_table(df, model_characterstics=True)["KV Cache (MB)"].values[0])
+
+
+def _chunked_kv_mb(config, tmp_path, decode_kv):
+    from llm_memory_calculator.genz.Models.get_language_model import (
+        create_full_chunked_model,
+        get_configs,
+    )
+
+    return _genz_kv_mb(
+        create_full_chunked_model, tmp_path, name=get_configs(config),
+        prefill_kv_sizes=[(0, 512)], decode_kv_sizes=[decode_kv],
+    )
+
+
+def test_the_chunked_graph_charges_kv_only_on_the_attention_layers(tmp_path):
+    """`create_full_chunked_model` (chunked serving, speculative decoding, the simulation
+    engine's chunked feature) built every layer as attention: Qwen3.5-4B paid 32 layers of KV.
+    The growth from 4,096 to 8,192 cached tokens is 8 full-attention layers, 128 MiB."""
+    c = cfg("Qwen_Qwen3.5-4B")
+    growth = _chunked_kv_mb(c, tmp_path, 8192) - _chunked_kv_mb(c, tmp_path, 4096)
+    assert growth == pytest.approx(128.0, rel=1e-6)
+
+
+def test_the_chunked_graph_bounds_windowed_layers_by_their_window(tmp_path):
+    """gpt-oss-120b: 18 full + 18 sliding (window 128). Past the window only the full layers grow."""
+    c = cfg("openai_gpt-oss-120b")
+    per_token_mib = per_layer_token(c["num_key_value_heads"], c["head_dim"]) / MiB
+    growth = _chunked_kv_mb(c, tmp_path, 8192) - _chunked_kv_mb(c, tmp_path, 4096)
+    assert growth == pytest.approx(18 * per_token_mib * 4096, rel=1e-6)
+
+
+def test_the_genz_recurrent_state_is_priced_like_the_calculator(tmp_path):
+    """The recurrent matrix is held in fp32 (as vLLM and llama.cpp hold it); the graph priced
+    it at the activation precision, half the calculator's figure for the same config."""
+    from llm_memory_calculator.genz.Models.get_language_model import (
+        create_full_decode_model,
+        get_configs,
+    )
+
+    c = cfg("Qwen_Qwen3.5-4B")
+    kv = _genz_kv_mb(create_full_decode_model, tmp_path, name=get_configs(c),
+                     input_sequence_length=4096, output_gen_tokens=0)
+    assert kv == pytest.approx(128.0 + state_bytes(c) / MiB, rel=1e-6)
+
+
+def test_the_genz_graph_places_moe_only_on_the_layers_the_config_says():
+    """Jamba: `expert_layer_period: 2, expert_layer_offset: 1` -- half its FFNs are dense.
+    Kimi Linear / DeepSeek: the first `first_k_dense_replace` layers are dense."""
+    from llm_memory_calculator.genz.Models.get_language_model import get_configs
+
+    jamba = get_configs(cfg("ai21labs_Jamba-v0.1"))
+    ffn = [lc.ffn_type for lc in jamba.layer_configs]
+    assert ffn.count("MoE") == 16 and ffn.count("Dense") == 16
+    assert all(f == ("MoE" if i % 2 == 1 else "Dense") for i, f in enumerate(ffn))
+    # a dense layer of an MoE model is graphed as one FFN, not as the experts
+    assert jamba.get_layer_view(0).num_experts == 1
+    assert jamba.get_layer_view(1).num_experts == 16
+
+    kimi = get_configs(cfg("moonshotai_Kimi-Linear-48B-A3B-Instruct"))
+    ffn = [lc.ffn_type for lc in kimi.layer_configs]
+    assert ffn[0] == "Dense" and set(ffn[1:]) == {"MoE"}
+
+
+def test_the_genz_jamba_weights_match_the_parameter_count(tmp_path):
+    from llm_memory_calculator import calculate_memory
+    from llm_memory_calculator.genz.Models.get_language_model import (
+        create_full_decode_model,
+        get_configs,
+    )
+    from llm_memory_calculator.genz.analyse_model import get_model_df, get_summary_table
+
+    c = cfg("ai21labs_Jamba-v0.1")
+    for sub in ("model", "sparsity"):
+        (tmp_path / sub).mkdir(exist_ok=True)
+    path = create_full_decode_model(name=get_configs(c), input_sequence_length=1024,
+                                    output_gen_tokens=0, data_path=str(tmp_path))
+    df = get_model_df(path, batch_size=1, data_path=str(tmp_path), model_characterstics=True)
+    weights_mb = float(get_summary_table(df, model_characterstics=True)["Total Weights (MB)"].values[0])
+    params = calculate_memory(c, batch_size=1, seq_length=1024).parameter_count
+    # bf16 weights; the graph omits norms and small vectors, so allow a few percent
+    assert weights_mb * MiB / 2 == pytest.approx(params, rel=0.05)
+
+
+def test_a_window_without_a_stated_layout_follows_the_config_class():
+    """Gemma 2's hub config.json carries `sliding_window` and no `layer_types`; its config
+    class (transformers) alternates sliding and full. Clamping every layer to the window
+    under-counted KV 8x at 32k. Mistral's class states no per-layer list: every layer slides."""
+    gemma2 = dict(model_type="gemma2", hidden_size=2304, num_hidden_layers=8,
+                  num_attention_heads=8, num_key_value_heads=4, head_dim=256,
+                  sliding_window=4096, vocab_size=1000, intermediate_size=9216)
+    kinds = layer_kinds(gemma2)
+    assert kinds["attn"].count("full") == 4 and kinds["attn"].count("sliding") == 4
+    per = per_layer_token(4, 256)
+    assert kv_bytes(gemma2, 32768, engine={"heterogeneous_kv_layout": True}) == pytest.approx(per * (
+        4 * 32768 + 4 * 4096
+    ))
+    mistral = dict(model_type="mistral", hidden_size=4096, num_hidden_layers=32,
+                   num_attention_heads=32, num_key_value_heads=8, sliding_window=4096)
+    assert layer_kinds(mistral)["attn"] == ["sliding"] * 32
+
+
+def test_a_window_on_an_unknown_model_type_is_charged_in_full_and_said_so():
+    c = dict(model_type="futurenet", hidden_size=4096, num_hidden_layers=4,
+             num_attention_heads=32, num_key_value_heads=8, sliding_window=512)
+    with pytest.warns(UserWarning, match="window"):
+        kinds = layer_kinds(c)
+    assert kinds["attn"] == ["full"] * 4
+    assert any("window" in n for n in kinds["notes"])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert kv_bytes(c, 4096) == 4 * per_layer_token(8, 128) * 4096
+
+
+def test_depth_comes_from_the_per_layer_list_when_the_config_omits_it():
+    """transformers 5.12's NemotronHConfig deprecates `num_hidden_layers` for
+    `layers_block_type`: mamba, moe, attention, mlp -- one attention layer, one Mamba-2."""
+    c = dict(model_type="nemotron_h", hidden_size=4096, num_attention_heads=32,
+             num_key_value_heads=8, head_dim=128, mamba_num_heads=128, mamba_head_dim=64,
+             ssm_state_size=128, n_groups=8, conv_kernel=4, vocab_size=1000,
+             layers_block_type=["mamba", "moe", "attention", "mlp"])
+    kinds = layer_kinds(c)
+    assert kinds["attn"] == [None, None, "full", None]
+    assert kinds["recurrent"] == [MECH_MAMBA2, None, None, None]
+    assert kinds["ffn"] == [False, True, False, True]
+    assert kv_bytes(c, 32768) == per_layer_token(8, 128) * 32768
+
+
+def test_a_nemotron_pattern_reads_its_moe_slots():
+    """Nemotron 3's pattern adds `E` (an MoE FFN slot) to M / * / -."""
+    c = dict(model_type="nemotron_h", hidden_size=2688, num_hidden_layers=6,
+             num_attention_heads=32, num_key_value_heads=2, head_dim=128,
+             ssm_state_size=128, n_groups=8, hybrid_override_pattern="MEM*EM")
+    kinds = layer_kinds(c)
+    assert kinds["ffn"] == [False, True, False, False, True, False]
+    assert sum(1 for a in kinds["attn"] if a) == 1
+
+
+def test_a_mamba1_gguf_is_sized_as_mamba1():
+    """A Mamba-1 GGUF states no `ssm.group_count`: llama.cpp's Mamba-1 has no B/C groups."""
+    meta = {"ssm.state_size": 16, "ssm.conv_kernel": 4, "ssm.inner_size": 8192,
+            "ssm.time_step_rank": 256}
+    keys = hf_layer_keys_from_gguf(_gguf(meta), 64)
+    kinds = layer_kinds(dict(model_type="falcon_mamba", num_hidden_layers=64,
+                             hidden_size=4096, **keys))
+    assert kinds["mechanisms"] == ["mamba1"]
+
+
+def test_the_qwen35_gguf_parameter_count_matches_its_tensors():
+    """The GGUF reader stated no RoPE (so the counter added 537M learned position
+    embeddings) and no gated FFN; the file's own tensors are the truth."""
+    import sys
+
+    path = "/home/bud/models/qwen3.5-2b-gguf/Qwen3.5-2B-Q4_K_M.gguf"
+    if not os.path.exists(path):
+        pytest.skip("Qwen3.5-2B GGUF not on this machine")
+    import gguf
+    import numpy as np
+
+    root = Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(root))
+    try:
+        import bud_component
+    finally:
+        sys.path.pop(0)
+    from llm_memory_calculator.parameter_counter import UniversalParameterCounter
+
+    c, _, _ = bud_component.gguf_to_hf_config(path)
+    truth = sum(int(np.prod(t.shape)) for t in gguf.GGUFReader(path).tensors)
+    assert UniversalParameterCounter().count_parameters(c) == pytest.approx(truth, rel=0.03)
+
+
+def test_sambay_kv_is_never_below_its_one_shared_full_cache():
+    """Phi-4-mini-flash (SambaY): its YOCO cross-decoder reuses ONE full-attention cache that
+    grows with the context. Charging every layer a 512-token window under-counted it at long
+    context; the bound charges that cache in full and never less than the published design
+    (8 windowed layers + 1 full) needs."""
+    c = cfg("microsoft_Phi-4-mini-flash-reasoning")
+    per = per_layer_token(c["num_key_value_heads"], c["hidden_size"] // c["num_attention_heads"])
+    for seq in (4096, 32768, 131072):
+        kv = kv_bytes(c, seq, engine={"heterogeneous_kv_layout": True})
+        assert kv >= per * (8 * 512 + seq)
+        assert kv < per * 32 * seq
+
+
+def test_a_dense_layer_of_an_moe_model_graphs_under_expert_parallelism(tmp_path):
+    """Jamba with expert_parallel=2: its dense layers have no experts to shard."""
+    from llm_memory_calculator.genz.Models.get_language_model import (
+        create_full_chunked_model,
+        create_full_decode_model,
+        create_full_prefill_model,
+        get_configs,
+    )
+
+    for sub in ("model", "sparsity"):
+        (tmp_path / sub).mkdir(exist_ok=True)
+    mc = get_configs(cfg("ai21labs_Jamba-v0.1"))
+    create_full_prefill_model(name=mc, input_sequence_length=256, data_path=str(tmp_path),
+                              expert_parallel=2)
+    create_full_decode_model(name=mc, input_sequence_length=256, data_path=str(tmp_path),
+                             expert_parallel=2)
+    create_full_chunked_model(name=mc, prefill_kv_sizes=[(0, 128)], decode_kv_sizes=[256],
+                              data_path=str(tmp_path), expert_parallel=2)

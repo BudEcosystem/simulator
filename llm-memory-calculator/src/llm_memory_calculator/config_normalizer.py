@@ -18,7 +18,8 @@ from .layer_plan import (
     MECH_MAMBA1,
     MECH_MAMBA2,
     _classify_layer_type_string,
-    synthesized_layer_types,
+    depth as _depth,
+    stated_layer_types,
 )
 
 
@@ -250,17 +251,24 @@ class ConfigNormalizer:
         if config.get('use_sliding_window') is False:
             normalized['sliding_window'] = None
 
-        layer_types = config.get('layer_types')
-        if layer_types is None:
-            # A global (full-attention) layer every `sliding_window_pattern`
-            # layers; the one synthesis lives with the layer-kind table.
-            layer_types = synthesized_layer_types(normalized)
+        # A config that states its depth only through a per-layer list (transformers
+        # 5.12's Nemotron-H) still has a depth every counter below can read.
+        if not normalized.get('num_hidden_layers'):
+            depth = _depth(normalized)
+            if depth:
+                normalized['num_hidden_layers'] = depth
+
+        # Which layers take the window: an explicit list, a period, or the layout the
+        # model type's own config class derives -- one answer, kept with the table.
+        layer_types, _, layer_notes = stated_layer_types(normalized)
 
         if layer_types:
             normalized['_layer_metadata'] = ConfigNormalizer._parse_layer_types(
                 layer_types,
-                config.get('num_hidden_layers', len(layer_types))
+                normalized.get('num_hidden_layers') or len(layer_types)
             )
+            if layer_notes:
+                normalized['_layer_metadata']['notes'] = list(layer_notes)
         
         return normalized
     

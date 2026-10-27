@@ -1,3 +1,4 @@
+from llm_memory_calculator.genz.Models.recurrent import RECURRENT_OPS, op_state_bytes
 from llm_memory_calculator.genz.unit import Unit
 import llm_memory_calculator.genz.operators as operators
 from llm_memory_calculator.genz.operator_base import op_type_dicts
@@ -197,7 +198,7 @@ def get_runtime_breakdown(df:pd.DataFrame) -> RuntimeBreakdown:
             runtime_breakdown.Collective += layer_latency
         elif layer_name in ['Inproj', 'Conv', 'BC proj', 'xt proj', 'deltaA', 'deltaB', 'deltaBu', 'x calc', 'y calc', 'D addition', 'out mult z', 'Out proj', 'Mamba AR']:
             runtime_breakdown.Mamba_time += layer_latency
-        elif layer_name in ['Rec Proj', 'Rec State', 'Rec Conv', 'Rec AR']:
+        elif layer_name in RECURRENT_OPS:
             # A recurrent token mixer (Gated DeltaNet, Mamba-2, ...; genz/Models/recurrent.py):
             # booked with the Mamba time, the bucket for fixed-state mixers.
             runtime_breakdown.Mamba_time += layer_latency
@@ -227,6 +228,8 @@ def analysis_model(model_dims, system=None, unit=Unit(), densities = None,interm
             dim[1] /= beam_size         ## Batch size is divided by beam size
         operator_instance = operator(dim=dim, density=density)
         operator_instance.weight_role = weight_roles.role_for(dim[0])
+        # A recurrent mixer's state is held at its own dtype (genz/Models/recurrent.py).
+        operator_instance.state_bytes = op_state_bytes(dim[0])
         # print(density[0],density[1],density[2])
         if (intermediate_on_chip):
             if(op_type == 'Logit'):

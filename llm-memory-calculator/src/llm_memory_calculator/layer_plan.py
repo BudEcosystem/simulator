@@ -132,6 +132,10 @@ _MECHANISM_REQUIRED_KEYS = {
 }
 
 
+#: Nemotron-H's pattern characters, as transformers translates them.
+_NEMOTRON_PATTERN = {"M": "mamba", "E": "moe", "*": "attention", "-": "mlp"}
+
+
 def _first(config: Dict[str, Any], *keys, default=None):
     """First present, non-None key among aliases. Families disagree on spelling."""
     for k in keys:
@@ -154,6 +158,27 @@ def _text_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def _blank(n: int) -> Dict[str, Any]:
     return {"attn": [None] * n, "recurrent": [None] * n}
+
+
+#: Per-layer lists whose length IS the depth. transformers 5.12's NemotronHConfig deprecates
+#: `num_hidden_layers` in favour of `layers_block_type` and drops it from the saved config,
+#: so a reader that requires the scalar loses the whole layout.
+_PER_LAYER_LIST_KEYS = (
+    "layer_types", "layers_block_type", "hybrid_override_pattern", "attn_type_list",
+    "sliding_window_layout", "mlp_layer_types",
+)
+
+
+def depth(tc: Dict[str, Any]) -> int:
+    """Decoder depth: the stated layer count, else the length of a per-layer list."""
+    n = _first(tc, "num_hidden_layers", "n_layers", "num_layers")
+    if n:
+        return int(n)
+    for key in _PER_LAYER_LIST_KEYS:
+        v = tc.get(key)
+        if isinstance(v, (list, tuple, str)) and v:
+            return len(v)
+    return 0
 
 
 #: Spellings of "how many tokens a windowed layer keeps". SmallThinker ships
@@ -233,16 +258,24 @@ def _recurrent_mechanism(name: Optional[str], tc: Dict[str, Any], layer_name: st
 
 
 def _apply_layer_names(plan, names, tc, n, notes):
-    """Fill both axes from a list of per-layer kind names; flag unknown names."""
+    """Fill both axes from a list of per-layer kind names; flag unknown names.
+
+    A stack that names FFN-only slots (Nemotron-H's ``moe`` / ``mlp``) gives the FFN its own
+    layer: then only those slots carry one, and the mixers carry none. Every other stack pairs
+    an FFN with each mixer. The answer is left in ``plan["_ffn"]`` (None = every layer).
+    """
     unknown = []
+    ffn_only = []
     for i, lt in enumerate(list(names)[:n]):
         k = _classify_layer_type_string(lt)
         if k.get("unknown"):
             unknown.append(k["unknown"])
+        ffn_only.append(not k.get("unknown") and k["attn"] is None and k["recurrent"] is None)
         plan["attn"][i] = ATTN_SLIDING if k["attn"] == ATTN_CHUNKED else k["attn"]
         if k["attn"] == ATTN_CHUNKED:
             plan.setdefault("_chunked", True)
         plan["recurrent"][i] = _recurrent_mechanism(k["recurrent"], tc, lt)
+    plan["_ffn"] = ffn_only if any(ffn_only) else None
     if unknown:
         msg = (
             f"layer kinds {sorted(set(unknown))} are not in the simulator's layer-kind "
@@ -265,7 +298,7 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     silent wrong number.
     """
     tc = _text_config(config)
-    n = _first(tc, "num_hidden_layers", "n_layers", "num_layers")
+    n = depth(tc)
     if not n:
         return None
 
@@ -279,7 +312,7 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     layer_types = tc.get("layer_types")
     if isinstance(layer_types, list) and layer_types:
         _apply_layer_names(plan, layer_types, tc, n, notes)
-        return _finish(plan, config, "layer_types", notes)
+        return _finish(plan, config, "layer_types", notes, ffn=plan.pop("_ffn", None))
 
     # --- 1a. A block-type pattern that repeats over the depth (RecurrentGemma's
     # `block_types`, e.g. ["recurrent", "recurrent", "attention"]). Its one
@@ -289,6 +322,7 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if isinstance(block_types, (list, tuple)) and block_types and isinstance(block_types[0], str):
         cycle = [block_types[i % len(block_types)] for i in range(n)]
         _apply_layer_names(plan, cycle, tc, n, notes)
+        plan.pop("_ffn", None)
         if _window(tc):
             plan["attn"] = [ATTN_SLIDING if a == ATTN_FULL else a for a in plan["attn"]]
         return _finish(plan, config, "block_types", notes)
@@ -330,25 +364,28 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 plan["recurrent"][i] = MECH_LIGHTNING
         return _finish(plan, config, "attn_type_list", notes)
 
-    # --- 4. Nemotron-H: a pattern string, M=mamba * =attention - =MLP-only ---
+    # --- 4. Nemotron-H: a pattern string, one character per layer, in transformers'
+    # own translation (NemotronHConfig._pattern_to_list): M=mamba, E=moe, *=attention,
+    # -=mlp. The names then resolve through the table like any per-layer list. ----------
     pat = tc.get("hybrid_override_pattern")
     if isinstance(pat, str) and pat:
         # Unlike every other family here, Nemotron-H gives the FFN its OWN layer
         # slot rather than pairing one with each mixer. Charging an FFN on all 56
         # layers instead of the 25 that have one is a ~2.2x over-count on the
         # single largest parameter block in the model.
-        ffn = [False] * n
-        for i, ch in enumerate(pat[:n]):
-            if ch == "*":
-                plan["attn"][i] = ATTN_FULL
-            elif ch == "M":
-                plan["recurrent"][i] = MECH_MAMBA2
-            elif ch == "-":
-                ffn[i] = True
+        names = [_NEMOTRON_PATTERN.get(ch, ch) for ch in pat]
+        _apply_layer_names(plan, names, tc, n, notes)
+        ffn = plan.pop("_ffn", None) or [False] * n
         return _finish(plan, config, "hybrid_override_pattern", notes, ffn=ffn)
 
-    # --- 5. Zamba2: layers_block_type, 'hybrid' carries the shared attention -
+    # --- 5. layers_block_type. Zamba / Zamba2 name a 'hybrid' layer: the SHARED
+    # attention+MLP block runs beside that layer's Mamba mixer. Any other list
+    # (Nemotron-H as transformers 5.12 saves it: mamba / moe / attention / mlp)
+    # resolves through the table like `layer_types`. --------------------------
     lbt = tc.get("layers_block_type")
+    if isinstance(lbt, list) and lbt and not any(str(t).lower() == "hybrid" for t in lbt):
+        _apply_layer_names(plan, lbt, tc, n, notes)
+        return _finish(plan, config, "layers_block_type", notes, ffn=plan.pop("_ffn", None))
     if isinstance(lbt, list) and lbt:
         for i, t in enumerate(lbt[:n]):
             t = str(t).lower()
@@ -462,28 +499,42 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             plan["attn"][i] = ATTN_CROSS if i in s else ATTN_FULL
         return _finish(plan, config, "cross_attention_layers", notes, keep_uniform=True)
 
-    # --- Known-but-unmodelled: SambaY / Phi-4-flash --------------------------
-    # SambaY interleaves Mamba with sliding-window attention and then adds YOCO
-    # cross-attention layers that *share a single* global KV cache. Neither the
-    # sharing nor the Mamba/attention split is expressible here, and the config
-    # carries no SSM dimensions at all (no d_state, no conv_kernel -- they live
-    # in the modeling code), so the recurrent state cannot be sized from it.
+    # --- SambaY / Phi-4-flash: an upper bound, never an under-count ----------
+    # SambaY interleaves Mamba with sliding-window attention in its self-decoder,
+    # then its YOCO cross-decoder reuses ONE full-attention KV cache -- written by
+    # a single layer and read by the cross-attention layers after it -- which
+    # grows with the context. The config states the Mamba spacing (`mb_per_layer`,
+    # a Mamba mixer every that-many layers) and the window, but not which layer
+    # writes the shared cache, nor any SSM dimension (they live in the modelling
+    # code). Recognised by that key: nothing else ships `mb_per_layer`.
     #
-    # Every layer is therefore marked sliding, which preserves the window clamp
-    # this model genuinely uses. Marking them `full` instead would silently
-    # discard the 512-token window and inflate KV by 195x at 100k context -- a
-    # far worse answer than the one being approximated.
-    # Recognised by its own config key: `mb_per_layer` (Mamba blocks per layer)
-    # is the SambaY decoder's, and nothing else ships it.
+    # Charged: every non-Mamba layer the window, plus ONE layer the full context
+    # for the shared cache. That is never below the published design (the
+    # self-decoder's windowed layers + one growing cache) and never charges the
+    # cross-attention layers a cache of their own. Every layer windowed (the old
+    # reading) dropped the growing cache and under-counted at long context; every
+    # layer full would charge 16x that cache. The Mamba state falls back to
+    # default geometry and is flagged as an estimate below.
     if "mb_per_layer" in tc:
-        plan["attn"] = [ATTN_SLIDING] * n
+        mb = int(tc.get("mb_per_layer") or 0)
+        for i in range(n):
+            if mb > 0 and i % mb == 0:
+                plan["recurrent"][i] = MECH_MAMBA1
+            else:
+                plan["attn"][i] = ATTN_SLIDING if _window(tc) else ATTN_FULL
+        shared_cache = next(
+            (i for i in range(n // 2, n) if plan["attn"][i] is not None),
+            next((i for i in range(n) if plan["attn"][i] is not None), None),
+        )
+        if shared_cache is not None:
+            plan["attn"][shared_cache] = ATTN_FULL
         return _finish(
             plan, config, "phi4flash",
             notes + [
-                "SambaY (Phi-4-flash): YOCO cross-attention layers share one "
-                "global KV cache and half the stack is Mamba, so charging all "
-                "layers a windowed KV is an OVER-estimate. Recurrent state is "
-                "reported as 0 because the config ships no SSM dimensions."
+                "SambaY (Phi-4-flash): an UPPER BOUND. Every non-Mamba layer is "
+                "charged the window and one layer the full context for the YOCO "
+                "cache the cross-attention layers share; the config does not say "
+                "which layers are windowed and which only read the shared cache."
             ],
             approximate=True,
         )
@@ -499,7 +550,7 @@ def synthesized_layer_types(tc: Dict[str, Any]) -> Optional[List[str]]:
     Without this every layer reads as full attention and the global layers'
     window is lost. None when the config states no such period.
     """
-    n = _first(tc, "num_hidden_layers", "n_layers", "num_layers")
+    n = depth(tc)
     pattern = tc.get("sliding_window_pattern")
     if not (
         n and isinstance(pattern, int) and not isinstance(pattern, bool) and pattern > 1
@@ -510,6 +561,183 @@ def synthesized_layer_types(tc: Dict[str, Any]) -> Optional[List[str]]:
         "full_attention" if i % pattern == pattern - 1 else "sliding_attention"
         for i in range(int(n))
     ]
+
+
+#: Keys a config class may need to derive its layout, for the reduced retry when a
+#: config does not validate as a whole.
+_LAYOUT_KEYS = (
+    "num_hidden_layers", "sliding_window", "use_sliding_window", "max_window_layers",
+    "sliding_window_pattern", "layer_types", "attention_chunk_size", "no_rope_layers",
+)
+
+_CLASS_LAYOUT_CACHE: Dict[str, Any] = {}
+
+
+def _config_class_layer_types(tc: Dict[str, Any]):
+    """``(known, names)``: what the model type's own config class says the layers are.
+
+    transformers derives a per-layer list for families whose hub configs predate it --
+    Gemma 2 alternates sliding and full in `Gemma2Config`, Qwen2 windows the layers from
+    `max_window_layers` on -- and states none for a family where every layer takes the
+    window (Mistral). ``known`` is False when the installed transformers does not have this
+    model type (or cannot read the config), so the caller can stay conservative.
+    """
+    mt = str(tc.get("model_type") or "")
+    if not mt:
+        return False, None
+    try:
+        import json
+
+        key = json.dumps(tc, sort_keys=True, default=str)
+    except Exception:
+        key = None
+    if key is not None and key in _CLASS_LAYOUT_CACHE:
+        return _CLASS_LAYOUT_CACHE[key]
+    result = (False, None)
+    try:
+        from transformers import CONFIG_MAPPING
+
+        cls = CONFIG_MAPPING[mt]
+    except Exception:
+        cls = None
+    if cls is not None:
+        import logging
+
+        drop = {"model_type", "transformers_version", "architectures", "auto_map", "text_config",
+                "vision_config", "audio_config"}
+        whole = {k: v for k, v in tc.items() if k not in drop and not k.startswith("_")}
+        reduced = {k: whole[k] for k in _LAYOUT_KEYS if k in whole}
+        tf_log = logging.getLogger("transformers")
+        level = tf_log.level
+        tf_log.setLevel(logging.ERROR)
+        try:
+            for kwargs in (whole, reduced):
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        obj = cls(**kwargs)
+                except Exception:
+                    continue
+                names = getattr(obj, "layer_types", None)
+                n = depth(tc)
+                if isinstance(names, (list, tuple)) and names and (not n or len(names) == n):
+                    result = (True, [str(x) for x in names])
+                else:
+                    result = (True, None)
+                break
+        finally:
+            tf_log.setLevel(level)
+    if key is not None:
+        _CLASS_LAYOUT_CACHE[key] = result
+    return result
+
+
+def stated_layer_types(tc: Dict[str, Any]):
+    """``(names, source, notes)``: the per-layer kind names a decoder config states.
+
+    In order: an explicit ``layer_types``; a period (``sliding_window_pattern``); and, for a
+    config that carries a window but no layout, the layout its own config class derives
+    (transformers). A window whose layers no source places -- the model type is unknown to
+    the installed transformers -- is charged on NO layer: every layer is full attention, the
+    over-estimate, and the notes and a warning say so. Clamping every layer to the window
+    instead under-counts any model that alternates (Gemma 2's hub config is exactly that
+    shape). ``names`` is None for a uniform stack the window, if any, applies to as a whole.
+    """
+    names = tc.get("layer_types")
+    if isinstance(names, list) and names:
+        return list(names), "layer_types", []
+    names = synthesized_layer_types(tc)
+    if names:
+        return names, "sliding_window_pattern", []
+    if not _window(tc):
+        return None, "uniform", []
+    known, names = _config_class_layer_types(tc)
+    if names:
+        return names, "config_class", []
+    if known:
+        return None, "uniform", []
+    if resolve_layer_plan(tc) is not None:
+        # A hybrid dialect (Hymba's global indices, SambaY's Mamba spacing) places the
+        # window itself; the layer plan answers for it.
+        return None, "layer_plan", []
+    n = depth(tc)
+    msg = (
+        f"model type {tc.get('model_type')!r} states a {_window(tc)}-token window but not which "
+        "layers take it, and the installed transformers has no config class to say; every "
+        f"layer is charged FULL-ATTENTION KV ({n} layers) -- an over-estimate, not a measurement. "
+        "Add `layer_types` to the config to apply the window."
+    )
+    warnings.warn(msg, stacklevel=3)
+    return ["full_attention"] * n, "unplaced_window", [msg]
+
+
+#: Spellings of the routed-expert count. Hunyuan ships one per layer.
+_EXPERT_COUNT_KEYS = (
+    "num_local_experts", "n_routed_experts", "num_experts", "moe_num_experts",
+    "moe_num_primary_experts",
+)
+
+
+def moe_layers(config: Dict[str, Any]) -> Optional[List[bool]]:
+    """Which decoder layers route to experts, from the config's own placement keys.
+
+    None for a model without routed experts. MoE changes no layer's KV; it decides which
+    FFN a layer runs. Rules as each family's modelling code applies them (transformers
+    5.12): `mlp_layer_types` (dense / sparse), `moe_layers` (Llama 4's index list), a
+    per-layer expert count, `expert_layer_period` / `expert_layer_offset` (Jamba:
+    i % period == offset), `decoder_sparse_step` + `mlp_only_layers` (Qwen MoE:
+    (i + 1) % step == 0), `interleave_moe_layer_step` (Llama 4), `moe_layer_start_index` /
+    `moe_layer_end_index` / `moe_layer_interval` (ERNIE 4.5), and `first_k_dense_replace` /
+    `moe_layer_freq` (DeepSeek, Kimi, GLM: i >= k and i % freq == 0). A stack that names its
+    FFN slots (Nemotron-H's `moe` / `mlp`) says it per layer. With none of these, every
+    layer is MoE.
+    """
+    tc = _text_config(config)
+    n = depth(tc)
+    if not n:
+        return None
+    mlt = tc.get("mlp_layer_types")
+    if isinstance(mlt, list) and len(mlt) == n:
+        return [str(t).lower() == "sparse" for t in mlt]
+    count = _first(tc, *_EXPERT_COUNT_KEYS)
+    if isinstance(count, list) and len(count) == n:
+        return [isinstance(c, (int, float)) and c > 1 for c in count]
+    if not (isinstance(count, (int, float)) and not isinstance(count, bool) and count > 1):
+        return None
+    for key in ("hybrid_override_pattern", "layers_block_type", "layer_types"):
+        names = tc.get(key)
+        if isinstance(names, str):
+            names = [_NEMOTRON_PATTERN.get(ch, ch) for ch in names]
+        if isinstance(names, list) and len(names) == n and any(
+            str(x).lower() in ("moe", "mlp", "mlp_only", "ffn", "dense") for x in names
+        ):
+            return [str(x).lower() == "moe" for x in names]
+    idx = tc.get("moe_layers")
+    if isinstance(idx, list) and idx and all(isinstance(i, int) for i in idx):
+        s = set(idx)
+        return [i in s for i in range(n)]
+    period = tc.get("expert_layer_period")
+    if isinstance(period, int) and period > 1:
+        off = int(tc.get("expert_layer_offset") or 0)
+        return [i % period == off for i in range(n)]
+    step = tc.get("decoder_sparse_step")
+    mlp_only = set(tc.get("mlp_only_layers") or ())
+    if (isinstance(step, int) and step > 1) or mlp_only:
+        step = step if isinstance(step, int) and step > 0 else 1
+        return [(i + 1) % step == 0 and i not in mlp_only for i in range(n)]
+    inter = tc.get("interleave_moe_layer_step")
+    if isinstance(inter, int) and inter > 1:
+        return [(i + 1) % inter == 0 for i in range(n)]
+    if "moe_layer_start_index" in tc or "moe_layer_interval" in tc:
+        start = int(tc.get("moe_layer_start_index") or 0)
+        end = tc.get("moe_layer_end_index")
+        end = n - 1 if end is None or int(end) < 0 else int(end)
+        every = int(tc.get("moe_layer_interval") or 1) or 1
+        return [(i + 1) % every == 0 and start <= i <= end for i in range(n)]
+    k = int(tc.get("first_k_dense_replace") or 0)
+    freq = tc.get("moe_layer_freq")
+    freq = int(freq) if isinstance(freq, int) and freq > 0 else 1
+    return [i >= k and i % freq == 0 for i in range(n)]
 
 
 def layer_kinds(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -526,6 +754,7 @@ def layer_kinds(config: Dict[str, Any]) -> Dict[str, Any]:
     if plan is not None:
         out = {k: plan[k] for k in ("attn", "recurrent", "ffn", "kv_shared")}
         out.update(
+            moe=moe_layers(config),
             sliding_window=plan.get("sliding_window"),
             encoder_tokens=plan.get("encoder_tokens"),
             source="layer_plan:" + plan["dialect"],
@@ -533,17 +762,16 @@ def layer_kinds(config: Dict[str, Any]) -> Dict[str, Any]:
             mechanisms=plan.get("mechanisms") or [],
         )
         return out
-    n = int(_first(tc, "num_hidden_layers", "n_layers", "num_layers", default=0) or 0)
+    n = depth(tc)
     blank = _blank(n)
-    notes: List[str] = []
-    names = tc.get("layer_types")
-    if not (isinstance(names, list) and names):
-        names = synthesized_layer_types(tc)
+    names, stated_by, notes = stated_layer_types(tc)
+    ffn = [True] * n
     if names:
         _apply_layer_names(blank, names, tc, n, notes)
         blank.pop("_unknown", None)
         chunked = blank.pop("_chunked", False)
-        source = "layer_types"
+        ffn = blank.pop("_ffn", None) or ffn
+        source = "layer_types" if stated_by in ("layer_types", "sliding_window_pattern") else stated_by
     else:
         chunked = False
         blank["attn"] = [ATTN_SLIDING if _window(tc) else ATTN_FULL] * n
@@ -555,7 +783,8 @@ def layer_kinds(config: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "attn": blank["attn"],
         "recurrent": blank["recurrent"],
-        "ffn": [True] * n,
+        "ffn": ffn,
+        "moe": moe_layers(config),
         "kv_shared": [False] * n,
         "sliding_window": window,
         "encoder_tokens": None,

@@ -15,13 +15,15 @@ from llm_memory_calculator.huggingface_loader import HuggingFaceConfigLoader
 from llm_memory_calculator.genz.Models.utils import OpType, ResidencyInfo, CollectiveType, parse_einsum_expression
 from llm_memory_calculator.genz.Models.attention import (mha_flash_attention_prefill, mha_flash_attention_decode,
     mha_flash_attention_chunked, mha_flash_attention_prefill_local, mha_flash_attention_decode_local,
-    mla_attention_prefill, mla_attention_decode,
+    mla_attention_prefill, mla_attention_decode, mla_attention_chunked, window_kv_sizes,
     linear_attention_prefill, linear_attention_decode)
 from llm_memory_calculator.genz.Models.ffn import (ffn_prefill, ffn_decode, deepseek_ffn_prefill,
     linear_ffn_prefill, linear_ffn_decode)
 from llm_memory_calculator.genz.Models.mamba import mamba_prefill, mamba_decode
-from llm_memory_calculator.genz.Models.recurrent import recurrent_prefill, recurrent_decode
+from llm_memory_calculator.genz.Models.recurrent import (recurrent_prefill, recurrent_decode,
+    recurrent_chunked)
 from llm_memory_calculator.genz.Models.embedding import input_embedding, output_embedding
+from copy import copy
 from difflib import get_close_matches
 from uuid import uuid4
 try:
@@ -139,34 +141,47 @@ def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1
     * a recurrent mixer alone -> ``Recurrent`` (fixed state, no KV); beside attention in
       a parallel hybrid -> the attention kind with the mixer attached
     * an FFN-only slot -> attention ``no_op``; a layer the plan gives no FFN -> FFN ``no_op``
+    * an FFN on a layer that routes to experts -> ``MoE``, on any other layer of an MoE
+      model -> ``Dense`` (``layer_plan.moe_layers``: Jamba's expert period, DeepSeek's and
+      Kimi's leading dense layers, Qwen's sparse step, ...)
 
     A pure state-space stack keeps GenZ's own Mamba operators (returns None).
     """
     from llm_memory_calculator.genz.Models.default_models import LayerConfig
     from llm_memory_calculator.layer_plan import ATTN_SLIDING, layer_kinds
     from llm_memory_calculator.mixer_params import _DISPATCH as _MIXER_PARAMS
-    from llm_memory_calculator.state_memory import recurrent_state_shape
+    from llm_memory_calculator.state_memory import _state_dtype_bytes, recurrent_state_shape
 
     kinds = layer_kinds(hf_config)
-    if kinds["source"] in ("uniform", "layer_plan:pure_ssm"):
+    if kinds["source"] == "layer_plan:pure_ssm":
         return None
     if len(kinds["attn"]) != num_layers:
+        return None
+    moe = kinds.get("moe") if num_experts > 1 else None
+    moe = moe if moe is not None and len(moe) == num_layers else [num_experts > 1] * num_layers
+    # A uniform stack keeps GenZ's uniform attention path; it is graphed per layer only when
+    # its FFNs differ (DeepSeek's leading dense layers), and then only the FFN changes.
+    uniform = kinds["source"] == "uniform"
+    if uniform and len(set(moe)) == 1:
         return None
     attn_kinds = [a for a in kinds["attn"] if a is not None]
     if not kinds["mechanisms"] and not any(a == ATTN_SLIDING for a in attn_kinds) and all(
         kinds["ffn"]
-    ):
-        return None  # every layer full attention with an FFN: uniform after all
+    ) and len(set(moe)) == 1:
+        return None  # every layer full attention with the same FFN: uniform after all
     hidden = int(hf_config.get('hidden_size') or 0)
-    ffn_kind = "MoE" if num_experts > 1 else "Dense"
     shapes, params = {}, {}
     out = []
-    for attn, mech, ffn in zip(kinds["attn"], kinds["recurrent"], kinds["ffn"]):
+    for attn, mech, ffn, routed in zip(kinds["attn"], kinds["recurrent"], kinds["ffn"], moe):
+        ffn_kind = "MoE" if routed else "Dense"
         if mech and mech not in shapes:
-            shapes[mech] = recurrent_state_shape(mech, hf_config, hidden)
+            shapes[mech] = dict(recurrent_state_shape(mech, hf_config, hidden),
+                                state_bytes=_state_dtype_bytes(hf_config))
             params[mech] = int(_MIXER_PARAMS[mech](hf_config, hidden))
         if attn is None:
             attention_type = "Recurrent" if mech else "no_op"
+        elif uniform:
+            attention_type = "MHA-global"
         else:
             attention_type = "MHA-local" if attn == ATTN_SLIDING else "MHA-global"
         out.append(LayerConfig(
@@ -177,6 +192,18 @@ def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1
             recurrent_params=params.get(mech) if mech else None,
         ))
     return out
+
+
+def _ffn_parallelism(cfg, model_config, parallelism_config):
+    """The parallelism an FFN runs under. A dense layer of an MoE model (`get_layer_view` gives
+    it one expert) has no experts to shard: expert parallelism does not apply to it, and the
+    expert-count assertions in the FFN builders would reject it."""
+    if (parallelism_config.expert_parallel > 1 and (cfg.num_experts or 1) <= 1
+            and (model_config.num_experts or 1) > 1):
+        pc = copy(parallelism_config)
+        pc.expert_parallel = 1
+        return pc
+    return parallelism_config
 
 
 def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> ModelConfig:
@@ -616,8 +643,9 @@ def create_full_prefill_model(
         elif ffn_type == "linear":
             return linear_ffn_prefill(cfg, parallelism_config, input_sequence_length)
         else:
-            ops = ffn_prefill(cfg, parallelism_config, input_sequence_length)
-            return inject_lora_ops(ops, cfg, parallelism_config, input_sequence_length)
+            pc = _ffn_parallelism(cfg, model_config, parallelism_config)
+            ops = ffn_prefill(cfg, pc, input_sequence_length)
+            return inject_lora_ops(ops, cfg, pc, input_sequence_length)
 
     def add_layers(layers, num_layers):
         ffn_ops = ffn_prefill(model_config, parallelism_config, input_sequence_length)
@@ -778,8 +806,9 @@ def create_full_decode_model(
         elif ffn_type == "linear":
             return linear_ffn_decode(cfg, parallelism_config)
         else:
-            ops = ffn_decode(cfg, parallelism_config, num_tokens=num_decode_tokens)
-            return inject_lora_ops(ops, cfg, parallelism_config, 1)
+            pc = _ffn_parallelism(cfg, model_config, parallelism_config)
+            ops = ffn_decode(cfg, pc, num_tokens=num_decode_tokens)
+            return inject_lora_ops(ops, cfg, pc, 1)
 
     def add_layers(layers, num_layers):
         ffn_ops = ffn_decode(model_config, parallelism_config, num_tokens=num_decode_tokens)
@@ -880,27 +909,72 @@ def create_full_chunked_model(name:str ='GPT-2',
             decode_length += 1
     chunk_size = prefill_length + decode_length
 
-    def add_layers(layers, num_layers):
-        # TODO: no layer_configs / local-attention branch here — models with per-layer
-        # sliding-window attention (e.g. gpt-oss layer_types) are charged full attention
-        # on every layer in chunked mode.
-        layers += repeat_layers(num_layers)
+    def _get_attn_chunked(attn_type, cfg=None, lc=None):
+        """One layer's token mixer over the chunk, by the layer's own kind -- the same kinds
+        the prefill and decode graphs read (`layer_configs_from_hf`)."""
+        cfg = cfg or model_config
+        if attn_type == "Recurrent":
+            return recurrent_chunked(lc, cfg, parallelism_config, chunk_size,
+                                     prefill_kv_sizes, decode_kv_sizes)
+        mixer = (recurrent_chunked(lc, cfg, parallelism_config, chunk_size,
+                                   prefill_kv_sizes, decode_kv_sizes)
+                 if lc is not None and lc.recurrent else [])
+        if attn_type in ("MHA-global", "MHA-local"):
+            # A windowed layer reads no context beyond its window.
+            window = cfg.sliding_window if attn_type == "MHA-local" else None
+            pre, dec = window_kv_sizes(prefill_kv_sizes, decode_kv_sizes, window)
+            op = mla_attention_chunked if cfg.is_mla else mha_flash_attention_chunked
+            return op(cfg, parallelism_config, chunk_size, pre, dec) + mixer
+        if attn_type == "Mamba":
+            return mamba_prefill(cfg, parallelism_config, chunk_size)
+        if attn_type == "linear":
+            return linear_attention_prefill(cfg, parallelism_config, chunk_size)
+        if attn_type == "no_op":
+            return []
+        raise ValueError(f"Unknown attention type: {attn_type}")
 
-        # Get attention operations and inject LoRA if configured
-        attn_ops = mha_flash_attention_chunked(  model_config=model_config,
-                                                parallelism_config=parallelism_config,
-                                                chunk_size=chunk_size,
-                                                prefill_kv_sizes=prefill_kv_sizes,
-                                                decode_kv_sizes=decode_kv_sizes)
-        attn_ops = inject_lora_ops(attn_ops, model_config, parallelism_config, chunk_size)
-        layers += attn_ops
-        
-        # Get FFN operations and inject LoRA if configured
-        ffn_ops = get_ffn_implementation(model_config)(model_config, parallelism_config, chunk_size)
-        ffn_ops = inject_lora_ops(ffn_ops, model_config, parallelism_config, chunk_size)
-        layers += ffn_ops
-        
-        layers += end_repeat_layers(num_layers)
+    def _get_ffn_chunked(ffn_type, cfg=None):
+        cfg = cfg or model_config
+        if ffn_type == "no_op":
+            return []
+        if ffn_type == "linear":
+            return linear_ffn_prefill(cfg, parallelism_config, chunk_size)
+        pc = _ffn_parallelism(cfg, model_config, parallelism_config)
+        ops = get_ffn_implementation(cfg)(cfg, pc, chunk_size)
+        return inject_lora_ops(ops, cfg, pc, chunk_size)
+
+    def _block(layers, count, attn_type, ffn_type="Dense", cfg=None, lc=None):
+        layers += repeat_layers(count)
+        attn_ops = _get_attn_chunked(attn_type, cfg, lc)
+        layers += inject_lora_ops(attn_ops, cfg or model_config, parallelism_config, chunk_size)
+        layers += _get_ffn_chunked(ffn_type, cfg)
+        layers += end_repeat_layers(count)
+        return layers
+
+    def add_layers(layers, num_layers):
+        if model_config.layer_configs is not None:
+            # Heterogeneous layers (hybrids, interleaved windows, per-layer FFNs): group
+            # consecutive identical configs, as the prefill and decode graphs do.
+            i = 0
+            while i < num_layers:
+                lc = model_config.layer_configs[i]
+                key = lc.effective_key()
+                j = i + 1
+                while j < num_layers and model_config.layer_configs[j].effective_key() == key:
+                    j += 1
+                layers = _block(layers, j - i, lc.attention_type, lc.ffn_type,
+                                model_config.get_layer_view(i), lc)
+                i = j
+        elif model_config.global_attn_every_n_layers is not None:
+            total = model_config.num_decoder_layers
+            total_global = sum(1 for lt in model_config.layer_type if lt[0] == "MHA-global")
+            n_global = round(total_global * num_layers / total)
+            if n_global > 0:
+                layers = _block(layers, n_global, "MHA-global")
+            if num_layers - n_global > 0:
+                layers = _block(layers, num_layers - n_global, "MHA-local")
+        else:
+            layers = _block(layers, num_layers, "MHA-global")
         return layers
 
     # assert prefill_length > 0, "Chunk size should be greater than the decode batches"

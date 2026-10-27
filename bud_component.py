@@ -130,6 +130,24 @@ def gguf_to_hf_config(path):
     if head_dim_k:
         cfg["head_dim"] = int(head_dim_k)
 
+    # Position encoding and FFN shape, from what the file states. llama.cpp writes RoPE as
+    # `rope.freq_base` / `rope.dimension_count` and stores no learned position table for a
+    # RoPE model; without the key the parameter counter assumed a learned table of
+    # context_length x hidden rows (537M phantom parameters on Qwen3.5-2B). A gated FFN is a
+    # `ffn_gate` tensor in the file -- the activation itself is not written.
+    rope_base = a("rope.freq_base")
+    if rope_base:
+        cfg["rope_theta"] = float(rope_base)
+    elif a("rope.dimension_count"):
+        cfg["position_embedding_type"] = "rope"
+    tensor_names = {t.name for t in reader.tensors}
+    if any(name.startswith("blk.") and (".ffn_gate." in name or ".ffn_gate_exps." in name
+                                         or ".ffn_gate_shexp." in name) for name in tensor_names):
+        cfg["hidden_act"] = "silu"
+    # A separate output projection is its own tensor; without one llama.cpp reuses the
+    # token embedding (tied).
+    cfg["tie_word_embeddings"] = "output.weight" not in tensor_names
+
     # Which layers hold a KV cache, which carry a fixed recurrent state, and how big that state
     # is -- llama.cpp's keys translated to the HF ones the layer plan reads, so a GGUF and its
     # source checkpoint resolve to the same layer kinds. Dropping them charged every layer of

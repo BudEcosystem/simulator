@@ -67,7 +67,10 @@ def hf_layer_keys_from_gguf(get: Callable[[str], Any], n_layers: int) -> Dict[st
         recurrent_name = "rwkv"
         out["head_size"] = int(wkv)
     elif ssm_state:
-        recurrent_name = "mamba"
+        # Mamba-2 (and every grouped SSM-style mixer llama.cpp sizes the same way) states
+        # `ssm.group_count`; Mamba-1 (mamba, falcon-mamba, jamba) states none. The mechanism
+        # follows from the file's keys, as it does from an HF config's.
+        recurrent_name = "mamba" if get("ssm.group_count") else "mamba1"
         out["ssm_state_size"] = int(ssm_state)
         for suffix, key in (
             ("ssm.conv_kernel", "ssm_conv_kernel"),
@@ -112,7 +115,7 @@ def hf_layer_keys_from_gguf(get: Callable[[str], Any], n_layers: int) -> Dict[st
     elif recurrent_name:
         heads = _positive(get("attention.head_count")) or 0
         kv_heads = _positive(kv) or 0
-        mixed = "hybrid" if recurrent_name == "mamba" else recurrent_name
+        mixed = "hybrid" if recurrent_name in ("mamba", "mamba1") else recurrent_name
         names = [mixed if (heads and kv_heads) else recurrent_name] * n_layers
     elif swa is not None:
         names = ["sliding_attention" if s else "full_attention" for s in swa]

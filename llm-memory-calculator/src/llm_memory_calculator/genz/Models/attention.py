@@ -119,6 +119,88 @@ def mha_flash_attention_decode(model_config:ModelConfig, parallelism_config:Para
 
 
 
+def window_kv_sizes(prefill_kv_sizes, decode_kv_sizes, window):
+    """A chunked step's KV sizes as a windowed layer sees them: no context beyond ``window``.
+
+    A prefill chunk of ``cur`` tokens after ``past`` cached ones reads at most the last
+    ``window`` of them; a decoding sequence reads at most ``window`` cached tokens. With no
+    window the sizes are returned unchanged.
+    """
+    if not window:
+        return prefill_kv_sizes, decode_kv_sizes
+    w = int(window)
+    prefill = [(min(past, w), cur) for past, cur in prefill_kv_sizes]
+    decode = []
+    for kv in decode_kv_sizes:
+        if isinstance(kv, tuple) and len(kv) == 4:
+            decode.append((kv[0], kv[1], min(kv[2], w), min(kv[3], w)))
+        elif isinstance(kv, tuple) and len(kv) == 2:
+            decode.append((kv[0], min(kv[1], w)))
+        else:
+            decode.append(min(kv, w))
+    return prefill, decode
+
+
+def mla_attention_chunked(model_config:ModelConfig, parallelism_config:ParallelismConfig,
+                          chunk_size: int, prefill_kv_sizes, decode_kv_sizes):
+    """Multi-head Latent Attention over a chunked step: MLA's projections over the chunk's
+    tokens, and its single shared latent head (``Hkv = 1``) read over each request's cache,
+    as `mla_attention_prefill` / `mla_attention_decode` read it."""
+    H = model_config.num_attention_heads
+    D = model_config.hidden_size
+    kv_lora_rank = model_config.kv_lora_rank
+    q_lora_rank = model_config.q_lora_rank
+    rope = model_config.qk_rope_head_dim or 0
+    nope = model_config.qk_nope_head_dim or 0
+    v_head_dim = model_config.v_head_dim
+
+    tp = parallelism_config.tensor_parallel
+    sp = parallelism_config.sequence_parallel
+    per_node_H = max(ceil(H / tp), 1)
+    Dq = nope + rope
+
+    layers = []
+    q_out_dim = per_node_H * Dq
+    if q_lora_rank:
+        layers += [["Q Down", q_lora_rank, chunk_size, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+        layers += [["Q Up", q_out_dim, chunk_size, q_lora_rank, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    else:
+        layers += [["Q Proj", q_out_dim, chunk_size, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    layers += [["KV Compress", kv_lora_rank + rope, chunk_size, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    kv_out_dim = per_node_H * (nope + v_head_dim)
+    context = sum(p + c for p, c in prefill_kv_sizes)
+    for kv in decode_kv_sizes:
+        if isinstance(kv, tuple) and len(kv) == 4:
+            context += kv[2] + kv[3]
+        elif isinstance(kv, tuple) and len(kv) == 2:
+            context += kv[0] * kv[1]
+        else:
+            context += kv
+    layers += [["KV Up", kv_out_dim, max(context // sp, 1), kv_lora_rank, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+
+    for past, cur in prefill_kv_sizes:
+        layers += [["Logit Pre", per_node_H, cur, past + cur, Dq, 1, ResidencyInfo.C_onchip, OpType.Logit_Causal_PREFILL]]
+        layers += [["Attend Pre", per_node_H, cur, past + cur, v_head_dim, 1, ResidencyInfo.A_onchip, OpType.Attend_Causal_PREFILL]]
+    for kv in decode_kv_sizes:
+        if isinstance(kv, tuple) and len(kv) == 4:
+            pb, db, pctx, dctx = kv
+            layers += [["Logit Pre", pb * per_node_H, 1, pctx // sp, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit]]
+            layers += [["Attend Pre", pb * per_node_H, 1, pctx // sp, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend]]
+            layers += [["Logit Suf", db * per_node_H, 1, dctx, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit]]
+            layers += [["Attend Suf", db * per_node_H, 1, dctx, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend]]
+        elif isinstance(kv, tuple) and len(kv) == 2:
+            nb, ctx = kv
+            layers += [["Logit Dec", nb * per_node_H, 1, ctx, Dq, nb, ResidencyInfo.AC_onchip, OpType.Logit]]
+            layers += [["Attend Dec", nb * per_node_H, 1, ctx, v_head_dim, nb, ResidencyInfo.AC_onchip, OpType.Attend]]
+        else:
+            layers += [["Logit Dec", per_node_H, 1, kv, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit]]
+            layers += [["Attend Dec", per_node_H, 1, kv, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend]]
+    layers += [["Out Proj", D, chunk_size, per_node_H * v_head_dim, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    if tp > 1:
+        layers += [["MLA AR", chunk_size, D, 1, 1, tp, CollectiveType.AllReduce, OpType.Sync]]
+    return layers
+
+
 def mha_flash_attention_chunked(model_config:ModelConfig, parallelism_config:ParallelismConfig,
                                 chunk_size: int, prefill_kv_sizes: list[int,int], decode_kv_sizes: list[int]):
     '''

@@ -532,6 +532,7 @@ class ModelMemoryCalculator:
                 source = "_layer_metadata"
                 num_full = metadata.get("num_full_layers", 0)
                 num_sliding = metadata.get("num_sliding_layers", 0)
+                notes.extend(metadata.get("notes") or [])
                 if not num_full and not num_sliding:
                     notes.append(
                         "KV is charged as zero: no entry in `layer_types` "

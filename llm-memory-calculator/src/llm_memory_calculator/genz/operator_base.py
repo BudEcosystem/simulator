@@ -22,6 +22,9 @@ op_type_dicts = {0: 'FC', 1: 'CONV2D', 2: 'DWCONV', 3: 'GEMM', 4: 'Logit', 5: 'A
 class Operator(object):
     #: Weight role assigned by analysis_model (genz/weight_precision.py). None keeps `bits`.
     weight_role = None
+    #: For a recurrent mixer's state operator: bytes per element of the state it holds, or
+    #: "act" for the activation precision. None for every other operator (K/V keep kv_bits).
+    state_bytes = None
 
     def __init__(self, dim, density=(1.0,1.0,1.0)):
         self.dim = [int(x) if isinstance(x, (int, float, np.int32, np.int64)) else x for x in dim]
@@ -114,7 +117,12 @@ class Operator(object):
         operators_sizes = []
         for i, tensor_sz in enumerate(sz_list):
             if self.get_op_type(self.dim) in ['Logit', 'Attend']:
-                if i == 1 and self.get_op_type(self.dim) == 'Logit':
+                if i == 1 and self.state_bytes is not None:
+                    ## A recurrent state: its own dtype (fp32 by default), not the KV dtype
+                    per = (system.get_bit_multiplier(type='M', data='a')
+                           if self.state_bytes == 'act' else self.state_bytes)
+                    operators_sizes.append(tensor_sz * per)
+                elif i == 1 and self.get_op_type(self.dim) == 'Logit':
                     ## K values
                     operators_sizes.append(tensor_sz * system.get_bit_multiplier(type='M', data='k', operators=self.input_w))
                 elif i == 1 and self.get_op_type(self.dim) == 'Attend':
