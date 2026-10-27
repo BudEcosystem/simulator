@@ -35,6 +35,23 @@ RUNTIME_KV_PRECISION = "fp16"
 # the analytic estimator but always present on a CUDA backend.
 CUDA_RUNTIME_RESERVE = 1024 * 1024 * 1024
 
+# Known-DENSE decoder architectures for the ONNX no-config.json path (3rd-review no-OOM fix). An ONNX MoE
+# modeled DENSE omits the non-freeing ORT activation-arena expert term → multi-GiB memory OVER-ADMIT on
+# the shared unified pool. A DENYLIST fails OPEN for any MoE arch whose model.type lacks "moe"
+# (deepseekv2/v3, llama4, minimax, grok, arctic, hunyuan, qwen3next, …) — a real over-admit. So we use an
+# ALLOWLIST: with NO config.json to size experts, a model is modeled dense ONLY if its arch is known-dense;
+# anything else (unknown OR MoE) is REFUSED (fail-closed) — "single source of truth, never a guessed
+# number". `model.type` = HF architectures[0] truncated before "For", lowercased (ONNX-GenAI base.py:646);
+# most Llama-derivatives (deepseek-llm/coder, yi, vicuna, tinyllama, smollm) export AS "llama". MoE
+# families are DELIBERATELY absent so they fail closed. Extend as ONNX-GenAI adds dense families.
+ONNX_KNOWN_DENSE_TYPES = frozenset({
+    "llama", "llama2", "llama3", "mistral", "qwen", "qwen2", "qwen3", "phi", "phi3", "phimsft",
+    "phi3small", "phi4", "gemma", "gemma2", "gemma3", "gemma3text", "granite", "nemotron", "nemotronh",
+    "olmo", "olmo2", "internlm", "internlm2", "chatglm", "glm", "glm4", "ernie", "lfm2", "smollm",
+    "falcon", "mpt", "baichuan", "stablelm", "stablelm2", "starcoder2", "gptbigcode", "gptneox", "gptj",
+    "codegen", "bloom", "opt", "cohere", "cohere2", "exaone", "yi", "minicpm", "gpt2", "gptneox20b",
+})
+
 # NOTE: GB10 inference calibration now lives INSIDE GenZ (hardware/configs.py 'inference_calibration'
 # block + genz/LLM_inference). estimate_end_to_end_performance(system_name='GB10') already returns
 # CALIBRATED TTFT/TPOT, so this component no longer post-processes them — it just reads them. This
@@ -96,6 +113,65 @@ def gguf_to_hf_config(path):
     }
     if head_dim_k:
         cfg["head_dim"] = int(head_dim_k)
+
+    # CHAOS-#5: MoE — surface the expert geometry so GenZ models the ACTIVE-expert decode cost, not a
+    # dense single expert (which under-predicts TPOT ~1.5-1.7x, so the strict SLO gate would admit
+    # requests that miss the declared TPOT). is_moe iff expert_count > 1 (matches the runtime,
+    # llama-model.cpp:1016). Modeling MoE RAISES TPOT — the SAFE (conservative) direction.
+    n_expert = a("expert_count")
+    if n_expert and int(n_expert) > 1:
+        cfg["num_experts"] = int(n_expert)
+        cfg["n_routed_experts"] = int(n_expert)  # GenZ config_normalizer keys is_moe on this
+        n_expert_used = a("expert_used_count")
+        if n_expert_used:
+            cfg["num_experts_per_tok"] = int(n_expert_used)
+        n_ff_exp = a("expert_feed_forward_length")
+        if n_ff_exp:
+            cfg["moe_intermediate_size"] = int(n_ff_exp)
+        # CHAOS-#5b (chaos-fix-iterate): DeepSeek-style ALWAYS-ACTIVE shared experts + leading dense
+        # layers. Shared experts run on EVERY token (unlike the routed top-k), so DROPPING them
+        # under-counts active-decode FLOPs → optimistic TPOT → the strict SLO gate admits requests that
+        # miss. GenZ consumes n_shared_experts + shared_expert_intermediate_size (genz Models/ffn.py,
+        # which multiplies by n_shared_experts internally ⇒ this is the PER-EXPERT size = the same
+        # expert_feed_forward_length the routed experts use) + first_k_dense_replace (parameter_counter).
+        # Modeling them RAISES TPOT — the SAFE (conservative) direction, like the routed-expert emit
+        # above. Emit the shared geometry only when the per-expert FF is known (both keys together, so
+        # GenZ never sees n_shared_experts without its intermediate size).
+        # Prefer the DISTINCT shared-expert FF key when the GGUF carries it (review #-medium: some MoE
+        # GGUFs size the shared expert differently from the routed one); fall back to the routed
+        # per-expert FF (correct for DeepSeek, where they match) so the emit is never dropped.
+        n_shared = a("expert_shared_count")
+        n_ff_shared = a("expert_shared_feed_forward_length") or n_ff_exp
+        if n_shared and int(n_shared) > 0 and n_ff_shared:
+            cfg["n_shared_experts"] = int(n_shared)
+            cfg["shared_expert_intermediate_size"] = int(n_ff_shared)
+        n_dense = a("leading_dense_block_count")
+        if n_dense:
+            cfg["first_k_dense_replace"] = int(n_dense)
+
+    # CHAOS-#10: MLA (DeepSeek-V2/V3) — GATE compact-MLA modeling on attention.key_length_mla, the EXACT
+    # field the runtime's llama_hparams::is_mla() keys on (llama-hparams.cpp:216-220). A LEGACY DeepSeek
+    # GGUF carries kv_lora_rank but NOT key_length_mla → the fork DECOMPRESSES the cache to full MHA, so
+    # gating on kv_lora_rank (the naive fix) would model the compact cache → under-count KV ~71x → OOM.
+    # Only when key_length_mla is present do we surface the MLA fields so GenZ models the compact cache
+    # (matching the runtime); otherwise the model stays MHA — today's behaviour, conservative. (Inert
+    # unless a DeepSeek-MLA GGUF is present; NEEDS real-DeepSeek validation before relying on it.)
+    klen_mla = a("attention.key_length_mla")
+    if klen_mla is not None:
+        kv_lora = a("attention.kv_lora_rank")
+        q_lora = a("attention.q_lora_rank")
+        rope_dim = a("rope.dimension_count")
+        vlen_mla = a("attention.value_length_mla")
+        if kv_lora:
+            cfg["kv_lora_rank"] = int(kv_lora)
+        if q_lora:
+            cfg["q_lora_rank"] = int(q_lora)
+        if rope_dim:
+            cfg["qk_rope_head_dim"] = int(rope_dim)
+            cfg["qk_nope_head_dim"] = max(int(klen_mla) - int(rope_dim), 0)  # MLA key dim = nope + rope
+        if vlen_mla:
+            cfg["v_head_dim"] = int(vlen_mla)
+
     weight_bytes = os.path.getsize(path)
     precision = _precision_from_gguf_file_type(val("general.file_type"))
     return cfg, weight_bytes, precision
@@ -169,6 +245,73 @@ def onnx_dir_to_hf_config(path):
     inter = d.get("intermediate_size") or m.get("intermediate_size")
     if inter:
         cfg["intermediate_size"] = int(inter)
+    # CHAOS-#5/#10 for ONNX (chaos-fix-iterate #9/#10, 2nd-review-corrected): a MoE model served via
+    # ONNX-GenAI (Phi-3.5-MoE, GPT-OSS, Qwen3-MoE, Mixtral, …) must NOT be modeled as a dense single
+    # expert (optimistic TPOT → the SLO gate admits requests that then MISS). Two facts the 2nd brutal
+    # review established: (1) genai_config.json carries NO expert geometry, and (2) the ONNX-GenAI
+    # model_builder does NOT write the HF config.json into the model dir (only pre-packaged HF-ONNX repos
+    # and the Qwen3.5 builder do) — so an on-box-built ONNX MoE has NO config.json and reading it is dead.
+    # Policy (3rd-review, no-OOM-correct ALLOWLIST — replaces the fail-OPEN denylist): read expert
+    # geometry from a sibling config.json when present; a config.json present without experts is
+    # authoritatively DENSE. With NO config.json, model dense ONLY for a known-dense arch
+    # (ONNX_KNOWN_DENSE_TYPES); ANY other arch (unknown OR MoE whose model.type lacks "moe") FAILS CLOSED
+    # — "single source of truth, never a guessed number" — because a MoE modeled dense omits the ORT
+    # activation-arena expert term and OVER-ADMITS memory. Place the source HF config.json to size it.
+    hf = {}
+    config_present = False
+    hf_path = os.path.join(path, "config.json")
+    if os.path.exists(hf_path):
+        try:
+            hf = json.load(open(hf_path))
+            config_present = True
+        except Exception:
+            hf = {}
+    hf = hf.get("text_config", hf)  # unwrap multimodal wrappers
+    # Backfill the dense intermediate_size from config.json when genai_config lacked it (review LOW).
+    if "intermediate_size" not in cfg and hf.get("intermediate_size"):
+        cfg["intermediate_size"] = int(hf["intermediate_size"])
+    model_type = str(m.get("type", "")).lower()
+    n_expert = hf.get("num_local_experts") or hf.get("num_experts") or hf.get("n_routed_experts")
+    if n_expert and int(n_expert) > 1:
+        cfg["num_experts"] = int(n_expert)
+        cfg["n_routed_experts"] = int(n_expert)  # GenZ config_normalizer keys is_moe on this
+        n_used = hf.get("num_experts_per_tok") or hf.get("num_experts_per_token")
+        if n_used:
+            cfg["num_experts_per_tok"] = int(n_used)
+        moe_inter = hf.get("moe_intermediate_size") or hf.get("intermediate_size")
+        if moe_inter:
+            cfg["moe_intermediate_size"] = int(moe_inter)
+        # DeepSeek/Qwen-MoE always-active shared experts + leading dense (symmetric with the GGUF path).
+        n_shared = hf.get("n_shared_experts") or hf.get("num_shared_experts")
+        shared_inter = hf.get("shared_expert_intermediate_size")
+        if n_shared and int(n_shared) > 0 and shared_inter:
+            cfg["n_shared_experts"] = int(n_shared)
+            cfg["shared_expert_intermediate_size"] = int(shared_inter)
+        fkd = hf.get("first_k_dense_replace")
+        if fkd is not None:
+            cfg["first_k_dense_replace"] = int(fkd)
+    elif config_present:
+        # config.json IS present and carries no experts → authoritatively DENSE; model it dense (the
+        # HF config is the source of truth — a MoE would have declared num_experts here). No fail-close.
+        pass
+    elif model_type not in ONNX_KNOWN_DENSE_TYPES:
+        # No config.json to rule out MoE AND the arch is not on the known-dense allowlist → we CANNOT
+        # safely model it dense (a MoE modeled dense OMITS the ORT activation-arena expert term →
+        # OVER-ADMITS memory on the shared pool + misses TPOT). FAIL CLOSED — refuse rather than guess.
+        raise ValueError(
+            f"ONNX model '{cfg['name']}' has model.type='{model_type}', which is not a known DENSE "
+            f"architecture, and no expert geometry is available (genai_config carries none; no sibling "
+            f"config.json in {path}). Modeling an unknown or MoE arch as dense would omit the MoE "
+            f"activation arena → OVER-ADMIT memory and miss TPOT, so it is REFUSED (fail-closed). "
+            f"Place the source HF config.json in the model dir to size it."
+        )
+    # else: no config.json but a KNOWN-DENSE arch → model dense (safe).
+    # NOTE: MLA for ONNX is deliberately NOT surfaced here. The GGUF path gates MLA on `key_length_mla`
+    # (the runtime's is_mla() key) specifically to AVOID the legacy-DeepSeek trap where keying on
+    # kv_lora_rank models the compact cache for a GGUF the fork actually decompresses to full MHA
+    # (under-counts KV ~71x → OOM). genai_config has no verified equivalent gating field, so surfacing
+    # MLA from an unverified key would risk that exact under-count. Left MHA (conservative) pending a
+    # verified ONNX MLA-cache signal + a real ONNX MLA model to calibrate against.
     weight_bytes = sum(
         os.path.getsize(os.path.join(path, f))
         for f in os.listdir(path)
