@@ -11,13 +11,18 @@ if TYPE_CHECKING:
     from BudSimulator.lora.config import LoraConfig
 
 
+#: GenZ attention kinds that keep a per-token KV cache. "Mamba", "Recurrent",
+#: "linear" (DeciLM's attention replacement) and "no_op" keep none.
+KV_ATTENTION_TYPES = ("MHA-global", "MHA-local")
+
+
 @dataclass
 class LayerConfig:
     """Per-layer configuration overrides for heterogeneous models (e.g. Nemotron-51B / DeciLM).
 
     When a field is None the model-level default from ModelConfig is used.
     """
-    # Attention behaviour: "MHA-global", "MHA-local", "linear", "no_op", "Mamba"
+    # Attention behaviour: "MHA-global", "MHA-local", "linear", "no_op", "Mamba", "Recurrent"
     attention_type: str = "MHA-global"
     # FFN behaviour: "Dense", "MoE", "linear", "no_op"
     ffn_type: str = "Dense"
@@ -28,12 +33,25 @@ class LayerConfig:
     # Convenience multiplier applied to the model-level intermediate_size
     # (ignored when intermediate_size is set explicitly)
     ffn_mult: Optional[float] = None
+    # A recurrent token mixer in this layer (attention_type "Recurrent", or beside
+    # attention in a parallel hybrid): its mechanism, the state it carries
+    # (state_memory.recurrent_state_shape) and its own parameter count.
+    recurrent: Optional[str] = None
+    recurrent_state: Optional[dict] = None
+    recurrent_params: Optional[int] = None
 
     def effective_key(self) -> tuple:
         """Return a hashable key for grouping identical layer configs."""
+        state = tuple(sorted((self.recurrent_state or {}).items()))
         return (self.attention_type, self.ffn_type,
                 self.num_attention_heads, self.num_key_value_heads,
-                self.intermediate_size, self.ffn_mult)
+                self.intermediate_size, self.ffn_mult,
+                self.recurrent, state, self.recurrent_params)
+
+    @property
+    def holds_kv(self) -> bool:
+        """Whether this layer keeps a per-token KV cache of its own."""
+        return self.attention_type in KV_ATTENTION_TYPES
 
 class ModelConfig():
     r"""
@@ -191,7 +209,7 @@ class ModelConfig():
             if self.is_mamba and self.is_moe:
                 self.unique_layers = lcm(self.mamba_layer_period, self.expert_layer_period, self.attn_layer_period)
             elif self.is_mamba:
-                self.unique_layers = self.mamba_layer_period
+                self.unique_layers = lcm(self.mamba_layer_period, self.attn_layer_period)
             elif self.is_moe:
                 self.unique_layers = self.expert_layer_period
             else:
@@ -199,11 +217,17 @@ class ModelConfig():
             num_repeats = self.num_decoder_layers / self.unique_layers
             assert num_repeats.is_integer(), "Number of decoder layers must be divisible by the unique layers"
             for i in range(self.unique_layers):
-                # Determine the attention type
-                if self.is_mamba and (i % self.mamba_layer_period == 0):
+                # Determine the attention type. In a Mamba hybrid that states an attention
+                # period (Jamba: one attention layer every 8, at offset 4) the attention
+                # layers are exactly those; every other layer is Mamba. Testing the Mamba
+                # period first made a period of 1 turn EVERY layer Mamba, attention included.
+                if self.is_mamba and self.attn_layer_period > 1:
+                    if i % self.attn_layer_period == self.attn_layer_offset:
+                        attention_type = "MHA-global"
+                    else:
+                        attention_type = "Mamba"
+                elif self.is_mamba and (i % self.mamba_layer_period == 0):
                     attention_type = "Mamba"
-                elif (i % self.attn_layer_period == self.attn_layer_offset):
-                    attention_type = "MHA-global"
                 else:
                     attention_type = "MHA-global"
 
@@ -306,19 +330,32 @@ class ModelConfig():
         return view
 
     def get_kv_size(self):
-        if self.is_mla:
-            # MLA stores compressed KV: (kv_lora_rank + qk_rope_head_dim) per token per layer
-            return self.num_decoder_layers * (self.kv_lora_rank + self.qk_rope_head_dim)
+        """KV elements one token adds, summed over the layers that hold a KV cache.
+
+        Only attention layers keep a per-token cache: a Mamba / Gated DeltaNet /
+        linear / no-op layer keeps none, so counting every decoder layer (as this
+        did) over-charged a hybrid by its recurrent fraction -- 4x on Qwen3.5.
+        MLA keeps one latent of ``kv_lora_rank + qk_rope_head_dim`` per layer.
+        """
         if self.layer_configs is not None:
-            # Heterogeneous: sum per-layer KV sizes (no_op layers contribute 0)
             total = 0
             for i, lc in enumerate(self.layer_configs):
-                if lc.attention_type == "no_op":
+                if lc.attention_type not in KV_ATTENTION_TYPES:
+                    continue
+                if self.is_mla:
+                    total += self.kv_lora_rank + (self.qk_rope_head_dim or 0)
                     continue
                 view = self.get_layer_view(i)
                 total += 2 * view.head_dim * view.num_key_value_heads
             return total
-        return 2*self.num_decoder_layers*self.head_dim*self.num_key_value_heads
+        # Uniform or periodic stack: `layer_type` is one period, repeated.
+        period = max(len(self.layer_type), 1)
+        kv_in_period = sum(1 for lt in self.layer_type if lt[0] in KV_ATTENTION_TYPES)
+        kv_layers = self.num_decoder_layers * kv_in_period // period
+        if self.is_mla:
+            # MLA stores compressed KV: (kv_lora_rank + qk_rope_head_dim) per token per layer
+            return kv_layers * (self.kv_lora_rank + (self.qk_rope_head_dim or 0))
+        return 2 * kv_layers * self.head_dim * self.num_key_value_heads
 
     def __str__(self):
         return str(vars(self))

@@ -193,6 +193,10 @@ def get_runtime_breakdown(df:pd.DataFrame) -> RuntimeBreakdown:
             runtime_breakdown.Collective += layer_latency
         elif layer_name in ['Inproj', 'Conv', 'BC proj', 'xt proj', 'deltaA', 'deltaB', 'deltaBu', 'x calc', 'y calc', 'D addition', 'out mult z', 'Out proj', 'Mamba AR']:
             runtime_breakdown.Mamba_time += layer_latency
+        elif layer_name in ['Rec Proj', 'Rec State', 'Rec Conv', 'Rec AR']:
+            # A recurrent token mixer (Gated DeltaNet, Mamba-2, ...; genz/Models/recurrent.py):
+            # booked with the Mamba time, the bucket for fixed-state mixers.
+            runtime_breakdown.Mamba_time += layer_latency
         else:
             raise ValueError(f'Layer Name:{layer_name} not found in the breakdown function')
 

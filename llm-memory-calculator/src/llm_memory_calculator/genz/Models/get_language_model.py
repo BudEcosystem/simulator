@@ -20,6 +20,7 @@ from llm_memory_calculator.genz.Models.attention import (mha_flash_attention_pre
 from llm_memory_calculator.genz.Models.ffn import (ffn_prefill, ffn_decode, deepseek_ffn_prefill,
     linear_ffn_prefill, linear_ffn_decode)
 from llm_memory_calculator.genz.Models.mamba import mamba_prefill, mamba_decode
+from llm_memory_calculator.genz.Models.recurrent import recurrent_prefill, recurrent_decode
 from llm_memory_calculator.genz.Models.embedding import input_embedding, output_embedding
 from difflib import get_close_matches
 from uuid import uuid4
@@ -125,6 +126,57 @@ def resolve_decoder_config(hf_config: dict) -> dict:
     merged = dict(hf_config)
     merged.update({k: v for k, v in sub.items() if v is not None})
     return merged
+
+
+def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1):
+    """Per-layer GenZ configs from the config's own layer kinds, or None for a uniform stack.
+
+    The one place an HF config's layer kinds become GenZ layers; the BudSimulator model
+    converter calls it too. Kinds come from ``layer_plan.layer_kinds`` (the memory
+    calculator's table):
+
+    * full / cross-attention -> ``MHA-global``; sliding / chunked -> ``MHA-local``
+    * a recurrent mixer alone -> ``Recurrent`` (fixed state, no KV); beside attention in
+      a parallel hybrid -> the attention kind with the mixer attached
+    * an FFN-only slot -> attention ``no_op``; a layer the plan gives no FFN -> FFN ``no_op``
+
+    A pure state-space stack keeps GenZ's own Mamba operators (returns None).
+    """
+    from llm_memory_calculator.genz.Models.default_models import LayerConfig
+    from llm_memory_calculator.layer_plan import ATTN_SLIDING, layer_kinds
+    from llm_memory_calculator.mixer_params import _DISPATCH as _MIXER_PARAMS
+    from llm_memory_calculator.state_memory import recurrent_state_shape
+
+    kinds = layer_kinds(hf_config)
+    if kinds["source"] in ("uniform", "layer_plan:pure_ssm"):
+        return None
+    if len(kinds["attn"]) != num_layers:
+        return None
+    attn_kinds = [a for a in kinds["attn"] if a is not None]
+    if not kinds["mechanisms"] and not any(a == ATTN_SLIDING for a in attn_kinds) and all(
+        kinds["ffn"]
+    ):
+        return None  # every layer full attention with an FFN: uniform after all
+    hidden = int(hf_config.get('hidden_size') or 0)
+    ffn_kind = "MoE" if num_experts > 1 else "Dense"
+    shapes, params = {}, {}
+    out = []
+    for attn, mech, ffn in zip(kinds["attn"], kinds["recurrent"], kinds["ffn"]):
+        if mech and mech not in shapes:
+            shapes[mech] = recurrent_state_shape(mech, hf_config, hidden)
+            params[mech] = int(_MIXER_PARAMS[mech](hf_config, hidden))
+        if attn is None:
+            attention_type = "Recurrent" if mech else "no_op"
+        else:
+            attention_type = "MHA-local" if attn == ATTN_SLIDING else "MHA-global"
+        out.append(LayerConfig(
+            attention_type=attention_type,
+            ffn_type=ffn_kind if ffn else "no_op",
+            recurrent=mech,
+            recurrent_state=shapes.get(mech) if mech else None,
+            recurrent_params=params.get(mech) if mech else None,
+        ))
+    return out
 
 
 def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> ModelConfig:
@@ -319,28 +371,14 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
             ))
 
     # ============================================================
-    # Per-layer attention types (e.g. gpt-oss, Gemma3-style HF configs)
+    # Per-layer kinds (hybrids, interleaved windows, KV-free layers)
     # ============================================================
-    # HF configs may carry a `layer_types` list like
-    # ['sliding_attention', 'full_attention', ...]: sliding layers attend to at
-    # most `sliding_window` KV tokens (MHA-local), full layers to the whole
-    # context (MHA-global). Mirror the block_configs schema above.
-    # NOTE: create_full_chunked_model has no layer_configs/local-attention
-    # branch yet, so chunked modeling still charges full attention everywhere.
-    layer_types = hf_config.get('layer_types')
-    if layer_configs is None and isinstance(layer_types, list) and len(layer_types) == num_layers:
-        sliding_window = hf_config.get('sliding_window')
-        has_sliding = sliding_window and any('sliding' in str(lt).lower() for lt in layer_types)
-        if has_sliding:
-            from llm_memory_calculator.genz.Models.default_models import LayerConfig
-            ffn_type_val = "MoE" if num_experts > 1 else "Dense"
-            layer_configs = [
-                LayerConfig(
-                    attention_type="MHA-local" if 'sliding' in str(lt).lower() else "MHA-global",
-                    ffn_type=ffn_type_val,
-                )
-                for lt in layer_types
-            ]
+    # Read from the one layer-kind table the memory calculator uses, so the
+    # performance graph charges attention -- and a KV cache -- only on the
+    # layers that have one. Building every layer as attention charged
+    # Qwen3.5's Gated DeltaNet layers a full KV cache (4x its real KV).
+    if layer_configs is None:
+        layer_configs = layer_configs_from_hf(hf_config, num_layers, num_experts)
 
     # Create ModelConfig with all extracted attributes
     return ModelConfig(
@@ -548,15 +586,21 @@ def create_full_prefill_model(
         data_parallel=args.get('data_parallel',1),
         )
 
-    def _get_attn_prefill(attn_type, cfg=None):
+    def _get_attn_prefill(attn_type, cfg=None, lc=None):
         cfg = cfg or model_config
-        if cfg.is_mla:
-            return mla_attention_prefill(cfg, parallelism_config, input_sequence_length)
+        # A layer with no attention is never an MLA layer, even in an MLA model
+        # (Kimi Linear: MLA full-attention layers between KDA layers).
+        if attn_type == "Recurrent":
+            return recurrent_prefill(lc, cfg, parallelism_config, input_sequence_length)
+        mixer = (recurrent_prefill(lc, cfg, parallelism_config, input_sequence_length)
+                 if lc is not None and lc.recurrent else [])
+        if cfg.is_mla and attn_type in ("MHA-global", "MHA-local"):
+            return mla_attention_prefill(cfg, parallelism_config, input_sequence_length) + mixer
         if attn_type == "MHA-global":
-            return mha_flash_attention_prefill(cfg, parallelism_config, input_sequence_length)
-        elif attn_type == "MHA-local":
-            return mha_flash_attention_prefill_local(cfg, parallelism_config, input_sequence_length)
-        elif attn_type == "Mamba":
+            return mha_flash_attention_prefill(cfg, parallelism_config, input_sequence_length) + mixer
+        if attn_type == "MHA-local":
+            return mha_flash_attention_prefill_local(cfg, parallelism_config, input_sequence_length) + mixer
+        if attn_type == "Mamba":
             return mamba_prefill(cfg, parallelism_config, input_sequence_length)
         elif attn_type == "linear":
             return linear_attention_prefill(cfg, parallelism_config, input_sequence_length)
@@ -595,7 +639,7 @@ def create_full_prefill_model(
                     j += 1
                 count = j - i
                 layers += repeat_layers(count)
-                attn_ops = _get_attn_prefill(lc.attention_type, cfg_view)
+                attn_ops = _get_attn_prefill(lc.attention_type, cfg_view, lc)
                 attn_ops = inject_lora_ops(attn_ops, cfg_view, parallelism_config, input_sequence_length)
                 layers += attn_ops
                 layers += _get_ffn_prefill(lc.ffn_type, cfg_view)
@@ -705,15 +749,20 @@ def create_full_decode_model(
         data_parallel=args.get('data_parallel', 1),
     )
 
-    def _get_attn_decode(attn_type, cfg=None):
+    def _get_attn_decode(attn_type, cfg=None, lc=None):
         cfg = cfg or model_config
-        if cfg.is_mla:
-            return mla_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens)
+        # A layer with no attention is never an MLA layer, even in an MLA model.
+        if attn_type == "Recurrent":
+            return recurrent_decode(lc, cfg, parallelism_config)
+        mixer = (recurrent_decode(lc, cfg, parallelism_config)
+                 if lc is not None and lc.recurrent else [])
+        if cfg.is_mla and attn_type in ("MHA-global", "MHA-local"):
+            return mla_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens) + mixer
         if attn_type == "MHA-global":
-            return mha_flash_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens)
-        elif attn_type == "MHA-local":
-            return mha_flash_attention_decode_local(cfg, parallelism_config, input_sequence_length, output_gen_tokens)
-        elif attn_type == "Mamba":
+            return mha_flash_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens) + mixer
+        if attn_type == "MHA-local":
+            return mha_flash_attention_decode_local(cfg, parallelism_config, input_sequence_length, output_gen_tokens) + mixer
+        if attn_type == "Mamba":
             return mamba_decode(cfg, parallelism_config, input_sequence_length)
         elif attn_type == "linear":
             return linear_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens)
@@ -749,7 +798,7 @@ def create_full_decode_model(
                     j += 1
                 count = j - i
                 layers += repeat_layers(count)
-                attn_ops = _get_attn_decode(lc.attention_type, cfg_view)
+                attn_ops = _get_attn_decode(lc.attention_type, cfg_view, lc)
                 attn_ops = inject_lora_ops(attn_ops, cfg_view, parallelism_config, 1)
                 layers += attn_ops
                 layers += _get_ffn_decode(lc.ffn_type, cfg_view)

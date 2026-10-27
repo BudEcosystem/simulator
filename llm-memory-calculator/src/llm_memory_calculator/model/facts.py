@@ -20,8 +20,10 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, Mapping, Optional, Tuple
 
 from ..layer_plan import (
+    ATTN_CROSS,
     ATTN_FULL,
     ATTN_SLIDING,
+    layer_kinds,
     resolve_layer_plan,
 )
 from ..state_memory import _per_layer_bytes  # noqa: PLC2701 - the one per-mechanism state formula
@@ -505,20 +507,26 @@ def _native_role_bytes(
 
 
 def _layer_counts(config: Mapping[str, Any], text: Mapping[str, Any], n_layers: int) -> LayerCounts:
-    plan = None
+    kinds = None
     try:
-        plan = resolve_layer_plan(dict(config))
+        kinds = layer_kinds(dict(config))
     except Exception:  # noqa: BLE001 - an exotic config must not fail the plan (NFR-5)
-        plan = None
+        kinds = None
     window = _get(text, "sliding_window", default=None)
     window = int(window) if isinstance(window, (int, float)) and window else None
     mla = bool(_get(text, "kv_lora_rank", default=0))
-    if plan:
-        attn = plan.get("attn") or []
-        full = sum(1 for a in attn if a == ATTN_FULL)
-        sliding = sum(1 for a in attn if a == ATTN_SLIDING)
-        recurrent = int(plan.get("num_recurrent_layers") or 0)
-        mechs = tuple(plan.get("mechanisms") or ())
+    if kinds and kinds["source"] != "uniform":
+        # The one layer-kind table decides: a layer holds KV only if it has
+        # attention and does not reuse another layer's cache. Cross-attention
+        # layers are counted as full (their encoder cache, over-estimated).
+        owns = [
+            a for a, shared in zip(kinds["attn"], kinds["kv_shared"]) if a is not None and not shared
+        ]
+        full = sum(1 for a in owns if a in (ATTN_FULL, ATTN_CROSS))
+        sliding = sum(1 for a in owns if a == ATTN_SLIDING)
+        recurrent = sum(1 for r in kinds["recurrent"] if r)
+        mechs = tuple(kinds.get("mechanisms") or ())
+        window = kinds.get("sliding_window") or window
         if sliding == 0:
             window = None
         return LayerCounts(

@@ -22,6 +22,9 @@ _N_GROUPS = ("n_groups", "mamba_n_groups", "ssm_n_groups")
 _N_HEADS = ("mamba_n_heads", "mamba_num_heads", "n_mamba_heads")
 _D_HEAD = ("mamba_d_head", "mamba_head_dim")
 _DT_RANK = ("dt_rank", "time_step_rank", "mamba_dt_rank")
+# An explicitly stated inner width. llama.cpp's GGUF states it as `ssm.inner_size`
+# (bud_component carries it over as `ssm_inner_size`); HF configs derive it.
+_D_INNER = ("ssm_inner_size", "mamba_d_inner")
 
 
 def first(config: Dict[str, Any], *keys, default=None):
@@ -47,10 +50,17 @@ def mamba_dims(config: Dict[str, Any], hidden_size: int) -> Dict[str, int]:
     n_heads = first(config, *_N_HEADS)
     d_head = first(config, *_D_HEAD)
 
+    stated_inner = first(config, *_D_INNER)
     if n_heads and d_head:
         # Authoritative. Nemotron-H's d_inner is mamba_num_heads x
         # mamba_head_dim = 10240, which has no relation to expand x hidden_size.
         d_inner = int(n_heads) * int(d_head)
+    elif stated_inner:
+        d_inner = int(stated_inner)
+        if n_heads:
+            d_head = max(1, d_inner // int(n_heads))
+        else:
+            n_heads, d_head = 1, d_inner
     else:
         d_inner = expand * hidden_size
         if n_heads:

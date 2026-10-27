@@ -3,7 +3,7 @@
 import warnings
 from typing import Dict, Any, Union
 from .config_normalizer import ConfigNormalizer
-from .layer_plan import resolve_layer_plan
+from .layer_plan import layer_kinds, resolve_layer_plan
 from .mixer_params import recurrent_mixer_params
 
 
@@ -492,11 +492,13 @@ class UniversalParameterCounter:
         # Get layer configuration
         num_layers = config.get('num_hidden_layers', 12)
 
-        # Some hybrids specify layer types explicitly
-        layer_types = config.get('layer_types', [])
-        if layer_types:
-            attention_layers = sum(1 for t in layer_types if 'attention' in str(t).lower())
-            mamba_layers = sum(1 for t in layer_types if 'mamba' in str(t).lower() or 'ssm' in str(t).lower())
+        # Some hybrids specify layer kinds explicitly. Read them through the one
+        # layer-kind table, never by substring: "linear_attention" contains
+        # "attention" and is not a softmax-attention layer.
+        kinds = layer_kinds(config)
+        if kinds["source"] != "uniform":
+            attention_layers = sum(1 for a in kinds["attn"] if a is not None)
+            mamba_layers = sum(1 for r in kinds["recurrent"] if r)
         else:
             # Use ratio if specified
             attention_ratio = config.get('attention_ratio', 0.5)

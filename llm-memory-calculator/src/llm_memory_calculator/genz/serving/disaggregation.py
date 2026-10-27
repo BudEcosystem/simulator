@@ -293,15 +293,9 @@ class DisaggregationAnalyzer:
         # No magic fallback: if the model config cannot be resolved we cannot derive the
         # per-token KV footprint honestly, so let the exception propagate (ROOT-B).
         config = get_configs(self._model)
-        num_kv = getattr(config, "num_key_value_heads", None)
-        if num_kv is None:
-            num_kv = getattr(config, "num_attention_heads", 32)
-        hdim = getattr(config, "head_dim", None)
-        if hdim is None:
-            hidden = getattr(config, "hidden_size", 4096)
-            n_heads = getattr(config, "num_attention_heads", 32)
-            hdim = hidden // n_heads
-        layers = getattr(config, "num_decoder_layers", 32)
-        # K + V, bf16 = 2 bytes per element (canonical bytes_per_token_kv, TP=1 for transfer).
-        bytes_per_token = 2 * num_kv * hdim * layers * 2
+        # KV elements per token from the layers that hold a cache (ModelConfig.get_kv_size:
+        # attention layers only, MLA as its latent), K + V at bf16 = 2 bytes per element,
+        # TP=1 for transfer. Counting every decoder layer charged a hybrid's recurrent
+        # layers a cache they do not have.
+        bytes_per_token = config.get_kv_size() * 2
         return bytes_per_token * (input_tokens + output_tokens)

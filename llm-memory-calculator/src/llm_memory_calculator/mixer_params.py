@@ -23,6 +23,9 @@ from .layer_plan import (
     MECH_LIGHTNING,
     MECH_MAMBA1,
     MECH_MAMBA2,
+    MECH_MLSTM,
+    MECH_RGLRU,
+    MECH_RWKV,
     MECH_SHORTCONV,
 )
 
@@ -151,6 +154,37 @@ def lightning_params(config: Dict[str, Any], hidden: int) -> int:
     return 4 * hidden * inner + hidden * inner  # q,k,v,o + output gate
 
 
+def rwkv_params(config: Dict[str, Any], hidden: int) -> int:
+    """RWKV time-mix block, one layer (transformers ``RwkvSelfAttention``).
+
+    key / value / receptance project hidden -> attention_hidden_size, output
+    projects back; time_decay and time_first are one vector each, the three
+    time_mix interpolations one hidden-wide vector each.
+    """
+    att = int(_first(config, "attention_hidden_size", default=hidden) or hidden)
+    return 4 * hidden * att + 2 * att + 3 * hidden
+
+
+def mlstm_params(config: Dict[str, Any], hidden: int) -> int:
+    """xLSTM mLSTM layer: q, k (hidden -> qk_dim), v and the output gate
+    (hidden -> v_dim), input/forget gates (hidden -> num_heads each) and the
+    output projection (v_dim -> hidden)."""
+    nh = int(_first(config, "num_heads", default=8))
+    qk = -(-int(round(hidden * float(_first(config, "qk_dim_factor", default=0.5)))) // 64) * 64
+    v = -(-int(round(hidden * float(_first(config, "v_dim_factor", default=1.0)))) // 64) * 64
+    return hidden * (2 * qk + 2 * v) + 2 * hidden * nh + v * hidden
+
+
+def rglru_params(config: Dict[str, Any], hidden: int) -> int:
+    """RecurrentGemma recurrent block: linear_x, linear_y (hidden -> lru_width)
+    and linear_out back, the depthwise conv, and the RG-LRU's block-diagonal
+    input and recurrence gates plus its recurrence parameter."""
+    width = int(_first(config, "lru_width", default=hidden) or hidden)
+    k = int(_first(config, "conv1d_width", default=4))
+    nh = int(_first(config, "num_attention_heads", default=1) or 1)
+    return 3 * hidden * width + width * k + 2 * width * width // max(nh, 1) + width
+
+
 _DISPATCH = {
     MECH_GDN: gdn_params,
     MECH_KDA: kda_params,
@@ -158,6 +192,9 @@ _DISPATCH = {
     MECH_MAMBA1: mamba1_params,
     MECH_SHORTCONV: shortconv_params,
     MECH_LIGHTNING: lightning_params,
+    MECH_RWKV: rwkv_params,
+    MECH_MLSTM: mlstm_params,
+    MECH_RGLRU: rglru_params,
 }
 
 

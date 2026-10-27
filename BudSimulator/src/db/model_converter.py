@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, List
 import logging
 
 from llm_memory_calculator.genz.Models.default_models import ModelConfig
+from llm_memory_calculator.genz.Models.get_language_model import layer_configs_from_hf
 from llm_memory_calculator.genz.Models.model_quality import QualityMetricsCollection, MMLU, MATH, GSM8K, Hellaswag, TriviaQA
 
 
@@ -144,6 +145,11 @@ class ModelConverter:
             if metrics:
                 quality_collection = QualityMetricsCollection(metrics)
         
+        # Per-layer kinds from the config's own keys (hybrids, interleaved windows,
+        # KV-free layers), through the same reader the HF loader uses, so a model
+        # synced from the database is graphed exactly like one loaded from a config.
+        layer_configs = layer_configs_from_hf(hf_config, num_decoder_layers, num_experts)
+
         # Create GenZ ModelConfig
         config = ModelConfig(
             model=model_id,
@@ -170,7 +176,8 @@ class ModelConverter:
             mamba_d_conv=mamba_d_conv,
             mamba_expand=mamba_expand,
             # Quality metrics
-            model_quality=quality_collection
+            model_quality=quality_collection,
+            layer_configs=layer_configs,
         )
         
         return config

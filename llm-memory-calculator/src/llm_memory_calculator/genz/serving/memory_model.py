@@ -123,11 +123,15 @@ class MemoryModel:
     def bytes_per_token_kv(self) -> int:
         """KV cache bytes per token.
 
-        Formula: 2 (K+V) * kv_heads * head_dim * layers * precision / TP, unless the caller passed the
-        calculator's figure (see ``__init__``).
+        Formula: ``ModelConfig.get_kv_size()`` (K+V elements per token over the layers that hold a
+        cache) * precision / TP, unless the caller passed the calculator's figure (see ``__init__``).
         """
         if self._bytes_per_token_kv_override:
             return self._bytes_per_token_kv_override
+        get_kv_size = getattr(self._model_config, 'get_kv_size', None)
+        if callable(get_kv_size):
+            # Only the layers that hold a cache (ModelConfig.get_kv_size), MLA as its latent.
+            return int(get_kv_size() * self._precision_bytes // self._tensor_parallel)
         return (2 * self._num_kv_heads * self._head_dim
                 * self._num_layers * self._precision_bytes // self._tensor_parallel)
 

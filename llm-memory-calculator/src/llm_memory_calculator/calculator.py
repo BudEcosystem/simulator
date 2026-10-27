@@ -7,10 +7,12 @@ from .types import MemoryReport
 from .parameter_counter import UniversalParameterCounter
 from .config_normalizer import ConfigNormalizer
 from .layer_plan import (
+    ATTN_CROSS,
     ATTN_FULL,
     ATTN_SLIDING,
     MECH_MAMBA1,
     MECH_MAMBA2,
+    layer_kinds,
     resolve_layer_plan,
 )
 from .state_memory import calculate_recurrent_state_bytes
@@ -508,10 +510,12 @@ class ModelMemoryCalculator:
         notes: List[str] = []
 
         plan = resolve_layer_plan(config)
+        num_cross = 0
         if plan is not None:
             source = "layer_plan:" + plan["dialect"]
             num_full = plan["num_full_layers"]
             num_sliding = plan["num_sliding_layers"]
+            num_cross = plan.get("num_cross_layers", 0)
             depth = depth or len(plan["attn"])
             notes.extend(plan.get("notes") or [])
         else:
@@ -545,8 +549,12 @@ class ModelMemoryCalculator:
         # `.get(key, default)` returns a stored None, and the window is
         # legitimately None here: a config carrying layer_types can also carry
         # `use_sliding_window: false`, which the normalizer scrubs to None. "No
-        # window" means those layers attend to the full sequence.
-        window = text_config.get("sliding_window") or None
+        # window" means those layers attend to the full sequence. A plan states
+        # its own window (a chunked layer's is `attention_chunk_size`).
+        if plan is not None and plan.get("sliding_window"):
+            window = plan["sliding_window"]
+        else:
+            window = text_config.get("sliding_window") or None
         windowed_seq = min(seq_length, window) if window else seq_length
 
         # The engine half of the answer. Windowed layers cost less than full ones
@@ -580,6 +588,13 @@ class ModelMemoryCalculator:
                     "effective_seq": sliding_seq,
                 }
             )
+        if num_cross > 0:
+            # A cross-attention layer caches the encoder's tokens, a fixed count
+            # per request; without one stated, the full sequence (over-estimate).
+            enc = plan.get("encoder_tokens") if plan else None
+            groups.append(
+                {"kind": ATTN_CROSS, "layers": num_cross, "effective_seq": enc or seq_length}
+            )
 
         return {
             "source": source,
@@ -589,7 +604,8 @@ class ModelMemoryCalculator:
             # Linear-attention / SSM / conv / MLP-only layers. Zero KV, and the
             # count is reported so a 2x error shows up as a layer count rather
             # than as an unexplained factor.
-            "num_no_kv_layers": max(depth - num_full - num_sliding, 0),
+            "num_cross_layers": num_cross,
+            "num_no_kv_layers": max(depth - num_full - num_sliding - num_cross, 0),
             "sliding_window": window,
             "groups": groups,
             "heterogeneous_attention": heterogeneous,
@@ -979,16 +995,29 @@ class ModelMemoryCalculator:
         kv_elements = batch_size * num_layers * seq_length * compressed_kv_dim
         return (kv_elements * bytes_per_element) / 1e9
 
-    def _count_attention_layers(self, config: Dict[str, Any], total_layers: int) -> int:
-        """Count the number of attention layers in hybrid models."""
-        # Check for explicit layer types
-        layer_types = config.get("layer_types", [])
-        if layer_types:
-            return sum(1 for lt in layer_types if "attention" in str(lt).lower())
+    def _count_attention_layers(
+        self, config: Dict[str, Any], total_layers: int, own_kv_only: bool = True
+    ) -> int:
+        """Layers that hold a KV cache (or, with ``own_kv_only=False``, that run
+        attention at all) in a model the caller has marked hybrid.
 
-        # Use attention ratio if specified
-        attention_ratio = config.get("attention_ratio", 0.5)
-        return int(total_layers * attention_ratio)
+        Read from the one layer-kind table (`layer_plan.layer_kinds`), never by
+        testing names for the substring "attention" -- that is what charged
+        Gated DeltaNet's "linear_attention" layers a full cache. A hybrid whose
+        layout no config key states is charged every layer: an over-estimate,
+        where the old 50% guess could under-count.
+        """
+        kinds = layer_kinds(config)
+        if kinds["source"] != "uniform":
+            return sum(
+                1
+                for a, shared in zip(kinds["attn"], kinds["kv_shared"])
+                if a is not None and not (own_kv_only and shared)
+            )
+        ratio = config.get("attention_ratio")
+        if isinstance(ratio, (int, float)) and 0 <= ratio <= 1:
+            return int(total_layers * ratio)
+        return total_layers
 
     # =========================================================================
     # Encoder-Decoder / Audio Model Support
@@ -1446,8 +1475,11 @@ class ModelMemoryCalculator:
             # or a bare `attention_ratio`, with no per-layer dialect to resolve.
             # Synthesize a plan so there is still exactly one arithmetic path.
             n = config.get("num_hidden_layers", config.get("n_layers", 12))
-            if self.model_type == "hybrid":
-                n = int(n * (1 - config.get("attention_ratio", 0.5)))
+            ratio = config.get("attention_ratio")
+            if self.model_type == "hybrid" and isinstance(ratio, (int, float)) and 0 <= ratio <= 1:
+                n = int(n * (1 - ratio))
+            # No stated ratio: every layer is charged state, the over-estimate,
+            # matching `_count_attention_layers` charging every layer KV.
             mech = MECH_MAMBA2 if "n_groups" in config else MECH_MAMBA1
             plan = {"recurrent": [mech] * n, "num_recurrent_layers": n}
 
@@ -1510,7 +1542,9 @@ class ModelMemoryCalculator:
 
         # Count only attention layers for hybrid models
         if self.model_type == "hybrid":
-            num_attention_layers = self._count_attention_layers(text_config, num_layers)
+            num_attention_layers = self._count_attention_layers(
+                text_config, num_layers, own_kv_only=False
+            )
         else:
             num_attention_layers = num_layers
 

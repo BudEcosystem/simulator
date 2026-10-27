@@ -22,6 +22,7 @@ import sys
 
 from llm_memory_calculator import get_hardware_config
 from llm_memory_calculator import estimate_end_to_end_performance
+from llm_memory_calculator.gguf_layers import hf_layer_keys_from_gguf
 from llm_memory_calculator.inference_engines import estimate_memory_for_engine
 from llm_memory_calculator.genz.Models.default_models import MODEL_DICT
 from llm_memory_calculator.genz.Models.get_language_model import (
@@ -57,6 +58,14 @@ ONNX_KNOWN_DENSE_TYPES = frozenset({
 # CALIBRATED TTFT/TPOT, so this component no longer post-processes them — it just reads them. This
 # makes the accuracy available to EVERY BudSimulator consumer (PyPI, API, Streamlit) with no API
 # change, and Bud Gaia's external JSON schema is unchanged.
+
+
+def _largest(v):
+    """A GGUF hparam that may be a per-layer array: its largest entry, else the value itself."""
+    if isinstance(v, (list, tuple)):
+        vals = [int(x) for x in v if x is not None]
+        return max(vals) if vals else None
+    return v
 
 
 def gguf_to_hf_config(path):
@@ -100,19 +109,32 @@ def gguf_to_hf_config(path):
         toks = reader.fields.get("tokenizer.ggml.tokens")
         vocab = len(toks.data) if toks is not None and toks.data is not None else 32000
 
+    # Per-layer arrays (a hybrid states 0 KV heads on its recurrent layers; some stacks vary
+    # the FFN width) collapse to their largest entry here -- the per-layer kinds are read
+    # from the arrays themselves below.
+    n_heads = _largest(n_heads)
+    n_kv_heads = _largest(n_kv_heads)
+    n_ff = _largest(n_ff)
     cfg = {
         "name": os.path.basename(path),
         "model_type": str(arch),
         "num_hidden_layers": int(n_layers),
-        "num_attention_heads": int(n_heads),
-        "num_key_value_heads": int(n_kv_heads) if n_kv_heads else int(n_heads),
         "hidden_size": int(n_embd),
         "intermediate_size": int(n_ff) if n_ff else 4 * int(n_embd),
         "vocab_size": int(vocab),
         "max_position_embeddings": int(ctx) if ctx else 8192,
     }
+    if n_heads:  # an attention-free stack (Mamba, RWKV) states no heads
+        cfg["num_attention_heads"] = int(n_heads)
+        cfg["num_key_value_heads"] = int(n_kv_heads) if n_kv_heads else int(n_heads)
     if head_dim_k:
         cfg["head_dim"] = int(head_dim_k)
+
+    # Which layers hold a KV cache, which carry a fixed recurrent state, and how big that state
+    # is -- llama.cpp's keys translated to the HF ones the layer plan reads, so a GGUF and its
+    # source checkpoint resolve to the same layer kinds. Dropping them charged every layer of
+    # a hybrid GGUF a full KV cache (4x on Qwen3.5).
+    cfg.update(hf_layer_keys_from_gguf(a, int(n_layers)))
 
     # CHAOS-#5: MoE — surface the expert geometry so GenZ models the ACTIVE-expert decode cost, not a
     # dense single expert (which under-predicts TPOT ~1.5-1.7x, so the strict SLO gate would admit
@@ -412,6 +434,8 @@ def main():
         "parameter_count": int(em.parameter_count),
         "weights_bytes": float(em.weights_bytes),
         "kv_cache_bytes": float(em.kv_cache_bytes),
+        # A hybrid's fixed recurrent state (0 for a plain transformer): constant in --seq.
+        "state_bytes": float(em.state_bytes),
         "activations_bytes": float(em.activation_bytes),
         "cuda_reserve_bytes": float(CUDA_RUNTIME_RESERVE),
         "total_runtime_bytes": float(total_runtime),
@@ -500,6 +524,7 @@ def main():
                 "total_runtime_bytes": float(tot_b),
                 "total_runtime_gb": tot_b / 1e9,
                 "kv_cache_bytes": float(em_b.kv_cache_bytes),
+                "state_bytes": float(em_b.state_bytes),
                 "activations_bytes": float(em_b.activation_bytes),
             }
             pp = _perf_point(bb)

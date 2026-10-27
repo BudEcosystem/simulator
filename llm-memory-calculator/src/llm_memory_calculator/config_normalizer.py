@@ -14,9 +14,11 @@ from typing import Dict, Any, List, Optional
 from .layer_plan import (
     ATTN_FULL,
     ATTN_SLIDING,
+    ATTN_CHUNKED,
     MECH_MAMBA1,
     MECH_MAMBA2,
     _classify_layer_type_string,
+    synthesized_layer_types,
 )
 
 
@@ -250,14 +252,9 @@ class ConfigNormalizer:
 
         layer_types = config.get('layer_types')
         if layer_types is None:
-            window = normalized.get('sliding_window')
-            pattern = config.get('sliding_window_pattern')
-            n_layers = config.get('num_hidden_layers', 0)
-            if window and isinstance(pattern, int) and pattern > 1 and n_layers:
-                layer_types = ['sliding_attention'] * n_layers
-                # A global (full-attention) layer every `pattern` layers.
-                for idx in range(pattern - 1, n_layers, pattern):
-                    layer_types[idx] = 'full_attention'
+            # A global (full-attention) layer every `sliding_window_pattern`
+            # layers; the one synthesis lives with the layer-kind table.
+            layer_types = synthesized_layer_types(normalized)
 
         if layer_types:
             normalized['_layer_metadata'] = ConfigNormalizer._parse_layer_types(
@@ -324,7 +321,7 @@ class ConfigNormalizer:
         for idx, layer_type in enumerate(layer_types):
             kind = _classify_layer_type_string(layer_type)
 
-            if kind['attn'] == ATTN_SLIDING:
+            if kind['attn'] in (ATTN_SLIDING, ATTN_CHUNKED):
                 attention_layers.append(idx)
                 sliding_layers.append(idx)
             elif kind['attn'] == ATTN_FULL:

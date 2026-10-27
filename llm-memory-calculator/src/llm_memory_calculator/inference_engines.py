@@ -40,6 +40,11 @@ class EngineMemory:
     attention_type: Optional[str]
     parameter_count: int
     engine: str
+    # A hybrid's or SSM's fixed per-sequence recurrent + conv state (constant in context
+    # length; llama.cpp's "llama_memory_recurrent", vLLM's mamba cache). Zero for a plain
+    # transformer. Counted in ``total_bytes``: once its layers stopped being charged a KV
+    # cache, leaving the state out would have turned the over-count into an under-count.
+    state_bytes: float = 0.0
 
 
 class InferenceEngine:
@@ -183,7 +188,8 @@ def estimate_memory_for_engine(
             float(rep_rt.activation_memory_bytes),
         )
     )
-    total = weights + kv + activation
+    state = float(getattr(rep_rt, "state_memory_bytes", 0.0) or 0.0)
+    total = weights + kv + state + activation
     return EngineMemory(
         weights_bytes=weights,
         kv_cache_bytes=kv,
@@ -192,4 +198,5 @@ def estimate_memory_for_engine(
         attention_type=rep_rt.attention_type,
         parameter_count=int(rep_rt.parameter_count),
         engine=engine.name,
+        state_bytes=state,
     )

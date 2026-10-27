@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping
 
+from ..layer_plan import LAYER_KINDS
+
 KNOWN_MODEL_TYPES = frozenset(
     {
         # dense decoders
@@ -97,24 +99,8 @@ KNOWN_MODEL_TYPES = frozenset(
     }
 )
 
-KNOWN_LAYER_TYPES = frozenset(
-    {
-        "full_attention",
-        "attention",
-        "sliding_attention",
-        "linear_attention",
-        "mamba",
-        "mamba2",
-        "ssm",
-        "conv",
-        "shortconv",
-        "recurrent",
-        "chunked_attention",
-        "global",
-        "local",
-        "hybrid",
-    }
-)
+# The per-layer kind names the simulator models: the one table in layer_plan.
+KNOWN_LAYER_TYPES = frozenset(LAYER_KINDS)
 
 
 def _text(config: Mapping[str, Any]) -> Mapping[str, Any]:
