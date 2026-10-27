@@ -162,11 +162,15 @@ def get_runtime_breakdown(df:pd.DataFrame) -> RuntimeBreakdown:
         layer_latency = df.loc[i, f'Latency ({unit.unit_time})']
         if layer_name in ['embeddings', 'classifier']:
             runtime_breakdown.Embedding += layer_latency
-        elif layer_name in ['QKV', 'Out Proj']:
+        elif layer_name in ['QKV', 'Out Proj',
+                            # MLA's projections (DeepSeek V2/V3, Kimi): the compressed Q pair or
+                            # the full-rank Q Proj (q_lora_rank null), and the latent KV path.
+                            'Q Down', 'Q Up', 'Q Proj', 'KV Compress', 'KV Up']:
             runtime_breakdown.MHA += layer_latency
             runtime_breakdown.QKVO_layers += layer_latency
         elif layer_name in ['Logit', 'Attend', 'Logit Pre', 'Logit Suf',
-                            'Attend Pre', 'Attend Suf', 'Logit Dec', 'Attend Dec']:
+                            'Attend Pre', 'Attend Suf', 'Logit Dec', 'Attend Dec',
+                            'Attn Linear']:  # DeciLM's linear attention replacement
             runtime_breakdown.MHA += layer_latency
             runtime_breakdown.LA_layers += layer_latency
         elif layer_name in ['Gate', 'up+gate', 'down', 'shared up+gate', 'shared down']:
@@ -175,7 +179,7 @@ def get_runtime_breakdown(df:pd.DataFrame) -> RuntimeBreakdown:
         elif layer_name in ['Message Pass']:
             runtime_breakdown.Collective += layer_latency
             runtime_breakdown.Send_Recv_time += layer_latency
-        elif layer_name in ['MHA AR', 'Mamba AR']:
+        elif layer_name in ['MHA AR', 'Mamba AR', 'MLA AR', 'Attn Linear AR']:
             runtime_breakdown.MHA += layer_latency
             runtime_breakdown.Collective += layer_latency
             runtime_breakdown.AR_time += layer_latency
