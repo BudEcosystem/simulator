@@ -14,7 +14,7 @@ table, and every part of the simulator answers from it:
 | `bud_component.py --gguf` (via `gguf_layers.hf_layer_keys_from_gguf`) | the same kinds from a GGUF's llama.cpp keys |
 | GenZ graph (`get_language_model.layer_configs_from_hf`, `ModelConfig.get_kv_size`) -- the prefill, decode **and chunked** builders (`create_full_chunked_model`: chunked serving, speculative decoding, the simulation engine's chunked feature) | per-layer operators; KV only on attention layers, the window on windowed ones; which FFNs are MoE (`layer_plan.moe_layers`) |
 | GenZ serving (`MemoryModel.bytes_per_token_kv`, disaggregation KV transfer) | per-token KV |
-| `UniversalParameterCounter`, `model.facts` (FRD-027), `model.recognise` | weights per mixer, KV per token, the known vocabulary |
+| `UniversalParameterCounter`, `model.facts` (FRD-027), `model.recognise` | weights per mixer, KV per token, the known vocabulary. `model.facts` reads the layer kinds for every config: a `model_type` outside the recogniser is still flagged `architecture: unrecognised`, but which layers hold KV comes from the table, not from that allowlist |
 | BudSimulator `ModelConverter.hf_to_genz` | database models graphed like HF configs |
 
 The table is `layer_plan.LAYER_KINDS`; the per-model answer is `layer_plan.layer_kinds(config)`
@@ -75,6 +75,13 @@ gguf-py's `Keys` (`gguf/constants.py`).
 Parallel hybrids (attention and a mixer in the same layer: Falcon-H1, Hymba, Zamba's `hybrid`
 layers) set both axes on that layer: it holds KV *and* a state.
 
+Zamba / Zamba2 name their layers through the same table (`mamba`, `hybrid`; any other name is
+charged full attention with the warning). A `hybrid` layer invokes the shared attention+MLP
+block, so it runs that block's MLP too; a plain `mamba` layer has no FFN. The block's weights
+exist once per shared block (`num_mem_blocks`, one when the config states none), so the
+parameter counts (`UniversalParameterCounter`, `model.facts`) count them that many times, while
+the graph streams them on every layer that invokes the block.
+
 A multimodal config nests the decoder under `text_config`; every reader looks there first, so a
 model that is both multimodal and hybrid (Qwen3.5) gets the hybrid layout.
 
@@ -96,8 +103,10 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
   any model that alternates (the original Gemma 2 hub config is exactly that shape: 8x low at
   32k tokens). A known type takes its config class's layout, as above. That lookup reads the
   installed `transformers` (BudSimulator requires it; the calculator package alone does not):
-  without it, or with a release that predates the model type, such a config -- Mistral v0.1's
-  included -- is charged full KV on every layer with the same warning, an over-estimate.
+  without it, with a release that predates the model type, or with a release before 4.53 (the
+  first whose config classes derive `layer_types`: 4.50's `Gemma2Config` states none though
+  Gemma 2 alternates), such a config -- Mistral v0.1's included -- is charged full KV on every
+  layer with the same warning, an over-estimate.
 * **SambaY (Phi-4-mini-flash)**, recognised by its `mb_per_layer` key: its YOCO cross-decoder
   reuses one full-attention cache that grows with the context, and the config does not say which
   layer writes it. Charged: a Mamba mixer every `mb_per_layer` layers, every other layer the
@@ -108,6 +117,10 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
   engine is declared able to hold a per-layer KV layout
   (`engine_capabilities={"heterogeneous_kv_layout": True}`); see `EngineKVCapabilities`.
 * **Sparse / compressed attention** is charged as full attention.
+* **A pure state-space stack whose config states no state key and no attention-head count** is
+  recognised by its `model_type` (`mamba`, `mamba2`, `falcon_mamba`, ...): the one place a family
+  name decides a layer kind, and only after every structural key is absent. Its state is then
+  sized from fallback geometry and marked as an `ESTIMATE`.
 * **Cross-attention** without a vision geometry in the config is charged the full sequence.
 
 ## The recurrent state
@@ -118,8 +131,10 @@ context length: the recurrent matrix in fp32 (unless `mamba_ssm_cache_dtype` / `
 / `inference_state_dtype` says otherwise) plus the convolution's `d_conv - 1` ring buffer at
 model precision. One function, `state_memory.recurrent_state_shape`, gives the shape for every
 mechanism; the GenZ graph's recurrent operators read the same shape and the same bytes per
-element (the state dtype travels in the operator's name: `Rec State` fp32, `Rec State16` 16-bit;
-`Rec Conv` at the activation precision), so the graph's state equals `calculate_state_memory`.
+element (the state dtype travels in the operator's name: `Rec State` fp32, `Rec State16` 16-bit,
+for the recurrent matrix and for the small vectors some mechanisms keep beside it -- RWKV's token
+shifts, xLSTM's normaliser; `Rec Conv` at the activation precision), so the graph's state equals
+`calculate_state_memory` for every mechanism.
 
 ## GGUF
 
@@ -145,8 +160,9 @@ mixer's own parameter count (`mixer_params`); `Rec State`, the fixed state read 
 state; it now carries every mixer's state, and grows with the context only through the attention
 layers. A pure Mamba stack keeps GenZ's own Mamba operators.
 
-All three graph builders read the same per-layer configs. In the chunked graph a windowed layer
-reads no context beyond its window (`attention.window_kv_sizes`), an MLA layer reads its one
+All three graph builders read the same per-layer configs, and a windowed layer's window from the
+same table: any window spelling, and `attention_chunk_size` for Llama 4's chunked layers. In the
+chunked graph a windowed layer reads no context beyond its window (`attention.window_kv_sizes`), an MLA layer reads its one
 latent head (`attention.mla_attention_chunked`), and a recurrent layer holds one state per
 sequence in the chunk however much each has cached (`recurrent.recurrent_chunked`). A dense layer
 of an MoE model (Jamba's even layers, DeepSeek's and Kimi's leading layers) is graphed as one FFN

@@ -2,9 +2,12 @@
 
 Branch `fix/hybrid-kv-layer-kinds`, measured against **origin/main `c17ef89`** (what this branch
 lands on). Generated on the shared GB10 box, 27-28 Oct 2026, with `scripts/kv_corpus.py`; no GPU
-used. Two rounds: the fix itself, and the corrections an independent review asked for (the
+used. Three rounds: the fix itself; the corrections an independent review asked for (the
 chunked graph, the state's bytes, MoE placement, unplaced windows, depth from a layer list,
-SambaY, the GGUF reader's Mamba-1 / RoPE / gating / tying, and this proof's own coverage).
+SambaY, the GGUF reader's Mamba-1 / RoPE / gating / tying, and this proof's own coverage); and the
+second review's (Zamba's shared MLP and its unknown names, transformers before 4.53, the FRD-027
+facts' allowlist and `mistral` rule, RWKV / xLSTM state bytes in the graph, Llama 4's chunk in
+the graph, optional test dependencies).
 
 ## 1. The measured case
 
@@ -43,7 +46,24 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
   - test_a_mamba1_gguf_is_sized_as_mamba1
   - test_the_qwen35_gguf_parameter_count_matches_its_tensors
   - test_sambay_kv_is_never_below_its_one_shared_full_cache
-* This branch: 51 passed.
+* Round 3 (9 cases added for the second review) against the round-2 head `6815b6a`: all 9
+  failed. One assertion was added after the first fix, and checked red against a copy of the tree
+  with the fix's other half reverted (a `qwen35` config's state priced 0):
+  - test_zamba2_runs_its_shared_mlp_on_every_hybrid_layer (no FFN on any of the 54 layers)
+  - test_zamba2_facts_count_the_shared_mlp_once_per_block (no `dense_ffn` role at all)
+  - test_an_unknown_name_in_a_zamba_layer_list_is_charged_full_kv_and_said_so (charged as Mamba,
+    no warning)
+  - test_a_transformers_release_without_layer_layouts_places_no_window (Gemma 2 clamped to the
+    window on every layer)
+  - test_model_facts_read_layer_kinds_for_a_model_type_the_recogniser_lacks (`qwen35` GGUF and
+    MiniMax-Text-01: KV on every layer)
+  - test_model_facts_slide_a_uniform_window_by_the_table_not_by_family_name (Phi-3: 32 full)
+  - test_the_genz_state_of_every_mechanism_is_priced_like_the_calculator[rwkv] (0.75 MiB, not
+    0.9375) and [xlstm] (128.1255, not 128.2510)
+  - test_the_genz_graph_bounds_chunked_layers_by_their_chunk (6,144 MiB at 32k, not 2,688)
+* In a clean venv with neither `transformers` nor `gguf` (the calculator's own dependencies), four
+  older cases failed instead of skipping; they now skip, and every other case passes there.
+* This branch: 60 passed (the two GGUF-file cases skip where `gguf` is absent).
 * Two older SambaY tests in `tests/test_hybrid_layer_plan.py` pinned the all-windowed reading
   ("every layer sliding", an "OVER-estimate"). That reading under-counts at long context, so they
   now pin the upper bound -- one full layer, the window elsewhere, never below the published
@@ -53,7 +73,7 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
 
 | Suite | origin/main `c17ef89` | This branch |
 |---|---|---|
-| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,142 passed, 14 skipped, 1 failed |
+| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,151 passed, 14 skipped, 1 failed |
 | `BudSimulator/tests` (pytest) | 24 passed | 24 passed |
 
 The one failure is the same test on both sides and predates this work:
@@ -86,7 +106,7 @@ Reproduce (the first `PYTHONPATH` entry is the tree measured):
         --hf-cache ~/.cache/huggingface/hub --models /home/bud/models --repo-root <tree> --genz-data <scratch>
     python llm-memory-calculator/scripts/kv_corpus.py --diff before.json after.json --report diff.md
 
-**Result: 141 unchanged, 51 changed** (192 configs, plus the empty-row marker). No uniform dense
+**Result: 134 unchanged, 58 changed** (192 configs, plus the empty-row marker). No uniform dense
 transformer's KV moved in any output. No config that measured before fails now; three that failed
 now measure (Jamba, Kimi Linear, DeepSeek-V2-Lite in GenZ). Every change, by cause:
 
@@ -136,6 +156,27 @@ now measure (Jamba, Kimi Linear, DeepSeek-V2-Lite in GenZ). Every change, by cau
 * **Unplaced windows** (`stated_layer_types`): no config in this corpus carries a window without a
   layout on a model type transformers does not know, and none takes its layout from a config class
   -- so this rule moves no corpus figure; its tests are synthetic (Gemma-2 shape, unknown type).
+  Likewise the round-3 rule that a transformers release before 4.53 places no window (this
+  machine runs 5.12); checked by hand in a venv with 4.50.3: Gemma 2's hub config goes from the
+  window on all 42 layers (1.41 GB at 32k, flat) to full KV with the warning (11.27 GB).
+
+Round 3 (the second review) moved 11 configs against the round-2 head, each by one of these:
+
+* **Zamba2 runs its shared MLP on its 9 `hybrid` layers** in GenZ: FFN kinds `no_op` x 54 ->
+  `Dense` x 9 + `no_op` x 45, decode weights 4,714.5 -> 5,614.5 MiB. (On origin/main the graph had
+  54 Dense FFNs.) The parameter count is unchanged: the block's weights are still counted once per
+  `num_mem_blocks`. The FRD-027 facts now count them the same way (they counted none).
+* **The FRD-027 facts read layer kinds from the table for every model type** (the recogniser's
+  allowlist only flags the type): the Qwen3.5-2B GGUF [24 full] -> [6 full, 18 recurrent];
+  MiniMax-Text-01 [80 full] -> [10 full, 70 recurrent]; SmallThinker [52 full] -> [13 full, 39
+  sliding, window 4,096]; five ModernBERT encoder configs (Julia-1, Laya) take their `layer_types`
+  (e.g. [28 full] -> [10 full, 18 sliding]; their `local_attention` window is not a window key the
+  table reads, so the sliding layers keep the full context -- an over-estimate).
+* **The facts slide a uniform window by the table, not by `model_type == "mistral"`**: Mimi
+  [8 full] -> [8 sliding, window 250] and Voxtral-Mini-4B-Realtime [26 full] -> [26 sliding,
+  window 8,192] -- what the calculator already charged for both.
+* RWKV / xLSTM state bytes and Llama 4's chunk in the graph move no corpus config (none of those
+  shapes is in it); their tests are synthetic.
 
 The full per-config table follows.
 
@@ -240,6 +281,41 @@ The full per-config table follows.
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
 | serving_bytes_per_token | 131072 | 32768 |
 
+## config:models--SupersonicLabs--Julia-1/snapshots/a85b127321d580d65176c89ced8273f305745d85/encoder/config.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| facts_full_attention | true | false |
+| facts_layers | [22, 0, 0, null] | [8, 14, 0, null] |
+
+## config:models--convaiinnovations--laya-multilingual/snapshots/e4e9ddf21a7b1903b7acffd8814ad4307bf63a67/encoder/config.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| facts_full_attention | true | false |
+| facts_layers | [22, 0, 0, null] | [8, 14, 0, null] |
+
+## config:models--convaiinnovations--laya-typed-decisions/snapshots/1a793eb568e6718f15941d08f85432581df534e3/encoder/config.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| facts_full_attention | true | false |
+| facts_layers | [28, 0, 0, null] | [10, 18, 0, null] |
+
+## config:models--convaiinnovations--laya/snapshots/55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851/encoder/config.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| facts_full_attention | true | false |
+| facts_layers | [28, 0, 0, null] | [10, 18, 0, null] |
+
+## config:models--convaiinnovations--laya/snapshots/55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851/typed-decisions/encoder/config.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| facts_full_attention | true | false |
+| facts_layers | [28, 0, 0, null] | [10, 18, 0, null] |
+
 ## config:models--internlm--Intern-Decision-4B/snapshots/0e5e6aa7d6d750e2b1504ba11a8136cb58aeb3cd/config.json (multimodal)
 
 | figure | before | after |
@@ -258,6 +334,20 @@ The full per-config table follows.
 | genz_kv_size | 65536 | 16384 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
 | serving_bytes_per_token | 131072 | 32768 |
+
+## config:models--kyutai--mimi/snapshots/89091b3e466eb6a9d11e537bf26b144f194978f7/config.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| facts_full_attention | true | false |
+| facts_layers | [8, 0, 0, null] | [0, 8, 0, 250] |
+
+## config:models--mistralai--Voxtral-Mini-4B-Realtime-2602/snapshots/2769294da9567371363522aac9bbcfdd19447add/config.json (audio-llm)
+
+| figure | before | after |
+|---|---|---|
+| facts_full_attention | true | false |
+| facts_layers | [26, 0, 0, null] | [0, 26, 0, 8192] |
 
 ## config:models--openai--gpt-oss-120b/snapshots/b5c939de8f754692c1647ca79fbf85e8c1e70f8a/config.json (decoder-only)
 
@@ -333,6 +423,8 @@ The full per-config table follows.
 | eng_llamacpp_32768_total_mb | 917067.869389 | 917361.470669 |
 | eng_llamacpp_4096_state_mb | 0.0 | 293.60128 |
 | eng_llamacpp_4096_total_mb | 915349.88247 | 915643.48375 |
+| facts_full_attention | true | false |
+| facts_layers | [80, 0, 0, null] | [10, 0, 70, null] |
 | genz_chunked_kv_mb | 1440.0 | 740.0 |
 | genz_decode_kv_mb | 1280.0 | 440.0 |
 | genz_decode_weights_mb | 849094.5 | 867574.5 |
@@ -344,6 +436,8 @@ The full per-config table follows.
 
 | figure | before | after |
 |---|---|---|
+| facts_full_attention | true | false |
+| facts_layers | [52, 0, 0, null] | [13, 39, 0, 4096] |
 | genz_layer_kinds | {"MHA-global": 52} | {"MHA-global": 13, "MHA-local": 39} |
 
 ## fixture:Qwen_Qwen3-Next-80B-A3B-Instruct.json (hybrid)
@@ -417,8 +511,8 @@ The full per-config table follows.
 | eng_llamacpp_4096_total_mb | 5445.688128 | 5518.16736 |
 | genz_chunked_kv_mb | 2430.0 | 543.243164 |
 | genz_decode_kv_mb | 35.859375 | 429.121582 |
-| genz_decode_weights_mb | 9842.5 | 4714.521484 |
-| genz_ffn_kinds | {"Dense": 54} | {"no_op": 54} |
+| genz_decode_weights_mb | 9842.5 | 5614.521484 |
+| genz_ffn_kinds | {"Dense": 54} | {"Dense": 9, "no_op": 45} |
 | genz_kv_size | 276480 | 46080 |
 | genz_layer_kinds | {"Mamba": 54} | {"MHA-global": 9, "Recurrent": 45} |
 | serving_bytes_per_token | 552960 | 92160 |
@@ -806,6 +900,8 @@ The full per-config table follows.
 | eng_llamacpp_4096_params | 1901268992 | 1855758390 |
 | eng_llamacpp_4096_state_mb | 0.0 | 19.53792 |
 | eng_llamacpp_4096_total_mb | 4185.058509 | 3962.580281 |
+| facts_full_attention | true | false |
+| facts_layers | [24, 0, 0, null] | [6, 0, 18, null] |
 | genz_chunked_kv_mb | 216.0 | 91.265625 |
 | genz_decode_kv_mb | 192.0 | 66.632812 |
 | genz_decode_weights_mb | 2602.0 | 3539.265625 |
