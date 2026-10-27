@@ -235,12 +235,17 @@ def mla_attention_prefill(model_config:ModelConfig, parallelism_config:Paralleli
 
     layers = []
 
-    # Q down-projection: [B, S, D] -> [B, S, q_lora_rank]
-    layers += [["Q Down", q_lora_rank, input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
-
-    # Q up-projection: [B, S, q_lora_rank] -> [B, S, H*(qk_nope_head_dim + qk_rope_head_dim)]
+    # Query projection. A low-rank down/up pair when q_lora_rank is set; a single
+    # full-rank projection when the config ships it null (DeepSeek-V2-Lite,
+    # Kimi Linear) -- building the pair from None put a NaN in the operator dims.
     q_out_dim = per_node_H * (qk_nope_head_dim + qk_rope_head_dim)
-    layers += [["Q Up", q_out_dim, input_sequence_length//sp, q_lora_rank, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+    if q_lora_rank:
+        # Q down-projection: [B, S, D] -> [B, S, q_lora_rank]
+        layers += [["Q Down", q_lora_rank, input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+        # Q up-projection: [B, S, q_lora_rank] -> [B, S, H*(qk_nope_head_dim + qk_rope_head_dim)]
+        layers += [["Q Up", q_out_dim, input_sequence_length//sp, q_lora_rank, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+    else:
+        layers += [["Q Proj", q_out_dim, input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
 
     # KV compression: [B, S, D] -> [B, S, kv_lora_rank + qk_rope_head_dim]
     kv_compressed_dim = kv_lora_rank + qk_rope_head_dim
@@ -284,10 +289,14 @@ def mla_attention_decode(model_config:ModelConfig, parallelism_config:Parallelis
 
     layers = []
 
-    # Q down-projection + up-projection
-    layers += [["Q Down", q_lora_rank, 1, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    # Query projection: the low-rank pair, or one full-rank projection when
+    # q_lora_rank is null (see prefill).
     q_out_dim = per_node_H * (qk_nope_head_dim + qk_rope_head_dim)
-    layers += [["Q Up", q_out_dim, 1, q_lora_rank, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    if q_lora_rank:
+        layers += [["Q Down", q_lora_rank, 1, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+        layers += [["Q Up", q_out_dim, 1, q_lora_rank, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    else:
+        layers += [["Q Proj", q_out_dim, 1, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
 
     # KV compression for the new token
     kv_compressed_dim = kv_lora_rank + qk_rope_head_dim
