@@ -72,6 +72,17 @@ def per_layer_token(heads_kv, head_dim, nbytes=2):
     return 2 * heads_kv * head_dim * nbytes
 
 
+def needs_transformers_layouts():
+    """A case that reads a layout from a transformers config class. transformers is optional
+    for the calculator, and only 4.53+ derives `layer_types` (without it a window is charged on
+    no layer, which is what the case does not test)."""
+    transformers = pytest.importorskip("transformers")
+    from llm_memory_calculator.layer_plan import transformers_states_layer_layouts
+
+    if not transformers_states_layer_layouts():
+        pytest.skip(f"transformers {transformers.__version__} derives no layer_types")
+
+
 # ------------------------------------------------- the measured case: Qwen3.5 on the GB10
 
 
@@ -145,6 +156,7 @@ def test_bud_component_reads_the_same_layers_from_the_gguf():
     path = "/home/bud/models/qwen3.5-2b-gguf/Qwen3.5-2B-Q4_K_M.gguf"
     if not os.path.exists(path):
         pytest.skip("Qwen3.5-2B GGUF not on this machine")
+    pytest.importorskip("gguf")
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root))
     try:
@@ -299,6 +311,7 @@ def test_gemma3_interleave_is_read_from_its_window_pattern():
 
 def test_a_uniformly_windowed_stack_is_bounded_by_its_window():
     """Mistral-7B v0.1: `sliding_window: 4096` and no per-layer list -- every layer slides."""
+    needs_transformers_layouts()
     c = dict(model_type="mistral", hidden_size=4096, num_hidden_layers=32,
              num_attention_heads=32, num_key_value_heads=8, sliding_window=4096)
     assert kv_bytes(c, 32768) == 32 * per_layer_token(8, 128) * 4096
@@ -586,6 +599,7 @@ def test_a_window_without_a_stated_layout_follows_the_config_class():
     """Gemma 2's hub config.json carries `sliding_window` and no `layer_types`; its config
     class (transformers) alternates sliding and full. Clamping every layer to the window
     under-counted KV 8x at 32k. Mistral's class states no per-layer list: every layer slides."""
+    needs_transformers_layouts()
     gemma2 = dict(model_type="gemma2", hidden_size=2304, num_hidden_layers=8,
                   num_attention_heads=8, num_key_value_heads=4, head_dim=256,
                   sliding_window=4096, vocab_size=1000, intermediate_size=9216)
@@ -654,7 +668,7 @@ def test_the_qwen35_gguf_parameter_count_matches_its_tensors():
     path = "/home/bud/models/qwen3.5-2b-gguf/Qwen3.5-2B-Q4_K_M.gguf"
     if not os.path.exists(path):
         pytest.skip("Qwen3.5-2B GGUF not on this machine")
-    import gguf
+    gguf = pytest.importorskip("gguf")
     import numpy as np
 
     root = Path(__file__).resolve().parents[2]
@@ -701,3 +715,162 @@ def test_a_dense_layer_of_an_moe_model_graphs_under_expert_parallelism(tmp_path)
                              expert_parallel=2)
     create_full_chunked_model(name=mc, prefill_kv_sizes=[(0, 128)], decode_kv_sizes=[256],
                               data_path=str(tmp_path), expert_parallel=2)
+
+
+# ------------------------------------------------- review round 2: what still erred low or by name
+
+
+def test_zamba2_runs_its_shared_mlp_on_every_hybrid_layer():
+    """Zamba2's shared attention+MLP block runs beside the Mamba mixer on each `hybrid` layer.
+    The plan's FFN axis is what runs; the shared weights are counted once per block
+    (`num_mem_blocks`) by the parameter count alone. Graphing no FFN at all under-counted
+    ~0.7B params of weight traffic per decoded token."""
+    from llm_memory_calculator.genz.Models.get_language_model import get_configs
+
+    c = cfg("Zyphra_Zamba2-2.7B")
+    hybrid = [t == "hybrid" for t in c["layers_block_type"]]
+    assert layer_kinds(c)["ffn"] == hybrid
+    ffn = [lc.ffn_type for lc in get_configs(c).layer_configs]
+    assert ffn == ["Dense" if h else "no_op" for h in hybrid]
+    plan = resolve_layer_plan(c)
+    assert plan["num_ffn_layers"] == 9
+    assert plan["num_ffn_param_layers"] == c["num_mem_blocks"]
+
+
+def test_zamba2_facts_count_the_shared_mlp_once_per_block():
+    from llm_memory_calculator.model.facts import ModelFacts
+
+    c = cfg("Zyphra_Zamba2-2.7B")
+    roles = ModelFacts.from_config(c).params_by_role
+    assert roles.get("dense_ffn") == c["num_mem_blocks"] * 3 * c["hidden_size"] * c["intermediate_size"]
+
+
+def test_an_unknown_name_in_a_zamba_layer_list_is_charged_full_kv_and_said_so():
+    c = dict(model_type="zamba2", hidden_size=2560, num_attention_heads=32,
+             num_key_value_heads=32, head_dim=80, num_hidden_layers=4, mamba_d_state=64,
+             layers_block_type=["mamba", "hybrid", "newkind", "mamba"])
+    with pytest.warns(UserWarning, match="newkind"):
+        kinds = layer_kinds(c)
+    assert kinds["attn"] == [None, "full", "full", None]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        plan = resolve_layer_plan(c)
+        assert plan["approximate"]
+        assert kv_bytes(c, 4096) == 2 * per_layer_token(32, 80) * 4096
+
+
+def test_a_transformers_release_without_layer_layouts_places_no_window(monkeypatch):
+    """transformers before 4.53 derives no `layer_types` for any family, so a config class
+    with none says nothing about the layout: Gemma 2 alternates, yet 4.50's Gemma2Config
+    states no list. Reading that silence as "every layer takes the window" under-counted
+    Gemma 2 8x at 32k; the window is placed on no layer instead, and said so."""
+    transformers = pytest.importorskip("transformers")
+    from transformers import CONFIG_MAPPING
+
+    import llm_memory_calculator.layer_plan as lp
+
+    class Gemma2Config450:  # what transformers 4.50's Gemma2Config exposes: no layer_types
+        def __init__(self, **kw):
+            self.__dict__.update({k: v for k, v in kw.items() if k != "layer_types"})
+
+    monkeypatch.setattr(transformers, "__version__", "4.50.3")
+    monkeypatch.setitem(CONFIG_MAPPING._extra_content, "gemma2", Gemma2Config450)
+    monkeypatch.setattr(lp, "_CLASS_LAYOUT_CACHE", {})
+    gemma2 = dict(model_type="gemma2", hidden_size=2304, num_hidden_layers=8,
+                  num_attention_heads=8, num_key_value_heads=4, head_dim=256,
+                  sliding_window=4096, vocab_size=1000, intermediate_size=9216)
+    with pytest.warns(UserWarning, match="window"):
+        kinds = layer_kinds(gemma2)
+    assert kinds["attn"] == ["full"] * 8
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert kv_bytes(gemma2, 32768) == 8 * per_layer_token(4, 256) * 32768
+
+
+def test_model_facts_read_layer_kinds_for_a_model_type_the_recogniser_lacks():
+    """FRD-027's facts consulted the layer-kind table only for an allow-listed model_type, so
+    a Qwen3.5 GGUF (`qwen35`) and MiniMax-Text-01 were charged KV on every layer. The type
+    stays flagged unrecognised; which layers hold KV is read from the config's own keys."""
+    from llm_memory_calculator.model.facts import ModelFacts
+
+    hf = cfg("Qwen_Qwen3.5-4B")
+    g = dict(model_type="qwen35", num_hidden_layers=32, hidden_size=hf["text_config"]["hidden_size"],
+             num_attention_heads=16, num_key_value_heads=4, head_dim=256, vocab_size=1000)
+    g.update(hf_layer_keys_from_gguf(_gguf(qwen35_4b_gguf_meta()), 32))
+    f = ModelFacts.from_config(g)
+    assert not f.recognised and "architecture: unrecognised" in f.flags
+    assert (f.layers.full, f.layers.recurrent) == (8, 24)
+    known = ModelFacts.from_config(hf)
+    assert f.kv_bytes_per_token() == known.kv_bytes_per_token() == 8 * 2 * 4 * 256 * 2
+    # the 24 recurrent layers are charged their state and their mixers' weights, not dropped
+    assert f.state_bytes_per_sequence() == pytest.approx(known.state_bytes_per_sequence())
+    assert f.params_by_role["attention"] >= known.params_by_role["attention"] * 0.9
+
+    mm = cfg("MiniMaxAI_MiniMax-Text-01")
+    f = ModelFacts.from_config(mm)
+    assert f.layers.full == sum(mm["attn_type_list"]) == 10
+    assert f.layers.recurrent == 70
+
+
+def test_model_facts_slide_a_uniform_window_by_the_table_not_by_family_name():
+    """facts slid every layer only for model_type `mistral`; the table slides every layer of any
+    uniform stack whose config class states no per-layer list (Phi-3's 2,047-token window)."""
+    needs_transformers_layouts()
+    from llm_memory_calculator.model.facts import ModelFacts
+
+    phi3 = dict(model_type="phi3", hidden_size=3072, num_hidden_layers=32,
+                num_attention_heads=32, num_key_value_heads=32, sliding_window=2047,
+                vocab_size=32064, intermediate_size=8192)
+    assert layer_kinds(phi3)["attn"] == ["sliding"] * 32
+    f = ModelFacts.from_config(phi3)
+    assert (f.layers.full, f.layers.sliding, f.layers.sliding_window) == (0, 32, 2047)
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        dict(model_type="rwkv", hidden_size=2048, num_hidden_layers=24, attention_hidden_size=2048,
+             intermediate_size=8192, vocab_size=50277, context_length=4096),
+        dict(model_type="xlstm", hidden_size=4096, num_hidden_layers=32, num_heads=8,
+             qk_dim_factor=0.5, v_dim_factor=1.0, vocab_size=50304),
+    ],
+    ids=["rwkv", "xlstm"],
+)
+def test_the_genz_state_of_every_mechanism_is_priced_like_the_calculator(config, tmp_path):
+    """RWKV's token-shift vectors and xLSTM's normaliser are state, held at the state dtype;
+    the graph priced them at the activation precision."""
+    from llm_memory_calculator.genz.Models.get_language_model import (
+        create_full_decode_model,
+        get_configs,
+    )
+
+    kv = _genz_kv_mb(create_full_decode_model, tmp_path, name=get_configs(config),
+                     input_sequence_length=4096, output_gen_tokens=0)
+    assert kv == pytest.approx(state_bytes(config) / MiB, rel=1e-6)
+
+
+def test_the_genz_graph_bounds_chunked_layers_by_their_chunk(tmp_path):
+    """Llama 4: 36 `chunked_attention` layers keep at most `attention_chunk_size` (8,192) tokens.
+    The graph read only `sliding_window`, so they were graphed over the whole context."""
+    from llm_memory_calculator.genz.Models.get_language_model import (
+        create_full_decode_model,
+        get_configs,
+    )
+
+    n = 48
+    c = dict(model_type="llama4_text", hidden_size=5120, num_hidden_layers=n,
+             num_attention_heads=40, num_key_value_heads=8, head_dim=128, intermediate_size=8192,
+             intermediate_size_mlp=16384, num_local_experts=16, num_experts_per_tok=1,
+             interleave_moe_layer_step=1, attention_chunk_size=8192, vocab_size=202048,
+             layer_types=["full_attention" if (i + 1) % 4 == 0 else "chunked_attention"
+                          for i in range(n)])
+    per_token_mib = per_layer_token(8, 128) / MiB
+
+    def kv(seq):
+        return _genz_kv_mb(create_full_decode_model, tmp_path, name=get_configs(c),
+                           input_sequence_length=seq, output_gen_tokens=0)
+
+    assert kv(32768) == pytest.approx(per_token_mib * (12 * 32768 + 36 * 8192), rel=1e-6)
+    assert _chunked_kv_mb(c, tmp_path, 32768) - _chunked_kv_mb(c, tmp_path, 16384) == (
+        pytest.approx(per_token_mib * 12 * 16384, rel=1e-6)
+    )

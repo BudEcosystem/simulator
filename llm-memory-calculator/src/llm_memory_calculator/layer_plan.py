@@ -22,6 +22,7 @@ their state is also charged on every layer. Sequential hybrids (Qwen3-Next,
 Jamba, Nemotron-H, ...) set exactly one axis per layer.
 """
 
+import re
 import warnings
 from typing import Any, Dict, List, Optional
 
@@ -378,31 +379,34 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         ffn = plan.pop("_ffn", None) or [False] * n
         return _finish(plan, config, "hybrid_override_pattern", notes, ffn=ffn)
 
-    # --- 5. layers_block_type. Zamba / Zamba2 name a 'hybrid' layer: the SHARED
-    # attention+MLP block runs beside that layer's Mamba mixer. Any other list
-    # (Nemotron-H as transformers 5.12 saves it: mamba / moe / attention / mlp)
-    # resolves through the table like `layer_types`. --------------------------
+    # --- 5. layers_block_type. Resolves through the table like `layer_types`
+    # (Nemotron-H as transformers 5.12 saves it: mamba / moe / attention / mlp).
+    # Zamba / Zamba2 name a 'hybrid' layer: the SHARED attention+MLP block runs
+    # beside that layer's Mamba mixer. -----------------------------------------
     lbt = tc.get("layers_block_type")
     if isinstance(lbt, list) and lbt and not any(str(t).lower() == "hybrid" for t in lbt):
         _apply_layer_names(plan, lbt, tc, n, notes)
         return _finish(plan, config, "layers_block_type", notes, ffn=plan.pop("_ffn", None))
     if isinstance(lbt, list) and lbt:
-        for i, t in enumerate(lbt[:n]):
-            t = str(t).lower()
-            plan["recurrent"][i] = MECH_MAMBA2
-            if "hybrid" in t or "attention" in t:
-                plan["attn"][i] = ATTN_FULL
+        _apply_layer_names(plan, lbt, tc, n, notes)
+        plan.pop("_ffn", None)
+        # The MLP is the shared block's: it runs on every layer that invokes the block
+        # (every layer with attention, an unknown name included, as charged), and on no
+        # plain Mamba layer.
+        ffn = [a is not None for a in plan["attn"]]
         # Zamba2's attention+MLP block is SHARED: `num_mem_blocks` distinct
         # blocks are re-invoked across every hybrid layer. Each invocation
-        # allocates its own KV, so the runtime counts above stand -- but the
-        # weights exist only once per block, so parameter counting must use
-        # num_mem_blocks. Counting them per-layer doubles the model.
-        blocks = int(tc.get("num_mem_blocks") or 0)
+        # allocates its own KV and streams the block's weights, so the runtime
+        # counts above stand -- but the weights exist only once per block, so
+        # parameter counting must use num_mem_blocks. Counting them per-layer
+        # doubles the model. Zamba (v1) states no count: it has one shared block,
+        # the default both transformers config classes give.
+        blocks = int(tc.get("num_mem_blocks") or 1)
         return _finish(
             plan, config, "layers_block_type", notes,
-            ffn=[False] * n,  # mamba layers carry no FFN; the shared block owns it
-            attention_param_layers=blocks or None,
-            ffn_param_layers=blocks or None,
+            ffn=ffn,
+            attention_param_layers=blocks,
+            ffn_param_layers=blocks,
         )
 
     # --- 6. Bamba: explicit attention layer indices, rest Mamba-2 ------------
@@ -572,6 +576,24 @@ _LAYOUT_KEYS = (
 
 _CLASS_LAYOUT_CACHE: Dict[str, Any] = {}
 
+#: The first transformers release whose config classes derive ``layer_types`` (Gemma2Config,
+#: Qwen2Config, ...). Before it no class states one, for any family.
+LAYER_LAYOUTS_SINCE = (4, 53)
+
+
+def transformers_states_layer_layouts() -> bool:
+    """Whether the installed transformers derives ``layer_types`` in its config classes.
+
+    Only then does a class that states none mean "no per-layer layout" (Mistral: every layer
+    takes the window). An older release states none for Gemma 2 either, which alternates.
+    """
+    try:
+        import transformers
+    except Exception:
+        return False
+    m = re.match(r"(\d+)\.(\d+)", str(getattr(transformers, "__version__", "")))
+    return bool(m) and (int(m.group(1)), int(m.group(2))) >= LAYER_LAYOUTS_SINCE
+
 
 def _config_class_layer_types(tc: Dict[str, Any]):
     """``(known, names)``: what the model type's own config class says the layers are.
@@ -580,7 +602,9 @@ def _config_class_layer_types(tc: Dict[str, Any]):
     Gemma 2 alternates sliding and full in `Gemma2Config`, Qwen2 windows the layers from
     `max_window_layers` on -- and states none for a family where every layer takes the
     window (Mistral). ``known`` is False when the installed transformers does not have this
-    model type (or cannot read the config), so the caller can stay conservative.
+    model type (or cannot read the config), and when it predates `layer_types` altogether
+    (before 4.53 a class without one says nothing about the layout), so the caller can stay
+    conservative.
     """
     mt = str(tc.get("model_type") or "")
     if not mt:
@@ -594,6 +618,7 @@ def _config_class_layer_types(tc: Dict[str, Any]):
     if key is not None and key in _CLASS_LAYOUT_CACHE:
         return _CLASS_LAYOUT_CACHE[key]
     result = (False, None)
+    layouts = transformers_states_layer_layouts()
     try:
         from transformers import CONFIG_MAPPING
 
@@ -623,7 +648,7 @@ def _config_class_layer_types(tc: Dict[str, Any]):
                 if isinstance(names, (list, tuple)) and names and (not n or len(names) == n):
                     result = (True, [str(x) for x in names])
                 else:
-                    result = (True, None)
+                    result = (layouts, None)
                 break
         finally:
             tf_log.setLevel(level)
@@ -638,10 +663,12 @@ def stated_layer_types(tc: Dict[str, Any]):
     In order: an explicit ``layer_types``; a period (``sliding_window_pattern``); and, for a
     config that carries a window but no layout, the layout its own config class derives
     (transformers). A window whose layers no source places -- the model type is unknown to
-    the installed transformers -- is charged on NO layer: every layer is full attention, the
-    over-estimate, and the notes and a warning say so. Clamping every layer to the window
-    instead under-counts any model that alternates (Gemma 2's hub config is exactly that
-    shape). ``names`` is None for a uniform stack the window, if any, applies to as a whole.
+    the installed transformers, the release predates 4.53 (whose classes derive no layout
+    for any type), or transformers is not installed -- is charged on NO layer: every layer
+    is full attention, the over-estimate, and the notes and a warning say so. Clamping every
+    layer to the window instead under-counts any model that alternates (Gemma 2's hub config
+    is exactly that shape). ``names`` is None for a uniform stack the window, if any, applies
+    to as a whole.
     """
     names = tc.get("layer_types")
     if isinstance(names, list) and names:
@@ -663,7 +690,8 @@ def stated_layer_types(tc: Dict[str, Any]):
     n = depth(tc)
     msg = (
         f"model type {tc.get('model_type')!r} states a {_window(tc)}-token window but not which "
-        "layers take it, and the installed transformers has no config class to say; every "
+        "layers take it, and the installed transformers does not derive the layout (no config "
+        "class for the type, or a release before 4.53, or none installed); every "
         f"layer is charged FULL-ATTENTION KV ({n} layers) -- an over-estimate, not a measurement. "
         "Add `layer_types` to the config to apply the window."
     )

@@ -11,12 +11,14 @@ grow with the context. So the graph charges
   "context" of ``key_dim`` rows. Its weight-side input is the state, so the summary table counts
   it with the KV cache (GenZ's "KV Cache" column has always carried Mamba's state too), it scales
   with the batch, and it does NOT scale with the sequence.
+  The small state vectors some mechanisms keep beside it (RWKV's token shifts, xLSTM's
+  normaliser: the shape's ``extra``) are a second operator of the same name and dtype.
 * ``Rec Conv``  -- the short convolution's ring buffer, the same way, when the mechanism has one.
 
 The shapes come from ``state_memory.recurrent_state_shape`` and the bytes per element from the
-same module: the recurrent matrix is held at the state dtype (fp32 unless the config says
-otherwise, as vLLM and llama.cpp hold it), the conv buffer at the activation precision. So the
-graph and the memory calculator agree on a layer's state in shape and in bytes.
+same module: the recurrent matrix and its vectors are held at the state dtype (fp32 unless the
+config says otherwise, as vLLM and llama.cpp hold it), the conv buffer at the activation
+precision. So the graph and the memory calculator agree on a layer's state in shape and in bytes.
 """
 
 from math import ceil
@@ -72,7 +74,11 @@ def _state(lc, parallelism_config, m, sequences, decode):
     if heads and kd and vd:
         h = max(int(ceil(heads / tp)), 1) * sequences
         layers += [[_state_op_name(shape), h, m, kd, vd, h, residency_s, attend]]
-    conv = int(shape.get("conv") or 0) + int(shape.get("extra") or 0)
+    extra = int(shape.get("extra") or 0)
+    if extra > 0:
+        e = max(int(ceil(extra / tp)), 1)
+        layers += [[_state_op_name(shape), sequences, m, 1, e, sequences, residency_s, attend]]
+    conv = int(shape.get("conv") or 0)
     if conv > 0:
         c = max(int(ceil(conv / tp)), 1)
         layers += [[CONV_OP, sequences, m, 1, c, sequences, residency_s, attend]]

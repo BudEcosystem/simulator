@@ -407,6 +407,15 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
     if layer_configs is None:
         layer_configs = layer_configs_from_hf(hf_config, num_layers, num_experts)
 
+    # What a windowed layer keeps, from the same table: `sliding_window` or its other
+    # spellings, and Llama 4's `attention_chunk_size` for its chunked layers. Reading
+    # `sliding_window` alone graphed chunked layers over the whole context.
+    sliding_window = hf_config.get('sliding_window', None)
+    if layer_configs and any(lc.attention_type == "MHA-local" for lc in layer_configs):
+        from llm_memory_calculator.layer_plan import layer_kinds
+
+        sliding_window = layer_kinds(hf_config).get("sliding_window") or sliding_window
+
     # Create ModelConfig with all extracted attributes
     return ModelConfig(
         model=model_name,
@@ -420,7 +429,7 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         head_dim=head_dim,
         num_key_value_heads=num_kv_heads,
         hidden_act=hf_config.get('hidden_act', hf_config.get('activation_function', 'silu')),
-        sliding_window=hf_config.get('sliding_window', None),
+        sliding_window=sliding_window,
         global_attn_every_n_layers=hf_config.get('global_attn_every_n_layers', None),
         ffn_implementation=ffn_implementation,
         # MoE parameters

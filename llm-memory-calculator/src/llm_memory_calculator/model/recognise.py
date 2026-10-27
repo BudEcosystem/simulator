@@ -1,8 +1,9 @@
 """Which architectures the layer-plan recogniser knows (FRD-027 FR-MDL-5).
 
-An unknown ``model_type`` or layer type never fails a plan: it is costed as dense full attention, flagged
-``architecture: unrecognised`` and grounded at the prior level, so it gets the capacity rules and nothing
-numerics-changing. A new family lands as an entry here.
+An unknown ``model_type`` or layer type never fails a plan: it is flagged ``architecture: unrecognised`` and
+grounded at the prior level, so it gets the capacity rules and nothing numerics-changing. Which of its layers
+hold KV is still read from its config through ``layer_plan.LAYER_KINDS`` -- an unknown layer name there is
+charged full attention -- so this list never decides a layer's kind. A new family lands as an entry here.
 """
 
 from __future__ import annotations

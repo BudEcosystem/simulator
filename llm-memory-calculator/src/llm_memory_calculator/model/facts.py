@@ -515,10 +515,12 @@ def _layer_counts(config: Mapping[str, Any], text: Mapping[str, Any], n_layers: 
     window = _get(text, "sliding_window", default=None)
     window = int(window) if isinstance(window, (int, float)) and window else None
     mla = bool(_get(text, "kv_lora_rank", default=0))
-    if kinds and kinds["source"] != "uniform":
+    if kinds and (kinds["source"] != "uniform" or len(kinds["attn"]) == n_layers):
         # The one layer-kind table decides: a layer holds KV only if it has
         # attention and does not reuse another layer's cache. Cross-attention
-        # layers are counted as full (their encoder cache, over-estimated).
+        # layers are counted as full (their encoder cache, over-estimated). A
+        # uniform stack with a window slides every layer, as the table says (a
+        # depth the table cannot read -- `n_layer`, `decoder_layers` -- stays full).
         owns = [
             a for a, shared in zip(kinds["attn"], kinds["kv_shared"]) if a is not None and not shared
         ]
@@ -537,13 +539,6 @@ def _layer_counts(config: Mapping[str, Any], text: Mapping[str, Any], n_layers: 
             mechanisms=mechs,
             mla=mla,
         )
-    # uniform model; a global sliding window (Mistral-style, use_sliding_window) slides every layer
-    if (
-        window
-        and text.get("use_sliding_window", True) is not False
-        and str(text.get("model_type")) in ("mistral",)
-    ):
-        return LayerCounts(full=0, sliding=n_layers, recurrent=0, sliding_window=window, mla=mla)
     return LayerCounts(full=n_layers, sliding=0, recurrent=0, sliding_window=None, mla=mla)
 
 
@@ -597,9 +592,12 @@ def _mamba_params(text: Mapping[str, Any], h: int) -> Tuple[int, int]:
 
 
 def _ffn_params(
-    text: Mapping[str, Any], h: int, n_layers: int, plan_ffn: Optional[list]
+    text: Mapping[str, Any], h: int, n_layers: int, ffn_layers: Optional[int]
 ) -> Dict[str, int]:
-    """Dense FFN, routed experts, shared experts and routers, summed over layers."""
+    """Dense FFN, routed experts, shared experts and routers, summed over layers.
+
+    ``ffn_layers`` is the layer plan's weight-counting FFN count: Nemotron-H's FFN slots, none
+    in a pure SSM, one per shared block in Zamba (whose block runs on many layers)."""
     inter = int(_get(text, "intermediate_size", "ffn_dim", default=4 * h))
     n_experts = int(
         _get(
@@ -616,7 +614,7 @@ def _ffn_params(
     gated = str(text.get("hidden_act") or "silu") not in ("gelu_new_plain",)
     width = 3 if gated else 2
     if not n_experts:
-        layers = sum(1 for f in plan_ffn if f) if plan_ffn else n_layers
+        layers = n_layers if ffn_layers is None else int(ffn_layers)
         roles["dense_ffn"] = layers * width * h * inter
         return roles
     moe_inter = int(_get(text, "moe_intermediate_size", "expert_intermediate_size", default=inter))
@@ -745,10 +743,12 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
         _get(text, "vocab_size", default=_get(config, "vocab_size", default=32000)) or 32000
     )
 
-    if ok:
-        layers = _layer_counts(config, text, n_layers)
-    else:
-        layers = LayerCounts(full=n_layers, sliding=0, recurrent=0)
+    # Which layers hold KV is read from the config's own keys through the one layer-kind
+    # table, recognised family or not: an unknown layer name is charged full there, so an
+    # unrecognised model is still never under-counted, and a recognised-family allowlist
+    # never decides a layer's kind. A layer read as recurrent is then charged its mixer's
+    # weights and its fixed state, from the same keys, so no weight or state goes unpriced.
+    layers = _layer_counts(config, text, n_layers)
 
     attn_large, attn_small = _attention_params(text, h, nh, nkv, hd)
     roles: Dict[str, int] = {"embedding": vocab * h}
@@ -762,7 +762,7 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     roles["attention"] = n_attn_layers * attn_large
     roles["mixer_small"] = n_attn_layers * attn_small
     gdn_dims = None
-    if layers.recurrent and ok:
+    if layers.recurrent:
         if "gdn" in layers.mechanisms or "linear_num_value_heads" in text:
             large, small, gdn_dims = _gdn_params(text, h)
         else:
@@ -772,13 +772,13 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     sinks = str(text.get("model_type")) == "gpt_oss" or bool(text.get("attention_sinks"))
     if sinks:
         roles["mixer_small"] += n_attn_layers * nh
-    plan_ffn = None
+    ffn_layers = None
     try:
-        plan = resolve_layer_plan(dict(config)) if ok else None
-        plan_ffn = plan.get("ffn") if plan else None
+        plan = resolve_layer_plan(dict(config))
+        ffn_layers = plan.get("num_ffn_param_layers") if plan else None
     except Exception:  # noqa: BLE001
-        plan_ffn = None
-    ffn = _ffn_params(text, h, n_layers, plan_ffn)
+        ffn_layers = None
+    ffn = _ffn_params(text, h, n_layers, ffn_layers)
     roles.update({k: v for k, v in ffn.items() if v})
     roles["norm"] = (2 * n_layers + 1) * h
     if encoder_decoder:
@@ -868,7 +868,7 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
         kv_lora_rank=int(_get(text, "kv_lora_rank", default=0) or 0),
         qk_rope_head_dim=int(_get(text, "qk_rope_head_dim", default=0) or 0),
         gdn_dims=gdn_dims,
-        state_per_layer=_state_table(text, layers.mechanisms, h) if ok else {},
+        state_per_layer=_state_table(text, layers.mechanisms, h),
         components=tuple(components),
         encoder_decoder=encoder_decoder,
         conv_kernel=int(
