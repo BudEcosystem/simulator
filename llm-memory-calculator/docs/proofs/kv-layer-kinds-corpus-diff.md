@@ -20,7 +20,10 @@ config that states it only as a per-layer list, a GGUF's 0-KV layers taken for F
 the database converter's window, and the README's statement of the window); and the seventh
 review's (an encoder-decoder's decoder read under its own spellings by every reader, the
 converter's recurrent state and MLA latent, a GGUF window pattern shorter than the stack, and
-this proof's headline).
+this proof's headline); and the eighth review's (an encoder-decoder's cross-attention cache
+charged by every reader of a request's KV, a whole encoder-decoder nested under `text_config`,
+ProphetNet's decoder heads, the encoder in the GenZ prefill graph, and this proof's coverage:
+every reader of the layer kinds, every fixture folder, synthetic edge shapes).
 
 ## 1. The measured case
 
@@ -168,6 +171,30 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
     failed on Mamba-Codestral (state 0.29% low), DeepSeek-V3.2 and Kimi Linear (no MLA latent);
     test_a_database_encoder_decoder_is_graphed_with_its_decoder_s_own_depth failed on all 8 (Dia
     9 decoder layers, flan-t5-xl 12, ...; BART and Whisper: the loader's ValueError).
+* Round 9 (cases added for the eighth review) against the round-8 head `2b26ea0` (a `git archive`
+  of it with this round's test files copied in):
+  - `tests/test_encoder_decoder_cross_attention.py` x 49: 48 failed, 1 guard passed
+    (`test_the_prefix_cache_prices_a_cached_token_by_the_self_attention`: a cached prefix token
+    holds the self-attention only, which round 8 already priced). Of the 48, the codec guard
+    (`test_two_nested_stacks_that_never_meet_hold_no_cross_cache`, added after the first fix
+    over-charged Qwen3-TTS's speech tokenizer, below) fails there only because
+    `cross_attention_cache` does not exist. Eleven encoder-decoder shapes (Whisper-turbo, Dia,
+    cohere_asr, flan-t5-xl, BART, Moonshine, BLIP-2 and InstructBLIP with flan-T5, Florence-2,
+    ProphetNet, a TrOCR VisionEncoderDecoder) through the table, `calculate_kv_cache`, GenZ's
+    `get_kv_size` / `get_cross_kv_bytes`, the serving admission (Whisper-turbo 1,024 tokens:
+    20,971,520 B, truth 51,691,520), the transfer, the facts, the vLLM planner (Dia: 1,024
+    running), `KVGeometry` (32 KV layers for Whisper-turbo), `calculate_memory`'s cross width
+    (Dia: half), the GenZ decode graph's KV (80 MiB, truth 109.3) and the prefill graph's weights
+    (Whisper-turbo 403 MiB of 1,542). On the round-8 head ProphetNet's `calculate_kv_cache` is 0
+    and BLIP-2's 0, GenZ graphs BLIP-2's Q-Former (12 layers, 18,432 elements a token).
+  - `tests/test_encoder_decoder_stack.py`: three assertions widened to self + cross (the GenZ
+    `get_kv_size` where the encoder's length is unstated, `calculate_kv_cache`, the breakdown's
+    `num_cross_layers`); 15 of its cases fail on the round-8 head for that reason.
+  - BudSimulator `tests/test_model_converter_layer_kinds.py`: three nested cases (BLIP-2,
+    InstructBLIP, Florence-2) and a cross-cache case for all 11 shapes added, the KV assertion
+    widened to self + cross: 53 cases, 19 failed on the round-8 head (BLIP-2 / InstructBLIP: 12
+    decoder layers of 768, `get_kv_size` 18,432; Florence-2: 32 default layers; no fixed bytes
+    anywhere), 34 passed.
 * This branch: 157 cases, 150 passed and 7 skipped (the GGUF-file cases skip where `gguf` is absent; the cross-check
   skips the 7 fixtures transformers cannot build). The category file also runs in a venv with
   neither `transformers` nor `gguf` (149 passed, 33 skipped across it and
@@ -185,10 +212,12 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
 
 | Suite | origin/main `c17ef89` | This branch |
 |---|---|---|
-| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,290 passed, 21 skipped, 1 failed |
-| `BudSimulator/tests` (pytest) | 24 passed | 65 passed |
+| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,339 passed, 21 skipped, 1 failed |
+| `BudSimulator/tests` (pytest) | 24 passed | 79 passed |
 
-(Round 8 adds the 49 calculator cases and the 34 BudSimulator converter cases above; round 7
+(Round 9 adds the 49 cases of `tests/test_encoder_decoder_cross_attention.py` and 14 BudSimulator
+converter cases (three nested encoder-decoders, and the cross cache of all eleven shapes); round 8
+ended at 2,290 passed, 21 skipped / 65. Round 8 adds the 49 calculator cases and the 34 BudSimulator converter cases above; round 7
 ended at 2,241 passed, 21 skipped / 31. Round 3 ended at 2,151 / 24; round 4 at 2,191 passed, 14 skipped / 26; round 5 adds the 32
 category cases above, 7 of which skip -- fixtures transformers cannot build. Round 6 adds the 7 category cases for the fifth review; round 7 the 18 category cases and the 5
 BudSimulator converter cases for the sixth (no existing test changed: the planner's gpt-oss
@@ -204,42 +233,69 @@ machine's pydantic (2.13).
 
 ## 4. Corpus: every model config the simulator ships or this machine caches
 
-193 configs measured: the 26 rows of `BudSimulator/data/prepopulated.db` that carry a config, the
-29 fixtures under `tests/fixtures` (round 4 added GPT-Neo-1.3B's hub config), the 44 decoder configs in the HuggingFace cache and model
-folders, 5 GGUFs read through `bud_component.gguf_to_hf_config` (beside each file's own tensor
-count), and the 89 built-in GenZ models. The database's other **63 rows have `config_json = '{}'`**
-and are listed in the JSON (`_empty_db_rows`), not measured: they would only measure the
-calculator's defaults. Both trees were measured with the same script, the same committed database
-and the same fixtures.
+257 configs measured (round 9): the 26 rows of `BudSimulator/data/prepopulated.db` that carry a
+config; the 55 model configs under `tests/fixtures`, read recursively (the 26 hybrid configs, the
+3 at its root, from round 9 the 6 encoder-decoders of `encoder_decoder/`, the 18 of
+`planner/models/` and the 2 of `measured_checkpoints/`; the planner's engine records beside them
+are not model configs and are skipped); the 48 configs in the HuggingFace cache and model folders
+that name a decoder's or an encoder-decoder's geometry (from round 9 also those that state the
+decoder only under its own spelling or in a nested block: Dia, Qwen3-TTS's two speech
+tokenizers, VibeVoice); 5 GGUFs read through `bud_component.gguf_to_hf_config` (beside each
+file's own tensor count); the 89 built-in GenZ models; and, from round 9, 34 synthetic shapes
+(`kv_corpus.synthetic_configs`: depth stated only in a per-layer list, flat and nested; nested
+decoders -- VisionEncoderDecoder with TrOCR and with GPT-2, EncoderDecoderModel, MusicGen,
+BLIP-2 / InstructBLIP with flan-T5, Florence-2; ProphetNet, T5 / mT5 / Marian / Whisper / NLLB-MoE
+spellings; RWKV, xLSTM; Llama 4 Scout and Maverick with interleaved MoE; GGUF-derived window
+patterns, short and full; GPT-2, MPT, ChatGLM, Falcon, a dense Llama, Mistral's window, Gemma 2's
+hub config, an unknown layer name, an audio-LLM, DeepSeek-V2-Lite's MLA). The database's other
+**63 rows have `config_json = '{}'`** and are listed in the JSON (`_empty_db_rows`), not
+measured: they would only measure the calculator's defaults. Every tree was measured with the same
+script, the same committed database and the same fixtures.
 
-Figures per config: the calculator's KV at 4,096 and 32,768 tokens, its layer breakdown, the
-recurrent state, `calculate_memory`'s weights / params / total; the engine estimate
-(`estimate_memory_for_engine`, llama.cpp and generic, 4k and 32k: KV, state, total, params); the
-FRD-027 `ModelFacts` layer counts; GenZ's attention and FFN kinds, `get_kv_size` (the
-disaggregation KV transfer is this x 2 B per token), the decode graph's KV and weights, the
-chunked graph's KV; and the serving `MemoryModel`'s bytes per token, its per-request state, the
-1,024-token requests that fit 8 GiB, and the disaggregation transfer for 512 + 128 tokens (KV x
-2 B, plus the state where the tree counts it). Round 4 added the last three figures and re-measured
-origin/main, the round-3 head and this branch with the same script. Round 8 added BudSimulator's
-converter (`ModelConverter.hf_to_genz`, the database path; `--repo-root` names the tree): its
-encoder and decoder depths, `get_kv_size` and `get_state_bytes(2)`, and re-measured origin/main,
-the round-7 head and this branch.
+Figures per config: the calculator's KV at 4,096 and 32,768 tokens, its layer breakdown (with,
+from round 9, its cross-attention layers), the recurrent state, `calculate_memory`'s weights /
+params / total; the engine estimate (`estimate_memory_for_engine`, llama.cpp and generic, 4k and
+32k: KV, state, total, params); the FRD-027 `ModelFacts` layer counts; GenZ's attention and FFN
+kinds, `get_kv_size` (the disaggregation KV transfer is this x 2 B per token), the decode graph's
+KV and weights, the chunked graph's KV; and the serving `MemoryModel`'s bytes per token, its
+per-request fixed bytes (state, and from round 9 the cross-attention cache), the 1,024-token
+requests that fit 8 GiB, and the disaggregation transfer for 512 + 128 tokens (KV x 2 B, plus the
+fixed bytes where the tree counts them). Round 4 added the last three figures. Round 8 added
+BudSimulator's converter (`ModelConverter.hf_to_genz`, the database path; `--repo-root` names the
+tree): its encoder and decoder depths, `get_kv_size` and fixed bytes. Round 9 added every other
+reader of the layer kinds: the GenZ prefill graph's weights and KV; the prefix-cache analyser's
+bytes a cached token; the KV planner's `KVGeometry` (bytes a token, KV layers, recurrent layers,
+state a layer, block, cross bytes a sequence) at 4k and 32k; the vLLM planner (`engine/vllm.py`,
+`vllm-0.30-upstream` on `h100xm-80c-vgpu`: `limits` -- blocks, KV tokens, sequence ceiling,
+attention and sliding groups, fixed bytes a sequence, boots -- and the sequences `predict` runs for
+1,024 clients at 1k and 8k prompts + 256); its profile scheduler (`perf.predict.sim_config` +
+`perf.sched.simulate`, 400 requests of 1,024 + 256 at a flat 10 ms step: the most running); and
+its shared-slice sizing (`runtime.modules.capacity.shared_slice_mib`, 16 x 4,352 tokens).
+origin/main, the round-8 head and this branch were all re-measured with round 9's script.
 
 Reproduce (the first `PYTHONPATH` entry is the tree measured):
 
     PYTHONPATH=<tree>/llm-memory-calculator/src python llm-memory-calculator/scripts/kv_corpus.py \
         --out after.json --db BudSimulator/data/prepopulated.db \
-        --fixtures llm-memory-calculator/tests/fixtures/hybrid_configs llm-memory-calculator/tests/fixtures \
+        --fixtures llm-memory-calculator/tests/fixtures \
         --hf-cache ~/.cache/huggingface/hub --models /home/bud/models --repo-root <tree> --genz-data <scratch>
     python llm-memory-calculator/scripts/kv_corpus.py --diff before.json after.json --report diff.md
 
-**Result: 194 rows -- 193 configs and the empty-row marker -- 127 unchanged, 67 changed** against
-origin/main, over every figure including BudSimulator's converter (measured from round 8 on).
-Over the figures measured before round 8: 129 unchanged, 65 changed, the 59 of round 7 (135
-unchanged counting the marker, 134 not) and the six encoder-decoders of round 8. No uniform dense
-decoder-only transformer's KV moved in any output. No config that measured before fails now; four
-that failed now measure (Jamba, Kimi Linear, DeepSeek-V2-Lite and, from round 8, Whisper
-large-v3-turbo in GenZ). Every change, by cause (rounds 1-7; round 8's below):
+**Result: 258 rows -- 257 configs and the empty-row marker -- 144 unchanged, 114 changed** against
+origin/main, over every figure. Of the 223 shipped, cached and built-in configs, 86 changed and 137
+did not; of the 34 synthetic shapes, 28 changed and 6 did not (a dense Llama with and without
+`is_encoder_decoder: false`, Mistral's window, Falcon-40B, an audio-LLM, and GPT-2: GenZ reads
+no GPT-2 spelling on either tree). Every config whose figures moved moved in a figure measured
+before round 9 too: no change is confined to the planners' and the prefill graph's new figures
+(the prefix bytes, `KVGeometry`, the vLLM planner, its scheduler and slice sizing follow the KV,
+state and cross cache already in the table). Against the round-8 head, 31 changed and 227 did not:
+the encoder-decoders, their nested and synthetic shapes, and three `KVGeometry` depths (round 9,
+below). No uniform dense decoder-only transformer's KV moved in any output. No config that
+measured before fails now (on either base); 14 configs that fail somewhere on origin/main now
+measure everywhere (Jamba, Kimi Linear, DeepSeek-V2-Lite, GPT-Neo, Whisper large-v3-turbo x2,
+BART, T5 in GenZ; the synthetic list-depth Nemotron-H x2 and Qwen3.5 and DeepSeek-V2-Lite; from
+round 9 Florence-2 and the TrOCR shape, which fail on the round-8 head too). Every change, by
+cause (rounds 1-7; rounds 8 and 9 below):
 
 * **Recurrent layers no longer charged a KV cache** (Qwen3.5-4B/-Base and two Qwen3.5
   derivatives, Qwen3.6-27B x2, Qwen3-Next, LFM2 / LFM2.5-Audio, MiniMax-Text-01, Kimi Linear, the
@@ -571,7 +627,90 @@ which the corpus measures from this round on (`conv_layers` [encoder, decoder], 
 Found while checking round 8, not changed by it (present on origin/main): a GPT-2-style config
 (`n_layer`, `n_head`, `n_embd`) is refused by GenZ and read by the converter as a 7B default, and
 the decoder's cross-attention cache is charged by `calculate_memory` only, at the encoder's width
-(docs/LAYER_KINDS.md, "What is conservative").
+(docs/LAYER_KINDS.md, "What is conservative"). Round 9 fixes the second.
+
+Round 9 (the eighth review, of `2b26ea0`) moved 31 configs against the round-8 head (`--diff` of
+the round-8 head's corpus against this branch's, both measured with this round's script: 227
+unchanged), every one an encoder-decoder (shipped, cached or synthetic) or one of the three
+`KVGeometry` depth readings below; no decoder-only config's KV, state or weights moved:
+
+* **The cross-attention cache, by every reader.** `layer_plan.cross_attention_cache` reads each
+  decoder layer's K / V over the encoder's output (the cross-attention's own width, the encoder's
+  stated length), and the calculator, `calculate_memory` and the engine estimate, GenZ's
+  `ModelConfig` (serving admission, `B_eff`, the transfer, the prefix cache), the FRD-027 facts
+  and the vLLM planner (`Limits.state_bytes_per_sequence`, so `predict`, `sim_config` and
+  `shared_slice_mib`), `KVGeometry`, the GenZ graphs and the converter charge it
+  (docs/LAYER_KINDS.md, "Encoder-decoder models"). Round 8 had read the decoder right and so
+  removed origin/main's accidental over-count (or its refusal), leaving the cross cache out:
+  these figures were below the truth. origin/main -> round-8 head -> this branch:
+
+  | config | figure | origin/main | round-8 head | this branch | truth |
+  |---|---|---|---|---|---|
+  | whisper-tiny.en | 1,024-token requests in 8 GiB | 128 | 1,365 | **553** | 8 GiB / (6.29 MB self + 4 x 2 x 1,500 x 384 x 2 B = 9.22 MB) = 553 |
+  | whisper-base | the same | 85 | 682 | **276** | 8 GiB / (12.58 + 18.43 MB) = 276 |
+  | whisper-large-v3-turbo | the same | refused | 409 | **166** | 8 GiB / (20.97 + 30.72 MB) = 166 |
+  | | GenZ decode KV at 4,096 tokens | refused | 80.0 MiB | **109.3 MiB** | 80 + 29.3 |
+  | | `KVGeometry` KV layers, cross bytes | 32, -- | 32, -- | **4, 30,720,000** | 4 decoder layers |
+  | Dia-1.6B-0626 | vLLM running, 1,024 + 256 tokens (vllm-0.30, h100xm-80c-vgpu) | 58 | 1,024 | **357** | pool / (47 MB self + 151 MB cross) |
+  | | 1,024-token requests in 8 GiB | 227 | 227 | **45** | 8 GiB / (37.7 + 151.0 MB) = 45 |
+  | | `calculate_kv_cache` at 4k | 0 | 0.151 GB | **0.302 GB** | 0.151 self + 0.151 cross (16 KV heads of 128 over 1,024) |
+  | cohere-transcribe | vLLM running, 1,024 + 256 | 1,024 | 1,024 | **356** | cross over the parakeet encoder's 5,000 positions: 164 MB a request |
+  | flan-t5-xl geometry | vLLM running, 1,024 + 256 | 273 | 276 | **65** | cross over the request's 4,096-token context (no stated length) |
+  | | `calculate_kv_cache` at 4k | 0 | 0.805 GB | **1.611 GB** | self + cross over the sequence |
+
+  Where the config states no encoder length (T5, BART, Marian, Moonshine, ProphetNet, BLIP-2's
+  flan-T5, Florence-2, MusicGen), the calculator, GenZ and the serving model charge the cache over
+  the sequence (`get_kv_size`, the prefix cache's bytes a token and the GenZ graphs double:
+  flan-t5-xl 98,304 -> 196,608 elements), and the facts and the vLLM planner over the request's
+  context. `calculate_memory` now prices the cross term at the cross-attention's own width over
+  the same tokens: Dia 0.335 -> 0.376 GB at 4k (16 x 128 wide, not the 1,024-wide encoder);
+  flan-t5-xl 1.395 -> 1.906 GB and BART 0.349 -> 0.476 GB (the whole 4,096-token sequence, not
+  Whisper's 1,500 frames); cohere-transcribe 0.564 -> 0.667 GB (its encoder block's 5,000
+  positions). Whisper's report does not move (1,500 frames at 1,280 wide either way).
+* **The GenZ prefill graph runs the encoder** (`encoder_stack`) and each decoder layer's K / V
+  projection of it; every graph reads the cross cache. Prefill weights origin/main -> round 8 ->
+  this branch: whisper-large-v3-turbo refused -> 403 -> **1,653 MiB** (809M parameters = 1,542
+  MiB, plus GenZ's own graphed tied classifier, 127 MiB); whisper-base 2,610 -> 137 -> **185 MiB**
+  (72.6M = 139 MiB + 51 MiB classifier); BART-large defaults refused -> 484 -> **868 MiB** (410M =
+  782 MiB + 98 MiB). Decode weights rise only by the cross-attention's query and output
+  projections (whisper-base 86.6 -> 92.6 MiB): a decode step streams the decoder, without the
+  input-embedding table, as for every model -- a step's weights, not the resident model's
+  (docs/LAYER_KINDS.md).
+* **A whole encoder-decoder under `text_config`** (BLIP-2 / InstructBLIP with flan-T5,
+  Florence-2; synthetic, in the shape transformers 5.12's config classes write): `decoder_view`
+  views it in place and the GenZ / converter search views every candidate block. BLIP-2 with
+  flan-t5-xl: converter [0, 12] layers, 18,432 elements a token (the Q-Former; origin/main
+  [16, 16], 131,072) -> **[24, 24], 196,608** (98,304 self + 98,304 cross a token); GenZ the same
+  (round 8 and origin/main: the Q-Former, 18,432); `calculate_kv_cache` 0 -> 1.611 GB at 4k.
+  Florence-2: converter [0, 32] at the 7B default (origin/main [16, 16]) -> [12, 12]; GenZ refused
+  -> 49,152; calculator 0 -> 0.403 GB.
+* **ProphetNet's decoder heads** (`num_decoder_attention_heads`): `calculate_kv_cache` 0 (and 0
+  on origin/main) -> 0.403 GB at 4k (12 x 2 x 16 x 64 a token, self + cross), `KVGeometry` 0 ->
+  98,304 B a token. Its `calculate_memory` parameters move by the head count the decoder getters
+  now read (640.7M -> 640.9M).
+* **Only a decoder that attends to the encoder holds a cross cache**: the config says
+  `is_encoder_decoder`, states a decoder stack of its own spelling, or its decoder block says
+  `add_cross_attention` / states a cross geometry. Qwen3-TTS's two speech tokenizers (an audio
+  codec: an encoder and a decoder nested side by side, never meeting) were read as encoder-decoders
+  in round 8 for their depths; the first version of this round charged them a 262 MB cross cache
+  over 8,000 positions. They hold none (and GenZ runs no encoder for them).
+* **Depth and nested blocks through the table.** `KVGeometry` takes its KV layers from
+  `layer_plan.depth` of the decoder view (MPT's `n_layers`, ChatGLM's `num_layers`, Qwen3-TTS's
+  codecs: 1 -> 32 / 28 / 8; only the per-layer segment size moves); a nested decoder block that
+  spells its depth `decoder_layers` (TrOCR in a VisionEncoderDecoder) is a stack block (converter
+  [12, 32] at the 7B default -> [12, 12]; GenZ refused -> 24,576 + 577 image tokens of cross
+  cache), and MusicGen's `text_encoder` is its encoder (converter [0, 24] -> [12, 24]). Their
+  `calculate_memory` parameter counts move with the encoder-decoder getters' depths (TrOCR
+  synthetic 803M -> 885M, MusicGen 1,105M -> 1,080M): those getters size an encoder-decoder from
+  Whisper-shaped defaults where a key is missing, an estimate outside this work.
+
+Found while checking round 9, not changed by it (present on origin/main): GenZ reads no GPT-2
+spelling (`n_layer` / `n_embd` / `n_head`): a GPT-2 or StarCoder config, and a VisionEncoderDecoder
+with a GPT-2 decoder, are graphed from the 7B defaults or refused, as on origin/main (a dense
+dialect, not a layer kind: left for a separate fix); Gemma 3n's per-layer `intermediate_size` list
+fails GenZ and the vLLM planner (a TypeError on origin/main too). For an audio encoder that states
+no output length (Moonshine) the sequence is not a bound on its cross cache (docs/LAYER_KINDS.md,
+"What is conservative").
 
 The full per-config table (before = origin/main, after = this branch) follows.
 
@@ -580,6 +719,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | figure | before | after |
 |---|---|---|
 | genz_chunked_kv_mb | 216.0 | 123.0 |
+| slice_mib_16x4352 | [20736, true] | [20992, true] |
+| vllm_limits | [155360, 2485760, 155360, 1, 0, 0.0, true] | [155360, 2485760, 155360, 1, 1, 0.0, true] |
+| vllm_running_8192 | 294 | 289 |
 
 ## config:models--Cloudflare--clef-flash/snapshots/17f0b0ad64efb65d273590632833508766b2aae6/config.json (multimodal)
 
@@ -601,6 +743,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 13716.0 | 14881.6875 |
 | genz_kv_size | 65536 | 16384 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
+| genz_prefill_kv_mb | 512.0 | 177.125 |
+| genz_prefill_weights_mb | 15656.0 | 16821.6875 |
+| prefix_kv_bytes_per_token | 131072 | 32768 |
 | serving_bytes_per_token | 131072 | 32768 |
 | serving_requests_8gib_1k | 64 | 100 |
 | serving_state_bytes | 0 | 51511296 |
@@ -625,6 +770,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 128.0 | 130.514648 |
 | genz_kv_size | 4096 | 1536 |
 | genz_layer_kinds | {"MHA-global": 5, "MHA-local": 3} | {"MHA-local": 3, "Recurrent": 5} |
+| genz_prefill_kv_mb | 20.087891 | 0.102539 |
+| genz_prefill_weights_mb | 192.0 | 194.514648 |
+| prefix_kv_bytes_per_token | 8192 | 3072 |
 | serving_bytes_per_token | 8192 | 3072 |
 | serving_requests_8gib_1k | 1024 | 2717 |
 | serving_state_bytes | 0 | 15360 |
@@ -649,6 +797,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 128.0 | 130.514648 |
 | genz_kv_size | 4096 | 1536 |
 | genz_layer_kinds | {"MHA-global": 5, "MHA-local": 3} | {"MHA-local": 3, "Recurrent": 5} |
+| genz_prefill_kv_mb | 20.087891 | 0.102539 |
+| genz_prefill_weights_mb | 192.0 | 194.514648 |
+| prefix_kv_bytes_per_token | 8192 | 3072 |
 | serving_bytes_per_token | 8192 | 3072 |
 | serving_requests_8gib_1k | 1024 | 2717 |
 | serving_state_bytes | 0 | 15360 |
@@ -659,6 +810,64 @@ The full per-config table (before = origin/main, after = this branch) follows.
 |---|---|---|
 | conv_kv_size | 262144 | 57344 |
 | conv_layers | [0, 32] | [0, 28] |
+
+## config:models--Qwen--Qwen3-TTS-12Hz-0.6B-Base/snapshots/5d83992436eae1d760afd27aff78a71d676296fc/speech_tokenizer/config.json (unknown)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 16384 |
+| conv_layers | [0, 32] | [8, 8] |
+| eng_None_32768_kv_mb | 0.0 | 1073.741824 |
+| eng_None_32768_total_mb | 469.858406 | 1543.60023 |
+| eng_None_4096_kv_mb | 0.0 | 134.217728 |
+| eng_None_4096_total_mb | 386.811187 | 521.028915 |
+| eng_llamacpp_32768_kv_mb | 0.0 | 1073.741824 |
+| eng_llamacpp_32768_total_mb | 469.858406 | 1543.60023 |
+| eng_llamacpp_4096_kv_mb | 0.0 | 134.217728 |
+| eng_llamacpp_4096_total_mb | 386.811187 | 521.028915 |
+| facts_layers | [32, 0, 0, null] | [8, 0, 0, null] |
+| kv_full_layers | 0 | 8 |
+| kv_gb@32768 | 0.0 | 1.073741824 |
+| kv_gb@4096 | 0.0 | 0.134217728 |
+| kv_source | "uniform" | "_layer_metadata" |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [32768.0, 8, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [32768.0, 8, 0, 0.0, 16, 0.0] |
+| report_kv_gb | 0.0 | 0.134217728 |
+| report_total_gb | 0.403420631 | 0.564481905 |
+| sim_max_running | 104 | 400 |
+| slice_mib_16x4352 | [65792, true] | [8192, true] |
+| vllm_limits | [6750, 108000, 6750, 1, 0, 0.0, true] | [142753, 2284048, 142753, 1, 0, 0.0, true] |
+| vllm_running_1024 | 84 | 1024 |
+| vllm_running_8192 | 12 | 270 |
+
+## config:models--Qwen--Qwen3-TTS-12Hz-0.6B-CustomVoice/snapshots/85e237c12c027371202489a0ec509ded67b5e4b5/speech_tokenizer/config.json (unknown)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 16384 |
+| conv_layers | [0, 32] | [8, 8] |
+| eng_None_32768_kv_mb | 0.0 | 1073.741824 |
+| eng_None_32768_total_mb | 469.858406 | 1543.60023 |
+| eng_None_4096_kv_mb | 0.0 | 134.217728 |
+| eng_None_4096_total_mb | 386.811187 | 521.028915 |
+| eng_llamacpp_32768_kv_mb | 0.0 | 1073.741824 |
+| eng_llamacpp_32768_total_mb | 469.858406 | 1543.60023 |
+| eng_llamacpp_4096_kv_mb | 0.0 | 134.217728 |
+| eng_llamacpp_4096_total_mb | 386.811187 | 521.028915 |
+| facts_layers | [32, 0, 0, null] | [8, 0, 0, null] |
+| kv_full_layers | 0 | 8 |
+| kv_gb@32768 | 0.0 | 1.073741824 |
+| kv_gb@4096 | 0.0 | 0.134217728 |
+| kv_source | "uniform" | "_layer_metadata" |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [32768.0, 8, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [32768.0, 8, 0, 0.0, 16, 0.0] |
+| report_kv_gb | 0.0 | 0.134217728 |
+| report_total_gb | 0.403420631 | 0.564481905 |
+| sim_max_running | 104 | 400 |
+| slice_mib_16x4352 | [65792, true] | [8192, true] |
+| vllm_limits | [6750, 108000, 6750, 1, 0, 0.0, true] | [142753, 2284048, 142753, 1, 0, 0.0, true] |
+| vllm_running_1024 | 84 | 1024 |
+| vllm_running_8192 | 12 | 270 |
 
 ## config:models--Qwen--Qwen3.5-4B-Base/snapshots/1001bb4d826a52d1f399e183466143f4da7b741b/config.json (multimodal)
 
@@ -680,6 +889,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 7132.5 | 7861.523438 |
 | genz_kv_size | 65536 | 16384 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
+| genz_prefill_kv_mb | 512.0 | 177.125 |
+| genz_prefill_weights_mb | 8345.0 | 9074.023438 |
+| prefix_kv_bytes_per_token | 131072 | 32768 |
 | serving_bytes_per_token | 131072 | 32768 |
 | serving_requests_8gib_1k | 64 | 100 |
 | serving_state_bytes | 0 | 51511296 |
@@ -704,6 +916,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 7132.5 | 7861.523438 |
 | genz_kv_size | 65536 | 16384 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
+| genz_prefill_kv_mb | 512.0 | 177.125 |
+| genz_prefill_weights_mb | 8345.0 | 9074.023438 |
+| prefix_kv_bytes_per_token | 131072 | 32768 |
 | serving_bytes_per_token | 131072 | 32768 |
 | serving_requests_8gib_1k | 64 | 100 |
 | serving_state_bytes | 0 | 51511296 |
@@ -714,6 +929,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 |---|---|---|
 | kv_full_layers | 8 | 22 |
 | kv_sliding_layers | 14 | 0 |
+| kvgeo_32768 | [33792.0, 8, 0, 0.0, 16, 0.0] | [33792.0, 22, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [33792.0, 8, 0, 0.0, 16, 0.0] | [33792.0, 22, 0, 0.0, 16, 0.0] |
 
 ## config:models--bosonai--higgs-audio-v3-tts-4b/snapshots/239f63fb7b02b1aa085f98d9efae5e35cc5523e8/config.json (unknown)
 
@@ -728,6 +945,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 |---|---|---|
 | kv_full_layers | 8 | 22 |
 | kv_sliding_layers | 14 | 0 |
+| kvgeo_32768 | [67584.0, 8, 0, 0.0, 16, 0.0] | [67584.0, 22, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [67584.0, 8, 0, 0.0, 16, 0.0] | [67584.0, 22, 0, 0.0, 16, 0.0] |
 
 ## config:models--convaiinnovations--laya-typed-decisions/snapshots/1a793eb568e6718f15941d08f85432581df534e3/encoder/config.json (decoder-only)
 
@@ -735,6 +954,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 |---|---|---|
 | kv_full_layers | 10 | 28 |
 | kv_sliding_layers | 18 | 0 |
+| kvgeo_32768 | [114688.0, 10, 0, 0.0, 16, 0.0] | [114688.0, 28, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [114688.0, 10, 0, 0.0, 16, 0.0] | [114688.0, 28, 0, 0.0, 16, 0.0] |
 
 ## config:models--convaiinnovations--laya/snapshots/55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851/encoder/config.json (decoder-only)
 
@@ -742,6 +963,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 |---|---|---|
 | kv_full_layers | 10 | 28 |
 | kv_sliding_layers | 18 | 0 |
+| kvgeo_32768 | [114688.0, 10, 0, 0.0, 16, 0.0] | [114688.0, 28, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [114688.0, 10, 0, 0.0, 16, 0.0] | [114688.0, 28, 0, 0.0, 16, 0.0] |
 
 ## config:models--convaiinnovations--laya/snapshots/55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851/typed-decisions/encoder/config.json (decoder-only)
 
@@ -749,6 +972,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 |---|---|---|
 | kv_full_layers | 10 | 28 |
 | kv_sliding_layers | 18 | 0 |
+| kvgeo_32768 | [114688.0, 10, 0, 0.0, 16, 0.0] | [114688.0, 28, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [114688.0, 10, 0, 0.0, 16, 0.0] | [114688.0, 28, 0, 0.0, 16, 0.0] |
 
 ## config:models--internlm--Intern-Decision-4B/snapshots/0e5e6aa7d6d750e2b1504ba11a8136cb58aeb3cd/config.json (multimodal)
 
@@ -770,6 +995,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 7132.5 | 7861.523438 |
 | genz_kv_size | 65536 | 16384 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
+| genz_prefill_kv_mb | 512.0 | 177.125 |
+| genz_prefill_weights_mb | 8345.0 | 9074.023438 |
+| prefix_kv_bytes_per_token | 131072 | 32768 |
 | serving_bytes_per_token | 131072 | 32768 |
 | serving_requests_8gib_1k | 64 | 100 |
 | serving_state_bytes | 0 | 51511296 |
@@ -781,6 +1009,13 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | facts_full_attention | true | false |
 | facts_layers | [8, 0, 0, null] | [0, 8, 0, 250] |
 
+## config:models--microsoft--VibeVoice-1.5B/snapshots/c00898d257e6b46004e3e2866a47534085fb685a/config.json (unknown)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 14336 |
+| conv_layers | [0, 32] | [0, 28] |
+
 ## config:models--mistralai--Voxtral-Mini-4B-Realtime-2602/snapshots/2769294da9567371363522aac9bbcfdd19447add/config.json (audio-llm)
 
 | figure | before | after |
@@ -790,127 +1025,265 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | facts_full_attention | true | false |
 | facts_layers | [26, 0, 0, null] | [0, 26, 0, 8192] |
 
+## config:models--nari-labs--Dia-1.6B-0626/snapshots/ef2795fcc29c5abe6ffc91fd33808588b49bbc66/config.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 18432 |
+| conv_layers | [16, 16] | [12, 18] |
+| conv_state_bytes | 0 | 150994944 |
+| disagg_transfer_bytes_640 | 23592960 | 174587904 |
+| eng_None_32768_kv_mb | 701.80864 | 1432.682496 |
+| eng_None_32768_params | 808394240 | 1763025664 |
+| eng_None_32768_total_mb | 2484.691558 | 5124.828262 |
+| eng_None_4096_kv_mb | 114.60608 | 375.717888 |
+| eng_None_4096_params | 808394240 | 1763025664 |
+| eng_None_4096_total_mb | 1814.441779 | 3984.816435 |
+| eng_llamacpp_32768_kv_mb | 701.80864 | 1432.682496 |
+| eng_llamacpp_32768_params | 808394240 | 1763025664 |
+| eng_llamacpp_32768_total_mb | 2484.691558 | 5124.828262 |
+| eng_llamacpp_4096_kv_mb | 114.60608 | 375.717888 |
+| eng_llamacpp_4096_params | 808394240 | 1763025664 |
+| eng_llamacpp_4096_total_mb | 1814.441779 | 3984.816435 |
+| facts_layers | [32, 0, 0, null] | [18, 0, 0, null] |
+| genz_chunked_kv_mb | 162.0 | 450.0 |
+| genz_decode_kv_mb | 144.0 | 288.0 |
+| genz_decode_weights_mb | 2092.015625 | 2380.015625 |
+| genz_prefill_kv_mb | 144.0 | 384.0 |
+| genz_prefill_weights_mb | 2096.03125 | 3008.03125 |
+| kv_cross_layers | 0 | 18 |
+| kv_full_layers | 0 | 18 |
+| kv_gb@32768 | 0.0 | 1.358954496 |
+| kv_gb@4096 | 0.0 | 0.301989888 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 18, 0, 0.0, 16, 150994944.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 18, 0, 0.0, 16, 150994944.0] |
+| report_kv_gb | 0.11460608 | 0.375717888 |
+| report_params | 808394240 | 1763025664 |
+| report_total_gb | 1.856430039 | 4.078566257 |
+| report_weight_gb | 1.61678848 | 3.526051328 |
+| serving_requests_8gib_1k | 227 | 45 |
+| serving_state_bytes | 0 | 150994944 |
+| sim_max_running | 72 | 372 |
+| slice_mib_16x4352 | [81582, false] | [15360, true] |
+| vllm_limits | [4702, 75232, 4702, 1, 0, 0.0, true] | [120000, 1920000, 120000, 1, 0, 150994944.0, true] |
+| vllm_running_1024 | 58 | 357 |
+| vllm_running_8192 | 8 | 153 |
+
 ## config:models--onnx-community--cohere-transcribe-03-2026-ONNX/snapshots/31b1c6211c9000d76b077ddd23b74c9090badeba/config.json (encoder-decoder)
 
 | figure | before | after |
 |---|---|---|
 | conv_kv_size | 8192 | 16384 |
 | conv_layers | [4, 4] | [48, 8] |
-| eng_None_32768_kv_mb | 1122.893824 | 1503.821824 |
+| conv_state_bytes | 0 | 163840000 |
+| disagg_transfer_bytes_640 | 20971520 | 184811520 |
+| eng_None_32768_kv_mb | 1122.893824 | 1606.221824 |
 | eng_None_32768_params | 576643072 | 580837376 |
-| eng_None_32768_total_mb | 2417.108582 | 2806.42519 |
-| eng_None_4096_kv_mb | 183.369728 | 564.297728 |
+| eng_None_32768_total_mb | 2417.108582 | 2908.82519 |
+| eng_None_4096_kv_mb | 183.369728 | 666.697728 |
 | eng_None_4096_params | 576643072 | 580837376 |
-| eng_None_4096_total_mb | 1407.120179 | 1796.436787 |
-| eng_llamacpp_32768_kv_mb | 1122.893824 | 1503.821824 |
+| eng_None_4096_total_mb | 1407.120179 | 1898.836787 |
+| eng_llamacpp_32768_kv_mb | 1122.893824 | 1606.221824 |
 | eng_llamacpp_32768_params | 576643072 | 580837376 |
-| eng_llamacpp_32768_total_mb | 2417.108582 | 2806.42519 |
-| eng_llamacpp_4096_kv_mb | 183.369728 | 564.297728 |
+| eng_llamacpp_32768_total_mb | 2417.108582 | 2908.82519 |
+| eng_llamacpp_4096_kv_mb | 183.369728 | 666.697728 |
 | eng_llamacpp_4096_params | 576643072 | 580837376 |
-| eng_llamacpp_4096_total_mb | 1407.120179 | 1796.436787 |
-| report_kv_gb | 0.183369728 | 0.564297728 |
+| eng_llamacpp_4096_total_mb | 1407.120179 | 1898.836787 |
+| genz_chunked_kv_mb | 144.0 | 456.5 |
+| genz_decode_kv_mb | 128.0 | 284.25 |
+| genz_decode_weights_mb | 224.0 | 256.0 |
+| genz_prefill_kv_mb | 128.0 | 1456.125 |
+| genz_prefill_weights_mb | 256.0 | 2128.0 |
+| kv_cross_layers | 0 | 8 |
+| kv_gb@32768 | 1.073741824 | 1.237581824 |
+| kv_gb@4096 | 0.134217728 | 0.298057728 |
+| kvgeo_32768 | [32768.0, 8, 0, 0.0, 16, 0.0] | [32768.0, 8, 0, 0.0, 16, 163840000.0] |
+| kvgeo_4096 | [32768.0, 8, 0, 0.0, 16, 0.0] | [65536.0, 8, 0, 0.0, 16, 163840000.0] |
+| report_kv_gb | 0.183369728 | 0.666697728 |
 | report_params | 576643072 | 580837376 |
-| report_total_gb | 1.459883786 | 1.925846794 |
+| report_total_gb | 1.459883786 | 2.048726794 |
 | report_weight_gb | 1.153286144 | 1.161674752 |
+| serving_requests_8gib_1k | 256 | 43 |
+| serving_state_bytes | 0 | 163840000 |
+| sim_max_running | 400 | 368 |
+| slice_mib_16x4352 | [8704, true] | [12800, true] |
+| vllm_limits | [141755, 2268080, 141755, 1, 0, 0.0, true] | [139835, 2237360, 139835, 1, 0, 163840000.0, true] |
+| vllm_running_1024 | 1024 | 356 |
+| vllm_running_8192 | 268 | 166 |
 
 ## config:models--onnx-community--moonshine-base-ONNX/snapshots/b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad/config.json (encoder-decoder)
 
 | figure | before | after |
 |---|---|---|
-| conv_kv_size | 3328 | 6656 |
+| conv_kv_size | 3328 | 13312 |
 | conv_layers | [4, 4] | [8, 8] |
-| eng_None_32768_kv_mb | 456.175616 | 476.143616 |
-| eng_None_32768_total_mb | 753.298125 | 773.266125 |
-| eng_None_4096_kv_mb | 74.493952 | 94.461952 |
-| eng_None_4096_total_mb | 326.63255 | 346.60055 |
-| eng_llamacpp_32768_kv_mb | 456.175616 | 476.143616 |
-| eng_llamacpp_32768_total_mb | 753.298125 | 773.266125 |
-| eng_llamacpp_4096_kv_mb | 74.493952 | 94.461952 |
-| eng_llamacpp_4096_total_mb | 326.63255 | 346.60055 |
-| report_kv_gb | 0.074493952 | 0.094461952 |
-| report_total_gb | 0.351430523 | 0.375392123 |
+| disagg_transfer_bytes_640 | 8519680 | 17039360 |
+| eng_None_32768_kv_mb | 456.175616 | 892.383232 |
+| eng_None_32768_total_mb | 753.298125 | 1189.505741 |
+| eng_None_4096_kv_mb | 74.493952 | 129.019904 |
+| eng_None_4096_total_mb | 326.63255 | 381.158502 |
+| eng_llamacpp_32768_kv_mb | 456.175616 | 892.383232 |
+| eng_llamacpp_32768_total_mb | 753.298125 | 1189.505741 |
+| eng_llamacpp_4096_kv_mb | 74.493952 | 129.019904 |
+| eng_llamacpp_4096_total_mb | 326.63255 | 381.158502 |
+| genz_chunked_kv_mb | 58.5 | 117.0 |
+| genz_decode_kv_mb | 52.0 | 104.0 |
+| genz_decode_weights_mb | 57.6875 | 62.96875 |
+| genz_kv_size | 6656 | 13312 |
+| genz_prefill_kv_mb | 52.0 | 156.0 |
+| genz_prefill_weights_mb | 83.6875 | 125.9375 |
+| kv_cross_layers | 0 | 8 |
+| kv_gb@32768 | 0.436207616 | 0.872415232 |
+| kv_gb@4096 | 0.054525952 | 0.109051904 |
+| kvgeo_32768 | [13312.0, 8, 0, 0.0, 16, 0.0] | [26624.0, 8, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [13312.0, 8, 0, 0.0, 16, 0.0] | [26624.0, 8, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 13312 | 26624 |
+| report_kv_gb | 0.074493952 | 0.129019904 |
+| report_total_gb | 0.351430523 | 0.416861665 |
+| serving_bytes_per_token | 13312 | 26624 |
+| serving_requests_8gib_1k | 630 | 315 |
+| slice_mib_16x4352 | [6656, true] | [7680, true] |
+| vllm_limits | [351373, 5621968, 351373, 1, 0, 0.0, true] | [351373, 5621968, 351373, 1, 0, 6815744.0, true] |
+| vllm_running_8192 | 665 | 627 |
 
 ## config:models--onnx-community--moonshine-tiny-ONNX/snapshots/a6da1241cd305dcd64eab1edbd615f2bb9aabb95/config.json (encoder-decoder)
 
 | figure | before | after |
 |---|---|---|
-| conv_kv_size | 1728 | 3456 |
+| conv_kv_size | 1728 | 6912 |
 | conv_layers | [3, 3] | [6, 6] |
-| eng_None_32768_kv_mb | 236.860416 | 247.228416 |
-| eng_None_32768_total_mb | 399.278822 | 409.646822 |
-| eng_None_4096_kv_mb | 38.679552 | 49.047552 |
-| eng_None_4096_total_mb | 169.955251 | 180.323251 |
-| eng_llamacpp_32768_kv_mb | 236.860416 | 247.228416 |
-| eng_llamacpp_32768_total_mb | 399.278822 | 409.646822 |
-| eng_llamacpp_4096_kv_mb | 38.679552 | 49.047552 |
-| eng_llamacpp_4096_total_mb | 169.955251 | 180.323251 |
-| report_kv_gb | 0.038679552 | 0.049047552 |
-| report_total_gb | 0.184591703 | 0.197033303 |
+| disagg_transfer_bytes_640 | 4423680 | 8847360 |
+| eng_None_32768_kv_mb | 236.860416 | 463.352832 |
+| eng_None_32768_total_mb | 399.278822 | 625.771238 |
+| eng_None_4096_kv_mb | 38.679552 | 66.991104 |
+| eng_None_4096_total_mb | 169.955251 | 198.266803 |
+| eng_llamacpp_32768_kv_mb | 236.860416 | 463.352832 |
+| eng_llamacpp_32768_total_mb | 399.278822 | 625.771238 |
+| eng_llamacpp_4096_kv_mb | 38.679552 | 66.991104 |
+| eng_llamacpp_4096_total_mb | 169.955251 | 198.266803 |
+| genz_chunked_kv_mb | 30.375 | 60.75 |
+| genz_decode_kv_mb | 27.0 | 54.0 |
+| genz_decode_weights_mb | 29.390625 | 31.289062 |
+| genz_kv_size | 3456 | 6912 |
+| genz_prefill_kv_mb | 27.0 | 81.0 |
+| genz_prefill_weights_mb | 47.390625 | 62.578125 |
+| kv_cross_layers | 0 | 6 |
+| kv_gb@32768 | 0.226492416 | 0.452984832 |
+| kv_gb@4096 | 0.028311552 | 0.056623104 |
+| kvgeo_32768 | [6912.0, 6, 0, 0.0, 16, 0.0] | [13824.0, 6, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [6912.0, 6, 0, 0.0, 16, 0.0] | [13824.0, 6, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 6912 | 13824 |
+| report_kv_gb | 0.038679552 | 0.066991104 |
+| report_total_gb | 0.184591703 | 0.218565565 |
+| serving_bytes_per_token | 6912 | 13824 |
+| serving_requests_8gib_1k | 1213 | 606 |
+| slice_mib_16x4352 | [6144, true] | [6656, true] |
+| vllm_limits | [677592, 10841472, 677592, 1, 0, 0.0, true] | [677592, 10841472, 677592, 1, 0, 3538944.0, true] |
 
 ## config:models--onnx-community--whisper-base/snapshots/1846881b6b3a3024392c1eea3ad983695bc23925/config.json (encoder-decoder)
 
 | figure | before | after |
 |---|---|---|
 | conv_kv_size | 49152 | 6144 |
-| disagg_transfer_bytes_640 | 62914560 | 7864320 |
-| genz_chunked_kv_mb | 432.0 | 54.0 |
-| genz_decode_kv_mb | 384.0 | 48.0 |
-| genz_decode_weights_mb | 2205.195312 | 86.649414 |
+| conv_state_bytes | 0 | 18432000 |
+| disagg_transfer_bytes_640 | 62914560 | 26296320 |
+| genz_chunked_kv_mb | 432.0 | 89.15625 |
+| genz_decode_kv_mb | 384.0 | 65.578125 |
+| genz_decode_weights_mb | 2205.195312 | 92.649414 |
 | genz_kv_size | 49152 | 6144 |
-| kv_gb@32768 | 0.0 | 0.402653184 |
-| kv_gb@4096 | 0.0 | 0.050331648 |
+| genz_prefill_kv_mb | 384.0 | 83.15625 |
+| genz_prefill_weights_mb | 2610.390625 | 185.298828 |
+| kv_cross_layers | 0 | 6 |
+| kv_gb@32768 | 0.0 | 0.421085184 |
+| kv_gb@4096 | 0.0 | 0.068763648 |
+| kvgeo_32768 | [0.0, 6, 0, 0.0, 16, 0.0] | [12288.0, 6, 0, 0.0, 16, 18432000.0] |
+| kvgeo_4096 | [0.0, 6, 0, 0.0, 16, 0.0] | [12288.0, 6, 0, 0.0, 16, 18432000.0] |
+| prefix_kv_bytes_per_token | 98304 | 12288 |
 | serving_bytes_per_token | 98304 | 12288 |
-| serving_requests_8gib_1k | 85 | 682 |
+| serving_requests_8gib_1k | 85 | 276 |
+| serving_state_bytes | 0 | 18432000 |
+| slice_mib_16x4352 | [6656, true] | [6912, true] |
+| vllm_limits | [382126, 6114016, 382126, 1, 0, 0.0, true] | [382126, 6114016, 382126, 1, 0, 18432000.0, true] |
+| vllm_running_8192 | 723 | 614 |
 
 ## config:models--onnx-community--whisper-large-v3-turbo/snapshots/360ebcde2559d60bb474678be3c1de9ef347d01a/config.json (encoder-decoder)
 
 | figure | before | after |
 |---|---|---|
 | conv_kv_size | 32768 | 10240 |
-| disagg_transfer_bytes_640 | null | 13107200 |
+| conv_state_bytes | 0 | 30720000 |
+| disagg_transfer_bytes_640 | null | 43827200 |
 | facts_layers | [32, 0, 0, null] | [4, 0, 0, null] |
 | genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
-| genz_chunked_kv_mb | null | 90.0 |
-| genz_decode_kv_mb | null | 80.0 |
-| genz_decode_weights_mb | null | 276.625977 |
+| genz_chunked_kv_mb | null | 148.59375 |
+| genz_decode_kv_mb | null | 109.296875 |
+| genz_decode_weights_mb | null | 301.625977 |
 | genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
 | genz_ffn_kinds | null | {"Dense": 4} |
 | genz_kv_size | null | 10240 |
 | genz_layer_kinds | null | {"MHA-global": 4} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
+| genz_prefill_kv_mb | null | 343.671875 |
+| genz_prefill_weights_mb | null | 1653.251953 |
+| kv_cross_layers | 0 | 4 |
 | kv_full_layers | 32 | 4 |
-| kv_gb@32768 | 0.0 | 0.67108864 |
-| kv_gb@4096 | 0.0 | 0.08388608 |
+| kv_gb@32768 | 0.0 | 0.70180864 |
+| kv_gb@4096 | 0.0 | 0.11460608 |
+| kvgeo_32768 | [0.0, 32, 0, 0.0, 16, 0.0] | [20480.0, 4, 0, 0.0, 16, 30720000.0] |
+| kvgeo_4096 | [0.0, 32, 0, 0.0, 16, 0.0] | [20480.0, 4, 0, 0.0, 16, 30720000.0] |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment" | null |
+| prefix_kv_bytes_per_token | null | 20480 |
 | serving_bytes_per_token | null | 20480 |
 | serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
-| serving_requests_8gib_1k | null | 409 |
-| serving_state_bytes | null | 0 |
+| serving_requests_8gib_1k | null | 166 |
+| serving_state_bytes | null | 30720000 |
+| slice_mib_16x4352 | [22272, true] | [9472, true] |
+| vllm_limits | [27344, 437504, 27344, 1, 0, 0.0, true] | [224354, 3589664, 224354, 1, 0, 30720000.0, true] |
+| vllm_running_1024 | 341 | 1024 |
+| vllm_running_8192 | 51 | 360 |
 
 ## config:models--onnx-community--whisper-tiny.en/snapshots/2575352d61be1bf7225cf8f8b268a4678025fc58/config.json (encoder-decoder)
 
 | figure | before | after |
 |---|---|---|
 | conv_kv_size | 32768 | 3072 |
-| disagg_transfer_bytes_640 | 41943040 | 3932160 |
-| genz_chunked_kv_mb | 288.0 | 27.0 |
-| genz_decode_kv_mb | 256.0 | 24.0 |
-| genz_decode_weights_mb | 1605.1875 | 51.486328 |
+| conv_state_bytes | 0 | 9216000 |
+| disagg_transfer_bytes_640 | 41943040 | 13148160 |
+| genz_chunked_kv_mb | 288.0 | 44.578125 |
+| genz_decode_kv_mb | 256.0 | 32.789062 |
+| genz_decode_weights_mb | 1605.1875 | 53.736328 |
 | genz_kv_size | 32768 | 3072 |
-| kv_gb@32768 | 0.0 | 0.201326592 |
-| kv_gb@4096 | 0.0 | 0.025165824 |
+| genz_prefill_kv_mb | 256.0 | 41.578125 |
+| genz_prefill_weights_mb | 2010.375 | 107.472656 |
+| kv_cross_layers | 0 | 4 |
+| kv_gb@32768 | 0.0 | 0.210542592 |
+| kv_gb@4096 | 0.0 | 0.034381824 |
+| kvgeo_32768 | [0.0, 4, 0, 0.0, 16, 0.0] | [6144.0, 4, 0, 0.0, 16, 9216000.0] |
+| kvgeo_4096 | [0.0, 4, 0, 0.0, 16, 0.0] | [6144.0, 4, 0, 0.0, 16, 9216000.0] |
+| prefix_kv_bytes_per_token | 65536 | 6144 |
 | serving_bytes_per_token | 65536 | 6144 |
-| serving_requests_8gib_1k | 128 | 1365 |
+| serving_requests_8gib_1k | 128 | 553 |
+| serving_state_bytes | 0 | 9216000 |
+| slice_mib_16x4352 | [5888, true] | [6144, true] |
+| vllm_limits | [765220, 12243520, 765220, 1, 0, 0.0, true] | [765220, 12243520, 765220, 1, 0, 9216000.0, true] |
 
 ## config:models--openai--gpt-oss-120b/snapshots/b5c939de8f754692c1647ca79fbf85e8c1e70f8a/config.json (decoder-only)
 
 | figure | before | after |
 |---|---|---|
 | genz_chunked_kv_mb | 324.0 | 184.5 |
+| sim_max_running | 250 | 220 |
+| vllm_limits | [16363, 261808, 16363, 1, 0, 0.0, true] | [16363, 261808, 16363, 1, 1, 0.0, true] |
+| vllm_running_1024 | 204 | 183 |
 
 ## config:models--openai--gpt-oss-20b/snapshots/6cee5e81ee83917806bbde320786a8fb61efebee/config.json (decoder-only)
 
 | figure | before | after |
 |---|---|---|
 | genz_chunked_kv_mb | 216.0 | 123.0 |
+| slice_mib_16x4352 | [20736, true] | [20992, true] |
+| vllm_limits | [155360, 2485760, 155360, 1, 0, 0.0, true] | [155360, 2485760, 155360, 1, 1, 0.0, true] |
+| vllm_running_8192 | 294 | 289 |
 
 ## db:deepseek-ai/DeepSeek-V3-Base (decoder-only)
 
@@ -920,6 +1293,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_chunked_kv_mb | 7686.0 | 171.5625 |
 | genz_decode_weights_mb | 1335494.375 | 1273239.875 |
 | genz_ffn_kinds | {"MoE": 61} | {"Dense": 3, "MoE": 58} |
+| genz_prefill_weights_mb | 1337261.875 | 1275007.375 |
+| prefix_kv_bytes_per_token | 1748992 | 70272 |
 | serving_bytes_per_token | 1748992 | 70272 |
 | serving_requests_8gib_1k | 4 | 119 |
 
@@ -929,6 +1304,7 @@ The full per-config table (before = origin/main, after = this branch) follows.
 |---|---|---|
 | genz_decode_weights_mb | 30871.0 | 29943.0 |
 | genz_ffn_kinds | {"MoE": 28} | {"Dense": 1, "MoE": 27} |
+| genz_prefill_weights_mb | 31271.0 | 30343.0 |
 
 ## db:tiiuae/falcon-mamba-7b (state-space)
 
@@ -946,6 +1322,7 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | eng_llamacpp_4096_state_mb | 0.0 | 293.60128 |
 | eng_llamacpp_4096_total_mb | 109184.879821 | 109478.481101 |
 | genz_kv_size | 524288 | 0 |
+| prefix_kv_bytes_per_token | 1048576 | 0 |
 | serving_bytes_per_token | 1048576 | 0 |
 | serving_requests_8gib_1k | 8 | 29 |
 | serving_state_bytes | 0 | 293601280 |
@@ -976,12 +1353,17 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_ffn_kinds | null | {"Dense": 24} |
 | genz_kv_size | null | 98304 |
 | genz_layer_kinds | null | {"MHA-global": 12, "MHA-local": 12} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', 'attention_types', 'bos_token_id', 'embe" | "TypeError: unsupported operand type(s) for /: 'NoneType' and 'int'" |
 | kv_full_layers | 0 | 12 |
 | kv_gb@32768 | 0.0 | 6.442450944 |
 | kv_gb@4096 | 0.0 | 0.805306368 |
 | kv_sliding_layers | 24 | 12 |
 | kv_source | "uniform" | "layer_plan:attention_types" |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [196608.0, 12, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [196608.0, 12, 0, 0.0, 16, 0.0] |
 | model_type | "hybrid" | "decoder-only" |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', " | null |
+| prefix_kv_bytes_per_token | null | 196608 |
 | report_kv_gb | 0.0 | 0.805306368 |
 | report_params | 706906112 | 1310885888 |
 | report_state_gb | 0.00172032 | 0.0 |
@@ -991,7 +1373,12 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', 'attention_types', 'bos_token_id', 'embe" | null |
 | serving_requests_8gib_1k | null | 42 |
 | serving_state_bytes | null | 0 |
+| sim_max_running | 342 | 400 |
+| slice_mib_16x4352 | [25088, true] | [17664, true] |
 | state_gb | 0.00172032 | 0.0 |
+| vllm_limits | [22571, 361136, 22571, 1, 0, 0.0, true] | [45143, 722288, 45143, 1, 1, 0.0, true] |
+| vllm_running_1024 | 282 | 465 |
+| vllm_running_8192 | 42 | 82 |
 
 ## fixture:LiquidAI_LFM2-2.6B.json (hybrid)
 
@@ -1013,6 +1400,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 3376.0 | 3640.257812 |
 | genz_kv_size | 30720 | 8192 |
 | genz_layer_kinds | {"MHA-global": 30} | {"MHA-global": 8, "Recurrent": 22} |
+| genz_prefill_kv_mb | 240.0 | 64.257812 |
+| genz_prefill_weights_mb | 3632.0 | 3896.257812 |
+| prefix_kv_bytes_per_token | 61440 | 16384 |
 | serving_bytes_per_token | 61440 | 16384 |
 | serving_requests_8gib_1k | 136 | 503 |
 | serving_state_bytes | 0 | 270336 |
@@ -1039,8 +1429,12 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 849094.5 | 867574.5 |
 | genz_kv_size | 163840 | 20480 |
 | genz_layer_kinds | {"MHA-global": 80} | {"MHA-global": 10, "Recurrent": 70} |
+| genz_prefill_kv_mb | 1280.0 | 440.0 |
+| genz_prefill_weights_mb | 851439.0 | 869919.0 |
+| prefix_kv_bytes_per_token | 327680 | 40960 |
 | serving_bytes_per_token | 327680 | 40960 |
 | serving_state_bytes | 0 | 293601280 |
+| vllm_limits | [0, 0, 0, 1, 0, 0.0, false] | [0, 0, 0, 1, 0, 293601280.0, false] |
 
 ## fixture:PowerInfer_SmallThinker-21BA3B-Instruct.json (decoder-only)
 
@@ -1049,6 +1443,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | facts_full_attention | true | false |
 | facts_layers | [52, 0, 0, null] | [13, 39, 0, 4096] |
 | genz_layer_kinds | {"MHA-global": 52} | {"MHA-global": 13, "MHA-local": 39} |
+| slice_mib_16x4352 | [26368, true] | [26112, true] |
+| vllm_limits | [36572, 585152, 36572, 1, 0, 0.0, true] | [146290, 2340640, 146290, 1, 3, 0.0, true] |
+| vllm_running_8192 | 69 | 112 |
 
 ## fixture:Qwen_Qwen3-Next-80B-A3B-Instruct.json (hybrid)
 
@@ -1070,6 +1467,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 149873.5 | 150892.890625 |
 | genz_kv_size | 49152 | 12288 |
 | genz_layer_kinds | {"MHA-global": 48} | {"MHA-global": 12, "Recurrent": 36} |
+| genz_prefill_kv_mb | 384.0 | 169.6875 |
+| genz_prefill_weights_mb | 150467.0 | 151486.390625 |
+| prefix_kv_bytes_per_token | 98304 | 24576 |
 | serving_bytes_per_token | 98304 | 24576 |
 | serving_requests_8gib_1k | 85 | 83 |
 | serving_state_bytes | 0 | 77266944 |
@@ -1094,6 +1494,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 7132.5 | 7861.523438 |
 | genz_kv_size | 65536 | 16384 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
+| genz_prefill_kv_mb | 512.0 | 177.125 |
+| genz_prefill_weights_mb | 8345.0 | 9074.023438 |
+| prefix_kv_bytes_per_token | 131072 | 32768 |
 | serving_bytes_per_token | 131072 | 32768 |
 | serving_requests_8gib_1k | 64 | 100 |
 | serving_state_bytes | 0 | 51511296 |
@@ -1119,6 +1522,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 44025.0 | 47914.21875 |
 | genz_kv_size | 131072 | 32768 |
 | genz_layer_kinds | {"MHA-global": 64} | {"MHA-global": 16, "Recurrent": 48} |
+| genz_prefill_kv_mb | 1024.0 | 402.8125 |
+| genz_prefill_weights_mb | 46450.0 | 50339.21875 |
+| prefix_kv_bytes_per_token | 262144 | 65536 |
 | serving_bytes_per_token | 262144 | 65536 |
 | serving_requests_8gib_1k | 32 | 38 |
 | serving_state_bytes | 0 | 153944064 |
@@ -1152,8 +1558,13 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_ffn_kinds | {"Dense": 54} | {"Dense": 9, "no_op": 45} |
 | genz_kv_size | 276480 | 92160 |
 | genz_layer_kinds | {"Mamba": 54} | {"MHA-global": 9, "Recurrent": 45} |
+| genz_prefill_kv_mb | 35.859375 | 789.121582 |
+| genz_prefill_weights_mb | 9998.75 | 6220.771484 |
 | kv_gb@32768 | 3.01989888 | 6.03979776 |
 | kv_gb@4096 | 0.37748736 | 0.75497472 |
+| kvgeo_32768 | [92160.0, 9, 54, 1342208.0, 144, 0.0] | [184320.0, 9, 54, 1342208.0, 80, 0.0] |
+| kvgeo_4096 | [92160.0, 9, 54, 1342208.0, 144, 0.0] | [184320.0, 9, 54, 1342208.0, 80, 0.0] |
+| prefix_kv_bytes_per_token | 552960 | 184320 |
 | report_kv_gb | 0.37748736 | 0.75497472 |
 | report_params | 2446020000 | 2577092000 |
 | report_total_gb | 5.643392832 | 6.479317619 |
@@ -1161,6 +1572,11 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | serving_bytes_per_token | 552960 | 184320 |
 | serving_requests_8gib_1k | 15 | 32 |
 | serving_state_bytes | 0 | 72479232 |
+| sim_max_running | 376 | 240 |
+| slice_mib_16x4352 | [16896, true] | [27136, true] |
+| vllm_limits | [5261, 757584, 5261, 1, 0, 79626240.0, true] | [4682, 374560, 4682, 1, 0, 88473600.0, true] |
+| vllm_running_1024 | 350 | 212 |
+| vllm_running_8192 | 80 | 41 |
 
 ## fixture:ai21labs_Jamba-v0.1.json (hybrid)
 
@@ -1183,9 +1599,57 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_error | "ValueError: More than 1 unique layers not supported. Work in progress" | null |
 | genz_kv_size | 65536 | 8192 |
 | genz_layer_kinds | {"Mamba": 32} | {"MHA-global": 4, "Recurrent": 28} |
+| genz_prefill_error | "ValueError: More than 1 unique layers not supported. Work in progress" | null |
+| genz_prefill_kv_mb | null | 79.3125 |
+| genz_prefill_weights_mb | null | 98362.0625 |
+| prefix_kv_bytes_per_token | 131072 | 16384 |
 | serving_bytes_per_token | 131072 | 16384 |
 | serving_requests_8gib_1k | 64 | 261 |
 | serving_state_bytes | 0 | 16056320 |
+
+## fixture:bart_transformers-5.12-default.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 98304 | 49152 |
+| disagg_transfer_bytes_640 | null | 62914560 |
+| eng_None_32768_kv_mb | 1758.068736 | 3294.953472 |
+| eng_None_32768_total_mb | 2718.961254 | 4255.84599 |
+| eng_None_4096_kv_mb | 348.782592 | 476.381184 |
+| eng_None_4096_total_mb | 1239.210803 | 1366.809395 |
+| eng_llamacpp_32768_kv_mb | 1758.068736 | 3294.953472 |
+| eng_llamacpp_32768_total_mb | 2718.961254 | 4255.84599 |
+| eng_llamacpp_4096_kv_mb | 348.782592 | 476.381184 |
+| eng_llamacpp_4096_total_mb | 1239.210803 | 1366.809395 |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'attention_dropout', 'bos_token_id', 'chun" | null |
+| genz_chunked_kv_mb | null | 432.0 |
+| genz_decode_kv_mb | null | 384.0 |
+| genz_decode_weights_mb | null | 434.173828 |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'attention_dropout', 'bos_token_id', 'chun" | null |
+| genz_ffn_kinds | null | {"Dense": 12} |
+| genz_kv_size | null | 49152 |
+| genz_layer_kinds | null | {"MHA-global": 12} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'attention_dropout', 'bos_token_id', 'chun" | null |
+| genz_prefill_kv_mb | null | 576.0 |
+| genz_prefill_weights_mb | null | 868.347656 |
+| kv_cross_layers | 0 | 12 |
+| kv_full_layers | 0 | 12 |
+| kv_gb@32768 | 0.0 | 3.221225472 |
+| kv_gb@4096 | 0.0 | 0.402653184 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a" | null |
+| prefix_kv_bytes_per_token | null | 98304 |
+| report_kv_gb | 0.348782592 | 0.476381184 |
+| report_total_gb | 1.325056983 | 1.478175293 |
+| serving_bytes_per_token | null | 98304 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'attention_dropout', 'bos_token_id', 'chun" | null |
+| serving_requests_8gib_1k | null | 85 |
+| serving_state_bytes | null | 0 |
+| slice_mib_16x4352 | [10240, true] | [14080, true] |
+| vllm_limits | [94617, 1513872, 94617, 1, 0, 0.0, true] | [94617, 1513872, 94617, 1, 0, 50331648.0, true] |
+| vllm_running_1024 | 1024 | 657 |
+| vllm_running_8192 | 179 | 159 |
 
 ## fixture:deepseek-ai_DeepSeek-V3.2-Exp.json (decoder-only)
 
@@ -1195,6 +1659,21 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_chunked_kv_mb | 7686.0 | 171.5625 |
 | genz_decode_weights_mb | 1335494.375 | 1273239.875 |
 | genz_ffn_kinds | {"MoE": 61} | {"Dense": 3, "MoE": 58} |
+| genz_prefill_weights_mb | 1337261.875 | 1275007.375 |
+| prefix_kv_bytes_per_token | 1748992 | 70272 |
+| serving_bytes_per_token | 1748992 | 70272 |
+| serving_requests_8gib_1k | 4 | 119 |
+
+## fixture:deepseek-v3.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 874496 | 35136 |
+| genz_chunked_kv_mb | 7686.0 | 171.5625 |
+| genz_decode_weights_mb | 1335494.375 | 1273239.875 |
+| genz_ffn_kinds | {"MoE": 61} | {"Dense": 3, "MoE": 58} |
+| genz_prefill_weights_mb | 1337261.875 | 1275007.375 |
+| prefix_kv_bytes_per_token | 1748992 | 70272 |
 | serving_bytes_per_token | 1748992 | 70272 |
 | serving_requests_8gib_1k | 4 | 119 |
 
@@ -1208,8 +1687,31 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | null | 28699.5 |
 | genz_error | "ValueError: cannot convert float NaN to integer" | null |
 | genz_ffn_kinds | {"MoE": 27} | {"Dense": 1, "MoE": 26} |
+| genz_prefill_error | "ValueError: cannot convert float NaN to integer" | null |
+| genz_prefill_kv_mb | null | 67.5 |
+| genz_prefill_weights_mb | null | 29099.5 |
+| prefix_kv_bytes_per_token | 221184 | 31104 |
 | serving_bytes_per_token | 221184 | 31104 |
 | serving_requests_8gib_1k | 37 | 269 |
+
+## fixture:gpt-oss-20b-bf16.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 216.0 | 123.0 |
+| slice_mib_16x4352 | [49152, true] | [49408, true] |
+| vllm_limits | [85423, 1366768, 85423, 1, 0, 0.0, true] | [85423, 1366768, 85423, 1, 1, 0.0, true] |
+| vllm_running_1024 | 1024 | 959 |
+| vllm_running_8192 | 161 | 159 |
+
+## fixture:gpt-oss-20b.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 216.0 | 123.0 |
+| slice_mib_16x4352 | [20736, true] | [20992, true] |
+| vllm_limits | [155360, 2485760, 155360, 1, 0, 0.0, true] | [155360, 2485760, 155360, 1, 1, 0.0, true] |
+| vllm_running_8192 | 294 | 289 |
 
 ## fixture:ibm-ai-platform_Bamba-9B-v2.json (hybrid)
 
@@ -1231,6 +1733,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 18282.0 | 17651.945312 |
 | genz_kv_size | 65536 | 6144 |
 | genz_layer_kinds | {"Mamba": 32} | {"MHA-global": 3, "Recurrent": 29} |
+| genz_prefill_kv_mb | 66.0 | 165.401855 |
+| genz_prefill_weights_mb | 19284.0 | 18653.945312 |
+| prefix_kv_bytes_per_token | 131072 | 12288 |
 | serving_bytes_per_token | 131072 | 12288 |
 | serving_requests_8gib_1k | 64 | 63 |
 | serving_state_bytes | 0 | 123104768 |
@@ -1255,6 +1760,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 60806.5 | 59990.15625 |
 | genz_kv_size | 81920 | 8192 |
 | genz_layer_kinds | {"Mamba": 40} | {"MHA-global": 4, "Recurrent": 36} |
+| genz_prefill_kv_mb | 82.5 | 209.740234 |
+| genz_prefill_weights_mb | 61590.5 | 60774.15625 |
+| prefix_kv_bytes_per_token | 163840 | 16384 |
 | serving_bytes_per_token | 163840 | 16384 |
 | serving_requests_8gib_1k | 51 | 50 |
 | serving_state_bytes | 0 | 152819712 |
@@ -1265,6 +1773,16 @@ The full per-config table (before = origin/main, after = this branch) follows.
 |---|---|---|
 | genz_decode_weights_mb | 200204.0 | 194274.0 |
 | genz_ffn_kinds | {"MoE": 32} | {"Dense": 1, "MoE": 31} |
+| genz_prefill_weights_mb | 201432.0 | 195502.0 |
+
+## fixture:measured_checkpoints/openai_gpt-oss-20b/config.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| genz_chunked_kv_mb | 216.0 | 123.0 |
+| slice_mib_16x4352 | [20736, true] | [20992, true] |
+| vllm_limits | [155360, 2485760, 155360, 1, 0, 0.0, true] | [155360, 2485760, 155360, 1, 1, 0.0, true] |
+| vllm_running_8192 | 294 | 289 |
 
 ## fixture:microsoft_Phi-4-mini-flash-reasoning.json (hybrid)
 
@@ -1295,11 +1813,16 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 6976.875 | 7635.46875 |
 | genz_kv_size | 81920 | 40960 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 1, "MHA-local": 15, "Recurrent": 16} |
+| genz_prefill_kv_mb | 640.0 | 62.96875 |
+| genz_prefill_weights_mb | 7953.75 | 8612.34375 |
 | kv_free_layers | 0 | 16 |
 | kv_full_layers | 0 | 1 |
 | kv_gb@32768 | 0.08388608 | 2.68435456 |
 | kv_gb@4096 | 0.08388608 | 0.33554432 |
 | kv_sliding_layers | 32 | 15 |
+| kvgeo_32768 | [0.0, 32, 0, 0.0, 16, 0.0] | [81920.0, 1, 16, 358400.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 32, 0, 0.0, 16, 0.0] | [81920.0, 1, 16, 358400.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 163840 | 81920 |
 | report_kv_gb | 0.08388608 | 0.33554432 |
 | report_params | 4329313280 | 4674606080 |
 | report_state_gb | 0.0 | 0.0057344 |
@@ -1308,7 +1831,12 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | serving_bytes_per_token | 163840 | 81920 |
 | serving_requests_8gib_1k | 51 | 95 |
 | serving_state_bytes | 0 | 5734400 |
+| sim_max_running | 389 | 400 |
+| slice_mib_16x4352 | [24832, true] | [19200, true] |
 | state_gb | 0.0 | 0.0057344 |
+| vllm_limits | [25739, 411824, 25739, 1, 0, 0.0, true] | [10138, 811040, 10138, 1, 0, 6553600.0, true] |
+| vllm_running_1024 | 321 | 596 |
+| vllm_running_8192 | 48 | 94 |
 
 ## fixture:mistralai_Mamba-Codestral-7B-v0.1.json (state-space)
 
@@ -1326,6 +1854,7 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | eng_llamacpp_4096_state_mb | 0.0 | 272.367616 |
 | eng_llamacpp_4096_total_mb | 14854.245581 | 15126.613197 |
 | genz_kv_size | 262144 | 0 |
+| prefix_kv_bytes_per_token | 524288 | 0 |
 | serving_bytes_per_token | 524288 | 0 |
 | serving_requests_8gib_1k | 16 | 31 |
 | serving_state_bytes | 0 | 272367616 |
@@ -1352,9 +1881,57 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_ffn_kinds | {"MoE": 27} | {"Dense": 1, "MoE": 26} |
 | genz_kv_size | 15552 | 4032 |
 | genz_layer_kinds | {"MHA-global": 27} | {"MHA-global": 7, "Recurrent": 20} |
+| genz_prefill_error | "ValueError: cannot convert float NaN to integer" | null |
+| genz_prefill_kv_mb | null | 58.90625 |
+| genz_prefill_weights_mb | null | 93340.068359 |
+| prefix_kv_bytes_per_token | 248832 | 8064 |
 | serving_bytes_per_token | 248832 | 8064 |
 | serving_requests_8gib_1k | 33 | 166 |
 | serving_state_bytes | 0 | 43417600 |
+
+## fixture:nari-labs_Dia-1.6B-0626.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 18432 |
+| conv_layers | [16, 16] | [12, 18] |
+| conv_state_bytes | 0 | 150994944 |
+| disagg_transfer_bytes_640 | 23592960 | 174587904 |
+| eng_None_32768_kv_mb | 701.80864 | 1432.682496 |
+| eng_None_32768_params | 808394240 | 1763025664 |
+| eng_None_32768_total_mb | 2484.691558 | 5124.828262 |
+| eng_None_4096_kv_mb | 114.60608 | 375.717888 |
+| eng_None_4096_params | 808394240 | 1763025664 |
+| eng_None_4096_total_mb | 1814.441779 | 3984.816435 |
+| eng_llamacpp_32768_kv_mb | 701.80864 | 1432.682496 |
+| eng_llamacpp_32768_params | 808394240 | 1763025664 |
+| eng_llamacpp_32768_total_mb | 2484.691558 | 5124.828262 |
+| eng_llamacpp_4096_kv_mb | 114.60608 | 375.717888 |
+| eng_llamacpp_4096_params | 808394240 | 1763025664 |
+| eng_llamacpp_4096_total_mb | 1814.441779 | 3984.816435 |
+| facts_layers | [32, 0, 0, null] | [18, 0, 0, null] |
+| genz_chunked_kv_mb | 162.0 | 450.0 |
+| genz_decode_kv_mb | 144.0 | 288.0 |
+| genz_decode_weights_mb | 2092.015625 | 2380.015625 |
+| genz_prefill_kv_mb | 144.0 | 384.0 |
+| genz_prefill_weights_mb | 2096.03125 | 3008.03125 |
+| kv_cross_layers | 0 | 18 |
+| kv_full_layers | 0 | 18 |
+| kv_gb@32768 | 0.0 | 1.358954496 |
+| kv_gb@4096 | 0.0 | 0.301989888 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 18, 0, 0.0, 16, 150994944.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 18, 0, 0.0, 16, 150994944.0] |
+| report_kv_gb | 0.11460608 | 0.375717888 |
+| report_params | 808394240 | 1763025664 |
+| report_total_gb | 1.856430039 | 4.078566257 |
+| report_weight_gb | 1.61678848 | 3.526051328 |
+| serving_requests_8gib_1k | 227 | 45 |
+| serving_state_bytes | 0 | 150994944 |
+| sim_max_running | 72 | 372 |
+| slice_mib_16x4352 | [81582, false] | [15360, true] |
+| vllm_limits | [4702, 75232, 4702, 1, 0, 0.0, true] | [120000, 1920000, 120000, 1, 0, 150994944.0, true] |
+| vllm_running_1024 | 58 | 357 |
+| vllm_running_8192 | 8 | 153 |
 
 ## fixture:nvidia_Hymba-1.5B-Base.json (hybrid)
 
@@ -1374,6 +1951,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_kv_mb | 3.90625 | 58.085938 |
 | genz_decode_weights_mb | 2692.971802 | 3072.463989 |
 | genz_layer_kinds | {"Mamba": 32} | {"MHA-global": 3, "MHA-local": 29} |
+| genz_prefill_kv_mb | 3.90625 | 58.085938 |
+| genz_prefill_weights_mb | 2790.631104 | 3170.123291 |
 | serving_requests_8gib_1k | 204 | 174 |
 | serving_state_bytes | 0 | 7168000 |
 
@@ -1398,6 +1977,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_ffn_kinds | {"Dense": 56} | {"Dense": 25, "no_op": 31} |
 | genz_kv_size | 114688 | 8192 |
 | genz_layer_kinds | {"Mamba": 56} | {"MHA-global": 4, "Recurrent": 27, "no_op": 25} |
+| genz_prefill_kv_mb | 63.164062 | 200.898438 |
+| genz_prefill_weights_mb | 24045.0 | 16952.672119 |
+| prefix_kv_bytes_per_token | 229376 | 16384 |
 | serving_bytes_per_token | 229376 | 16384 |
 | serving_requests_8gib_1k | 36 | 53 |
 | serving_state_bytes | 0 | 143548416 |
@@ -1423,15 +2005,218 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_ffn_kinds | {"Dense": 52} | {"Dense": 24, "no_op": 28} |
 | genz_kv_size | 106496 | 8192 |
 | genz_layer_kinds | {"Mamba": 52} | {"MHA-global": 4, "Recurrent": 24, "no_op": 24} |
+| genz_prefill_kv_mb | 107.25 | 161.40625 |
+| genz_prefill_weights_mb | 30128.0 | 15450.8125 |
+| prefix_kv_bytes_per_token | 212992 | 16384 |
 | serving_bytes_per_token | 212992 | 16384 |
 | serving_requests_8gib_1k | 39 | 72 |
 | serving_state_bytes | 0 | 102137856 |
+
+## fixture:onnx-community_cohere-transcribe-03-2026-ONNX.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 8192 | 16384 |
+| conv_layers | [4, 4] | [48, 8] |
+| conv_state_bytes | 0 | 163840000 |
+| disagg_transfer_bytes_640 | 20971520 | 184811520 |
+| eng_None_32768_kv_mb | 1122.893824 | 1606.221824 |
+| eng_None_32768_params | 576643072 | 580837376 |
+| eng_None_32768_total_mb | 2417.108582 | 2908.82519 |
+| eng_None_4096_kv_mb | 183.369728 | 666.697728 |
+| eng_None_4096_params | 576643072 | 580837376 |
+| eng_None_4096_total_mb | 1407.120179 | 1898.836787 |
+| eng_llamacpp_32768_kv_mb | 1122.893824 | 1606.221824 |
+| eng_llamacpp_32768_params | 576643072 | 580837376 |
+| eng_llamacpp_32768_total_mb | 2417.108582 | 2908.82519 |
+| eng_llamacpp_4096_kv_mb | 183.369728 | 666.697728 |
+| eng_llamacpp_4096_params | 576643072 | 580837376 |
+| eng_llamacpp_4096_total_mb | 1407.120179 | 1898.836787 |
+| genz_chunked_kv_mb | 144.0 | 456.5 |
+| genz_decode_kv_mb | 128.0 | 284.25 |
+| genz_decode_weights_mb | 224.0 | 256.0 |
+| genz_prefill_kv_mb | 128.0 | 1456.125 |
+| genz_prefill_weights_mb | 256.0 | 2128.0 |
+| kv_cross_layers | 0 | 8 |
+| kv_gb@32768 | 1.073741824 | 1.237581824 |
+| kv_gb@4096 | 0.134217728 | 0.298057728 |
+| kvgeo_32768 | [32768.0, 8, 0, 0.0, 16, 0.0] | [32768.0, 8, 0, 0.0, 16, 163840000.0] |
+| kvgeo_4096 | [32768.0, 8, 0, 0.0, 16, 0.0] | [65536.0, 8, 0, 0.0, 16, 163840000.0] |
+| report_kv_gb | 0.183369728 | 0.666697728 |
+| report_params | 576643072 | 580837376 |
+| report_total_gb | 1.459883786 | 2.048726794 |
+| report_weight_gb | 1.153286144 | 1.161674752 |
+| serving_requests_8gib_1k | 256 | 43 |
+| serving_state_bytes | 0 | 163840000 |
+| sim_max_running | 400 | 368 |
+| slice_mib_16x4352 | [8704, true] | [12800, true] |
+| vllm_limits | [141755, 2268080, 141755, 1, 0, 0.0, true] | [139835, 2237360, 139835, 1, 0, 163840000.0, true] |
+| vllm_running_1024 | 1024 | 356 |
+| vllm_running_8192 | 268 | 166 |
+
+## fixture:onnx-community_moonshine-base-ONNX.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 3328 | 13312 |
+| conv_layers | [4, 4] | [8, 8] |
+| disagg_transfer_bytes_640 | 8519680 | 17039360 |
+| eng_None_32768_kv_mb | 456.175616 | 892.383232 |
+| eng_None_32768_total_mb | 753.298125 | 1189.505741 |
+| eng_None_4096_kv_mb | 74.493952 | 129.019904 |
+| eng_None_4096_total_mb | 326.63255 | 381.158502 |
+| eng_llamacpp_32768_kv_mb | 456.175616 | 892.383232 |
+| eng_llamacpp_32768_total_mb | 753.298125 | 1189.505741 |
+| eng_llamacpp_4096_kv_mb | 74.493952 | 129.019904 |
+| eng_llamacpp_4096_total_mb | 326.63255 | 381.158502 |
+| genz_chunked_kv_mb | 58.5 | 117.0 |
+| genz_decode_kv_mb | 52.0 | 104.0 |
+| genz_decode_weights_mb | 57.6875 | 62.96875 |
+| genz_kv_size | 6656 | 13312 |
+| genz_prefill_kv_mb | 52.0 | 156.0 |
+| genz_prefill_weights_mb | 83.6875 | 125.9375 |
+| kv_cross_layers | 0 | 8 |
+| kv_gb@32768 | 0.436207616 | 0.872415232 |
+| kv_gb@4096 | 0.054525952 | 0.109051904 |
+| kvgeo_32768 | [13312.0, 8, 0, 0.0, 16, 0.0] | [26624.0, 8, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [13312.0, 8, 0, 0.0, 16, 0.0] | [26624.0, 8, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 13312 | 26624 |
+| report_kv_gb | 0.074493952 | 0.129019904 |
+| report_total_gb | 0.351430523 | 0.416861665 |
+| serving_bytes_per_token | 13312 | 26624 |
+| serving_requests_8gib_1k | 630 | 315 |
+| slice_mib_16x4352 | [6656, true] | [7680, true] |
+| vllm_limits | [351373, 5621968, 351373, 1, 0, 0.0, true] | [351373, 5621968, 351373, 1, 0, 6815744.0, true] |
+| vllm_running_8192 | 665 | 627 |
+
+## fixture:onnx-community_whisper-large-v3-turbo.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 32768 | 10240 |
+| conv_state_bytes | 0 | 30720000 |
+| disagg_transfer_bytes_640 | null | 43827200 |
+| facts_layers | [32, 0, 0, null] | [4, 0, 0, null] |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
+| genz_chunked_kv_mb | null | 148.59375 |
+| genz_decode_kv_mb | null | 109.296875 |
+| genz_decode_weights_mb | null | 301.625977 |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
+| genz_ffn_kinds | null | {"Dense": 4} |
+| genz_kv_size | null | 10240 |
+| genz_layer_kinds | null | {"MHA-global": 4} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
+| genz_prefill_kv_mb | null | 343.671875 |
+| genz_prefill_weights_mb | null | 1653.251953 |
+| kv_cross_layers | 0 | 4 |
+| kv_full_layers | 32 | 4 |
+| kv_gb@32768 | 0.0 | 0.70180864 |
+| kv_gb@4096 | 0.0 | 0.11460608 |
+| kvgeo_32768 | [0.0, 32, 0, 0.0, 16, 0.0] | [20480.0, 4, 0, 0.0, 16, 30720000.0] |
+| kvgeo_4096 | [0.0, 32, 0, 0.0, 16, 0.0] | [20480.0, 4, 0, 0.0, 16, 30720000.0] |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment" | null |
+| prefix_kv_bytes_per_token | null | 20480 |
+| serving_bytes_per_token | null | 20480 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
+| serving_requests_8gib_1k | null | 166 |
+| serving_state_bytes | null | 30720000 |
+| slice_mib_16x4352 | [22272, true] | [9472, true] |
+| vllm_limits | [27344, 437504, 27344, 1, 0, 0.0, true] | [224354, 3589664, 224354, 1, 0, 30720000.0, true] |
+| vllm_running_1024 | 341 | 1024 |
+| vllm_running_8192 | 51 | 360 |
 
 ## fixture:openai_gpt-oss-120b.json (decoder-only)
 
 | figure | before | after |
 |---|---|---|
 | genz_chunked_kv_mb | 324.0 | 184.5 |
+| sim_max_running | 250 | 220 |
+| vllm_limits | [16363, 261808, 16363, 1, 0, 0.0, true] | [16363, 261808, 16363, 1, 1, 0.0, true] |
+| vllm_running_1024 | 204 | 183 |
+
+## fixture:qwen3.8-27b-fp8.json (multimodal)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 32768 |
+| conv_layers | [0, 32] | [0, 64] |
+| conv_state_bytes | 0 | 153944064 |
+| disagg_transfer_bytes_640 | 167772160 | 195887104 |
+| eng_None_32768_state_mb | 0.0 | 153.944064 |
+| eng_None_32768_total_mb | 34685.072013 | 34839.016077 |
+| eng_None_4096_state_mb | 0.0 | 153.944064 |
+| eng_None_4096_total_mb | 32312.77367 | 32466.717734 |
+| eng_llamacpp_32768_state_mb | 0.0 | 153.944064 |
+| eng_llamacpp_32768_total_mb | 34685.072013 | 34839.016077 |
+| eng_llamacpp_4096_state_mb | 0.0 | 153.944064 |
+| eng_llamacpp_4096_total_mb | 32312.77367 | 32466.717734 |
+| genz_chunked_kv_mb | 1152.0 | 581.625 |
+| genz_decode_kv_mb | 1024.0 | 402.8125 |
+| genz_decode_weights_mb | 44025.0 | 47914.21875 |
+| genz_kv_size | 131072 | 32768 |
+| genz_layer_kinds | {"MHA-global": 64} | {"MHA-global": 16, "Recurrent": 48} |
+| genz_prefill_kv_mb | 1024.0 | 402.8125 |
+| genz_prefill_weights_mb | 46450.0 | 50339.21875 |
+| prefix_kv_bytes_per_token | 262144 | 65536 |
+| serving_bytes_per_token | 262144 | 65536 |
+| serving_requests_8gib_1k | 32 | 38 |
+| serving_state_bytes | 0 | 153944064 |
+
+## fixture:qwen3.8-27b-w4a16.json (multimodal)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 32768 |
+| conv_layers | [0, 32] | [0, 64] |
+| conv_state_bytes | 0 | 153944064 |
+| disagg_transfer_bytes_640 | 167772160 | 195887104 |
+| eng_None_32768_state_mb | 0.0 | 153.944064 |
+| eng_None_32768_total_mb | 58973.596557 | 59127.540621 |
+| eng_None_4096_state_mb | 0.0 | 153.944064 |
+| eng_None_4096_total_mb | 56601.298214 | 56755.242278 |
+| eng_llamacpp_32768_state_mb | 0.0 | 153.944064 |
+| eng_llamacpp_32768_total_mb | 58973.596557 | 59127.540621 |
+| eng_llamacpp_4096_state_mb | 0.0 | 153.944064 |
+| eng_llamacpp_4096_total_mb | 56601.298214 | 56755.242278 |
+| genz_chunked_kv_mb | 1152.0 | 581.625 |
+| genz_decode_kv_mb | 1024.0 | 402.8125 |
+| genz_decode_weights_mb | 44025.0 | 47914.21875 |
+| genz_kv_size | 131072 | 32768 |
+| genz_layer_kinds | {"MHA-global": 64} | {"MHA-global": 16, "Recurrent": 48} |
+| genz_prefill_kv_mb | 1024.0 | 402.8125 |
+| genz_prefill_weights_mb | 46450.0 | 50339.21875 |
+| prefix_kv_bytes_per_token | 262144 | 65536 |
+| serving_bytes_per_token | 262144 | 65536 |
+| serving_requests_8gib_1k | 32 | 38 |
+| serving_state_bytes | 0 | 153944064 |
+
+## fixture:qwen3.8-27b.json (multimodal)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 32768 |
+| conv_layers | [0, 32] | [0, 64] |
+| conv_state_bytes | 0 | 153944064 |
+| disagg_transfer_bytes_640 | 167772160 | 195887104 |
+| eng_None_32768_state_mb | 0.0 | 153.944064 |
+| eng_None_32768_total_mb | 58973.596557 | 59127.540621 |
+| eng_None_4096_state_mb | 0.0 | 153.944064 |
+| eng_None_4096_total_mb | 56601.298214 | 56755.242278 |
+| eng_llamacpp_32768_state_mb | 0.0 | 153.944064 |
+| eng_llamacpp_32768_total_mb | 58973.596557 | 59127.540621 |
+| eng_llamacpp_4096_state_mb | 0.0 | 153.944064 |
+| eng_llamacpp_4096_total_mb | 56601.298214 | 56755.242278 |
+| genz_chunked_kv_mb | 1152.0 | 581.625 |
+| genz_decode_kv_mb | 1024.0 | 402.8125 |
+| genz_decode_weights_mb | 44025.0 | 47914.21875 |
+| genz_kv_size | 131072 | 32768 |
+| genz_layer_kinds | {"MHA-global": 64} | {"MHA-global": 16, "Recurrent": 48} |
+| genz_prefill_kv_mb | 1024.0 | 402.8125 |
+| genz_prefill_weights_mb | 46450.0 | 50339.21875 |
+| prefix_kv_bytes_per_token | 262144 | 65536 |
+| serving_bytes_per_token | 262144 | 65536 |
+| serving_requests_8gib_1k | 32 | 38 |
+| serving_state_bytes | 0 | 153944064 |
 
 ## fixture:qwen3_8_27b_config.json (multimodal)
 
@@ -1454,6 +2239,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 44025.0 | 47914.21875 |
 | genz_kv_size | 131072 | 32768 |
 | genz_layer_kinds | {"MHA-global": 64} | {"MHA-global": 16, "Recurrent": 48} |
+| genz_prefill_kv_mb | 1024.0 | 402.8125 |
+| genz_prefill_weights_mb | 46450.0 | 50339.21875 |
+| prefix_kv_bytes_per_token | 262144 | 65536 |
 | serving_bytes_per_token | 262144 | 65536 |
 | serving_requests_8gib_1k | 32 | 38 |
 | serving_state_bytes | 0 | 153944064 |
@@ -1474,9 +2262,62 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | eng_llamacpp_4096_state_mb | 0.0 | 22.9376 |
 | eng_llamacpp_4096_total_mb | 5713.840128 | 5736.777728 |
 | genz_kv_size | 327680 | 0 |
+| prefix_kv_bytes_per_token | 655360 | 0 |
 | serving_bytes_per_token | 655360 | 0 |
 | serving_requests_8gib_1k | 12 | 374 |
 | serving_state_bytes | 0 | 22937600 |
+| slice_mib_16x4352 | [62208, true] | [62976, true] |
+
+## fixture:t5_flan-xl-geometry.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 196608 |
+| conv_layers | [16, 16] | [24, 24] |
+| disagg_transfer_bytes_640 | null | 251658240 |
+| eng_None_32768_kv_mb | 1118.69952 | 13179.813888 |
+| eng_None_32768_params | 1911775232 | 3002679296 |
+| eng_None_32768_total_mb | 5264.372531 | 19507.295027 |
+| eng_None_4096_kv_mb | 182.84544 | 1905.524736 |
+| eng_None_4096_params | 1911775232 | 3002679296 |
+| eng_None_4096_total_mb | 4167.457178 | 8071.944602 |
+| eng_llamacpp_32768_kv_mb | 1118.69952 | 13179.813888 |
+| eng_llamacpp_32768_params | 1911775232 | 3002679296 |
+| eng_llamacpp_32768_total_mb | 5264.372531 | 19507.295027 |
+| eng_llamacpp_4096_kv_mb | 182.84544 | 1905.524736 |
+| eng_llamacpp_4096_params | 1911775232 | 3002679296 |
+| eng_llamacpp_4096_total_mb | 4167.457178 | 8071.944602 |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout', 'd_ff', 'd_kv', 'd_model', 'dense_act_" | null |
+| genz_chunked_kv_mb | null | 1728.0 |
+| genz_decode_kv_mb | null | 1536.0 |
+| genz_decode_weights_mb | null | 2237.5 |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout', 'd_ff', 'd_kv', 'd_model', 'dense_act_" | null |
+| genz_ffn_kinds | null | {"Dense": 24} |
+| genz_kv_size | null | 196608 |
+| genz_layer_kinds | null | {"MHA-global": 24} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout', 'd_ff', 'd_kv', 'd_model', 'dense_act_" | null |
+| genz_prefill_kv_mb | null | 2304.0 |
+| genz_prefill_weights_mb | null | 4475.0 |
+| kv_cross_layers | 0 | 24 |
+| kv_gb@32768 | 0.0 | 12.884901888 |
+| kv_gb@4096 | 0.0 | 1.610612736 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'" | null |
+| prefix_kv_bytes_per_token | null | 393216 |
+| report_kv_gb | 0.18284544 | 1.905524736 |
+| report_params | 1911775232 | 3002679296 |
+| report_total_gb | 4.24007852 | 8.489101804 |
+| report_weight_gb | 3.823550464 | 6.005358592 |
+| serving_bytes_per_token | null | 393216 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout', 'd_ff', 'd_kv', 'd_model', 'dense_act_" | null |
+| serving_requests_8gib_1k | null | 21 |
+| serving_state_bytes | null | 0 |
+| sim_max_running | 331 | 69 |
+| slice_mib_16x4352 | [27904, true] | [42496, true] |
+| vllm_limits | [21856, 349696, 21856, 1, 0, 0.0, true] | [22144, 354304, 22144, 1, 0, 805306368.0, true] |
+| vllm_running_1024 | 273 | 65 |
+| vllm_running_8192 | 41 | 28 |
 
 ## fixture:tiiuae_Falcon-H1-34B-Instruct.json (hybrid)
 
@@ -1496,8 +2337,32 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_kv_mb | 365.625 | 866.109375 |
 | genz_decode_weights_mb | 71130.0 | 61616.71875 |
 | genz_layer_kinds | {"Mamba": 72} | {"MHA-global": 72} |
+| genz_prefill_kv_mb | 365.625 | 866.109375 |
+| genz_prefill_weights_mb | 73680.0 | 64166.71875 |
 | serving_requests_8gib_1k | 56 | 18 |
 | serving_state_bytes | 0 | 304201728 |
+
+## fixture:unknown-arch.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| eng_None_32768_kv_mb | 0.0 | 3758.096384 |
+| eng_None_32768_total_mb | 5326.41792 | 9084.514304 |
+| eng_None_4096_kv_mb | 0.0 | 469.762048 |
+| eng_None_4096_total_mb | 5074.75968 | 5544.521728 |
+| eng_llamacpp_32768_kv_mb | 0.0 | 3758.096384 |
+| eng_llamacpp_32768_total_mb | 5326.41792 | 9084.514304 |
+| eng_llamacpp_4096_kv_mb | 0.0 | 469.762048 |
+| eng_llamacpp_4096_total_mb | 5074.75968 | 5544.521728 |
+| kv_free_layers | 28 | 0 |
+| kv_full_layers | 0 | 28 |
+| kv_gb@32768 | 0.0 | 3.758096384 |
+| kv_gb@4096 | 0.0 | 0.469762048 |
+| kv_source | "_layer_metadata" | "layer_plan:layer_types" |
+| kvgeo_32768 | [0.0, 28, 0, 0.0, 16, 0.0] | [114688.0, 28, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 28, 0, 0.0, 16, 0.0] | [114688.0, 28, 0, 0.0, 16, 0.0] |
+| report_kv_gb | 0.0 | 0.469762048 |
+| report_total_gb | 5.125091328 | 5.688805786 |
 
 ## fixture:unsloth_gemma-3-27b-it.json (multimodal)
 
@@ -1510,6 +2375,41 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_chunked_kv_mb | 2232.0 | 984.0 |
 | genz_decode_kv_mb | 1984.0 | 736.0 |
 | genz_layer_kinds | {"MHA-global": 62} | {"MHA-global": 10, "MHA-local": 52} |
+| genz_prefill_kv_mb | 1984.0 | 736.0 |
+| sim_max_running | 32 | 28 |
+| slice_mib_16x4352 | [81582, false] | [80896, true] |
+| vllm_limits | [2067, 33072, 2067, 1, 0, 0.0, false] | [12818, 205088, 12818, 1, 6, 0.0, true] |
+| vllm_running_1024 | 25 | 27 |
+| vllm_running_8192 | 3 | 13 |
+
+## fixture:whisper-large-v3.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 81920 |
+| conv_state_bytes | 0 | 245760000 |
+| disagg_transfer_bytes_640 | 335544320 | 350617600 |
+| genz_chunked_kv_mb | 2304.0 | 1188.75 |
+| genz_decode_kv_mb | 2048.0 | 874.375 |
+| genz_decode_weights_mb | 10005.203125 | 1526.625977 |
+| genz_kv_size | 262144 | 81920 |
+| genz_prefill_kv_mb | 2048.0 | 1108.75 |
+| genz_prefill_weights_mb | 10410.40625 | 3053.251953 |
+| kv_cross_layers | 0 | 32 |
+| kv_full_layers | 0 | 32 |
+| kv_gb@32768 | 0.0 | 5.61446912 |
+| kv_gb@4096 | 0.0 | 0.91684864 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [163840.0, 32, 0, 0.0, 16, 245760000.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [163840.0, 32, 0, 0.0, 16, 245760000.0] |
+| prefix_kv_bytes_per_token | 524288 | 163840 |
+| serving_bytes_per_token | 524288 | 163840 |
+| serving_requests_8gib_1k | 16 | 20 |
+| serving_state_bytes | 0 | 245760000 |
+| sim_max_running | 400 | 173 |
+| slice_mib_16x4352 | [65536, true] | [70144, true] |
+| vllm_limits | [27594, 441504, 27594, 1, 0, 0.0, true] | [27594, 441504, 27594, 1, 0, 245760000.0, true] |
+| vllm_running_1024 | 344 | 158 |
+| vllm_running_8192 | 52 | 44 |
 
 ## genz:ai21labs/AI21-Jamba-1.5-Large (None)
 
@@ -1642,13 +2542,18 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | genz_decode_weights_mb | 2602.0 | 3539.265625 |
 | genz_kv_size | 24576 | 6144 |
 | genz_layer_kinds | {"MHA-global": 24} | {"MHA-global": 6, "Recurrent": 18} |
+| genz_prefill_kv_mb | 192.0 | 66.632812 |
+| genz_prefill_weights_mb | 3572.0 | 4509.265625 |
 | gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_act", "hidden_size", "intermediate_size", "layer_types", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "rope_theta", "ssm_conv_kernel", "ssm_inner_size", "ssm_n_groups", "ssm_state_size", "tie_word_embeddings", "time_step_rank", "vocab_size"] |
 | kv_free_layers | 0 | 18 |
 | kv_full_layers | 24 | 6 |
 | kv_gb@32768 | 1.610612736 | 0.402653184 |
 | kv_gb@4096 | 0.201326592 | 0.050331648 |
 | kv_source | "uniform" | "layer_plan:layer_types" |
+| kvgeo_32768 | [49152.0, 24, 0, 0.0, 16, 0.0] | [12288.0, 6, 18, 1085440.0, 544, 0.0] |
+| kvgeo_4096 | [49152.0, 24, 0, 0.0, 16, 0.0] | [12288.0, 6, 18, 1085440.0, 544, 0.0] |
 | model_type | "decoder-only" | "hybrid" |
+| prefix_kv_bytes_per_token | 49152 | 12288 |
 | report_kv_gb | 0.201326592 | 0.050331648 |
 | report_params | 1901268992 | 1855758390 |
 | report_state_gb | 0.0 | 0.01953792 |
@@ -1657,7 +2562,10 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | serving_bytes_per_token | 49152 | 12288 |
 | serving_requests_8gib_1k | 170 | 267 |
 | serving_state_bytes | 0 | 19537920 |
+| slice_mib_16x4352 | [14080, true] | [12032, true] |
 | state_gb | 0.0 | 0.01953792 |
+| vllm_limits | [88602, 1417632, 88602, 1, 0, 0.0, true] | [10493, 5708192, 10493, 1, 0, 20054016.0, true] |
+| vllm_running_8192 | 167 | 552 |
 
 ## gguf:SmolVLM-500M-Instruct-Q8_0.gguf (decoder-only)
 
@@ -1690,10 +2598,15 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | eng_llamacpp_4096_total_mb | 4360.946534 | 42328.890624 |
 | genz_decode_weights_mb | 3078.984375 | 38773.828125 |
 | genz_ffn_kinds | {"Dense": 24} | {"MoE": 24} |
+| genz_prefill_weights_mb | 4183.59375 | 39878.4375 |
 | gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "moe_intermediate_size", "n_routed_experts", "num_attention_heads", "num_experts", "num_experts_per_tok", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
 | report_params | 1992044160 | 20908068480 |
 | report_total_gb | 4.436318177 | 42.431441357 |
 | report_weight_gb | 3.98408832 | 41.81613696 |
+| slice_mib_16x4352 | [14336, true] | [52736, true] |
+| vllm_limits | [88043, 1408688, 88043, 1, 0, 0.0, true] | [40956, 655296, 40956, 1, 0, 0.0, true] |
+| vllm_running_1024 | 1024 | 511 |
+| vllm_running_8192 | 166 | 77 |
 
 ## gguf:nomic-embed-text-v1.5.Q8_0.gguf (decoder-only)
 
@@ -1708,8 +2621,1050 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | eng_llamacpp_4096_params | 109986816 | 136725504 |
 | eng_llamacpp_4096_total_mb | 454.015795 | 507.493171 |
 | genz_decode_weights_mb | 206.709961 | 260.709961 |
+| genz_prefill_weights_mb | 251.419922 | 305.419922 |
 | gguf_config_keys | ["hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
 | report_params | 109986816 | 136725504 |
 | report_total_gb | 0.500824228 | 0.554301604 |
 | report_weight_gb | 0.219973632 | 0.273451008 |
+| vllm_limits | [126489, 2023824, 126489, 1, 0, 0.0, true] | [126569, 2025104, 126569, 1, 0, 0.0, true] |
+
+## synth:blip2-flan-t5-xl (multimodal)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 196608 |
+| conv_layers | [16, 16] | [24, 24] |
+| disagg_transfer_bytes_640 | 23592960 | 251658240 |
+| eng_None_32768_kv_mb | 0.0 | 12884.901888 |
+| eng_None_32768_params | 1663986176 | 1538943488 |
+| eng_None_32768_total_mb | 3656.150426 | 16290.966938 |
+| eng_None_4096_kv_mb | 0.0 | 1610.612736 |
+| eng_None_4096_params | 1663986176 | 1538943488 |
+| eng_None_4096_total_mb | 3495.089152 | 4855.616512 |
+| eng_llamacpp_32768_kv_mb | 0.0 | 12884.901888 |
+| eng_llamacpp_32768_params | 1663986176 | 1538943488 |
+| eng_llamacpp_32768_total_mb | 3656.150426 | 16290.966938 |
+| eng_llamacpp_4096_kv_mb | 0.0 | 1610.612736 |
+| eng_llamacpp_4096_params | 1663986176 | 1538943488 |
+| eng_llamacpp_4096_total_mb | 3495.089152 | 4855.616512 |
+| genz_chunked_kv_mb | 162.0 | 1728.0 |
+| genz_decode_kv_mb | 144.0 | 1536.0 |
+| genz_decode_weights_mb | 208.875 | 2237.5 |
+| genz_ffn_kinds | {"Dense": 12} | {"Dense": 24} |
+| genz_kv_size | 18432 | 196608 |
+| genz_layer_kinds | {"MHA-global": 12} | {"MHA-global": 24} |
+| genz_prefill_kv_mb | 144.0 | 2304.0 |
+| genz_prefill_weights_mb | 255.75 | 4475.0 |
+| kv_cross_layers | 0 | 24 |
+| kv_gb@32768 | 0.0 | 12.884901888 |
+| kv_gb@4096 | 0.0 | 1.610612736 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 36864 | 393216 |
+| report_kv_gb | 0.0 | 1.610612736 |
+| report_params | 1663986176 | 1538943488 |
+| report_total_gb | 3.528512512 | 5.211162419 |
+| report_weight_gb | 3.327972352 | 3.077886976 |
+| serving_bytes_per_token | 36864 | 393216 |
+| serving_requests_8gib_1k | 227 | 21 |
+| sim_max_running | 322 | 67 |
+| slice_mib_16x4352 | [30208, true] | [44800, true] |
+| vllm_limits | [21221, 339536, 21221, 1, 0, 0.0, true] | [21508, 344128, 21508, 1, 0, 805306368.0, true] |
+| vllm_running_1024 | 265 | 64 |
+| vllm_running_8192 | 40 | 27 |
+
+## synth:chatglm3 (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 229376 |
+| conv_layers | [0, 32] | [0, 28] |
+| disagg_transfer_bytes_640 | 335544320 | 293601280 |
+| eng_None_32768_kv_mb | 6442.450944 | 15032.385536 |
+| eng_None_32768_params | 2357735424 | 5226901504 |
+| eng_None_32768_total_mb | 11938.062336 | 26266.329088 |
+| eng_None_4096_kv_mb | 805.306368 | 1879.048192 |
+| eng_None_4096_params | 2357735424 | 5226901504 |
+| eng_None_4096_total_mb | 5910.847488 | 12722.921472 |
+| eng_llamacpp_32768_kv_mb | 6442.450944 | 15032.385536 |
+| eng_llamacpp_32768_params | 2357735424 | 5226901504 |
+| eng_llamacpp_32768_total_mb | 11938.062336 | 26266.329088 |
+| eng_llamacpp_4096_kv_mb | 805.306368 | 1879.048192 |
+| eng_llamacpp_4096_params | 2357735424 | 5226901504 |
+| eng_llamacpp_4096_total_mb | 5910.847488 | 12722.921472 |
+| genz_chunked_kv_mb | 2304.0 | 2016.0 |
+| genz_decode_kv_mb | 2048.0 | 1792.0 |
+| genz_decode_weights_mb | 9850.0 | 8650.0 |
+| genz_ffn_kinds | {"Dense": 32} | {"Dense": 28} |
+| genz_kv_size | 262144 | 229376 |
+| genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 28} |
+| genz_prefill_kv_mb | 2048.0 | 1792.0 |
+| genz_prefill_weights_mb | 10100.0 | 8900.0 |
+| kv_gb@32768 | 6.442450944 | 15.032385536 |
+| kv_gb@4096 | 0.805306368 | 1.879048192 |
+| kvgeo_32768 | [458752.0, 1, 0, 0.0, 16, 0.0] | [458752.0, 28, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [458752.0, 1, 0, 0.0, 16, 0.0] | [458752.0, 28, 0, 0.0, 16, 0.0] |
+| model_type | "unknown" | "decoder-only" |
+| prefix_kv_bytes_per_token | 524288 | 458752 |
+| report_kv_gb | 0.805306368 | 1.879048192 |
+| report_params | 2357735424 | 5226901504 |
+| report_total_gb | 6.149922816 | 13.176745165 |
+| report_weight_gb | 4.715470848 | 10.453803008 |
+| serving_bytes_per_token | 524288 | 458752 |
+| serving_requests_8gib_1k | 16 | 18 |
+
+## synth:deepseek-v2-lite-mla (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 110592 | 15552 |
+| genz_chunked_kv_mb | 972.0 | 75.9375 |
+| genz_decode_kv_mb | null | 67.5 |
+| genz_decode_weights_mb | null | 28699.5 |
+| genz_error | "ValueError: cannot convert float NaN to integer" | null |
+| genz_ffn_kinds | {"MoE": 27} | {"Dense": 1, "MoE": 26} |
+| genz_prefill_error | "ValueError: cannot convert float NaN to integer" | null |
+| genz_prefill_kv_mb | null | 67.5 |
+| genz_prefill_weights_mb | null | 29099.5 |
+| prefix_kv_bytes_per_token | 221184 | 31104 |
+| serving_bytes_per_token | 221184 | 31104 |
+| serving_requests_8gib_1k | 37 | 269 |
+
+## synth:enc-dec-llama-dec (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 32768 |
+| conv_layers | [16, 16] | [24, 16] |
+| disagg_transfer_bytes_640 | 20971520 | 41943040 |
+| eng_None_32768_kv_mb | 701.80864 | 2294.939648 |
+| eng_None_32768_params | 808394240 | 1649767168 |
+| eng_None_32768_total_mb | 2484.691558 | 5760.568422 |
+| eng_None_4096_kv_mb | 114.60608 | 415.891456 |
+| eng_None_4096_params | 808394240 | 1649767168 |
+| eng_None_4096_total_mb | 1814.441779 | 3798.473011 |
+| eng_llamacpp_32768_kv_mb | 701.80864 | 2294.939648 |
+| eng_llamacpp_32768_params | 808394240 | 1649767168 |
+| eng_llamacpp_32768_total_mb | 2484.691558 | 5760.568422 |
+| eng_llamacpp_4096_kv_mb | 114.60608 | 415.891456 |
+| eng_llamacpp_4096_params | 808394240 | 1649767168 |
+| eng_llamacpp_4096_total_mb | 1814.441779 | 3798.473011 |
+| facts_layers | [32, 0, 0, null] | [16, 0, 0, null] |
+| genz_chunked_kv_mb | 144.0 | 288.0 |
+| genz_decode_kv_mb | 128.0 | 256.0 |
+| genz_decode_weights_mb | 1981.0 | 2237.0 |
+| genz_kv_size | 16384 | 32768 |
+| genz_prefill_kv_mb | 128.0 | 640.0 |
+| genz_prefill_weights_mb | 2106.0 | 3162.0 |
+| kv_cross_layers | 0 | 16 |
+| kv_full_layers | 0 | 16 |
+| kv_gb@32768 | 0.0 | 2.147483648 |
+| kv_gb@4096 | 0.0 | 0.268435456 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [65536.0, 16, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [65536.0, 16, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 32768 | 65536 |
+| report_kv_gb | 0.11460608 | 0.415891456 |
+| report_params | 808394240 | 1649767168 |
+| report_total_gb | 1.856430039 | 3.900257546 |
+| report_weight_gb | 1.61678848 | 3.299534336 |
+| serving_bytes_per_token | 32768 | 65536 |
+| serving_requests_8gib_1k | 256 | 128 |
+| sim_max_running | 72 | 400 |
+| slice_mib_16x4352 | [81582, false] | [16128, true] |
+| vllm_limits | [4702, 75232, 4702, 1, 0, 0.0, true] | [133835, 2141360, 133835, 1, 0, 134217728.0, true] |
+| vllm_running_1024 | 58 | 398 |
+| vllm_running_8192 | 8 | 170 |
+
+## synth:florence2 (multimodal)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 49152 |
+| conv_layers | [16, 16] | [12, 12] |
+| disagg_transfer_bytes_640 | null | 62914560 |
+| eng_None_32768_kv_mb | 0.0 | 3221.225472 |
+| eng_None_32768_total_mb | 804.21417 | 4025.439642 |
+| eng_None_4096_kv_mb | 0.0 | 402.653184 |
+| eng_None_4096_total_mb | 693.484544 | 1096.137728 |
+| eng_llamacpp_32768_kv_mb | 0.0 | 3221.225472 |
+| eng_llamacpp_32768_total_mb | 804.21417 | 4025.439642 |
+| eng_llamacpp_4096_kv_mb | 0.0 | 402.653184 |
+| eng_llamacpp_4096_total_mb | 693.484544 | 1096.137728 |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t" | null |
+| genz_chunked_kv_mb | null | 432.0 |
+| genz_decode_kv_mb | null | 384.0 |
+| genz_decode_weights_mb | null | 436.173828 |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t" | null |
+| genz_ffn_kinds | null | {"Dense": 12} |
+| genz_kv_size | null | 49152 |
+| genz_layer_kinds | null | {"MHA-global": 12} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t" | null |
+| genz_prefill_kv_mb | null | 576.0 |
+| genz_prefill_weights_mb | null | 872.347656 |
+| kv_cross_layers | 0 | 12 |
+| kv_full_layers | 0 | 12 |
+| kv_gb@32768 | 0.0 | 3.221225472 |
+| kv_gb@4096 | 0.0 | 0.402653184 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [" | null |
+| prefix_kv_bytes_per_token | null | 98304 |
+| report_kv_gb | 0.0 | 0.402653184 |
+| report_total_gb | 0.716136243 | 1.199320064 |
+| serving_bytes_per_token | null | 98304 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t" | null |
+| serving_requests_8gib_1k | null | 85 |
+| serving_state_bytes | null | 0 |
+| slice_mib_16x4352 | [10496, true] | [14336, true] |
+| vllm_limits | [93844, 1501504, 93844, 1, 0, 0.0, true] | [93844, 1501504, 93844, 1, 0, 50331648.0, true] |
+| vllm_running_1024 | 1024 | 651 |
+| vllm_running_8192 | 177 | 158 |
+
+## synth:gemma2-9b-hub (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| eng_None_32768_kv_mb | 1409.286144 | 11274.289152 |
+| eng_None_32768_total_mb | 20726.532915 | 30591.535923 |
+| eng_llamacpp_32768_kv_mb | 1409.286144 | 11274.289152 |
+| eng_llamacpp_32768_total_mb | 20726.532915 | 30591.535923 |
+| facts_full_attention | true | false |
+| facts_layers | [42, 0, 0, null] | [21, 21, 0, 4096] |
+| genz_layer_kinds | {"MHA-global": 42} | {"MHA-global": 21, "MHA-local": 21} |
+| kv_full_layers | 0 | 21 |
+| kv_gb@32768 | 1.409286144 | 11.274289152 |
+| kv_sliding_layers | 42 | 21 |
+| kv_source | "uniform" | "_layer_metadata" |
+| kvgeo_32768 | [0.0, 42, 0, 0.0, 16, 0.0] | [344064.0, 42, 0, 0.0, 16, 0.0] |
+| slice_mib_16x4352 | [52992, true] | [52224, true] |
+| vllm_limits | [9855, 157680, 9855, 1, 0, 0.0, true] | [19711, 315376, 19711, 1, 1, 0.0, true] |
+| vllm_running_8192 | 18 | 25 |
+
+## synth:gguf-swa-full-pattern (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| facts_full_attention | true | false |
+| facts_layers | [34, 0, 0, null] | [5, 29, 0, 1024] |
+| genz_chunked_kv_mb | 612.0 | 264.0 |
+| genz_decode_kv_mb | 544.0 | 196.0 |
+| genz_layer_kinds | {"MHA-global": 34} | {"MHA-global": 5, "MHA-local": 29} |
+| genz_prefill_kv_mb | 544.0 | 196.0 |
+| kv_full_layers | 34 | 5 |
+| kv_sliding_layers | 0 | 29 |
+| kv_source | "uniform" | "layer_plan:layer_types" |
+| kvgeo_32768 | [139264.0, 34, 0, 0.0, 16, 0.0] | [139264.0, 5, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [139264.0, 34, 0, 0.0, 16, 0.0] | [139264.0, 5, 0, 0.0, 16, 0.0] |
+| slice_mib_16x4352 | [24832, true] | [17664, true] |
+| vllm_limits | [29394, 470304, 29394, 1, 0, 0.0, true] | [199885, 3198160, 199885, 1, 6, 0.0, true] |
+| vllm_running_1024 | 367 | 425 |
+| vllm_running_8192 | 55 | 217 |
+
+## synth:gguf-swa-short-pattern (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| facts_full_attention | true | false |
+| facts_layers | [34, 0, 0, null] | [29, 5, 0, 1024] |
+| genz_chunked_kv_mb | 612.0 | 552.0 |
+| genz_decode_kv_mb | 544.0 | 484.0 |
+| genz_layer_kinds | {"MHA-global": 34} | {"MHA-global": 29, "MHA-local": 5} |
+| genz_prefill_kv_mb | 544.0 | 484.0 |
+| kv_full_layers | 34 | 29 |
+| kv_sliding_layers | 0 | 5 |
+| kv_source | "uniform" | "layer_plan:layer_types" |
+| kvgeo_32768 | [139264.0, 34, 0, 0.0, 16, 0.0] | [139264.0, 29, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [139264.0, 34, 0, 0.0, 16, 0.0] | [139264.0, 29, 0, 0.0, 16, 0.0] |
+| slice_mib_16x4352 | [24832, true] | [24064, true] |
+| vllm_limits | [29394, 470304, 29394, 1, 0, 0.0, true] | [199885, 3198160, 33314, 6, 1, 0.0, true] |
+| vllm_running_1024 | 367 | 366 |
+| vllm_running_8192 | 55 | 61 |
+
+## synth:instructblip-flan-t5-xl (multimodal)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 196608 |
+| conv_layers | [16, 16] | [24, 24] |
+| disagg_transfer_bytes_640 | 23592960 | 251658240 |
+| eng_None_32768_kv_mb | 0.0 | 12884.901888 |
+| eng_None_32768_params | 1663986176 | 1538943488 |
+| eng_None_32768_total_mb | 3656.150426 | 16290.966938 |
+| eng_None_4096_kv_mb | 0.0 | 1610.612736 |
+| eng_None_4096_params | 1663986176 | 1538943488 |
+| eng_None_4096_total_mb | 3495.089152 | 4855.616512 |
+| eng_llamacpp_32768_kv_mb | 0.0 | 12884.901888 |
+| eng_llamacpp_32768_params | 1663986176 | 1538943488 |
+| eng_llamacpp_32768_total_mb | 3656.150426 | 16290.966938 |
+| eng_llamacpp_4096_kv_mb | 0.0 | 1610.612736 |
+| eng_llamacpp_4096_params | 1663986176 | 1538943488 |
+| eng_llamacpp_4096_total_mb | 3495.089152 | 4855.616512 |
+| genz_chunked_kv_mb | 162.0 | 1728.0 |
+| genz_decode_kv_mb | 144.0 | 1536.0 |
+| genz_decode_weights_mb | 208.875 | 2237.5 |
+| genz_ffn_kinds | {"Dense": 12} | {"Dense": 24} |
+| genz_kv_size | 18432 | 196608 |
+| genz_layer_kinds | {"MHA-global": 12} | {"MHA-global": 24} |
+| genz_prefill_kv_mb | 144.0 | 2304.0 |
+| genz_prefill_weights_mb | 255.75 | 4475.0 |
+| kv_cross_layers | 0 | 24 |
+| kv_gb@32768 | 0.0 | 12.884901888 |
+| kv_gb@4096 | 0.0 | 1.610612736 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 36864 | 393216 |
+| report_kv_gb | 0.0 | 1.610612736 |
+| report_params | 1663986176 | 1538943488 |
+| report_total_gb | 3.528512512 | 5.211162419 |
+| report_weight_gb | 3.327972352 | 3.077886976 |
+| serving_bytes_per_token | 36864 | 393216 |
+| serving_requests_8gib_1k | 227 | 21 |
+| sim_max_running | 322 | 67 |
+| slice_mib_16x4352 | [30208, true] | [44800, true] |
+| vllm_limits | [21221, 339536, 21221, 1, 0, 0.0, true] | [21508, 344128, 21508, 1, 0, 805306368.0, true] |
+| vllm_running_1024 | 265 | 64 |
+| vllm_running_8192 | 40 | 27 |
+
+## synth:llama4-maverick-text (unknown)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 98304 |
+| conv_layers | [0, 32] | [0, 48] |
+| genz_decode_weights_mb | 990833.125 | 506963.125 |
+| genz_ffn_kinds | {"MoE": 48} | {"Dense": 24, "MoE": 24} |
+| genz_prefill_weights_mb | 992806.25 | 508936.25 |
+
+## synth:llama4-scout-text (unknown)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 98304 |
+| conv_layers | [0, 32] | [0, 48] |
+
+## synth:marian-noflag (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 12288 |
+| conv_layers | [0, 32] | [6, 6] |
+| disagg_transfer_bytes_640 | 335544320 | 15728640 |
+| eng_None_32768_kv_mb | 439.517184 | 823.738368 |
+| eng_None_32768_total_mb | 701.818266 | 1086.03945 |
+| eng_None_4096_kv_mb | 87.195648 | 119.095296 |
+| eng_None_4096_total_mb | 294.131917 | 326.031565 |
+| eng_llamacpp_32768_kv_mb | 439.517184 | 823.738368 |
+| eng_llamacpp_32768_total_mb | 701.818266 | 1086.03945 |
+| eng_llamacpp_4096_kv_mb | 87.195648 | 119.095296 |
+| eng_llamacpp_4096_total_mb | 294.131917 | 326.031565 |
+| genz_chunked_kv_mb | 2304.0 | 108.0 |
+| genz_decode_kv_mb | 2048.0 | 96.0 |
+| genz_decode_weights_mb | 10053.914062 | 98.739258 |
+| genz_ffn_kinds | {"Dense": 32} | {"Dense": 6} |
+| genz_kv_size | 262144 | 12288 |
+| genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 6} |
+| genz_prefill_kv_mb | 2048.0 | 144.0 |
+| genz_prefill_weights_mb | 10507.828125 | 197.478516 |
+| kv_cross_layers | 0 | 6 |
+| kv_full_layers | 0 | 6 |
+| kv_gb@32768 | 0.0 | 0.805306368 |
+| kv_gb@4096 | 0.0 | 0.100663296 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 6, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 6, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 524288 | 24576 |
+| report_kv_gb | 0.087195648 | 0.119095296 |
+| report_total_gb | 0.323719209 | 0.361998787 |
+| serving_bytes_per_token | 524288 | 24576 |
+| serving_requests_8gib_1k | 16 | 341 |
+| slice_mib_16x4352 | [6656, true] | [7680, true] |
+| vllm_limits | [380038, 6080608, 380038, 1, 0, 0.0, true] | [380038, 6080608, 380038, 1, 0, 50331648.0, true] |
+| vllm_running_8192 | 719 | 484 |
+
+## synth:mpt-7b (unknown)
+
+| figure | before | after |
+|---|---|---|
+| eng_None_32768_kv_mb | 0.0 | 17179.869184 |
+| eng_None_32768_params | 6647455744 | 6649552896 |
+| eng_None_32768_total_mb | 14180.748493 | 31364.811981 |
+| eng_None_4096_kv_mb | 0.0 | 2147.483648 |
+| eng_None_4096_params | 6647455744 | 6649552896 |
+| eng_None_4096_total_mb | 13737.82999 | 15889.507942 |
+| eng_llamacpp_32768_kv_mb | 0.0 | 17179.869184 |
+| eng_llamacpp_32768_params | 6647455744 | 6649552896 |
+| eng_llamacpp_32768_total_mb | 14180.748493 | 31364.811981 |
+| eng_llamacpp_4096_kv_mb | 0.0 | 2147.483648 |
+| eng_llamacpp_4096_params | 6647455744 | 6649552896 |
+| eng_llamacpp_4096_total_mb | 13737.82999 | 15889.507942 |
+| kv_gb@32768 | 0.0 | 17.179869184 |
+| kv_gb@4096 | 0.0 | 2.147483648 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [524288.0, 32, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [524288.0, 32, 0, 0.0, 16, 0.0] |
+| report_kv_gb | 0.0 | 2.147483648 |
+| report_params | 6647455744 | 6649552896 |
+| report_total_gb | 13.826413691 | 16.407588372 |
+| report_weight_gb | 13.294911488 | 13.299105792 |
+
+## synth:mt5-noflag (unknown)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 12288 |
+| conv_layers | [0, 32] | [8, 8] |
+| disagg_transfer_bytes_640 | 335544320 | 15728640 |
+| eng_None_32768_kv_mb | 0.0 | 805.306368 |
+| eng_None_32768_params | 153052160 | 142754816 |
+| eng_None_32768_total_mb | 376.568627 | 1161.280307 |
+| eng_None_4096_kv_mb | 0.0 | 100.663296 |
+| eng_None_4096_params | 153052160 | 142754816 |
+| eng_None_4096_total_mb | 341.336474 | 421.405082 |
+| eng_llamacpp_32768_kv_mb | 0.0 | 805.306368 |
+| eng_llamacpp_32768_params | 153052160 | 142754816 |
+| eng_llamacpp_32768_total_mb | 376.568627 | 1161.280307 |
+| eng_llamacpp_4096_kv_mb | 0.0 | 100.663296 |
+| eng_llamacpp_4096_params | 153052160 | 142754816 |
+| eng_llamacpp_4096_total_mb | 341.336474 | 421.405082 |
+| genz_chunked_kv_mb | 2304.0 | 108.0 |
+| genz_decode_kv_mb | 2048.0 | 96.0 |
+| genz_decode_weights_mb | 11554.0 | 278.25 |
+| genz_ffn_kinds | {"Dense": 32} | {"Dense": 8} |
+| genz_kv_size | 262144 | 12288 |
+| genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8} |
+| genz_prefill_kv_mb | 2048.0 | 144.0 |
+| genz_prefill_weights_mb | 13508.0 | 556.5 |
+| kv_cross_layers | 0 | 8 |
+| kv_gb@32768 | 0.0 | 0.805306368 |
+| kv_gb@4096 | 0.0 | 0.100663296 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 8, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 8, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 524288 | 24576 |
+| report_kv_gb | 0.0 | 0.100663296 |
+| report_params | 153052160 | 142754816 |
+| report_total_gb | 0.348382904 | 0.448584172 |
+| report_weight_gb | 0.30610432 | 0.285509632 |
+| serving_bytes_per_token | 524288 | 24576 |
+| serving_requests_8gib_1k | 16 | 341 |
+| slice_mib_16x4352 | [7424, true] | [8192, true] |
+| vllm_limits | [281214, 4499424, 281214, 1, 0, 0.0, true] | [375102, 6001632, 375102, 1, 0, 50331648.0, true] |
+| vllm_running_8192 | 532 | 478 |
+
+## synth:musicgen-small (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 98304 |
+| conv_layers | [16, 16] | [12, 24] |
+| disagg_transfer_bytes_640 | 62914560 | 125829120 |
+| eng_None_32768_kv_mb | 701.80864 | 6497.746944 |
+| eng_None_32768_params | 808394240 | 1080272640 |
+| eng_None_32768_total_mb | 2484.691558 | 8824.386662 |
+| eng_None_4096_kv_mb | 114.60608 | 860.602368 |
+| eng_None_4096_params | 808394240 | 1080272640 |
+| eng_None_4096_total_mb | 1814.441779 | 3104.194867 |
+| eng_llamacpp_32768_kv_mb | 701.80864 | 6497.746944 |
+| eng_llamacpp_32768_params | 808394240 | 1080272640 |
+| eng_llamacpp_32768_total_mb | 2484.691558 | 8824.386662 |
+| eng_llamacpp_4096_kv_mb | 114.60608 | 860.602368 |
+| eng_llamacpp_4096_params | 808394240 | 1080272640 |
+| eng_llamacpp_4096_total_mb | 1814.441779 | 3104.194867 |
+| facts_layers | [32, 0, 0, null] | [24, 0, 0, null] |
+| genz_chunked_kv_mb | 432.0 | 864.0 |
+| genz_decode_kv_mb | 384.0 | 768.0 |
+| genz_decode_weights_mb | 580.0 | 676.0 |
+| genz_kv_size | 49152 | 98304 |
+| genz_prefill_kv_mb | 384.0 | 912.0 |
+| genz_prefill_weights_mb | 584.0 | 914.0 |
+| kv_cross_layers | 0 | 24 |
+| kv_full_layers | 0 | 24 |
+| kv_gb@32768 | 0.0 | 6.442450944 |
+| kv_gb@4096 | 0.0 | 0.805306368 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [196608.0, 24, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [196608.0, 24, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 98304 | 196608 |
+| report_kv_gb | 0.11460608 | 0.860602368 |
+| report_params | 808394240 | 1080272640 |
+| report_total_gb | 1.856430039 | 3.294460785 |
+| report_weight_gb | 1.61678848 | 2.16054528 |
+| serving_bytes_per_token | 98304 | 196608 |
+| serving_requests_8gib_1k | 85 | 42 |
+| sim_max_running | 72 | 242 |
+| slice_mib_16x4352 | [81582, false] | [22528, true] |
+| vllm_limits | [4702, 75232, 4702, 1, 0, 0.0, true] | [46826, 749216, 46826, 1, 0, 201326592.0, true] |
+| vllm_running_1024 | 58 | 225 |
+| vllm_running_8192 | 8 | 71 |
+
+## synth:nemotronh-list-depth (hybrid)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 65536 | 8192 |
+| conv_layers | [0, 32] | [0, 52] |
+| conv_state_bytes | 0 | 102137856 |
+| disagg_transfer_bytes_640 | null | 112623616 |
+| eng_None_32768_kv_mb | 805.306368 | 536.870912 |
+| eng_None_32768_params | 2183850336 | 8135050240 |
+| eng_None_32768_state_mb | 0.0 | 102.137856 |
+| eng_None_32768_total_mb | 6260.170637 | 17996.272845 |
+| eng_None_4096_kv_mb | 100.663296 | 67.108864 |
+| eng_None_4096_params | 2183850336 | 8135050240 |
+| eng_None_4096_state_mb | 0.0 | 102.137856 |
+| eng_None_4096_total_mb | 5011.945766 | 16982.928998 |
+| eng_llamacpp_32768_kv_mb | 805.306368 | 536.870912 |
+| eng_llamacpp_32768_params | 2183850336 | 8135050240 |
+| eng_llamacpp_32768_state_mb | 0.0 | 102.137856 |
+| eng_llamacpp_32768_total_mb | 6260.170637 | 17996.272845 |
+| eng_llamacpp_4096_kv_mb | 100.663296 | 67.108864 |
+| eng_llamacpp_4096_params | 2183850336 | 8135050240 |
+| eng_llamacpp_4096_state_mb | 0.0 | 102.137856 |
+| eng_llamacpp_4096_total_mb | 5011.945766 | 16982.928998 |
+| facts_full_attention | true | false |
+| facts_layers | [32, 0, 0, null] | [4, 0, 24, null] |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'auto_map', 'bos_token_id', 'chunk_size', '" | null |
+| genz_chunked_kv_mb | null | 266.8125 |
+| genz_decode_kv_mb | null | 161.40625 |
+| genz_decode_weights_mb | null | 14426.8125 |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'auto_map', 'bos_token_id', 'chunk_size', '" | null |
+| genz_ffn_kinds | null | {"Dense": 24, "no_op": 28} |
+| genz_kv_size | null | 8192 |
+| genz_layer_kinds | null | {"MHA-global": 4, "Recurrent": 24, "no_op": 24} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'auto_map', 'bos_token_id', 'chunk_size', '" | null |
+| genz_prefill_kv_mb | null | 161.40625 |
+| genz_prefill_weights_mb | null | 15450.8125 |
+| kv_free_layers | 0 | 48 |
+| kv_full_layers | 0 | 4 |
+| kv_gb@32768 | 0.805306368 | 0.536870912 |
+| kv_gb@4096 | 0.100663296 | 0.067108864 |
+| kv_source | "uniform" | "layer_plan:layers_block_type" |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 24, 4255744.0, 1040, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 24, 4255744.0, 1040, 0.0] |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au" | null |
+| prefix_kv_bytes_per_token | null | 16384 |
+| report_kv_gb | 0.100663296 | 0.067108864 |
+| report_params | 2183850336 | 8135050240 |
+| report_state_gb | 0.025534464 | 0.102137856 |
+| report_total_gb | 5.171436142 | 17.125494702 |
+| report_weight_gb | 4.367700672 | 16.27010048 |
+| serving_bytes_per_token | null | 16384 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'auto_map', 'bos_token_id', 'chunk_size', '" | null |
+| serving_requests_8gib_1k | null | 72 |
+| serving_state_bytes | null | 102137856 |
+| sim_max_running | 384 | 400 |
+| slice_mib_16x4352 | [37376, true] | [32512, true] |
+| state_gb | 0.025534464 | 0.102137856 |
+| vllm_limits | [25363, 405808, 25363, 1, 0, 0.0, true] | [3176, 3303040, 3176, 1, 0, 102236160.0, true] |
+| vllm_running_1024 | 317 | 397 |
+| vllm_running_8192 | 48 | 211 |
+
+## synth:nemotronh-list-depth-nested (hybrid)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 8192 |
+| conv_layers | [0, 32] | [0, 52] |
+| conv_state_bytes | 0 | 102137856 |
+| disagg_transfer_bytes_640 | null | 112623616 |
+| eng_None_32768_kv_mb | 1610.612736 | 536.870912 |
+| eng_None_32768_params | 123570432 | 247087176 |
+| eng_None_32768_state_mb | 0.0 | 102.137856 |
+| eng_None_32768_total_mb | 2944.917197 | 2220.346717 |
+| eng_None_4096_kv_mb | 201.326592 | 67.108864 |
+| eng_None_4096_params | 123570432 | 247087176 |
+| eng_None_4096_state_mb | 0.0 | 102.137856 |
+| eng_None_4096_total_mb | 992.049254 | 1207.00287 |
+| eng_llamacpp_32768_kv_mb | 1610.612736 | 536.870912 |
+| eng_llamacpp_32768_params | 123570432 | 247087176 |
+| eng_llamacpp_32768_state_mb | 0.0 | 102.137856 |
+| eng_llamacpp_32768_total_mb | 2944.917197 | 2220.346717 |
+| eng_llamacpp_4096_kv_mb | 201.326592 | 67.108864 |
+| eng_llamacpp_4096_params | 123570432 | 247087176 |
+| eng_llamacpp_4096_state_mb | 0.0 | 102.137856 |
+| eng_llamacpp_4096_total_mb | 992.049254 | 1207.00287 |
+| facts_full_attention | true | false |
+| facts_layers | [32, 0, 0, null] | [4, 0, 24, null] |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at the top level and in nested blocks. Refu" | null |
+| genz_chunked_kv_mb | null | 266.8125 |
+| genz_decode_kv_mb | null | 161.40625 |
+| genz_decode_weights_mb | null | 14426.8125 |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at the top level and in nested blocks. Refu" | null |
+| genz_ffn_kinds | null | {"Dense": 24, "no_op": 28} |
+| genz_kv_size | null | 8192 |
+| genz_layer_kinds | null | {"MHA-global": 4, "Recurrent": 24, "no_op": 24} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at the top level and in nested blocks. Refu" | null |
+| genz_prefill_kv_mb | null | 161.40625 |
+| genz_prefill_weights_mb | null | 15450.8125 |
+| kv_free_layers | 0 | 48 |
+| kv_full_layers | 0 | 4 |
+| kv_gb@32768 | 1.610612736 | 0.536870912 |
+| kv_gb@4096 | 0.201326592 | 0.067108864 |
+| kv_source | "uniform" | "layer_plan:layers_block_type" |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 24, 4255744.0, 1040, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 24, 4255744.0, 1040, 0.0] |
+| model_type | "unknown" | "hybrid" |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at " | null |
+| prefix_kv_bytes_per_token | null | 16384 |
+| report_kv_gb | 0.201326592 | 0.067108864 |
+| report_params | 123570432 | 247087176 |
+| report_state_gb | 0.0 | 0.102137856 |
+| report_total_gb | 1.141030932 | 1.349568574 |
+| report_weight_gb | 0.247140864 | 0.494174352 |
+| serving_bytes_per_token | null | 16384 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at the top level and in nested blocks. Refu" | null |
+| serving_requests_8gib_1k | null | 72 |
+| serving_state_bytes | null | 102137856 |
+| sim_max_running | 384 | 400 |
+| slice_mib_16x4352 | [37376, true] | [32512, true] |
+| state_gb | 0.0 | 0.102137856 |
+| vllm_limits | [25363, 405808, 25363, 1, 0, 0.0, true] | [3176, 3303040, 3176, 1, 0, 102236160.0, true] |
+| vllm_running_1024 | 317 | 397 |
+| vllm_running_8192 | 48 | 211 |
+
+## synth:nllb-moe (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| disagg_transfer_bytes_640 | 335544320 | 251658240 |
+| eng_None_32768_kv_mb | 7032.274944 | 13179.813888 |
+| eng_None_32768_total_mb | 14196.983398 | 20344.522342 |
+| eng_None_4096_kv_mb | 1395.130368 | 1905.524736 |
+| eng_None_4096_total_mb | 8338.379571 | 8848.773939 |
+| eng_llamacpp_32768_kv_mb | 7032.274944 | 13179.813888 |
+| eng_llamacpp_32768_total_mb | 14196.983398 | 20344.522342 |
+| eng_llamacpp_4096_kv_mb | 1395.130368 | 1905.524736 |
+| eng_llamacpp_4096_total_mb | 8338.379571 | 8848.773939 |
+| genz_chunked_kv_mb | 2304.0 | 1728.0 |
+| genz_decode_kv_mb | 2048.0 | 1536.0 |
+| genz_decode_weights_mb | 710641.609375 | 198772.804688 |
+| genz_ffn_kinds | {"MoE": 32} | {"MoE": 24} |
+| genz_kv_size | 262144 | 196608 |
+| genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 24} |
+| genz_prefill_kv_mb | 2048.0 | 2304.0 |
+| genz_prefill_weights_mb | 712643.21875 | 202461.609375 |
+| kv_cross_layers | 0 | 24 |
+| kv_full_layers | 0 | 24 |
+| kv_gb@32768 | 0.0 | 12.884901888 |
+| kv_gb@4096 | 0.0 | 1.610612736 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 524288 | 393216 |
+| report_kv_gb | 1.395130368 | 1.905524736 |
+| report_total_gb | 8.665537495 | 9.278010737 |
+| serving_bytes_per_token | 524288 | 393216 |
+| serving_requests_8gib_1k | 16 | 21 |
+| vllm_limits | [0, 0, 0, 1, 0, 0.0, false] | [0, 0, 0, 1, 0, 805306368.0, false] |
+
+## synth:prophetnet (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 32768 | 49152 |
+| conv_layers | [16, 16] | [12, 12] |
+| disagg_transfer_bytes_640 | 83886080 | 62914560 |
+| eng_None_32768_kv_mb | 559.34976 | 3294.953472 |
+| eng_None_32768_params | 506632192 | 640940032 |
+| eng_None_32768_total_mb | 1794.073395 | 4798.292787 |
+| eng_None_4096_kv_mb | 91.42272 | 476.381184 |
+| eng_None_4096_params | 506632192 | 640940032 |
+| eng_None_4096_total_mb | 1215.41673 | 1868.990874 |
+| eng_llamacpp_32768_kv_mb | 559.34976 | 3294.953472 |
+| eng_llamacpp_32768_params | 506632192 | 640940032 |
+| eng_llamacpp_32768_total_mb | 1794.073395 | 4798.292787 |
+| eng_llamacpp_4096_kv_mb | 91.42272 | 476.381184 |
+| eng_llamacpp_4096_params | 506632192 | 640940032 |
+| eng_llamacpp_4096_total_mb | 1215.41673 | 1868.990874 |
+| facts_layers | [32, 0, 0, null] | [12, 0, 0, null] |
+| genz_chunked_kv_mb | 576.0 | 432.0 |
+| genz_decode_kv_mb | 512.0 | 384.0 |
+| genz_decode_weights_mb | 1691.613281 | 395.613281 |
+| genz_ffn_kinds | {"Dense": 32} | {"Dense": 12} |
+| genz_kv_size | 65536 | 49152 |
+| genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 12} |
+| genz_prefill_kv_mb | 512.0 | 576.0 |
+| genz_prefill_weights_mb | 1751.226562 | 791.226562 |
+| kv_cross_layers | 0 | 12 |
+| kv_full_layers | 0 | 12 |
+| kv_gb@32768 | 0.0 | 3.221225472 |
+| kv_gb@4096 | 0.0 | 0.402653184 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 131072 | 98304 |
+| report_kv_gb | 0.09142272 | 0.476381184 |
+| report_params | 506632192 | 640940032 |
+| report_total_gb | 1.257843999 | 1.988409836 |
+| report_weight_gb | 1.013264384 | 1.281880064 |
+| serving_bytes_per_token | 131072 | 98304 |
+| serving_requests_8gib_1k | 64 | 85 |
+| slice_mib_16x4352 | [18432, true] | [14336, true] |
+| vllm_limits | [34622, 553952, 34622, 1, 0, 0.0, true] | [94033, 1504528, 94033, 1, 0, 25165824.0, true] |
+| vllm_running_1024 | 432 | 839 |
+| vllm_running_8192 | 65 | 167 |
+
+## synth:qwen35-list-depth (multimodal)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 16384 |
+| conv_state_bytes | 0 | 51511296 |
+| disagg_transfer_bytes_640 | null | 72482816 |
+| eng_None_32768_params | 2622843904 | 4944920064 |
+| eng_None_32768_state_mb | 0.0 | 51.511296 |
+| eng_None_32768_total_mb | 6833.655398 | 11529.319014 |
+| eng_None_4096_params | 2622843904 | 4944920064 |
+| eng_None_4096_state_mb | 0.0 | 51.511296 |
+| eng_None_4096_total_mb | 5637.439898 | 10333.103514 |
+| eng_llamacpp_32768_params | 2622843904 | 4944920064 |
+| eng_llamacpp_32768_state_mb | 0.0 | 51.511296 |
+| eng_llamacpp_32768_total_mb | 6833.655398 | 11529.319014 |
+| eng_llamacpp_4096_params | 2622843904 | 4944920064 |
+| eng_llamacpp_4096_state_mb | 0.0 | 51.511296 |
+| eng_llamacpp_4096_total_mb | 5637.439898 | 10333.103514 |
+| facts_full_attention | true | false |
+| facts_layers | [32, 0, 0, null] | [8, 0, 24, null] |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddings', 'transformers_version', 'video_tok" | null |
+| genz_chunked_kv_mb | null | 242.25 |
+| genz_decode_kv_mb | null | 177.125 |
+| genz_decode_weights_mb | null | 7861.523438 |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddings', 'transformers_version', 'video_tok" | null |
+| genz_ffn_kinds | null | {"Dense": 32} |
+| genz_kv_size | null | 16384 |
+| genz_layer_kinds | null | {"MHA-global": 8, "Recurrent": 24} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddings', 'transformers_version', 'video_tok" | null |
+| genz_prefill_kv_mb | null | 177.125 |
+| genz_prefill_weights_mb | null | 9074.023438 |
+| kv_free_layers | 0 | 24 |
+| kv_source | "_layer_metadata" | "layer_plan:layer_types" |
+| kvgeo_32768 | [32768.0, 1, 0, 0.0, 16, 0.0] | [32768.0, 8, 24, 2146304.0, 528, 0.0] |
+| kvgeo_4096 | [32768.0, 1, 0, 0.0, 16, 0.0] | [32768.0, 8, 24, 2146304.0, 528, 0.0] |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi" | null |
+| prefix_kv_bytes_per_token | null | 32768 |
+| report_params | 2622843904 | 4944920064 |
+| report_state_gb | 0.0 | 0.051511296 |
+| report_total_gb | 5.715790316 | 10.421756191 |
+| report_weight_gb | 5.245687808 | 9.889840128 |
+| serving_bytes_per_token | null | 32768 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddings', 'transformers_version', 'video_tok" | null |
+| serving_requests_8gib_1k | null | 100 |
+| serving_state_bytes | null | 51511296 |
+| slice_mib_16x4352 | [23808, true] | [20480, true] |
+| state_gb | 0.0 | 0.051511296 |
+| vllm_limits | [31388, 502208, 31388, 1, 0, 0.0, true] | [3767, 1988976, 3767, 1, 0, 51904512.0, true] |
+| vllm_running_1024 | 392 | 627 |
+| vllm_running_8192 | 59 | 198 |
+
+## synth:rwkv (state-space)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 98304 | 0 |
+| conv_state_bytes | 0 | 983040 |
+| disagg_transfer_bytes_640 | 125829120 | 983040 |
+| eng_None_32768_params | 1309554688 | 1311373312 |
+| eng_None_32768_state_mb | 0.0 | 0.98304 |
+| eng_None_32768_total_mb | 3062.027878 | 3066.648166 |
+| eng_None_4096_params | 1309554688 | 1311373312 |
+| eng_None_4096_state_mb | 0.0 | 0.98304 |
+| eng_None_4096_total_mb | 2840.568627 | 2845.188915 |
+| eng_llamacpp_32768_params | 1309554688 | 1311373312 |
+| eng_llamacpp_32768_state_mb | 0.0 | 0.98304 |
+| eng_llamacpp_32768_total_mb | 3062.027878 | 3066.648166 |
+| eng_llamacpp_4096_params | 1309554688 | 1311373312 |
+| eng_llamacpp_4096_state_mb | 0.0 | 0.98304 |
+| eng_llamacpp_4096_total_mb | 2840.568627 | 2845.188915 |
+| facts_full_attention | true | false |
+| facts_layers | [24, 0, 0, null] | [0, 0, 24, null] |
+| genz_chunked_kv_mb | 864.0 | 1.875 |
+| genz_decode_kv_mb | 768.0 | 0.9375 |
+| genz_decode_weights_mb | 2500.394531 | 2500.863281 |
+| genz_kv_size | 98304 | 0 |
+| genz_layer_kinds | {"MHA-global": 24} | {"Recurrent": 24} |
+| genz_prefill_kv_mb | 768.0 | 0.9375 |
+| genz_prefill_weights_mb | 2696.789062 | 2697.257812 |
+| kv_free_layers | 0 | 24 |
+| kv_full_layers | 24 | 0 |
+| kv_source | "uniform" | "layer_plan:rwkv_stack" |
+| kvgeo_32768 | [0.0, 24, 0, 0.0, 16, 0.0] | [0.0, 1, 24, 40960.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 24, 0, 0.0, 16, 0.0] | [0.0, 1, 24, 40960.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 196608 | 0 |
+| report_params | 1309554688 | 1311373312 |
+| report_state_gb | 0.00688128 | 0.00098304 |
+| report_total_gb | 2.893118013 | 2.889677373 |
+| report_weight_gb | 2.619109376 | 2.622746624 |
+| serving_bytes_per_token | 196608 | 0 |
+| serving_requests_8gib_1k | 42 | 8738 |
+| serving_state_bytes | 0 | 983040 |
+| sim_max_running | 342 | 335 |
+| slice_mib_16x4352 | [25088, true] | [25600, true] |
+| state_gb | 0.00688128 | 0.00098304 |
+| vllm_limits | [22571, 361136, 22571, 1, 0, 0.0, true] | [22433, 358928, 22433, 1, 0, 3145728.0, true] |
+| vllm_running_1024 | 282 | 276 |
+
+## synth:t5-asym (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 49152 |
+| conv_layers | [16, 16] | [24, 12] |
+| disagg_transfer_bytes_640 | 335544320 | 62914560 |
+| eng_None_32768_kv_mb | 559.34976 | 3368.681472 |
+| eng_None_32768_params | 497725440 | 611061760 |
+| eng_None_32768_total_mb | 1725.928243 | 4761.932595 |
+| eng_None_4096_kv_mb | 91.42272 | 550.109184 |
+| eng_None_4096_params | 497725440 | 611061760 |
+| eng_None_4096_total_mb | 1172.437402 | 1857.796506 |
+| eng_llamacpp_32768_kv_mb | 559.34976 | 3368.681472 |
+| eng_llamacpp_32768_params | 497725440 | 611061760 |
+| eng_llamacpp_32768_total_mb | 1725.928243 | 4761.932595 |
+| eng_llamacpp_4096_kv_mb | 91.42272 | 550.109184 |
+| eng_llamacpp_4096_params | 497725440 | 611061760 |
+| eng_llamacpp_4096_total_mb | 1172.437402 | 1857.796506 |
+| facts_layers | [24, 0, 0, null] | [12, 0, 0, null] |
+| genz_chunked_kv_mb | 2304.0 | 432.0 |
+| genz_decode_kv_mb | 2048.0 | 384.0 |
+| genz_decode_weights_mb | 9851.0 | 338.75 |
+| genz_ffn_kinds | {"Dense": 32} | {"Dense": 12} |
+| genz_kv_size | 262144 | 49152 |
+| genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 12} |
+| genz_prefill_kv_mb | 2048.0 | 768.0 |
+| genz_prefill_weights_mb | 10102.0 | 905.5 |
+| kv_cross_layers | 0 | 12 |
+| kv_full_layers | 24 | 12 |
+| kv_gb@32768 | 0.0 | 3.221225472 |
+| kv_gb@4096 | 0.0 | 0.402653184 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 524288 | 98304 |
+| report_kv_gb | 0.09142272 | 0.550109184 |
+| report_params | 497725440 | 611061760 |
+| report_total_gb | 1.209831506 | 1.986927903 |
+| report_weight_gb | 0.99545088 | 1.22212352 |
+| serving_bytes_per_token | 524288 | 98304 |
+| serving_requests_8gib_1k | 16 | 85 |
+| sim_max_running | 400 | 293 |
+| slice_mib_16x4352 | [15104, true] | [14336, true] |
+| vllm_limits | [46813, 749008, 46813, 1, 0, 0.0, true] | [94387, 1510192, 94387, 1, 0, 201326592.0, true] |
+| vllm_running_1024 | 585 | 280 |
+| vllm_running_8192 | 88 | 120 |
+
+## synth:t5-small (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 12288 |
+| conv_layers | [16, 16] | [6, 6] |
+| disagg_transfer_bytes_640 | 335544320 | 15728640 |
+| eng_None_32768_kv_mb | 274.432 | 823.738368 |
+| eng_None_32768_params | 135813120 | 144303104 |
+| eng_None_32768_total_mb | 656.787866 | 1223.074202 |
+| eng_None_4096_kv_mb | 45.056 | 119.095296 |
+| eng_None_4096_params | 135813120 | 144303104 |
+| eng_None_4096_total_mb | 372.047053 | 463.066317 |
+| eng_llamacpp_32768_kv_mb | 274.432 | 823.738368 |
+| eng_llamacpp_32768_params | 135813120 | 144303104 |
+| eng_llamacpp_32768_total_mb | 656.787866 | 1223.074202 |
+| eng_llamacpp_4096_kv_mb | 45.056 | 119.095296 |
+| eng_llamacpp_4096_params | 135813120 | 144303104 |
+| eng_llamacpp_4096_total_mb | 372.047053 | 463.066317 |
+| genz_chunked_kv_mb | 2304.0 | 108.0 |
+| genz_decode_kv_mb | 2048.0 | 96.0 |
+| genz_decode_weights_mb | 9851.0 | 73.375 |
+| genz_ffn_kinds | {"Dense": 32} | {"Dense": 6} |
+| genz_kv_size | 262144 | 12288 |
+| genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 6} |
+| genz_prefill_kv_mb | 2048.0 | 144.0 |
+| genz_prefill_weights_mb | 10102.0 | 146.75 |
+| kv_cross_layers | 0 | 6 |
+| kv_gb@32768 | 0.0 | 0.805306368 |
+| kv_gb@4096 | 0.0 | 0.100663296 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 6, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 6, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 524288 | 24576 |
+| report_kv_gb | 0.045056 | 0.119095296 |
+| report_params | 135813120 | 144303104 |
+| report_total_gb | 0.393206415 | 0.499033539 |
+| report_weight_gb | 0.27162624 | 0.288606208 |
+| serving_bytes_per_token | 524288 | 24576 |
+| serving_requests_8gib_1k | 16 | 341 |
+| slice_mib_16x4352 | [6656, true] | [7424, true] |
+| vllm_limits | [382640, 6122240, 382640, 1, 0, 0.0, true] | [382640, 6122240, 382640, 1, 0, 50331648.0, true] |
+| vllm_running_8192 | 724 | 488 |
+
+## synth:unknown-layer-name (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| eng_None_32768_kv_mb | 134.217728 | 268.435456 |
+| eng_None_32768_total_mb | 1060.603494 | 1194.821222 |
+| eng_None_4096_kv_mb | 16.777216 | 33.554432 |
+| eng_None_4096_total_mb | 721.703731 | 738.480947 |
+| eng_llamacpp_32768_kv_mb | 134.217728 | 268.435456 |
+| eng_llamacpp_32768_total_mb | 1060.603494 | 1194.821222 |
+| eng_llamacpp_4096_kv_mb | 16.777216 | 33.554432 |
+| eng_llamacpp_4096_total_mb | 721.703731 | 738.480947 |
+| kv_free_layers | 2 | 0 |
+| kv_full_layers | 2 | 4 |
+| kv_gb@32768 | 0.134217728 | 0.268435456 |
+| kv_gb@4096 | 0.016777216 | 0.033554432 |
+| kv_source | "_layer_metadata" | "layer_plan:layer_types" |
+| kvgeo_32768 | [4096.0, 4, 0, 0.0, 16, 0.0] | [8192.0, 4, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [4096.0, 4, 0, 0.0, 16, 0.0] | [8192.0, 4, 0, 0.0, 16, 0.0] |
+| report_kv_gb | 0.016777216 | 0.033554432 |
+| report_total_gb | 0.769351025 | 0.789483684 |
+
+## synth:vision-enc-dec (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 24576 |
+| conv_layers | [16, 16] | [12, 12] |
+| conv_state_bytes | 0 | 28360704 |
+| disagg_transfer_bytes_640 | null | 59817984 |
+| eng_None_32768_kv_mb | 701.80864 | 1694.26944 |
+| eng_None_32768_params | 808394240 | 885200640 |
+| eng_None_32768_total_mb | 2484.691558 | 3630.765158 |
+| eng_None_4096_kv_mb | 114.60608 | 284.983296 |
+| eng_None_4096_params | 808394240 | 885200640 |
+| eng_None_4096_total_mb | 1814.441779 | 2138.431795 |
+| eng_llamacpp_32768_kv_mb | 701.80864 | 1694.26944 |
+| eng_llamacpp_32768_params | 808394240 | 885200640 |
+| eng_llamacpp_32768_total_mb | 2484.691558 | 3630.765158 |
+| eng_llamacpp_4096_kv_mb | 114.60608 | 284.983296 |
+| eng_llamacpp_4096_params | 808394240 | 885200640 |
+| eng_llamacpp_4096_total_mb | 1814.441779 | 2138.431795 |
+| facts_layers | [32, 0, 0, null] | [12, 0, 0, null] |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev" | null |
+| genz_chunked_kv_mb | null | 270.09375 |
+| genz_decode_kv_mb | null | 219.046875 |
+| genz_decode_weights_mb | null | 434.173828 |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev" | null |
+| genz_ffn_kinds | null | {"Dense": 12} |
+| genz_kv_size | null | 24576 |
+| genz_layer_kinds | null | {"MHA-global": 12} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev" | null |
+| genz_prefill_kv_mb | null | 239.332031 |
+| genz_prefill_weights_mb | null | 730.347656 |
+| kv_cross_layers | 0 | 12 |
+| kv_full_layers | 0 | 12 |
+| kv_gb@32768 | 0.0 | 1.63897344 |
+| kv_gb@4096 | 0.0 | 0.229687296 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [49152.0, 12, 0, 0.0, 16, 28360704.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [49152.0, 12, 0, 0.0, 16, 28360704.0] |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde" | null |
+| prefix_kv_bytes_per_token | null | 49152 |
+| report_kv_gb | 0.11460608 | 0.284983296 |
+| report_params | 808394240 | 885200640 |
+| report_total_gb | 1.856430039 | 2.213573898 |
+| report_weight_gb | 1.61678848 | 1.77040128 |
+| serving_bytes_per_token | null | 49152 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev" | null |
+| serving_requests_8gib_1k | null | 109 |
+| serving_state_bytes | null | 28360704 |
+| sim_max_running | 72 | 400 |
+| slice_mib_16x4352 | [81582, false] | [11008, true] |
+| vllm_limits | [4702, 75232, 4702, 1, 0, 0.0, true] | [93853, 1501648, 93853, 1, 0, 28360704.0, true] |
+| vllm_running_1024 | 58 | 808 |
+| vllm_running_8192 | 8 | 166 |
+
+## synth:vision-enc-dec-gpt2 (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 262144 |
+| conv_layers | [16, 16] | [12, 32] |
+| eng_None_32768_kv_mb | 701.80864 | 744.81664 |
+| eng_None_32768_params | 808394240 | 803151360 |
+| eng_None_32768_total_mb | 2484.691558 | 2517.213798 |
+| eng_None_4096_kv_mb | 114.60608 | 157.61408 |
+| eng_None_4096_params | 808394240 | 803151360 |
+| eng_None_4096_total_mb | 1814.441779 | 1846.964019 |
+| eng_llamacpp_32768_kv_mb | 701.80864 | 744.81664 |
+| eng_llamacpp_32768_params | 808394240 | 803151360 |
+| eng_llamacpp_32768_total_mb | 2484.691558 | 2517.213798 |
+| eng_llamacpp_4096_kv_mb | 114.60608 | 157.61408 |
+| eng_llamacpp_4096_params | 808394240 | 803151360 |
+| eng_llamacpp_4096_total_mb | 1814.441779 | 1846.964019 |
+| report_kv_gb | 0.11460608 | 0.15761408 |
+| report_params | 808394240 | 803151360 |
+| report_total_gb | 1.856430039 | 1.896632279 |
+| report_weight_gb | 1.61678848 | 1.60630272 |
+| sim_max_running | 72 | 87 |
+| slice_mib_16x4352 | [81582, false] | [76032, true] |
+| vllm_limits | [4702, 75232, 4702, 1, 0, 0.0, true] | [5662, 90592, 5662, 1, 0, 0.0, true] |
+| vllm_running_1024 | 58 | 70 |
+| vllm_running_8192 | 8 | 10 |
+
+## synth:whisper-large-v3 (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 81920 |
+| conv_state_bytes | 0 | 245760000 |
+| disagg_transfer_bytes_640 | 335544320 | 350617600 |
+| genz_chunked_kv_mb | 2304.0 | 1188.75 |
+| genz_decode_kv_mb | 2048.0 | 874.375 |
+| genz_decode_weights_mb | 10005.203125 | 1526.625977 |
+| genz_kv_size | 262144 | 81920 |
+| genz_prefill_kv_mb | 2048.0 | 1108.75 |
+| genz_prefill_weights_mb | 10410.40625 | 3053.251953 |
+| kv_cross_layers | 0 | 32 |
+| kv_gb@32768 | 0.0 | 5.61446912 |
+| kv_gb@4096 | 0.0 | 0.91684864 |
+| kvgeo_32768 | [0.0, 32, 0, 0.0, 16, 0.0] | [163840.0, 32, 0, 0.0, 16, 245760000.0] |
+| kvgeo_4096 | [0.0, 32, 0, 0.0, 16, 0.0] | [163840.0, 32, 0, 0.0, 16, 245760000.0] |
+| prefix_kv_bytes_per_token | 524288 | 163840 |
+| serving_bytes_per_token | 524288 | 163840 |
+| serving_requests_8gib_1k | 16 | 20 |
+| serving_state_bytes | 0 | 245760000 |
+| sim_max_running | 400 | 171 |
+| slice_mib_16x4352 | [22272, true] | [26624, true] |
+| vllm_limits | [27344, 437504, 27344, 1, 0, 0.0, true] | [27344, 437504, 27344, 1, 0, 245760000.0, true] |
+| vllm_running_1024 | 341 | 157 |
+| vllm_running_8192 | 51 | 43 |
+
+## synth:xlstm (state-space)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 0 |
+| conv_state_bytes | 0 | 134480896 |
+| disagg_transfer_bytes_640 | 335544320 | 134480896 |
+| eng_None_32768_params | 6646931456 | 6651125760 |
+| eng_None_32768_state_mb | 0.0 | 134.480896 |
+| eng_None_32768_total_mb | 14179.699917 | 14322.569421 |
+| eng_None_4096_params | 6646931456 | 6651125760 |
+| eng_None_4096_state_mb | 0.0 | 134.480896 |
+| eng_None_4096_total_mb | 13736.781414 | 13879.650918 |
+| eng_llamacpp_32768_params | 6646931456 | 6651125760 |
+| eng_llamacpp_32768_state_mb | 0.0 | 134.480896 |
+| eng_llamacpp_32768_total_mb | 14179.699917 | 14322.569421 |
+| eng_llamacpp_4096_params | 6646931456 | 6651125760 |
+| eng_llamacpp_4096_state_mb | 0.0 | 134.480896 |
+| eng_llamacpp_4096_total_mb | 13736.781414 | 13879.650918 |
+| facts_full_attention | true | false |
+| facts_layers | [32, 0, 0, null] | [0, 0, 32, null] |
+| genz_chunked_kv_mb | 2304.0 | 256.501953 |
+| genz_decode_kv_mb | 2048.0 | 128.250977 |
+| genz_decode_weights_mb | 9993.0 | 9997.0 |
+| genz_kv_size | 262144 | 0 |
+| genz_layer_kinds | {"MHA-global": 32} | {"Recurrent": 32} |
+| genz_prefill_kv_mb | 2048.0 | 128.250977 |
+| genz_prefill_weights_mb | 10386.0 | 10390.0 |
+| kv_free_layers | 0 | 32 |
+| kv_full_layers | 32 | 0 |
+| kv_source | "uniform" | "layer_plan:mlstm_stack" |
+| kvgeo_32768 | [0.0, 32, 0, 0.0, 16, 0.0] | [0.0, 1, 32, 4202528.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 32, 0, 0.0, 16, 0.0] | [0.0, 1, 32, 4202528.0, 16, 0.0] |
+| model_type | "unknown" | "state-space" |
+| prefix_kv_bytes_per_token | 524288 | 0 |
+| report_params | 6646931456 | 6651125760 |
+| report_state_gb | 0.0 | 0.134480896 |
+| report_total_gb | 13.825365115 | 13.995130798 |
+| report_weight_gb | 13.293862912 | 13.30225152 |
+| serving_bytes_per_token | 524288 | 0 |
+| serving_requests_8gib_1k | 16 | 63 |
+| serving_state_bytes | 0 | 134480896 |
+| sim_max_running | 103 | 75 |
+| slice_mib_16x4352 | [66304, true] | [70912, true] |
+| state_gb | 0.0 | 0.134480896 |
+| vllm_limits | [6707, 107312, 6707, 1, 0, 0.0, true] | [378, 102816, 378, 1, 0, 142606336.0, false] |
+| vllm_running_1024 | 83 | 63 |
+| vllm_running_8192 | 12 | 11 |
 

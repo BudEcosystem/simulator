@@ -256,16 +256,20 @@ The calculator provides detailed breakdown:
   FFN-only layers none. Each layer is as wide as the model's own attention head (`head_dim`,
   or `attention_head_dim` / `kv_channels` / `d_kv`, or `attention_hidden_size / heads`). An
   encoder-decoder is charged its decoder's layers, heads and width (`decoder_layers`,
-  `num_decoder_layers`, `decoder_attention_heads`, T5's `num_heads` / `d_model`, a nested
-  `decoder_config`; `layer_plan.decoder_view`); its cross-attention cache over the encoder's
-  output is charged by `calculate_memory`, not by `calculate_kv_cache`. See
-  [docs/LAYER_KINDS.md](docs/LAYER_KINDS.md) for every category, the config keys read, and what
-  is charged conservatively.
+  `num_decoder_layers`, `decoder_attention_heads`, ProphetNet's `num_decoder_attention_heads`,
+  T5's `num_heads` / `d_model`, a nested `decoder_config`, or a whole encoder-decoder under a
+  multimodal `text_config` such as BLIP-2's flan-T5; `layer_plan.decoder_view`) and each decoder
+  layer's cross-attention cache over the encoder's output (`layer_plan.cross_attention_cache`:
+  its own K / V width, over the encoder's stated length -- Whisper's `max_source_positions` --
+  else over the sequence), by `calculate_kv_cache`, `calculate_memory`, the facts and planners,
+  GenZ and the serving model alike. See [docs/LAYER_KINDS.md](docs/LAYER_KINDS.md) for every
+  category, the config keys read, and what is charged conservatively.
 - **Activation Memory**: Intermediate activations during forward pass
 - **State Memory**: the fixed per-sequence state of recurrent layers (Gated DeltaNet, Mamba,
   KDA, linear attention, short conv, RWKV, xLSTM, RG-LRU) -- constant in sequence length, the
   recurrent matrix in fp32; the GenZ graphs and the serving memory model price it the same way
-  (`ModelConfig.get_state_bytes`: a serving request costs its KV blocks plus this state)
+  (`ModelConfig.get_state_bytes`: a serving request costs its KV blocks plus this state, and an
+  encoder-decoder's request its cross-attention cache too, `get_request_fixed_bytes`)
 - **Image Memory**: Vision transformer image embeddings
 - **Extra/Overhead**: Framework overhead and temporary buffers
 

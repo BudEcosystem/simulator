@@ -267,11 +267,17 @@ KV blocks plus that state (`MemoryModel.state_bytes_per_sequence`, also in the c
 disaggregation concurrency, the prefill-to-decode transfer and `/api/v2/memory/tiers`). Each KV
 layer is as wide as the model's own attention head (`head_dim` or its aliases, e.g. Zamba2's
 `attention_head_dim`), read by one function for every reader. An encoder-decoder (T5, BART,
-Whisper, Moonshine, Dia) is charged its **decoder's** self-attention, on the decoder's own depth,
-heads and width under each family's spellings (`decoder_layers`, T5's `num_decoder_layers` and
-`num_heads`, a nested `decoder_config`, ...), by every reader including BudSimulator's database
-converter; its cross-attention cache over the encoder's output is charged by `calculate_memory`
-and the engine estimate, not by the per-token readers. A layer kind the table does not
+Whisper, Moonshine, Dia, ProphetNet, and one nested under a multimodal `text_config`: BLIP-2 /
+InstructBLIP with flan-T5, Florence-2) is charged its **decoder's** self-attention, on the
+decoder's own depth, heads and width under each family's spellings (`decoder_layers`, T5's
+`num_decoder_layers` and `num_heads`, ProphetNet's `num_decoder_attention_heads`, a nested
+`decoder_config`, ...), **and** each decoder layer's cross-attention cache over the encoder's
+output, at the cross-attention's own width: a fixed cost a request where the config states the
+encoder's length (Whisper's 1,500 frames), else charged over the sequence. Every reader charges
+both -- the calculator, the engine estimate, the FRD-027 facts and the vLLM planner (its
+concurrency, profile scheduler and slice sizing), the KV planner's geometry, GenZ's graphs (the
+prefill graph also runs the encoder), the serving model's admission and transfer, and
+BudSimulator's database converter. A layer kind the table does not
 know, a per-layer list shorter than the depth, a window whose layers the config does not place,
 layers named sliding whose window the config states under no key the table reads, and a config with an SSM state and attention heads but no layout key (charged KV and state on
 every layer) are over-estimated with a warning, never treated as free or clamped. Categories, the config and GGUF keys read, and the
