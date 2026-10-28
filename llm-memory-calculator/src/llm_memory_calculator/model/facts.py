@@ -23,6 +23,7 @@ from ..layer_plan import (
     ATTN_FULL,
     ATTN_SLIDING,
     attention_head_dim,
+    attention_heads,
     cross_attention_bytes,
     cross_attention_cache,
     decoder_view,
@@ -754,14 +755,12 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     n_layers = int(
         _get(text, "num_hidden_layers", "n_layer", "num_layers", "decoder_layers", default=32) or 32
     )
+    # the head count from the one reader that goes with the head width (layer_plan.attention_heads:
+    # every spelling, T5's and Pix2Struct's `num_heads` beside their `d_kv` among them), so a block
+    # is never sized at its stated width over a default count
     nh = int(
-        _get(
-            text,
-            "num_attention_heads",
-            "n_head",
-            "decoder_attention_heads",
-            default=max(h // 128, 1),
-        )
+        attention_heads(text)
+        or _get(text, "decoder_attention_heads", default=max(h // 128, 1))
         or 1
     )
     nkv = int(_get(text, "num_key_value_heads", "num_kv_heads", default=nh) or nh)

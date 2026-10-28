@@ -669,9 +669,10 @@ class ModelMemoryCalculator:
         to the pessimistic answer (no saving on windowed layers inside a mixed
         stack) because under-sizing KV is what OOMs a deployment.
         """
-        # An encoder-decoder's KV is its decoder's, under the decoder's own spellings.
-        config = decoder_view(config)
+        # An encoder-decoder's KV is its decoder's, under the decoder's own spellings; the plan
+        # reads the config as stated (its decoder view and its cross-attention cache both).
         raw_config = config
+        config = decoder_view(config)
         # Normalize config for consistent key handling
         config = ConfigNormalizer.normalize_config(config)
 
@@ -802,8 +803,9 @@ class ModelMemoryCalculator:
         directly comparable to an engine's per-token KV accounting. It differs
         from ``bytes / tokens`` exactly when some layer is clamped.
         """
-        config = decoder_view(config)
         plan = self.resolve_kv_layer_plan(config, seq_length, engine_capabilities)
+        stated = config
+        config = decoder_view(config)
         bytes_per_element = self.PRECISION_BYTES.get(precision.lower(), 2)
         normalized = ConfigNormalizer.normalize_config(config)
         if isinstance(normalized.get("text_config"), dict):
@@ -813,7 +815,7 @@ class ModelMemoryCalculator:
         attention_type = self.detect_attention_type(normalized)
 
         total = self.calculate_kv_cache(
-            config, batch_size, seq_length, precision, engine_capabilities
+            stated, batch_size, seq_length, precision, engine_capabilities
         )
         # Only groups still growing at this length add to the marginal cost.
         growing = sum(

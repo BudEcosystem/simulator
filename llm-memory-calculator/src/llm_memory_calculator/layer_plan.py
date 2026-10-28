@@ -218,11 +218,23 @@ CROSS_KV_HEAD_KEYS = ("cross_num_key_value_heads", "cross_num_attention_heads")
 CROSS_HEAD_DIM_KEYS = ("cross_head_dim",)
 
 
-def _block_depth(block: Dict[str, Any]) -> int:
-    """A nested stack block's depth: its decoder-only spelling, else its own stack's (TrOCR's
-    decoder block says `decoder_layers`)."""
-    return depth(block) or _pos_int(_first(block, *DECODER_DEPTH_KEYS)) or _pos_int(
-        _first(block, *ENCODER_DEPTH_KEYS)) or 0
+def _block_depth(block: Dict[str, Any], role: Optional[str] = None) -> int:
+    """A nested stack block's depth, read for the ``role`` it plays ("decoder" / "encoder").
+
+    A block that is itself a whole encoder-decoder config (a VisionEncoderDecoder's `mbart`
+    decoder block: Donut, Nougat) states both of its own stacks, and its `num_hidden_layers` is
+    one of them by its class's alias (MBartConfig maps it to `encoder_layers`: 12, where the
+    decoder is `decoder_layers`: 4). So the role's own spelling is read first, then the
+    decoder-only one (`num_hidden_layers`, ...; MusicGen's decoder, a T5 text encoder), then the
+    other stack's (TrOCR's decoder block says only `decoder_layers`). With no role, any stated
+    depth (whether the block holds a stack at all)."""
+    own, other = ((DECODER_DEPTH_KEYS, ENCODER_DEPTH_KEYS) if role != "encoder"
+                  else (ENCODER_DEPTH_KEYS, DECODER_DEPTH_KEYS))
+    if role is not None:
+        v = _pos_int(_first(block, *own))
+        if v:
+            return v
+    return depth(block) or _pos_int(_first(block, *own)) or _pos_int(_first(block, *other)) or 0
 
 
 def _stack_block(config: Dict[str, Any], keys) -> Optional[Dict[str, Any]]:
@@ -249,8 +261,8 @@ def _own_stacks(config: Dict[str, Any]) -> Optional[Dict[str, int]]:
             or (dec_block is not None and enc_block is not None)):
         return None
     stated = depth(config)
-    decoder = dec_key or (_block_depth(dec_block) if dec_block is not None else stated)
-    encoder = enc_key or (_block_depth(enc_block) if enc_block is not None else stated)
+    decoder = dec_key or (_block_depth(dec_block, "decoder") if dec_block is not None else stated)
+    encoder = enc_key or (_block_depth(enc_block, "encoder") if enc_block is not None else stated)
     return {"encoder": int(encoder or 0), "decoder": int(decoder or 0)}
 
 
@@ -266,6 +278,29 @@ def decoder_only_block(block: Dict[str, Any]) -> bool:
     also flags `is_encoder_decoder`. Its encoder is a tower beside it, not a stack inside it."""
     return (block.get("is_decoder") is True and not _pos_int(_first(block, *ENCODER_DEPTH_KEYS))
             and _stack_block(block, NESTED_ENCODER_KEYS) is None)
+
+
+def composed_text_config(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The config's `text_config` as the composite model builds it, or None when it has none.
+
+    A decoder alone (``decoder_only_block``) beside a tower (``TOWER_KEYS``) is the decoder of an
+    encoder-decoder whose encoder is that tower: every layer cross-attends to the tower's output
+    (Pix2StructTextBlock always builds `encoder_decoder_attention`; BlipTextLayer builds its
+    `crossattention` exactly when `is_decoder`). transformers' composite config says so by
+    copying its own `is_encoder_decoder` into the block (Pix2StructConfig, whose class default is
+    True), but a hub file saved by an older release omits the outer flag (it is the class default)
+    and keeps the block's stale `is_encoder_decoder: false`, which is what the simulator reads
+    (google/deplot, pix2struct-*). So the block's own `is_decoder` beside a tower is read as the
+    statement, and the block is returned flagged as transformers flags it. Erring on a decoder
+    that would not attend to the tower over-counts, never under-counts. Any other `text_config`
+    is returned as it is."""
+    tc = config.get("text_config") if isinstance(config, dict) else None
+    if not isinstance(tc, dict):
+        return None
+    if (tc.get("is_encoder_decoder") is not True and decoder_only_block(tc)
+            and _tower(config) is not None and depth(tc) > 0):
+        return dict(tc, is_encoder_decoder=True)
+    return tc
 
 
 def _tower(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -304,13 +339,13 @@ def _stacks_holder(config: Dict[str, Any]):
     own = _own_stacks(config)
     if own and own["decoder"]:
         return config, own
-    tc = config.get("text_config")
+    tc = composed_text_config(config)
     if isinstance(tc, dict):
         inner = _own_stacks(tc)
         if inner:
             enc = _encoder_of(config, tc)
             if enc is not None and decoder_only_block(tc):
-                inner = dict(inner, encoder=_block_depth(enc))
+                inner = dict(inner, encoder=_block_depth(enc, "encoder"))
             return tc, inner
     return (config, own) if own else (None, None)
 
@@ -328,12 +363,24 @@ def encoder_decoder_stacks(config: Dict[str, Any]) -> Optional[Dict[str, int]]:
     return _stacks_holder(config)[1]
 
 
+#: What a nested decoder block states about itself, not about the model it is lifted into: its
+#: own composition flags (MusicGen's `decoder` and a VisionEncoderDecoder's carry the `to_dict`
+#: defaults `is_encoder_decoder: false`, `add_cross_attention: false` under an outer
+#: `is_encoder_decoder: true`) and the encoder stack of a block that is a whole encoder-decoder
+#: config (Donut's `mbart` decoder states `encoder_layers: 12`; the model's encoder is the Swin
+#: beside it). Lifting them over the top level made the decoder's view deny its own
+#: cross-attention, so a reader that viewed the decoder first charged none.
+_BLOCK_OWN_KEYS = (("is_encoder_decoder", "add_cross_attention") + ENCODER_DEPTH_KEYS
+                   + ENCODER_HEAD_KEYS + ENCODER_KV_HEAD_KEYS + ENCODER_FFN_KEYS)
+
+
 def _lift(config: Dict[str, Any], stacks: Dict[str, int]) -> Dict[str, Any]:
     """One encoder-decoder block with its decoder's geometry under the decoder-only names."""
     view = dict(config)
     block = _stack_block(config, NESTED_DECODER_KEYS)
     if block is not None:
-        view.update({k: v for k, v in block.items() if v is not None})
+        view.update({k: v for k, v in block.items()
+                     if v is not None and k not in _BLOCK_OWN_KEYS})
     if stacks["decoder"]:
         view["num_hidden_layers"] = stacks["decoder"]
     heads = _pos_int(_first(view, *DECODER_HEAD_KEYS))
@@ -417,16 +464,40 @@ def encoder_view(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return view
 
 
+def _two_sides(v: Any) -> Optional[Tuple[int, int]]:
+    """``(height, width)`` from a square size (an int) or a stated [height, width] pair."""
+    if _pos_int(v):
+        return int(v), int(v)
+    if isinstance(v, (list, tuple)) and len(v) == 2 and all(_pos_int(x) for x in v):
+        return int(v[0]), int(v[1])
+    return None
+
+
 def _image_tokens(vc: Any) -> Optional[int]:
-    """Tokens a vision tower outputs: patches per side squared plus the class token, per tile."""
+    """Tokens a vision tower hands the decoder for one image: its patch grid, from `image_size`
+    and `patch_size` (each a square int or a [height, width] pair: Donut's 2,560 x 1,920).
+
+    A flat ViT keeps every patch plus its class token, per tile (Mllama's `max_num_tiles`). A
+    hierarchical tower that states its stages (`depths`: Swin, Donut-Swin, FocalNet, NAT/DiNAT,
+    ConvNeXt) merges 2 x 2 neighbours between consecutive stages and has no class token: its last
+    stage, the one a decoder reads, is the grid halved per side once per stage after the first
+    (Donut: 2,560 / 4 / 8 x 1,920 / 4 / 8 = 80 x 60 = 4,800; Nougat 896 x 672 -> 28 x 21 = 588).
+    Each division rounds up, as those towers pad an odd side. None when the size or patch is
+    not stated as such."""
     if not isinstance(vc, dict):
         return None
-    size, patch = vc.get("image_size"), vc.get("patch_size")
-    if not (isinstance(size, int) and isinstance(patch, int) and patch > 0):
+    size, patch = _two_sides(vc.get("image_size")), _two_sides(vc.get("patch_size"))
+    if not (size and patch):
         return None
-    per_tile = (size // patch) ** 2 + 1
-    tiles = vc.get("max_num_tiles") or 1
-    return int(per_tile * int(tiles))
+    rows, cols = -(-size[0] // patch[0]), -(-size[1] // patch[1])
+    stages = vc.get("depths")
+    if isinstance(stages, (list, tuple)) and len(stages) > 1 and all(_pos_int(d) for d in stages):
+        for _ in range(len(stages) - 1):
+            rows, cols = -(-rows // 2), -(-cols // 2)
+        return int(rows * cols)
+    per_tile = rows * cols + 1
+    tiles = _pos_int(vc.get("max_num_tiles")) or 1
+    return int(per_tile * tiles)
 
 
 #: Spellings of an encoder's output length, the tokens every cross-attention layer caches.
@@ -1614,6 +1685,15 @@ def _finish(
         notes = notes + [
             f"{n_cross} cross-attention layers are charged the full sequence: the "
             "config does not state the encoder's token count."
+        ]
+    elif n_cross:
+        # The tower's output is per image (transformers reshapes Mllama's cross-attention states
+        # to `num_concurrent_media` x tiles x patches): the image count is the request's, as its
+        # length is, and no config states it. Not a bound for a request with several images.
+        notes = notes + [
+            f"{n_cross} cross-attention layers are charged one image's {enc_tokens} tower "
+            "tokens a request: the config states no image count, and each further image a "
+            "request carries adds as much again."
         ]
 
     plan.update(

@@ -7,6 +7,7 @@ from .layer_plan import (
     attention_head_dim,
     attention_heads,
     attention_input_width,
+    composed_text_config,
     cross_attention_cache,
     decoder_only_block,
     decoder_view,
@@ -561,7 +562,9 @@ class UniversalParameterCounter:
 
         # Process text config
         if 'text_config' in config and isinstance(config['text_config'], dict):
-            text_config = config['text_config'].copy()
+            # as the composite model builds it: a decoder beside a tower it cross-attends to
+            # (Pix2Struct's, BLIP's) is flagged as transformers' composite config flags it
+            text_config = dict(composed_text_config(config))
 
             # Ensure model_type is set for proper calculation
             if 'model_type' not in text_config:
