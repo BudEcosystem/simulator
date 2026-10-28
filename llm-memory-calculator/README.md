@@ -272,7 +272,11 @@ The calculator provides detailed breakdown:
   cache. Charged by `calculate_kv_cache`, `calculate_memory`, the facts and
   planners, GenZ's graphs and runtime modelling, the serving model and BudSimulator's converter
   alike. See [docs/LAYER_KINDS.md](docs/LAYER_KINDS.md) for every
-  category, the config keys read, and what is charged conservatively.
+  category, the config keys read, and what is charged conservatively. The weights beside them
+  (shared experts, MLA's indexer, an attention output gate, an encoder at its own geometry, an
+  adapter stack) come from the same readers, and `tests/test_kv_gate.py` holds every figure that
+  moves below origin/main's to its ground truth (`tests/fixtures/kv_gate/allowlist.json`; the
+  figures still below truth, and why: LAYER_KINDS.md, "What errs low, measured").
 - **Activation Memory**: Intermediate activations during forward pass
 - **State Memory**: the fixed per-sequence state of recurrent layers (Gated DeltaNet, Mamba,
   KDA, linear attention, short conv, RWKV, xLSTM, RG-LRU) -- constant in sequence length, the

@@ -291,9 +291,28 @@ attention heads (`ConfigNormalizer`) only when the table says the stack has atte
 xLSTM's `num_heads` belong to its recurrent matrix memory. Unread, GPT-Neo was charged no KV at
 all. Nor is GPT-Neo's `attention_layers` list a hybrid marker any more (`detect_model_type`).
 
+The weights beside the decoder are each read at their own geometry, by the readers that size
+them (round 12). The FRD-027 facts, which the vLLM planner reserves before it sizes the KV blocks,
+count an encoder-decoder's encoder through `stack_params.encoder_params` -- a hierarchical tower's
+stages (Donut's and Nougat's Swin: 20 blocks over 128-1,024 wide, which had been 4 blocks at the
+decoder's 1,024; `layer_plan.encoder_stages` also gives every reader its depth, 20 not 4), T5's
+gated FFN, a conformer's two FFNs and convolution module -- and an adapter stack between a tower
+and the language model through `stack_params.adapter_params` (BLIP-2's and InstructBLIP's
+Q-Former, its cross-attention layers and its projection: 106.7M the facts had left out). A tower's
+class defaults stand in for the keys its config leaves out (Mllama's 8 global layers, its
+7,680-wide output and its tiled position tables). The parameter counter counts a tower at its own
+geometry the same way, a wrapper around a language model alone from its `text_config`, and the
+activation and tied-embedding flags at the config class's defaults where a config states none
+(Llama 4's "silu" and untied head). Every reader takes an encoder-decoder's shape from the same
+reader: a flat config that states two stacks under an encoder-decoder's spellings
+(`encoder_decoder_stacks`: mT5's `num_layers` and `num_decoder_layers`) is an encoder-decoder to
+`detect_model_type` and the parameter count as it is to the layer plan.
+
 ## What is conservative, and why
 
-Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says so:
+Under-sizing KV is what OOMs a deployment, so every unknown **layer kind** errs high, and says so
+(the weights are a separate matter: see *What errs low, measured* below, which names every figure
+the gate holds below its ground truth and why):
 
 * **An unknown layer-kind name** is charged full-attention KV, the plan is marked `approximate`,
   its `notes` name the kind, and a `UserWarning` is raised. It is never silently treated as free.
@@ -412,6 +431,54 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
   check is not below the prefill check's. The input embedding table is the exception for every
   model, as on origin/main.
 
+## What errs low, measured
+
+`scripts/kv_corpus.py --gate` holds every figure the branch moves in the unsafe direction against
+origin/main to a ground truth (`tests/fixtures/kv_gate/allowlist.json`; *The gate* below), and
+over the whole corpus none is below it. The readers' figures that stay below the model's own
+count without having moved below origin/main's -- each the same or higher than origin/main --
+are these, stated rather than hidden:
+
+* **The GenZ graphs' weights hold matrices only.** No operator carries a norm or bias vector, nor a
+  few small matrices (T5's relative-position bias, Mllama's 8 extra embedding rows): the graphs
+  sit up to 5 parts in 100,000 below transformers' parameter count (DeepSeek-V3: 1.9 MiB of
+  1.28 TiB). The decode graph looks a token up in its input embedding (a gather) and graphs no
+  operator for it, on origin/main as here, so its weights are the prefill graph's less that table.
+* **The calculator's count for BLIP's BERT text decoder** leaves out its bias vectors, its learned
+  positions and its LM head's transform: 223.21M of 223.97M (origin/main 223.11M).
+* **A conformer encoder in the calculator and the GenZ graph** (cohere-transcribe's Parakeet
+  encoder: two FFNs and a convolution module a layer) is counted as plain blocks: 581M and 1.47B of
+  2.05B (origin/main 302M, and no graph). The FRD-027 facts count the conformer block
+  (`stack_params.stack_params`: 2.64B).
+* **Whisper's calculator count** leaves out its encoder's convolutional frame embedding:
+  1,542.5M of 1,543.5M (origin/main the same).
+* **DeepSeek Sparse Attention's indexer key cache** (V3.2: `index_head_dim` 128 a token a layer,
+  stored at 8 bits beside the 576-element MLA latent) is in no reader's KV, on origin/main as
+  here; its weights are in the GenZ graph (`attention.mla_indexer_ops`).
+* **A neural codec or a speech encoder** (a TTS model's speech tokenizer, Mimi, w2v-BERT) states
+  a stack's geometry but no token vocabulary: it is not a language model, which every reader
+  sizes, and the corpus names it (`_not_language_models`) without measuring it. Read as one, the
+  readers size its transformer blocks and not its convolutional decoder or quantizers (the
+  Qwen3-TTS speech tokenizer: 62M of its checkpoint's 171M; origin/main sized its default 4096 x
+  32 shape, 8.9B).
+
+## The gate
+
+`tests/test_kv_gate.py` runs the corpus harness over every config the repository ships
+(prepopulated.db, every fixture, the synthetic shapes, GenZ's built-in models) through every
+reader, and compares each figure with origin/main's (`tests/fixtures/kv_gate/origin-main.json`,
+measured by the same harness on `c17ef89`). A memory figure below origin/main's or a capacity
+figure above it fails unless the allowlist names it: the config, the reader, both figures, its
+cause, and its ground truth -- transformers 5.12's own model for the config on the meta device
+(`scripts/kv_truth.py`: every parameter, the K / V projections each decoder layer caches, the
+cache kinds and windows `DynamicCache(config=...)` builds), the checkpoint's or GGUF's tensors, or
+the published arithmetic the entry cites (`tests/fixtures/kv_gate/truths.json`) -- and the
+branch's figure is not below that truth. A capacity rise names the memory figures it is sized from,
+each held to its own truth. `python scripts/kv_corpus.py --gate main.json branch.json --allowlist
+tests/fixtures/kv_gate/allowlist.json` runs the same check over the machine's HF cache, model
+folders and GGUFs too. A figure that moves again, or a new drop, fails until its entry is
+re-measured (`scripts/kv_truth.py --allowlist-from`).
+
 ## The recurrent state
 
 `calculate_state_memory` (and `EngineMemory.state_bytes`, which `bud_component` reports as
@@ -483,16 +550,40 @@ the experts' (`layer_plan.dense_ffn_width`: Llama 4's `intermediate_size_mlp`, M
 `intermediate_size`. Llama-4-Maverick's 24 dense layers had been graphed at the experts' 8,192
 instead of 16,384: 3.02B parameters short.
 
+Every MoE layer graphs its shared expert(s) beside the routed ones (`ffn.shared_expert_ops`, the
+width from `layer_plan.shared_expert_width`: DeepSeek's and Kimi's `n_shared_experts` x the expert
+width, Qwen MoE's `shared_expert_intermediate_size`, Granite 4's `shared_intermediate_size`,
+Ling's `moe_shared_expert_intermediate_size`, Llama 4's and Hunyuan's class-built one), and the
+routed experts are read under every spelling (`layer_plan.routed_expert_count` /
+`routed_expert_width`: SmallThinker's `moe_num_primary_experts` of `moe_ffn_hidden_size`). The
+per-layer MoE placement had removed the extra MoE layers that hid the missing shared expert:
+DeepSeek-V3's graph fell to 2.55B parameters below the checkpoint (1,275,007 MiB against
+transformers' 1,281,505). MLA's cache is its latent (`attention.mla_latent_op`: kv_lora_rank +
+qk_rope_head_dim a token a layer; the per-head K / V its expanded score operators read are compute,
+not cache), and V3.2's lightning indexer is graphed. An attention that gates its output from a
+second query-width projection (`layer_plan.attention_output_gate`: Qwen3-Next, Qwen3.5) graphs
+it. A gated FFN is read from the config's activation, else its config class's default
+(`layer_plan.ffn_activation`: Llama 4's "silu"), else its family (`layer_plan.GATED_FFN_MODEL_TYPES`,
+the parameter counter's table: SmallThinker, ChatGLM, Pix2Struct's `wi_0` / `wi_1`). An audio
+decoder with several codebooks graphs as many embedding tables and heads
+(`layer_plan.decoder_streams`: MusicGen's `num_codebooks`, Dia's `num_channels`), and a decoder with a
+learned absolute position table graphs it (`layer_plan.learned_positions`: MBart, Whisper, GPT-2,
+BERT-style decoders). An encoder-decoder's encoder is graphed at its own geometry: a hierarchical
+tower stage by stage (`layer_plan.encoder_stages`: Swin's `depths` at `embed_dim` x 2^i, with the
+2 x 2 merges between stages and its windows' position tables), a tower's patch or frame embedding
+and positions (`stack_params.tower_embedding_params`), a nested encoder's own token table, and a
+composite's projection to the decoder's width (`enc_to_dec_proj`, MusicGen's 768 -> 1,024).
+
 Known approximations: the graph's KV memory is the model's (windowed layers bounded by their
 window in every stack), not that of an engine without per-layer KV, which would hold the full
 sequence on windowed layers of a mixed stack -- see *What is conservative*; KV-shared layers are
 still graphed as attention (their KV read traffic is real, their memory is over-counted); a
 cross-attention layer of its own (Mllama) is graphed as cross-attention over the tower's tokens,
 but the vision tower that produces them is not graphed (as for every multimodal decoder: GenZ
-graphs the language model); a
+graphs the language model, and an adapter such as BLIP-2's Q-Former is the tower's); a
 *uniformly* windowed stack (Mistral v0.1) keeps GenZ's uniform full-attention graph -- the memory
-calculator applies its window, the graph does not; a per-layer MoE list (Hunyuan's
-`num_experts` per layer) does not graph.
+calculator applies its window, the graph does not; a per-layer MoE list (Hunyuan's) is graphed
+at its largest entry.
 
 ## Adding a new family
 
@@ -506,4 +597,5 @@ a new layout key, add a dialect to `resolve_layer_plan`; if a new mechanism, add
 ## Evidence
 
 `docs/proofs/kv-layer-kinds-corpus-diff.md` holds the before/after figures for every model config
-the simulator ships or this machine caches (`scripts/kv_corpus.py`).
+the simulator ships or this machine caches (`scripts/kv_corpus.py`), and `tests/test_kv_gate.py`
+holds every figure that moves in the unsafe direction to its ground truth (*The gate* above).

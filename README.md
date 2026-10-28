@@ -297,6 +297,18 @@ layers named sliding whose window the config states under no key the table reads
 every layer) are over-estimated with a warning, never treated as free or clamped. Categories, the config and GGUF keys read, and the
 conservative rules: [llm-memory-calculator/docs/LAYER_KINDS.md](llm-memory-calculator/docs/LAYER_KINDS.md).
 
+The weights are read the same way, and from the same readers: an MoE layer's shared expert(s)
+(`layer_plan.shared_expert_width`) and its routed experts under every spelling, MLA's latent as
+its cache, an attention output gate, a gated FFN from the config's activation or its class's
+default, an encoder at its own geometry (a hierarchical tower stage by stage, a conformer's
+convolution module, a tower's patch and position tables) and an adapter stack (BLIP-2's
+Q-Former). A gate holds every figure that moves below origin/main's -- or a capacity above it --
+to a ground truth (transformers' own model for the config, a checkpoint's tensors, or the cited
+arithmetic): `llm-memory-calculator/tests/test_kv_gate.py` over every config the repository ships,
+and `scripts/kv_corpus.py --gate` over a machine's HF cache and model folders; the figures that
+stay below their truth without having moved, and why, are listed in LAYER_KINDS.md ("What errs
+low, measured").
+
 ---
 
 ## Serving Simulation
