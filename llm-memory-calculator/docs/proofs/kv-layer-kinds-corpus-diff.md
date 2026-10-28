@@ -2,14 +2,17 @@
 
 Branch `fix/hybrid-kv-layer-kinds`, measured against **origin/main `c17ef89`** (what this branch
 lands on). Generated on the shared GB10 box, 27-28 Oct 2026, with `scripts/kv_corpus.py`; no GPU
-used. Four rounds: the fix itself; the corrections an independent review asked for (the
+used. Five rounds: the fix itself; the corrections an independent review asked for (the
 chunked graph, the state's bytes, MoE placement, unplaced windows, depth from a layer list,
 SambaY, the GGUF reader's Mamba-1 / RoPE / gating / tying, and this proof's own coverage); and the
 second review's (Zamba's shared MLP and its unknown names, transformers before 4.53, the FRD-027
 facts' allowlist and `mistral` rule, RWKV / xLSTM state bytes in the graph, Llama 4's chunk in
 the graph, optional test dependencies); and the third review's (the serving path's missing
 recurrent state, GPT-Neo's layout under `attention_types`, per-layer lists shorter than the
-depth, Kimi's one-indexing without `kda_layers`, and the two window policies stated).
+depth, Kimi's one-indexing without `kda_layers`, and the two window policies stated); and the
+fourth review's (the attention head width read under its other spellings -- Zamba2's KV was half
+its size everywhere --, an SSM-state config with attention heads and no layout, a family name
+overriding stated attention heads, and `max_window_layers` where a config class states no layout).
 
 ## 1. The measured case
 
@@ -89,7 +92,37 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
   - test_kimi_layer_lists_are_one_indexed_even_without_kda_layers (6 full layers, not 7)
 * In a clean venv with neither `transformers` nor `gguf` (the calculator's own dependencies), four
   older cases failed instead of skipping; they now skip, and every other case passes there.
-* This branch: 100 passed (the two GGUF-file cases skip where `gguf` is absent).
+* Round 5 (32 cases added for the fourth review) against the round-4 head `9942738`: 9 failed,
+  16 passed, 7 skipped. The passing 16 are guards: 15 fixtures of the new per-fixture head-width
+  cross-check that were already right (the 7 skips are fixtures whose model type the installed
+  transformers cannot build, so there is no class to check against), and the Mistral case below.
+  - test_every_kv_reader_sizes_a_layer_by_the_configs_own_attention_head[Zyphra_Zamba2-2.7B]
+    (builds each fixture's own transformers config class and checks the calculator, the breakdown,
+    the facts, GenZ `get_kv_size` and the serving `MemoryModel` against its head width: Zamba2's
+    calculator gave 92,160 B a token against 184,320)
+  - test_zamba2_kv_is_its_nine_shared_attention_invocations_at_head_dim_160 (92,160; 51
+    requests in 8 GiB, not 32)
+  - test_zamba_v1_saved_by_its_config_class_is_sized_at_its_attention_width (193,024 against
+    386,048, for `ZambaConfig().to_dict()` and for the same config with the derived keys left out)
+  - test_the_head_width_spellings_cover_every_transformers_alias (no such table)
+  - test_zamba2_attention_weights_take_the_attention_width (26,214,400 per block against
+    91,750,400: Linear(5120, 5120) x 3 + Linear(5120, 2560))
+  - test_an_unknown_hybrid_without_a_layout_is_charged_attention_and_state_everywhere (calculator
+    24 full layers and no state; GenZ pure Mamba; serving 0 B a token)
+  - test_genz_graphs_no_mamba_layer_the_table_does_not_name (a state key made every layer Mamba)
+  - test_a_family_name_does_not_make_a_config_with_attention_heads_attention_free (`mamba` with
+    16 heads: 0 KV)
+  - test_max_window_layers_places_the_window_when_the_class_states_no_layout (4.53's
+    Qwen2MoeConfig, simulated: 24 sliding layers, not 21 full + 3 sliding)
+  - guard: test_a_uniform_window_without_max_window_layers_still_slides_every_layer (Mistral)
+* This branch: 132 passed (the two GGUF-file cases skip where `gguf` is absent; the cross-check
+  skips the 7 fixtures transformers cannot build). The category file also runs in a venv with
+  neither `transformers` nor `gguf` (142 passed, 33 skipped across it and
+  `tests/test_hybrid_layer_plan.py`), with transformers 4.50.0 (152 passed, 23 skipped) and with
+  4.53.0 (115 passed, 17 skipped; that venv lacks GenZ's `seaborn`, and its 43 failures are all
+  that import). By hand under 4.53.0: the reviewer's `qwen2moe_swa_on` config (24 layers,
+  `max_window_layers` 21) now reads 21 full + 3 sliding, `src = max_window_layers`, matching
+  4.53's `modeling_qwen2_moe.py`.
 * Two older SambaY tests in `tests/test_hybrid_layer_plan.py` pinned the all-windowed reading
   ("every layer sliding", an "OVER-estimate"). That reading under-counts at long context, so they
   now pin the upper bound -- one full layer, the window elsewhere, never below the published
@@ -99,11 +132,12 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
 
 | Suite | origin/main `c17ef89` | This branch |
 |---|---|---|
-| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,191 passed, 14 skipped, 1 failed |
+| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,216 passed, 21 skipped, 1 failed |
 | `BudSimulator/tests` (pytest) | 24 passed | 26 passed |
 
-(Round 3 ended at 2,151 / 24; round 4 adds the 40 category cases and the two memory-tier API
-cases. One existing assertion was widened: `tests/serving/test_memory_model.py::
+(Round 3 ended at 2,151 / 24; round 4 at 2,191 passed, 14 skipped / 26; round 5 adds the 32
+category cases above, 7 of which skip -- fixtures transformers cannot build. Round 4 added the 40
+category cases and the two memory-tier API cases. One existing assertion was widened: `tests/serving/test_memory_model.py::
 TestMemorySnapshot::test_snapshot_has_all_fields` pins the snapshot's keys, and the snapshot now
 reports `state_bytes` beside `kv_cache_bytes`.)
 
@@ -236,7 +270,7 @@ nothing else (`--diff` of the round-3 head's corpus against this branch's):
   | Kimi Linear | 33 | 1,040 | **166** | 43.4 MB |
   | Jamba-v0.1 (and the 2 built-in Jamba 1.5 / v0.1) | 64 | 512 | **261** | 16.1 MB |
   | built-in AI21-Jamba-1.5-Large | 28 | 227 | **78** | 72.3 MB |
-  | Zamba2-2.7B | 15 | 91 | **51** | 72.5 MB |
+  | Zamba2-2.7B | 15 | 91 | 51 (round 5: **32**) | 72.5 MB |
   | Falcon-H1-34B (parallel) | 56 | 56 | **18** | 304.2 MB |
   | Hymba-1.5B (parallel) | 204 | 204 | **174** | 7.2 MB |
   | Phi-4-mini-flash (SambaY) | 51 | 102 | **95** | 5.7 MB |
@@ -248,7 +282,8 @@ nothing else (`--diff` of the round-3 head's corpus against this branch's):
   | built-in falcon-mamba-7b / mamba-130m | 8 / 113 | unbounded | **234 / 3,328** | 36.7 / 2.6 MB |
 
   (origin/main charged every recurrent layer a full KV cache and no state; the round-3 head
-  dropped that KV and added nothing.) The disaggregation transfer for 512 + 128 tokens moves the
+  dropped that KV and added nothing. Zamba2's round-4 figure, 51, inherited a KV per token half
+  its true size; round 5 below corrects it to 32 = 8 GiB / (1,024 x 184,320 B + 72.5 MB).) The disaggregation transfer for 512 + 128 tokens moves the
   state with the KV: Qwen3.5-4B 20,971,520 -> 72,482,816 B, mamba-2.8b 0 -> 22,937,600 B.
 * **GPT-Neo-1.3B reads its layout from `attention_types`**: [24 sliding] (round 3; origin/main
   [24 full]) -> [12 full, 12 sliding, window 256] in the facts and the calculator's breakdown
@@ -269,6 +304,41 @@ falcon-mamba-7b states `expand: 16` beside `intermediate_size: 8192`; transforme
 derives `expand x hidden` = 65,536, so its parameters (54.5B, on origin/main too) and state
 (293.6 MB; the built-in GenZ model with the real width: 36.7 MB) are 8x high. An over-estimate,
 left for a separate fix.
+
+Round 5 (the fourth review) moved exactly one config against the round-4 head (`--diff` of the
+round-4 head's corpus against this branch's: 193 unchanged, 1 changed):
+
+* **Zamba2-2.7B's KV is sized at its own attention head, 160 wide** (`attention_head_dim`; its
+  hub config also states Megatron's `kv_channels: 80`, and hidden_size / heads is 80 too).
+  transformers 5.12's `Zamba2Attention` builds k_proj / v_proj as Linear(5120, 32 x 160), so the
+  truth is 9 hybrid layers x 2 x 32 x 160 x 2 B = 184,320 B a token. origin/main -> round-4 head
+  -> this branch:
+
+  | figure | origin/main | round-4 head | this branch |
+  |---|---|---|---|
+  | calculator KV at 4,096 / 32,768 tokens | 0.377 / 3.02 GB | 0.377 / 3.02 GB | **0.755 / 6.04 GB** |
+  | GenZ `get_kv_size` (elements a token) | 276,480 (54 layers) | 46,080 | **92,160** |
+  | serving bytes a token | 552,960 (54 layers at 80) | 92,160 | **184,320** |
+  | 1,024-token requests in 8 GiB | 15 | 51 | **32** |
+  | disaggregation transfer, 512 + 128 tokens | 353,894,400 B | 131,461,632 B | **190,444,032 B** |
+  | GenZ decode KV / weights | 35.9 / 9,842.5 MiB | 429.1 / 5,614.5 MiB | **789.1 / 6,064.5 MiB** |
+  | `calculate_memory` parameters | 2.446B | 2.446B | **2.577B** (real 2.689B) |
+
+  The calculator was already 2x low on origin/main; the serving path was over-counted there (all
+  54 layers charged KV) and the round-4 head turned that into an under-count. The parameter count
+  rises because the shared attention's Q / K / V read its 5,120-wide input
+  (`attention_hidden_size`) at 160-wide heads: per block 26.2M -> 91.75M, matching transformers'
+  shapes; `UniversalParameterCounter` without weight tying: 2.528B -> 2.659B (real 2.689B).
+* **The other three rules move no corpus config.** No shipped or cached config states an SSM
+  state and attention heads without a layout key other than Falcon-H1 (which was already read as
+  a parallel hybrid; it now carries the note), none is named `mamba*` while stating attention
+  heads, and none states `max_window_layers` with the window switched on (Qwen2 / Qwen2.5 / Qwen3
+  ship `use_sliding_window: false`). Their tests are synthetic.
+* While writing this a first version of the head-width reader descended into `text_config` and
+  read `d_model` when the caller had its own hidden size: it moved Whisper (GenZ, which models it
+  from default geometry) and a composite Higgs-Audio config. The reader now reads only the config
+  the caller passes, with the caller's own head count and hidden size as the last resort, so no
+  config without a stated width moves.
 
 The full per-config table (before = origin/main, after = this branch) follows.
 
@@ -660,23 +730,37 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
-| disagg_transfer_bytes_640 | 353894400 | 131461632 |
+| disagg_transfer_bytes_640 | 353894400 | 190444032 |
+| eng_None_32768_kv_mb | 3019.89888 | 6039.79776 |
+| eng_None_32768_params | 2446020000 | 2577092000 |
 | eng_None_32768_state_mb | 0.0 | 72.479232 |
-| eng_None_32768_total_mb | 8264.260416 | 8336.739648 |
+| eng_None_32768_total_mb | 8264.260416 | 11820.10912 |
+| eng_None_4096_kv_mb | 377.48736 | 754.97472 |
+| eng_None_4096_params | 2446020000 | 2577092000 |
 | eng_None_4096_state_mb | 0.0 | 72.479232 |
-| eng_None_4096_total_mb | 5445.688128 | 5518.16736 |
+| eng_None_4096_total_mb | 5445.688128 | 6258.462016 |
+| eng_llamacpp_32768_kv_mb | 3019.89888 | 6039.79776 |
+| eng_llamacpp_32768_params | 2446020000 | 2577092000 |
 | eng_llamacpp_32768_state_mb | 0.0 | 72.479232 |
-| eng_llamacpp_32768_total_mb | 8264.260416 | 8336.739648 |
+| eng_llamacpp_32768_total_mb | 8264.260416 | 11820.10912 |
+| eng_llamacpp_4096_kv_mb | 377.48736 | 754.97472 |
+| eng_llamacpp_4096_params | 2446020000 | 2577092000 |
 | eng_llamacpp_4096_state_mb | 0.0 | 72.479232 |
-| eng_llamacpp_4096_total_mb | 5445.688128 | 5518.16736 |
-| genz_chunked_kv_mb | 2430.0 | 543.243164 |
-| genz_decode_kv_mb | 35.859375 | 429.121582 |
-| genz_decode_weights_mb | 9842.5 | 5614.521484 |
+| eng_llamacpp_4096_total_mb | 5445.688128 | 6258.462016 |
+| genz_chunked_kv_mb | 2430.0 | 948.243164 |
+| genz_decode_kv_mb | 35.859375 | 789.121582 |
+| genz_decode_weights_mb | 9842.5 | 6064.521484 |
 | genz_ffn_kinds | {"Dense": 54} | {"Dense": 9, "no_op": 45} |
-| genz_kv_size | 276480 | 46080 |
+| genz_kv_size | 276480 | 92160 |
 | genz_layer_kinds | {"Mamba": 54} | {"MHA-global": 9, "Recurrent": 45} |
-| serving_bytes_per_token | 552960 | 92160 |
-| serving_requests_8gib_1k | 15 | 51 |
+| kv_gb@32768 | 3.01989888 | 6.03979776 |
+| kv_gb@4096 | 0.37748736 | 0.75497472 |
+| report_kv_gb | 0.37748736 | 0.75497472 |
+| report_params | 2446020000 | 2577092000 |
+| report_total_gb | 5.643392832 | 6.479317619 |
+| report_weight_gb | 4.89204 | 5.154184 |
+| serving_bytes_per_token | 552960 | 184320 |
+| serving_requests_8gib_1k | 15 | 32 |
 | serving_state_bytes | 0 | 72479232 |
 
 ## fixture:ai21labs_Jamba-v0.1.json (hybrid)
@@ -1200,4 +1284,3 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | report_params | 109986816 | 136725504 |
 | report_total_gb | 0.500824228 | 0.554301604 |
 | report_weight_gb | 0.219973632 | 0.273451008 |
-

@@ -253,8 +253,10 @@ The calculator provides detailed breakdown:
 - **KV Cache**: Key-Value cache, charged only on the layers that keep one and over the tokens
   each keeps: full attention every token, sliding / chunked layers their window, cross-attention
   the encoder's tokens, MLA one latent per layer; linear-attention, SSM, convolution and
-  FFN-only layers none. See [docs/LAYER_KINDS.md](docs/LAYER_KINDS.md) for every category, the
-  config keys read, and what is charged conservatively.
+  FFN-only layers none. Each layer is as wide as the model's own attention head (`head_dim`,
+  or `attention_head_dim` / `kv_channels` / `d_kv`, or `attention_hidden_size / heads`). See
+  [docs/LAYER_KINDS.md](docs/LAYER_KINDS.md) for every category, the config keys read, and what
+  is charged conservatively.
 - **Activation Memory**: Intermediate activations during forward pass
 - **State Memory**: the fixed per-sequence state of recurrent layers (Gated DeltaNet, Mamba,
   KDA, linear attention, short conv, RWKV, xLSTM, RG-LRU) -- constant in sequence length, the

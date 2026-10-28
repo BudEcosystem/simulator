@@ -55,7 +55,7 @@ gguf-py's `Keys` (`gguf/constants.py`).
 | Category | KV per layer | Config keys read | Examples |
 |---|---|---|---|
 | Full / global attention | every token | `layer_types: full_attention / attention / global`, or a uniform stack | Llama, Qwen2, most dense |
-| Sliding-window attention | at most `sliding_window` tokens | `layer_types: sliding_attention`; GPT-Neo's `attention_types` (`[[["global", "local"], 12]]`, which its config class expands into `attention_layers`; both read, names `global` / `local`); `sliding_window_pattern: N` (one full layer in N, the last of each group); `sliding_window_layout` (0/1 mask); `global_attn_idx`; window spellings `sliding_window`, `sliding_window_size`, `attention_window_size`, `window_size`; `use_sliding_window: false` disables. A window with **no** layout key takes the layout the model type's own config class derives (transformers: `Gemma2Config` alternates sliding and full, `Qwen2Config` windows from `max_window_layers` on), or every layer when that class states no per-layer list under any key the reader knows (Mistral) | Gemma 2/3, gpt-oss, GPT-Neo, Mistral v0.1, SmallThinker, Hymba |
+| Sliding-window attention | at most `sliding_window` tokens | `layer_types: sliding_attention`; GPT-Neo's `attention_types` (`[[["global", "local"], 12]]`, which its config class expands into `attention_layers`; both read, names `global` / `local`); `sliding_window_pattern: N` (one full layer in N, the last of each group); `sliding_window_layout` (0/1 mask); `global_attn_idx`; window spellings `sliding_window`, `sliding_window_size`, `attention_window_size`, `window_size`; `use_sliding_window: false` disables. A window with **no** layout key takes the layout the model type's own config class derives (transformers: `Gemma2Config` alternates sliding and full, `Qwen2Config` windows from `max_window_layers` on), or, when that class states no per-layer list under any key the reader knows, every layer (Mistral) -- unless the config states `max_window_layers`, whose documented meaning (transformers) is that the first N layers are full and the rest windowed: 4.53's `Qwen2MoeConfig` states no list while its modelling windows only from layer N on | Gemma 2/3, gpt-oss, GPT-Neo, Mistral v0.1, SmallThinker, Hymba |
 | Chunked local attention | at most `attention_chunk_size` | `layer_types: chunked_attention` | Llama 4 |
 | Sparse / compressed attention | every token (upper bound) | `deepseek_sparse_attention`, `compressed_sparse_attention`, `heavily_compressed_attention`, `minimax_m3_sparse`, `sparse` | DeepSeek-V3.2/V4, MiniMax-M3 |
 | MLA (latent KV) | `kv_lora_rank + qk_rope_head_dim`, no factor 2 | `kv_lora_rank` (non-null), `qk_rope_head_dim` | DeepSeek-V2/V3, Kimi |
@@ -82,6 +82,37 @@ exist once per shared block (`num_mem_blocks`, one when the config states none),
 parameter counts (`UniversalParameterCounter`, `model.facts`) count them that many times, while
 the graph streams them on every layer that invokes the block.
 
+### How wide a KV layer is
+
+A KV layer holds `2 x kv_heads x head_dim` elements a token (MLA: its latent). The head width is
+read once, by `layer_plan.attention_head_dim`, for every reader -- the calculator's KV and
+breakdown, the engine estimate, the parameter counter, the FRD-027 facts, the GenZ graph (and so
+`get_kv_size`, the serving `MemoryModel`, the prefix cache and the disaggregation transfer) and
+BudSimulator's model converter. In order:
+
+1. a stated width, under any spelling transformers aliases `head_dim` to (`attribute_map`):
+   `head_dim`, `attention_head_dim` (Zamba, Zamba2), `kv_channels` (JetMoE), `d_kv` (T5). Zamba2's
+   hub config also ships Megatron's `kv_channels: 80` beside `attention_head_dim: 160`; transformers
+   builds its K and V projections at 160, so `attention_head_dim` comes first;
+2. the attention's own input width over the heads, `attention_hidden_size` (Zamba's attention reads
+   the hidden state concatenated with the embeddings: 2 x hidden);
+3. the width the model type's config class derives under another name -- its `head_dim` alias, or
+   a width argument of its constructor in a release without the alias (transformers installed:
+   `ZambaConfig` gives `2 x hidden / heads` to a config that leaves both keys out, in 4.50 and
+   5.12 alike);
+4. only then `hidden_size / heads`.
+
+Step 3 imports the installed `transformers` (once a process, then cached per config) for a config
+that states no width under any spelling; without transformers it is skipped.
+
+Reading `head_dim` alone and deriving the rest from the hidden size charged Zamba2-2.7B half its KV
+(92,160 B a token against 184,320) everywhere, and counted its shared attention's weights at a
+quarter. The parameter counter also takes Q / K / V's input width from `attention_hidden_size`
+(`attention_input_width`). A test builds every fixture's own transformers config class and checks
+each reader's per-layer width against it; another checks that the spellings above cover every
+`head_dim` alias transformers states (GLM-4-MoE-Lite's, `qk_rope_head_dim`, is MLA's RoPE width:
+an MLA cache is its latent, sized by its own path).
+
 A multimodal config nests the decoder under `text_config`; every reader looks there first, so a
 model that is both multimodal and hybrid (Qwen3.5) gets the hybrid layout.
 
@@ -103,6 +134,13 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
   so charged nothing.
 * **A hybrid whose layout no key states** (a hybrid `model_type` with no per-layer key) is charged
   KV on every layer and state on every layer, unless the config states `attention_ratio`.
+* **A config that states an SSM state key and attention heads but no layout key** (none of the
+  per-layer lists, indices, periods or patterns above) is read as a parallel hybrid: every layer
+  charged a growing KV *and* a fixed state, with a note and a warning. That is exactly Falcon-H1,
+  and an upper bound for anything that interleaves instead. The calculator, the facts, the GenZ
+  graph and the serving path all read it from the table; GenZ used to take the state key alone as
+  "every layer is Mamba", so the serving path charged such a model 0 KV a token while the
+  calculator charged full KV and no state.
 * **A recurrent mechanism with none of its sizing keys** is sized from fallback geometry and
   marked as an `ESTIMATE` in the plan's notes.
 * **A GGUF with a sliding window but no window pattern** (gpt-oss: which layers slide is set in
@@ -116,7 +154,11 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
   without it, with a release that predates the model type, or with a release before 4.53 (the
   first whose config classes derive `layer_types`: 4.50's `Gemma2Config` states none though
   Gemma 2 alternates), such a config -- Mistral v0.1's included -- is charged full KV on every
-  layer with the same warning, an over-estimate.
+  layer with the same warning, an over-estimate. Config classes gained `layer_types` in different
+  releases after 4.53 (4.53's `Qwen2MoeConfig` has none, while its modelling windows only layers
+  >= `max_window_layers`), so a class that states none makes the window uniform only when the
+  config states no `max_window_layers`. That key only ever takes the window off layers, so a
+  release whose modelling windows every layer anyway is over-counted, never under-counted.
 * **SambaY (Phi-4-mini-flash)**, recognised by its `mb_per_layer` key: its YOCO cross-decoder
   reuses one full-attention cache that grows with the context, and the config does not say which
   layer writes it. Charged: a Mamba mixer every `mb_per_layer` layers, every other layer the
@@ -138,10 +180,13 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
   736 MiB against 1,984 MiB with the window withheld; a Llama 4 text stack at 32k, 2,688 MiB
   against the calculator's 6.44 GB. Size a deployment on such an engine from the calculator.
 * **Sparse / compressed attention** is charged as full attention.
-* **A pure state-space stack whose config states no state key and no attention-head count** is
-  recognised by its `model_type` (`mamba`, `mamba2`, `falcon_mamba`, ...): the one place a family
-  name decides a layer kind, and only after every structural key is absent. Its state is then
-  sized from fallback geometry and marked as an `ESTIMATE`.
+* **A pure state-space stack** is read structurally: an SSM state key and no attention-head count
+  of any spelling. Only a config with no attention-head count *and* no state key is recognised by
+  its `model_type` (`mamba`, `mamba2`, `falcon_mamba`, ...): the one place a family name decides a
+  layer kind, and only after every structural key is absent; its state is then sized from fallback
+  geometry and marked as an `ESTIMATE`. A config that states attention heads is never made
+  attention-free by its name (a `mamba`-named config with heads and a state key is the parallel
+  hybrid above).
 * **Cross-attention** without a vision geometry in the config is charged the full sequence.
 
 ## The recurrent state
@@ -192,7 +237,9 @@ A recurrent layer is three operators (`genz/Models/recurrent.py`): `Rec Proj`, a
 mixer's own parameter count (`mixer_params`); `Rec State`, the fixed state read as an Attend over
 `key_dim` rows; `Rec Conv`, the conv buffer. GenZ's "KV Cache" column has always carried Mamba's
 state; it now carries every mixer's state, and grows with the context only through the attention
-layers. A pure Mamba stack keeps GenZ's own Mamba operators.
+layers. A pure Mamba stack keeps GenZ's own Mamba operators. GenZ's own stack builder turns every
+layer into Mamba once it is given an SSM state, so it is given one only when the table names a
+recurrent layer: a stack the table reads as attention is graphed as attention, with its KV.
 
 All three graph builders read the same per-layer configs, and a windowed layer's window from the
 same table: any window spelling, and `attention_chunk_size` for Llama 4's chunked layers. In the

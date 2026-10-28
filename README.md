@@ -255,9 +255,12 @@ latent per layer. Gated DeltaNet (Qwen3-Next, Qwen3.5), Mamba, RWKV, xLSTM, shor
 FFN-only layers keep a fixed per-sequence state instead (fp32, as the engines hold it), reported
 as state memory and counted in the engine total; the serving simulator charges each request its
 KV blocks plus that state (`MemoryModel.state_bytes_per_sequence`, also in the cluster and
-disaggregation concurrency, the prefill-to-decode transfer and `/api/v2/memory/tiers`). A layer
-kind the table does not know, a per-layer list shorter than the depth, and a window whose layers
-the config does not place, are charged full KV with a warning, never treated as free or clamped. Categories, the config and GGUF keys read, and the
+disaggregation concurrency, the prefill-to-decode transfer and `/api/v2/memory/tiers`). Each KV
+layer is as wide as the model's own attention head (`head_dim` or its aliases, e.g. Zamba2's
+`attention_head_dim`), read by one function for every reader. A layer kind the table does not
+know, a per-layer list shorter than the depth, a window whose layers the config does not place,
+and a config with an SSM state and attention heads but no layout key (charged KV and state on
+every layer) are over-estimated with a warning, never treated as free or clamped. Categories, the config and GGUF keys read, and the
 conservative rules: [llm-memory-calculator/docs/LAYER_KINDS.md](llm-memory-calculator/docs/LAYER_KINDS.md).
 
 ---
