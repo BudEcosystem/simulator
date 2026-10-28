@@ -1,0 +1,220 @@
+{
+  "architectures": [
+    "CohereAsrForConditionalGeneration"
+  ],
+  "attention_bias": true,
+  "attention_dropout": 0.0,
+  "batch_size": 128,
+  "bos_token_id": 4,
+  "decoder_start_token_id": null,
+  "decoding": {
+    "beam": {
+      "beam_size": 1,
+      "len_pen": 0.0,
+      "max_generation_delta": 50
+    },
+    "return_best_hypothesis": true,
+    "strategy": "beam"
+  },
+  "encoder": {
+    "att_context_size": [
+      -1,
+      -1
+    ],
+    "causal_downsampling": false,
+    "conv_context_size": null,
+    "conv_kernel_size": 9,
+    "conv_norm_type": "batch_norm",
+    "d_model": 1280,
+    "dropout": 0,
+    "dropout_att": 0,
+    "dropout_emb": 0,
+    "dropout_pre_encoder": 0,
+    "feat_in": 128,
+    "feat_out": -1,
+    "ff_expansion_factor": 4,
+    "n_heads": 8,
+    "n_layers": 48,
+    "pos_emb_max_len": 5000,
+    "reduction": null,
+    "reduction_factor": 1,
+    "reduction_position": null,
+    "self_attention_model": "rel_pos",
+    "subsampling": "dw_striding",
+    "subsampling_conv_channels": 256,
+    "subsampling_factor": 8,
+    "untie_biases": true,
+    "xscaling": false
+  },
+  "encoder_config": {
+    "activation_dropout": 0.0,
+    "attention_bias": true,
+    "attention_dropout": 0.0,
+    "conv_kernel_size": 9,
+    "convolution_bias": true,
+    "dropout": 0.0,
+    "dropout_positions": 0.0,
+    "hidden_act": "silu",
+    "hidden_size": 1280,
+    "initializer_range": 0.02,
+    "intermediate_size": 5120,
+    "layerdrop": 0.0,
+    "max_position_embeddings": 5000,
+    "model_type": "parakeet_encoder",
+    "num_attention_heads": 8,
+    "num_hidden_layers": 48,
+    "num_key_value_heads": 8,
+    "num_mel_bins": 128,
+    "scale_input": false,
+    "subsampling_conv_channels": 256,
+    "subsampling_conv_kernel_size": 3,
+    "subsampling_conv_stride": 2,
+    "subsampling_factor": 8
+  },
+  "eos_token_id": 3,
+  "head": {
+    "activation": "relu",
+    "dropout": 0,
+    "hidden_size": 1024,
+    "log_softmax": true,
+    "num_classes": 16384,
+    "num_layers": 1,
+    "use_transformer_init": true
+  },
+  "head_dim": 128,
+  "hidden_act": "relu",
+  "hidden_size": 1024,
+  "initializer_range": 0.02,
+  "intermediate_size": 4096,
+  "is_encoder_decoder": true,
+  "log_batch_stats": false,
+  "log_prediction": true,
+  "max_audio_clip_s": 35,
+  "max_position_embeddings": 1024,
+  "max_seq_len": 1024,
+  "model_defaults": {
+    "asr_enc_hidden": 1280,
+    "lm_dec_hidden": 1024,
+    "lm_enc_hidden": 1024
+  },
+  "model_type": "cohere_asr",
+  "multitask_metrics_cfg": {
+    "log_predictions": true,
+    "metrics": {
+      "wer": {
+        "constraint": ".source_lang==.target_lang"
+      }
+    }
+  },
+  "num_attention_heads": 8,
+  "num_hidden_layers": 8,
+  "num_key_value_heads": 8,
+  "overlap_chunk_second": 5,
+  "pad_token_id": 2,
+  "preprocessor": {
+    "dither": 1e-05,
+    "features": 128,
+    "frame_splicing": 1,
+    "log": true,
+    "n_fft": 512,
+    "normalize": "per_feature",
+    "pad_to": 0,
+    "pad_value": 0.0,
+    "sample_rate": 16000,
+    "window": "hann",
+    "window_size": 0.025,
+    "window_stride": 0.01
+  },
+  "prompt_defaults": [
+    {
+      "role": "user",
+      "slots": {
+        "decodercontext": "",
+        "diarize": "<|nodiarize|>",
+        "emotion": "<|emo:undefined|>",
+        "itn": "<|noitn|>",
+        "pnc": "<|pnc|>",
+        "source_lang": "<|en|>",
+        "target_lang": "<|en|>",
+        "timestamp": "<|notimestamp|>"
+      }
+    },
+    {
+      "role": "user_partial",
+      "slots": {
+        "decodercontext": ""
+      }
+    }
+  ],
+  "prompt_format": "cohere_asr",
+  "sample_rate": 16000,
+  "supported_languages": [
+    "en",
+    "fr",
+    "de",
+    "es",
+    "it",
+    "pt",
+    "nl",
+    "pl",
+    "el",
+    "ar",
+    "ja",
+    "zh",
+    "vi",
+    "ko"
+  ],
+  "tie_word_embeddings": false,
+  "transf_decoder": {
+    "config_dict": {
+      "attn_layer_dropout": 0,
+      "attn_score_dropout": 0,
+      "embedding_dropout": 0,
+      "ffn_dropout": 0,
+      "hidden_act": "relu",
+      "hidden_size": 1024,
+      "inner_size": 4096,
+      "learn_positional_encodings": false,
+      "lm_dec_hidden": 1280,
+      "max_sequence_length": 1024,
+      "num_attention_heads": 8,
+      "num_layers": 8,
+      "num_token_types": 0,
+      "pre_ln": true,
+      "vocab_size": "None"
+    },
+    "encoder": null,
+    "model_name": null,
+    "pre_ln_final_layer_norm": true,
+    "pretrained": false
+  },
+  "transf_encoder": {
+    "attn_layer_dropout": 0,
+    "attn_score_dropout": 0,
+    "ffn_dropout": 0,
+    "hidden_size": 1024,
+    "inner_size": 4096,
+    "mask_future": false,
+    "num_attention_heads": 8,
+    "num_layers": 0,
+    "pre_ln": true,
+    "pre_ln_final_layer_norm": true
+  },
+  "transformers.js_config": {
+    "kv_cache_dtype": {
+      "fp16": "float16",
+      "q4f16": "float16"
+    },
+    "use_external_data_format": {
+      "decoder_model_merged": 1,
+      "encoder_model.onnx": 4,
+      "encoder_model_fp16.onnx": 2,
+      "encoder_model_q4.onnx": 1,
+      "encoder_model_q4f16.onnx": 1,
+      "encoder_model_quantized.onnx": 2
+    }
+  },
+  "transformers_version": "5.5.0.dev0",
+  "use_loss_mask_for_prompt": false,
+  "vocab_size": 16384
+}

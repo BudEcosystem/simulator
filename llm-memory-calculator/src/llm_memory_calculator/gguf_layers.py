@@ -110,7 +110,10 @@ def hf_layer_keys_from_gguf(get: Callable[[str], Any], n_layers: int) -> Dict[st
         names = []
         for i in range(n_layers):
             if kv_list[i] > 0:
-                names.append("sliding_attention" if swa and swa[i] else "full_attention")
+                # A pattern shorter than the stack marks only the layers it reaches; the rest
+                # attend in full, as `_fit_names` charges the layers a short list leaves out.
+                windowed = swa is not None and i < len(swa) and swa[i]
+                names.append("sliding_attention" if windowed else "full_attention")
             elif own_ffn_slots and ff_list[i] > 0:
                 names.append("mlp")
             elif recurrent_name:

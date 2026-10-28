@@ -115,6 +115,12 @@ def resolve_decoder_config(hf_config: dict) -> dict:
     """
     if not isinstance(hf_config, dict):
         return hf_config
+    # An encoder-decoder states its decoder under its own spellings (T5's `d_model` /
+    # `num_heads` / `num_decoder_layers`, Whisper's `decoder_layers`, Dia's `decoder_config`):
+    # the table's one reader puts them under the decoder-only names first.
+    from llm_memory_calculator.layer_plan import decoder_view
+
+    hf_config = decoder_view(hf_config)
     if _looks_like_decoder(hf_config):
         return hf_config
     sub = _find_decoder_subconfig(hf_config)
@@ -279,12 +285,18 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
     """
     # Composite (multimodal / omni) configs keep the decoder's dimensions in a nested
     # block; hoist them so every lookup below sees the real geometry instead of the
-    # module defaults. Flat configs pass through untouched.
+    # module defaults. Flat configs pass through untouched. An encoder-decoder's encoder
+    # depth is read before, from the config as stated.
+    from llm_memory_calculator.layer_plan import encoder_decoder_stacks
+
+    stacks = encoder_decoder_stacks(hf_config)
+    num_encoder_layers = stacks["encoder"] if stacks else 0
     hf_config = resolve_decoder_config(hf_config)
 
     # Extract architecture type
-    architectures = hf_config.get('architectures', [])
-    model_type = hf_config.get('model_type', '').lower()
+    # A config class's `to_dict` writes `architectures: null` (and may write `model_type` so)
+    architectures = hf_config.get('architectures') or []
+    model_type = (hf_config.get('model_type') or '').lower()
     is_mamba = any('mamba' in arch.lower() for arch in architectures) or 'mamba' in model_type
     is_jamba = 'jamba' in model_type or any('jamba' in arch.lower() for arch in architectures)
 
@@ -486,6 +498,7 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         hidden_size=hidden_size,
         intermediate_size=intermediate_size,
         num_ffi=num_ffi,
+        num_encoder_layers=num_encoder_layers,
         num_decoder_layers=num_layers,
         num_attention_heads=num_heads,
         head_dim=head_dim,

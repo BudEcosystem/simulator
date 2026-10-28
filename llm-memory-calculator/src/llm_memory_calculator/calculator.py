@@ -13,6 +13,9 @@ from .layer_plan import (
     MECH_MAMBA1,
     MECH_MAMBA2,
     attention_head_dim,
+    decoder_view,
+    encoder_block,
+    encoder_decoder_stacks,
     layer_kinds,
     resolve_layer_plan,
 )
@@ -499,6 +502,8 @@ class ModelMemoryCalculator:
         "GPU KV cache size" line.
         """
         caps = EngineKVCapabilities.resolve(engine_capabilities)
+        # An encoder-decoder's KV is its decoder's, under the decoder's own spellings.
+        config = decoder_view(config)
         normalized = ConfigNormalizer.normalize_config(config)
         # Structural, not by detected model type: a model can be multimodal AND
         # hybrid at once, and `self.model_type` holds only one label.
@@ -639,6 +644,8 @@ class ModelMemoryCalculator:
         to the pessimistic answer (no saving on windowed layers inside a mixed
         stack) because under-sizing KV is what OOMs a deployment.
         """
+        # An encoder-decoder's KV is its decoder's, under the decoder's own spellings.
+        config = decoder_view(config)
         raw_config = config
         # Normalize config for consistent key handling
         config = ConfigNormalizer.normalize_config(config)
@@ -726,6 +733,7 @@ class ModelMemoryCalculator:
         directly comparable to an engine's per-token KV accounting. It differs
         from ``bytes / tokens`` exactly when some layer is clamped.
         """
+        config = decoder_view(config)
         plan = self.resolve_kv_layer_plan(config, seq_length, engine_capabilities)
         bytes_per_element = self.PRECISION_BYTES.get(precision.lower(), 2)
         normalized = ConfigNormalizer.normalize_config(config)
@@ -1038,12 +1046,26 @@ class ModelMemoryCalculator:
     # Encoder-Decoder / Audio Model Support
     # =========================================================================
 
+    @staticmethod
+    def _plain_encoder_decoder(config: Dict[str, Any]):
+        """``(stacks, decoder view)`` of an encoder-decoder that states its stacks itself (T5,
+        BART, Whisper, Moonshine, Dia, ...), from the layer table's one reader; None for the
+        audio-LLM shapes the getters below read from `text_config` / `audio_config`."""
+        if "text_config" in config or "audio_config" in config:
+            return None
+        stacks = encoder_decoder_stacks(config)
+        return (stacks, decoder_view(config)) if stacks else None
+
     def _get_encoder_d_model(self, config: Dict[str, Any]) -> int:
         """Get encoder hidden dimension."""
         # Check for audio_config (Qwen2-Audio, Ultravox style)
         if "audio_config" in config:
             audio_config = config["audio_config"]
             return audio_config.get("d_model", audio_config.get("hidden_size", 1280))
+        # An encoder in its own block (Dia, cohere_asr) is as wide as that block says
+        block = encoder_block(config) if self._plain_encoder_decoder(config) else None
+        if block is not None and (block.get("hidden_size") or block.get("d_model")):
+            return int(block.get("hidden_size") or block.get("d_model"))
         # Whisper-style config
         return config.get("d_model", config.get("hidden_size", 1280))
 
@@ -1063,6 +1085,9 @@ class ModelMemoryCalculator:
         # Ultravox style: audio_config + top-level LLM params
         if "audio_config" in config and "hidden_size" in config:
             return config["hidden_size"]
+        plain = self._plain_encoder_decoder(config)
+        if plain and plain[1].get("hidden_size"):
+            return int(plain[1]["hidden_size"])
         # Whisper-style (shared d_model for encoder/decoder)
         return config.get("d_model", config.get("hidden_size", 1280))
 
@@ -1070,6 +1095,9 @@ class ModelMemoryCalculator:
         """Get number of encoder layers."""
         if "audio_config" in config:
             return config["audio_config"].get("encoder_layers", 32)
+        plain = self._plain_encoder_decoder(config)
+        if plain and plain[0]["encoder"]:
+            return plain[0]["encoder"]
         return config.get("encoder_layers", 0)
 
     def _get_decoder_layers(self, config: Dict[str, Any]) -> int:
@@ -1077,8 +1105,12 @@ class ModelMemoryCalculator:
         if "text_config" in config:
             text_cfg = config["text_config"]
             return text_cfg.get("num_hidden_layers", text_cfg.get("decoder_layers", 32))
-        # For encoder-decoder models (Whisper), prefer decoder_layers over num_hidden_layers
-        # num_hidden_layers in Whisper config refers to encoder, not decoder
+        # An encoder-decoder's own decoder depth: Whisper's `decoder_layers` (its
+        # num_hidden_layers is the encoder's), T5's `num_decoder_layers`, Moonshine's
+        # `decoder_num_hidden_layers`, Dia's `decoder_config` (`layer_plan.encoder_decoder_stacks`)
+        plain = self._plain_encoder_decoder(config)
+        if plain and plain[0]["decoder"]:
+            return plain[0]["decoder"]
         if "decoder_layers" in config:
             return config["decoder_layers"]
         # For audio-LLM with top-level params (Ultravox), use num_hidden_layers
@@ -1100,6 +1132,9 @@ class ModelMemoryCalculator:
         # Ultravox style: audio_config + top-level LLM params
         if "audio_config" in config and "num_attention_heads" in config:
             return config["num_attention_heads"]
+        plain = self._plain_encoder_decoder(config)
+        if plain and plain[1].get("num_attention_heads"):
+            return int(plain[1]["num_attention_heads"])
         return config.get(
             "decoder_attention_heads", config.get("num_attention_heads", 20)
         )
@@ -1119,6 +1154,10 @@ class ModelMemoryCalculator:
         if "audio_config" in config and "num_attention_heads" in config:
             num_heads = config["num_attention_heads"]
             return config.get("num_key_value_heads", num_heads)
+        plain = self._plain_encoder_decoder(config)
+        if plain and plain[1].get("num_attention_heads"):
+            view = plain[1]
+            return int(view.get("num_key_value_heads") or view["num_attention_heads"])
         num_heads = config.get(
             "decoder_attention_heads", config.get("num_attention_heads", 20)
         )
@@ -1358,6 +1397,10 @@ class ModelMemoryCalculator:
         num_heads = self._get_num_attention_heads(config)
         num_kv_heads = self._get_num_kv_heads(config)
         head_dim = decoder_d_model // num_heads
+        plain = self._plain_encoder_decoder(config)
+        if plain:
+            # The decoder's own head width (`head_dim`, T5's `d_kv`), as every reader takes it
+            head_dim = attention_head_dim(plain[1], num_heads, decoder_d_model) or head_dim
 
         bytes_per_element = self._get_bytes_per_element(precision)
 

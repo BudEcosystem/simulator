@@ -25,7 +25,9 @@ parameters); the FRD-027 `ModelFacts` layer counts; GenZ's per-layer attention a
 its KV elements per token (`get_kv_size`, which the disaggregation KV transfer multiplies by
 2 bytes), its decode and chunked graphs' KV and weights; and the serving `MemoryModel`'s KV
 bytes per token, per-request state, the 1,024-token requests 8 GiB admits, and the
-disaggregation transfer for 640 tokens.
+disaggregation transfer for 640 tokens; and, with ``--repo-root``, BudSimulator's database
+converter (`ModelConverter.hf_to_genz`): its encoder / decoder depths, KV elements per token and
+per-sequence state.
 """
 
 import argparse
@@ -144,7 +146,41 @@ def measure_config(name, cfg, genz_data):
         row["report_error"] = f"{type(e).__name__}: {e}"
     row.update(measure_genz(cfg, genz_data))
     row.update(measure_engine_and_facts(cfg))
+    row.update(measure_converter(cfg))
     return row
+
+
+#: The tree whose BudSimulator converter is measured (``--repo-root``).
+REPO_ROOT = None
+
+
+def measure_converter(cfg):
+    """BudSimulator's database path: `ModelConverter.hf_to_genz`, which graphs a model stored in
+    prepopulated.db (or added through hf_integration / model_loader) for the API."""
+    out = {}
+    if not REPO_ROOT:
+        return out
+    bud = os.path.join(REPO_ROOT, "BudSimulator")
+    sys.path.insert(0, bud)
+    try:
+        import contextlib
+        import io
+
+        from src.db.model_converter import ModelConverter
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            mc = ModelConverter().hf_to_genz(json.loads(json.dumps(cfg)))
+        out["conv_layers"] = [mc.num_encoder_layers, mc.num_decoder_layers]
+        out["conv_kv_size"] = int(mc.get_kv_size())
+        # A tree whose ModelConfig prices no state (origin/main) charges none: 0, as the serving
+        # path's state is recorded.
+        get_state = getattr(mc, "get_state_bytes", None)
+        out["conv_state_bytes"] = int(get_state(2)) if callable(get_state) else 0
+    except Exception as e:
+        out["conv_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    finally:
+        sys.path.remove(bud)
+    return out
 
 
 def measure_engine_and_facts(cfg):
@@ -274,6 +310,8 @@ def measure_gguf(path, repo_root, genz_data):
 
 
 def run(args):
+    global REPO_ROOT
+    REPO_ROOT = args.repo_root
     warnings.simplefilter("ignore")
     os.makedirs(os.path.join(args.genz_data, "model"), exist_ok=True)
     os.makedirs(os.path.join(args.genz_data, "sparsity"), exist_ok=True)

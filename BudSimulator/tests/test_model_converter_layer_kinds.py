@@ -73,3 +73,59 @@ def test_a_database_model_takes_its_depth_from_the_per_layer_list():
     assert converted.num_decoder_layers == loaded.num_decoder_layers == 52
     assert sum(lc.attention_type == "MHA-global" for lc in converted.layer_configs) == 4
     assert converted.get_kv_size() == loaded.get_kv_size() > 0
+
+
+HYBRIDS = sorted(p.stem for p in FIXTURES.glob("*.json"))
+
+
+def _figures(mc):
+    return dict(layers=mc.num_decoder_layers, kv=mc.get_kv_size(), state=mc.get_state_bytes(2))
+
+
+@pytest.mark.parametrize("name", HYBRIDS)
+def test_a_database_model_holds_the_kv_and_state_its_hf_config_holds(name):
+    """The converter computed the recurrent state and dropped it (a Mamba-2 stack fell back to
+    Mamba-1's conv buffer, 0.29% low on Mamba-Codestral), and passed no MLA dimensions (DeepSeek
+    and Kimi Linear charged full K and V per head, 25x and 8x their latent cache)."""
+    converted, loaded = _both(_cfg(name))
+    assert _figures(converted) == _figures(loaded)
+
+
+ENC_DEC = FIXTURES.parent / "encoder_decoder"
+
+
+def _enc_dec(name, **changes):
+    c = json.loads((ENC_DEC / f"{name}.json").read_text())
+    c.update(changes)
+    return c
+
+
+# name -> (config, encoder layers, decoder layers, K+V elements a token adds)
+ENC_DEC_CASES = {
+    "dia": (lambda: _enc_dec("nari-labs_Dia-1.6B-0626"), 12, 18, 2 * 18 * 4 * 128),
+    "whisper-turbo": (lambda: _enc_dec("onnx-community_whisper-large-v3-turbo"), 32, 4,
+                      2 * 4 * 20 * 64),
+    "moonshine": (lambda: _enc_dec("onnx-community_moonshine-base-ONNX"), 8, 8, 2 * 8 * 8 * 52),
+    "cohere-asr": (lambda: _enc_dec("onnx-community_cohere-transcribe-03-2026-ONNX"), 48, 8,
+                   2 * 8 * 8 * 128),
+    "flan-t5-xl": (lambda: _enc_dec("t5_flan-xl-geometry"), 24, 24, 2 * 24 * 32 * 64),
+    "t5-asymmetric": (lambda: _enc_dec("t5_flan-xl-geometry", num_layers=12,
+                                       num_decoder_layers=4), 12, 4, 2 * 4 * 32 * 64),
+    "bart": (lambda: _enc_dec("bart_transformers-5.12-default"), 12, 12, 2 * 12 * 16 * 64),
+    # as a config class's `to_dict` writes it, `architectures: null`
+    "bart-unnamed": (lambda: _enc_dec("bart_transformers-5.12-default", architectures=None),
+                     12, 12, 2 * 12 * 16 * 64),
+}
+
+
+@pytest.mark.parametrize("case", sorted(ENC_DEC_CASES))
+def test_a_database_encoder_decoder_is_graphed_with_its_decoder_s_own_depth(case):
+    """The converter split the decoder's depth in two (`num_hidden_layers // 2`): Dia's 18
+    decoder layers became 9, flan-t5-xl's 24 became 12 with a default 32 heads; Whisper's and
+    BART's width and heads were the 7B defaults."""
+    make, enc, dec, kv = ENC_DEC_CASES[case]
+    converted, loaded = _both(make())
+    assert (converted.num_encoder_layers, converted.num_decoder_layers) == (enc, dec)
+    assert converted.get_kv_size() == kv
+    assert (loaded.num_encoder_layers, loaded.num_decoder_layers, loaded.get_kv_size()) == (
+        enc, dec, kv)

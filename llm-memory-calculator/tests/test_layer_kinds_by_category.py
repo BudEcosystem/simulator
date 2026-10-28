@@ -266,6 +266,24 @@ def test_a_gguf_window_pattern_marks_the_windowed_layers():
     assert keys["sliding_window"] == 1024
 
 
+@pytest.mark.parametrize("kv", [[8, 0, 8, 8], 8])
+def test_a_gguf_window_pattern_shorter_than_the_stack_leaves_the_rest_full(kv):
+    """A window pattern array shorter than `block_count` (malformed metadata: llama.cpp writes
+    n_layer entries) marks only the layers it reaches; the rest attend in full. Beside a
+    per-layer KV-head array it indexed past its end (IndexError)."""
+    keys = hf_layer_keys_from_gguf(
+        _gguf({"attention.head_count": 8, "attention.head_count_kv": kv,
+               "attention.sliding_window": 512, "attention.sliding_window_pattern": [1, 1],
+               "feed_forward_length": 1024}), 4)
+    plan = resolve_layer_plan(dict(num_hidden_layers=4, hidden_size=1024,
+                                   num_attention_heads=8, **keys))
+    expect = (["sliding", "no_op", "full", "full"] if isinstance(kv, list)
+              else ["sliding", "sliding", "full", "full"])
+    got = ["no_op" if a is None else ("sliding" if a == "sliding" else "full")
+           for a in plan["attn"]]
+    assert got == expect
+
+
 def test_a_dense_gguf_adds_nothing():
     assert hf_layer_keys_from_gguf(
         _gguf({"attention.head_count": 32, "attention.head_count_kv": 8}), 32) == {}

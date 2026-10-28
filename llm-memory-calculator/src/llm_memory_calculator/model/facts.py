@@ -24,6 +24,8 @@ from ..layer_plan import (
     ATTN_FULL,
     ATTN_SLIDING,
     attention_head_dim,
+    decoder_view,
+    encoder_decoder_stacks,
     layer_kinds,
     resolve_layer_plan,
 )
@@ -718,6 +720,11 @@ def _mtp_params(
 
 
 def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
+    # An encoder-decoder's KV and decoder weights are its decoder's, under the decoder's own
+    # spellings (Whisper's `decoder_layers`, T5's `num_heads`); its encoder is its own stack.
+    stacks = encoder_decoder_stacks(config) if isinstance(config, dict) else None
+    if stacks is not None:
+        config = decoder_view(config)
     text = dict(_text(config))
     flags = set()
     ok, reason = _recognised(config)
@@ -783,7 +790,8 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     roles.update({k: v for k, v in ffn.items() if v})
     roles["norm"] = (2 * n_layers + 1) * h
     if encoder_decoder:
-        enc_layers = int(_get(text, "encoder_layers", default=n_layers) or n_layers)
+        enc_layers = int((stacks or {}).get("encoder") or _get(text, "encoder_layers", default=n_layers)
+                         or n_layers)
         enc_ffn = int(_get(text, "encoder_ffn_dim", default=4 * h) or 4 * h)
         roles["attention"] += (
             enc_layers * 4 * h * h + n_layers * 4 * h * h

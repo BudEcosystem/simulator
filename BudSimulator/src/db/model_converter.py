@@ -12,7 +12,7 @@ from llm_memory_calculator.genz.Models.get_language_model import (
     graph_layer_kinds,
     resolve_decoder_config,
 )
-from llm_memory_calculator.layer_plan import attention_head_dim, depth
+from llm_memory_calculator.layer_plan import attention_head_dim, depth, encoder_decoder_stacks
 from llm_memory_calculator.genz.Models.model_quality import QualityMetricsCollection, MMLU, MATH, GSM8K, Hellaswag, TriviaQA
 
 
@@ -57,8 +57,14 @@ class ModelConverter:
         if not model_id:
             model_id = hf_config.get('model_id', 'unknown')
         
-        # A multimodal config nests the decoder (`text_config`, ...): read its geometry, as the
-        # HF loader does. A config whose decoder cannot be found is read as it stands.
+        # An encoder-decoder's two depths, from the config as stated (each stack's own key or
+        # block: T5's `num_layers` is the encoder's, Dia nests each stack).
+        stacks = encoder_decoder_stacks(hf_config)
+
+        # A multimodal config nests the decoder (`text_config`, ...), an encoder-decoder states it
+        # under its own spellings (`decoder_layers`, T5's `num_heads` / `d_model`, Dia's
+        # `decoder_config`): read its geometry, as the HF loader does. A config whose decoder
+        # cannot be found is read as it stands.
         try:
             hf_config = resolve_decoder_config(hf_config)
         except ValueError:
@@ -114,18 +120,10 @@ class ModelConverter:
             # For Mixtral-style models, every layer is MoE
             moe_layer_freq = 1
         
-        # Handle encoder-decoder models
-        num_encoder_layers = 0
+        # Encoder-decoder models: the depth read above is already the decoder's. The encoder's is
+        # its own stack's, never a split of the decoder's (which halved Dia's and T5's decoder).
+        num_encoder_layers = stacks["encoder"] if stacks else 0
         num_decoder_layers = num_hidden_layers
-        if hf_config.get('is_encoder_decoder'):
-            # Split layers between encoder and decoder
-            if 'encoder_layers' in hf_config:
-                num_encoder_layers = hf_config['encoder_layers']
-                num_decoder_layers = hf_config.get('decoder_layers', num_hidden_layers)
-            else:
-                # Default split
-                num_encoder_layers = num_hidden_layers // 2
-                num_decoder_layers = num_hidden_layers - num_encoder_layers
         
         # Mamba parameters (for SSM models)
         mamba_d_state = hf_config.get('state_size', hf_config.get('d_state'))
@@ -165,6 +163,9 @@ class ModelConverter:
         layer_configs = plan["layer_configs"]
         sliding_window = plan["sliding_window"]
         mamba_d_state = plan["mamba_d_state"]
+        # The state of an all-recurrent stack's layer, from the config's own mechanism (a
+        # Mamba-2 conv buffer carries its B/C groups; without it GenZ falls back to Mamba-1's).
+        recurrent_state = plan["recurrent_state"]
 
         # Create GenZ ModelConfig
         config = ModelConfig(
@@ -191,9 +192,16 @@ class ModelConverter:
             mamba_d_state=mamba_d_state,
             mamba_d_conv=mamba_d_conv,
             mamba_expand=mamba_expand,
+            # MLA: one latent of kv_lora_rank + qk_rope_head_dim per layer, not K and V per head
+            kv_lora_rank=hf_config.get('kv_lora_rank'),
+            q_lora_rank=hf_config.get('q_lora_rank'),
+            qk_rope_head_dim=hf_config.get('qk_rope_head_dim'),
+            qk_nope_head_dim=hf_config.get('qk_nope_head_dim'),
+            v_head_dim=hf_config.get('v_head_dim'),
             # Quality metrics
             model_quality=quality_collection,
             layer_configs=layer_configs,
+            recurrent_state=recurrent_state,
         )
         
         return config

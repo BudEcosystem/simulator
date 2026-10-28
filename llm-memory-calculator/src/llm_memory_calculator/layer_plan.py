@@ -187,6 +187,103 @@ def depth(tc: Dict[str, Any]) -> int:
     return 0
 
 
+#: An encoder-decoder's two stacks, as transformers' config classes (5.12) spell them. The
+#: decoder holds the per-token KV cache. BART / Whisper / Marian / M2M-100 / Pegasus / ... say
+#: `decoder_layers`, `decoder_attention_heads`, `decoder_ffn_dim` and their `encoder_*` twins.
+#: The T5 family (T5, mT5, UMT5, LongT5, Switch) says `num_decoder_layers` beside `num_layers`,
+#: which is the ENCODER's depth, and `num_heads` / `d_model` / `d_ff` / `d_kv` for both. Moonshine
+#: says `decoder_num_hidden_layers` / `decoder_num_attention_heads` / `decoder_num_key_value_heads`.
+#: ProphetNet says `num_encoder_layers`. Dia and EncoderDecoderModel nest each stack in its own
+#: block (`encoder_config` / `decoder_config`, `encoder` / `decoder`); cohere_asr nests only the
+#: encoder and keeps the decoder at the top level.
+DECODER_DEPTH_KEYS = ("decoder_layers", "num_decoder_layers", "decoder_num_hidden_layers")
+ENCODER_DEPTH_KEYS = ("encoder_layers", "num_encoder_layers", "encoder_num_hidden_layers")
+DECODER_HEAD_KEYS = ("decoder_attention_heads", "decoder_num_attention_heads")
+DECODER_KV_HEAD_KEYS = ("decoder_num_key_value_heads",)
+DECODER_FFN_KEYS = ("decoder_ffn_dim",)
+NESTED_DECODER_KEYS = ("decoder_config", "decoder")
+NESTED_ENCODER_KEYS = ("encoder_config", "encoder")
+
+
+def _stack_block(config: Dict[str, Any], keys) -> Optional[Dict[str, Any]]:
+    """The nested block holding one stack (`encoder_config` / `decoder_config`, ...), or None."""
+    for k in keys:
+        v = config.get(k)
+        if isinstance(v, dict) and depth(v) > 0:
+            return v
+    return None
+
+
+def encoder_block(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """An encoder-decoder's nested encoder block (Dia's `encoder_config`, cohere_asr's, ...)."""
+    return _stack_block(config, NESTED_ENCODER_KEYS) if isinstance(config, dict) else None
+
+
+def encoder_decoder_stacks(config: Dict[str, Any]) -> Optional[Dict[str, int]]:
+    """``{"encoder": layers, "decoder": layers}`` for an encoder-decoder config, else None.
+
+    A config is one when it says so (`is_encoder_decoder`), states a decoder depth of its own,
+    or nests both stacks. Each depth is the stack's own key, else its nested block's depth,
+    else the config's stated depth: transformers reads `num_hidden_layers` of an
+    encoder-decoder as one stack's depth (BART and Whisper map it to `encoder_layers`, T5 to
+    `num_layers`, and T5's decoder defaults to `num_layers`), never as the two stacks' sum. A
+    depth the config does not state is 0.
+    """
+    if not isinstance(config, dict):
+        return None
+    dec_key = _pos_int(_first(config, *DECODER_DEPTH_KEYS))
+    enc_key = _pos_int(_first(config, *ENCODER_DEPTH_KEYS))
+    dec_block = _stack_block(config, NESTED_DECODER_KEYS)
+    enc_block = _stack_block(config, NESTED_ENCODER_KEYS)
+    if not (config.get("is_encoder_decoder") is True or dec_key
+            or (dec_block is not None and enc_block is not None)):
+        return None
+    stated = depth(config)
+    decoder = dec_key or (depth(dec_block) if dec_block is not None else stated)
+    encoder = enc_key or (depth(enc_block) if enc_block is not None else stated)
+    return {"encoder": int(encoder or 0), "decoder": int(decoder or 0)}
+
+
+def decoder_view(config: Dict[str, Any]) -> Dict[str, Any]:
+    """An encoder-decoder config with its DECODER's geometry under the decoder-only names.
+
+    The per-token KV cache is the decoder's self-attention: its depth, heads and width, which
+    such a config states under its own spellings (``DECODER_*_KEYS``, T5's ``num_heads`` /
+    ``d_model`` / ``d_ff``). Read under the decoder-only names alone they were missed: the
+    decoder was charged the encoder's depth, a default head count or none (Whisper and BART
+    were charged no KV at all). A decoder in its own block (Dia's `decoder_config`,
+    EncoderDecoderModel's `decoder`) is lifted over the top level, as a multimodal config's
+    `text_config` is. Any other config is returned as it is.
+    """
+    stacks = encoder_decoder_stacks(config)
+    if stacks is None:
+        return config
+    view = dict(config)
+    block = _stack_block(config, NESTED_DECODER_KEYS)
+    if block is not None:
+        view.update({k: v for k, v in block.items() if v is not None})
+    if stacks["decoder"]:
+        view["num_hidden_layers"] = stacks["decoder"]
+    heads = _pos_int(_first(view, *DECODER_HEAD_KEYS))
+    if heads:
+        view["num_attention_heads"] = heads
+        view["num_key_value_heads"] = _pos_int(_first(view, *DECODER_KV_HEAD_KEYS)) or heads
+    elif not _pos_int(_first(view, *ATTENTION_HEAD_KEYS)):
+        # T5's `num_heads`: in an encoder-decoder these are attention heads (the guard the
+        # normalizer keeps for `num_heads` is for xLSTM's matrix-memory heads, a decoder-only).
+        heads = _pos_int(view.get("num_heads"))
+        if heads:
+            view["num_attention_heads"] = heads
+    if not _pos_int(view.get("hidden_size")) and _pos_int(view.get("d_model")):
+        view["hidden_size"] = int(view["d_model"])
+    ffn = _pos_int(_first(view, *DECODER_FFN_KEYS))
+    if ffn:
+        view["intermediate_size"] = ffn
+    elif not _pos_int(view.get("intermediate_size")) and _pos_int(view.get("d_ff")):
+        view["intermediate_size"] = int(view["d_ff"])
+    return view
+
+
 #: Spellings of "how many tokens a windowed layer keeps". SmallThinker ships
 #: `sliding_window_size`, RecurrentGemma `attention_window_size`.
 WINDOW_KEYS = ("sliding_window", "sliding_window_size", "attention_window_size", "window_size")
