@@ -15,7 +15,7 @@ table, and every part of the simulator answers from it:
 | GenZ graph (`get_language_model.layer_configs_from_hf`, `ModelConfig.get_kv_size`) -- the prefill, decode **and chunked** builders (`create_full_chunked_model`: chunked serving, speculative decoding, the simulation engine's chunked feature) | per-layer operators; KV only on attention layers, the window on windowed ones; which FFNs are MoE (`layer_plan.moe_layers`) and how wide a dense one is (`layer_plan.dense_ffn_width`) |
 | GenZ serving (`MemoryModel.bytes_per_token_kv` and `state_bytes_per_sequence`, `request_bytes`, the scheduler's admission check, cluster and disaggregation `B_eff`, the disaggregation transfer; the prefix cache's price of a cached token (`PrefixCacheAnalyzer`, BudSimulator `/cache/analyze`); BudSimulator `/api/v2/memory/tiers`) | per-token KV, and the per-request fixed state (`ModelConfig.get_state_bytes`) |
 | `UniversalParameterCounter`, `model.facts` (FRD-027), `model.recognise` | weights per mixer, KV per token, the known vocabulary. `model.facts` reads the layer kinds for every config: a `model_type` outside the recogniser is still flagged `architecture: unrecognised`, but which layers hold KV comes from the table, not from that allowlist |
-| BudSimulator `ModelConverter.hf_to_genz` | database models graphed like HF configs: the same depth, per-layer kinds, window and Mamba decision (`get_language_model.graph_layer_kinds`), the decoder read from under `text_config` |
+| BudSimulator `ModelConverter.hf_to_genz` | database models graphed like HF configs: the same depth, per-layer kinds, window, Mamba decision and all-recurrent stack's state (`get_language_model.graph_layer_kinds`), the same MLA latent (`kv_lora_rank`, `qk_rope_head_dim`), the decoder read from under `text_config` or an encoder-decoder's own spellings (`layer_plan.decoder_view`), and the encoder's depth from its own stack (`layer_plan.encoder_decoder_stacks`) |
 | The vLLM planner (`engine/vllm.py`: `limits`, `predict`; the profile scheduler `perf.sched`; the shared-slice sizing `runtime.modules.capacity`) | the facts' full and sliding layers as KV-cache groups; a running sequence's blocks in every group (`Limits.blocks_per_sequence`) |
 
 The table is `layer_plan.LAYER_KINDS`; the per-model answer is `layer_plan.layer_kinds(config)`
@@ -66,6 +66,7 @@ gguf-py's `Keys` (`gguf/constants.py`).
 | Sparse / compressed attention | every token (upper bound) | `deepseek_sparse_attention`, `compressed_sparse_attention`, `heavily_compressed_attention`, `minimax_m3_sparse`, `sparse` | DeepSeek-V3.2/V4, MiniMax-M3 |
 | MLA (latent KV) | `kv_lora_rank + qk_rope_head_dim`, no factor 2 | `kv_lora_rank` (non-null), `qk_rope_head_dim` | DeepSeek-V2/V3, Kimi |
 | Cross-attention | the encoder's tokens, fixed per request | `cross_attention_layers`; encoder tokens = `max_num_tiles x ((image_size / patch_size)^2 + 1)` from `vision_config` | Mllama |
+| Encoder-decoder (the decoder's self-attention) | every token, on the **decoder's** layers | the decoder's depth: `decoder_layers` (BART, Whisper, Marian, M2M-100, Pegasus), `num_decoder_layers` (T5, mT5, UMT5, LongT5, Switch; T5's `num_layers` is the encoder's), `decoder_num_hidden_layers` (Moonshine), a nested `decoder_config` / `decoder` block (Dia, EncoderDecoderModel), else the stated depth; heads `decoder_attention_heads`, `decoder_num_attention_heads`, `decoder_num_key_value_heads`, T5's `num_heads`; width `d_model`; FFN `decoder_ffn_dim`, `d_ff`; head width `d_kv`. The encoder's depth: `encoder_layers`, `num_encoder_layers`, `encoder_num_hidden_layers`, a nested `encoder_config` / `encoder` block, else the stated depth | T5, BART, Whisper, Moonshine, Dia, cohere_asr |
 | KV-shared layers | none of their own | `num_kv_shared_layers` (the last N layers) | Gemma 3n |
 | Gated DeltaNet | fixed: `nv x dk x dv` fp32 + conv | `layer_types: linear_attention` with `linear_num_value_heads`, `linear_key_head_dim`, `linear_value_head_dim`, `linear_num_key_heads`, `linear_conv_kernel_dim`; `full_attention_interval` | Qwen3-Next, Qwen3.5/3.6 |
 | Plain linear attention | fixed: `heads x d x d` | `linear_attention` without GDN keys; `attn_type_list` (0 = linear) | MiniMax-Text-01 |
@@ -122,6 +123,38 @@ an MLA cache is its latent, sized by its own path).
 
 A multimodal config nests the decoder under `text_config`; every reader looks there first, so a
 model that is both multimodal and hybrid (Qwen3.5) gets the hybrid layout.
+
+### Encoder-decoder models
+
+An encoder-decoder's per-token KV cache is its **decoder's** self-attention. Such a config states
+the decoder under its own spellings (the encoder-decoder row above, each checked against
+transformers 5.12's configuration classes and the hub configs in
+`tests/fixtures/encoder_decoder/`), and `layer_plan.decoder_view` puts them under the
+decoder-only names (lifting a nested decoder block as `text_config` is lifted) for every reader:
+`calculate_kv_cache` and `kv_cache_breakdown`, `calculate_memory`'s encoder-decoder getters (and
+so the engine estimate), the FRD-027 facts, the GenZ loader (and so `get_kv_size`, the serving
+memory model and the disaggregation transfer) and BudSimulator's converter.
+`layer_plan.encoder_decoder_stacks` gives both depths. A config is one when it says so
+(`is_encoder_decoder`), states a decoder depth of its own or nests both stacks; any other config
+is read as it stands. Read under the decoder-only names alone:
+
+* `calculate_kv_cache` and the facts charged Whisper the encoder's depth (32 layers, not the
+  turbo decoder's 4), `calculate_kv_cache` charged Whisper, BART and Dia no KV at all (no head
+  count where it looked), and the facts gave flan-t5-xl a default 16 heads for its 32;
+* `calculate_memory`'s getters read Whisper's spellings only: flan-t5-xl's decoder was 4 layers of
+  20 heads (Whisper defaults) against 24 of 32, Dia's 4 of 20 against 18 of 4 KV heads;
+* GenZ refused T5, BART and Whisper outright (a width spelled `d_model` beside a nested block);
+* BudSimulator's converter split the decoder's depth in two (`num_hidden_layers // 2` whenever
+  `encoder_layers` was absent): Dia's 18 decoder layers became 9 and flan-t5-xl's 24 became 12
+  with a default 32 heads -- under the true decoder KV, and under origin/main's.
+
+The decoder's **cross-attention** cache (each decoder layer's K and V over the encoder's output,
+fixed per request) is charged by `calculate_memory` (and the engine estimate) beside the decoder's
+self-attention: `2 x decoder layers x encoder width x encoder tokens`, the tokens
+`encoder_seq_length` or the config's `max_source_positions` (1,500 when unstated), plus the
+same-sized encoder self-attention term. The per-token readers -- `calculate_kv_cache`, the facts,
+GenZ, the serving model, the converter -- charge the decoder's self-attention only. See "What is
+conservative".
 
 An attention head count spelled `num_heads` or `n_heads` (GPT-Neo, T5, MPT) is read as the
 attention heads (`ConfigNormalizer`) only when the table says the stack has attention layers:
@@ -209,6 +242,14 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
   attention-free by its name (a `mamba`-named config with heads and a state key is the parallel
   hybrid above).
 * **Cross-attention** without a vision geometry in the config is charged the full sequence.
+* **Not conservative: an encoder-decoder's cross-attention cache outside `calculate_memory`.**
+  The per-token readers (`calculate_kv_cache`, the facts, GenZ, the serving model and BudSimulator's
+  converter) charge the decoder's self-attention on its own layers (above) but not the
+  cross-attention K and V each decoder layer keeps over the encoder's output, `2 x decoder layers x
+  KV width x encoder tokens` a request (Whisper large-v3-turbo over its 1,500 audio frames: 4 x 2 x
+  1,280 x 1,500 x 2 B = 30.7 MB). `calculate_memory` and the engine estimate do charge it, with its
+  cross-attention width taken as the encoder's width (Dia's cross-attention is 16 KV heads of 128,
+  2,048 wide, against its 1,024-wide encoder: half). As on origin/main; a known under-count.
 
 ## The recurrent state
 
@@ -247,7 +288,9 @@ no FFN and some 0-KV layer runs one, as Nemotron-H's; any other 0-KV layer is th
 recurrent mixer, or `no_op` when it states none -- naming Deci's no-op and linear-replacement
 layers `mlp` slots had taken the FFN off every attention layer in the GenZ graph; an FFN no-op
 on a layer with KV heads, in a stack without FFN slots, is still given its FFN -- an over-count); `attention.sliding_window` with
-`attention.sliding_window_pattern`; `attention.shared_kv_layers`; `ssm.{conv_kernel, inner_size,
+`attention.sliding_window_pattern` (a pattern array shorter than `block_count`, which llama.cpp
+never writes, windows only the layers it reaches: the rest attend in full, beside a per-layer KV
+array as without one); `attention.shared_kv_layers`; `ssm.{conv_kernel, inner_size,
 state_size, group_count, time_step_rank}` (a file with no `ssm.group_count` is Mamba-1, as
 llama.cpp's Mamba-1 has no B/C groups); `wkv.head_size`; `shortconv.l_cache`. The reader also
 states what the parameter counter needs from the file itself: RoPE from `rope.freq_base` /

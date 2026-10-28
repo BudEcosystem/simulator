@@ -254,7 +254,11 @@ The calculator provides detailed breakdown:
   each keeps: full attention every token, sliding / chunked layers their window, cross-attention
   the encoder's tokens, MLA one latent per layer; linear-attention, SSM, convolution and
   FFN-only layers none. Each layer is as wide as the model's own attention head (`head_dim`,
-  or `attention_head_dim` / `kv_channels` / `d_kv`, or `attention_hidden_size / heads`). See
+  or `attention_head_dim` / `kv_channels` / `d_kv`, or `attention_hidden_size / heads`). An
+  encoder-decoder is charged its decoder's layers, heads and width (`decoder_layers`,
+  `num_decoder_layers`, `decoder_attention_heads`, T5's `num_heads` / `d_model`, a nested
+  `decoder_config`; `layer_plan.decoder_view`); its cross-attention cache over the encoder's
+  output is charged by `calculate_memory`, not by `calculate_kv_cache`. See
   [docs/LAYER_KINDS.md](docs/LAYER_KINDS.md) for every category, the config keys read, and what
   is charged conservatively.
 - **Activation Memory**: Intermediate activations during forward pass

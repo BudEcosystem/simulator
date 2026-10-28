@@ -266,7 +266,12 @@ as state memory and counted in the engine total; the serving simulator charges e
 KV blocks plus that state (`MemoryModel.state_bytes_per_sequence`, also in the cluster and
 disaggregation concurrency, the prefill-to-decode transfer and `/api/v2/memory/tiers`). Each KV
 layer is as wide as the model's own attention head (`head_dim` or its aliases, e.g. Zamba2's
-`attention_head_dim`), read by one function for every reader. A layer kind the table does not
+`attention_head_dim`), read by one function for every reader. An encoder-decoder (T5, BART,
+Whisper, Moonshine, Dia) is charged its **decoder's** self-attention, on the decoder's own depth,
+heads and width under each family's spellings (`decoder_layers`, T5's `num_decoder_layers` and
+`num_heads`, a nested `decoder_config`, ...), by every reader including BudSimulator's database
+converter; its cross-attention cache over the encoder's output is charged by `calculate_memory`
+and the engine estimate, not by the per-token readers. A layer kind the table does not
 know, a per-layer list shorter than the depth, a window whose layers the config does not place,
 layers named sliding whose window the config states under no key the table reads, and a config with an SSM state and attention heads but no layout key (charged KV and state on
 every layer) are over-estimated with a warning, never treated as free or clamped. Categories, the config and GGUF keys read, and the

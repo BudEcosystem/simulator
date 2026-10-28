@@ -17,7 +17,10 @@ and the fifth review's (a dense layer of an MoE model graphed at the experts' wi
 whose window the table does not read, and the prefix cache's price of a token); and the sixth
 review's (the vLLM planner's concurrency on a stack of full and sliding layers, GenZ's depth for a
 config that states it only as a per-layer list, a GGUF's 0-KV layers taken for FFN-only slots,
-the database converter's window, and the README's statement of the window).
+the database converter's window, and the README's statement of the window); and the seventh
+review's (an encoder-decoder's decoder read under its own spellings by every reader, the
+converter's recurrent state and MLA latent, a GGUF window pattern shorter than the stack, and
+this proof's headline).
 
 ## 1. The measured case
 
@@ -148,6 +151,23 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
   - BudSimulator `tests/test_model_converter_layer_kinds.py` x 5 (SmallThinker's
     `sliding_window_size`, Llama 4's `attention_chunk_size` flat and under `text_config`, Gemma 3
     under `text_config`: window None; the saved Nemotron-H: a ValueError)
+* Round 8 (83 cases added for the seventh review) against the round-7 head `de8f1be`:
+  - `tests/test_encoder_decoder_stack.py` x 47 (nine encoder-decoder shapes from
+    `tests/fixtures/encoder_decoder`: Dia, Whisper large-v3-turbo, Moonshine and an asymmetric
+    Moonshine, cohere_asr, flan-t5-xl, an asymmetric T5, a T5 saved with `architectures: null`,
+    BART; each through `encoder_decoder_stacks`, GenZ, `calculate_kv_cache` / `kv_cache_breakdown`,
+    the facts and `calculate_memory`'s decoder getters, plus a decoder-only guard over every hybrid
+    fixture and the view's stability): the file does not import on `de8f1be` (the reader does
+    not exist). Measured there by hand: `calculate_kv_cache` 0 for BART, Dia and Whisper, Whisper's
+    breakdown 32 layers; GenZ a ValueError for T5, BART and Whisper; `calculate_memory`'s decoder
+    4 layers of 20 heads for T5 and Dia; the facts 16 heads for flan-t5-xl's 32.
+  - test_a_gguf_window_pattern_shorter_than_the_stack_leaves_the_rest_full x 2: the per-layer KV
+    array case failed (IndexError); the scalar case is a guard.
+  - BudSimulator `tests/test_model_converter_layer_kinds.py` x 34: 11 failed, 23 guards.
+    test_a_database_model_holds_the_kv_and_state_its_hf_config_holds over the 26 hybrid fixtures
+    failed on Mamba-Codestral (state 0.29% low), DeepSeek-V3.2 and Kimi Linear (no MLA latent);
+    test_a_database_encoder_decoder_is_graphed_with_its_decoder_s_own_depth failed on all 8 (Dia
+    9 decoder layers, flan-t5-xl 12, ...; BART and Whisper: the loader's ValueError).
 * This branch: 157 cases, 150 passed and 7 skipped (the GGUF-file cases skip where `gguf` is absent; the cross-check
   skips the 7 fixtures transformers cannot build). The category file also runs in a venv with
   neither `transformers` nor `gguf` (149 passed, 33 skipped across it and
@@ -165,10 +185,11 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
 
 | Suite | origin/main `c17ef89` | This branch |
 |---|---|---|
-| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,241 passed, 21 skipped, 1 failed |
-| `BudSimulator/tests` (pytest) | 24 passed | 31 passed |
+| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,290 passed, 21 skipped, 1 failed |
+| `BudSimulator/tests` (pytest) | 24 passed | 65 passed |
 
-(Round 3 ended at 2,151 / 24; round 4 at 2,191 passed, 14 skipped / 26; round 5 adds the 32
+(Round 8 adds the 49 calculator cases and the 34 BudSimulator converter cases above; round 7
+ended at 2,241 passed, 21 skipped / 31. Round 3 ended at 2,151 / 24; round 4 at 2,191 passed, 14 skipped / 26; round 5 adds the 32
 category cases above, 7 of which skip -- fixtures transformers cannot build. Round 6 adds the 7 category cases for the fifth review; round 7 the 18 category cases and the 5
 BudSimulator converter cases for the sixth (no existing test changed: the planner's gpt-oss
 calibrations hold with each sequence's sliding blocks counted). Round 4 added the 40
@@ -199,7 +220,10 @@ disaggregation KV transfer is this x 2 B per token), the decode graph's KV and w
 chunked graph's KV; and the serving `MemoryModel`'s bytes per token, its per-request state, the
 1,024-token requests that fit 8 GiB, and the disaggregation transfer for 512 + 128 tokens (KV x
 2 B, plus the state where the tree counts it). Round 4 added the last three figures and re-measured
-origin/main, the round-3 head and this branch with the same script.
+origin/main, the round-3 head and this branch with the same script. Round 8 added BudSimulator's
+converter (`ModelConverter.hf_to_genz`, the database path; `--repo-root` names the tree): its
+encoder and decoder depths, `get_kv_size` and `get_state_bytes(2)`, and re-measured origin/main,
+the round-7 head and this branch.
 
 Reproduce (the first `PYTHONPATH` entry is the tree measured):
 
@@ -209,9 +233,13 @@ Reproduce (the first `PYTHONPATH` entry is the tree measured):
         --hf-cache ~/.cache/huggingface/hub --models /home/bud/models --repo-root <tree> --genz-data <scratch>
     python llm-memory-calculator/scripts/kv_corpus.py --diff before.json after.json --report diff.md
 
-**Result: 134 unchanged, 59 changed** (193 configs; the empty-row marker is unchanged). No uniform dense
-transformer's KV moved in any output. No config that measured before fails now; three that failed
-now measure (Jamba, Kimi Linear, DeepSeek-V2-Lite in GenZ). Every change, by cause:
+**Result: 194 rows -- 193 configs and the empty-row marker -- 127 unchanged, 67 changed** against
+origin/main, over every figure including BudSimulator's converter (measured from round 8 on).
+Over the figures measured before round 8: 129 unchanged, 65 changed, the 59 of round 7 (135
+unchanged counting the marker, 134 not) and the six encoder-decoders of round 8. No uniform dense
+decoder-only transformer's KV moved in any output. No config that measured before fails now; four
+that failed now measure (Jamba, Kimi Linear, DeepSeek-V2-Lite and, from round 8, Whisper
+large-v3-turbo in GenZ). Every change, by cause (rounds 1-7; round 8's below):
 
 * **Recurrent layers no longer charged a KV cache** (Qwen3.5-4B/-Base and two Qwen3.5
   derivatives, Qwen3.6-27B x2, Qwen3-Next, LFM2 / LFM2.5-Audio, MiniMax-Text-01, Kimi Linear, the
@@ -464,6 +492,87 @@ corpus is still 135 unchanged, 59 changed:
   (`feed_forward_length` 0) is still graphed with an FFN: an over-count.
 * The README now states which readers apply the window: no figure moves.
 
+Round 8 (the seventh review, of `de8f1be`) moved exactly the six encoder-decoder configs in the
+figures measured before (`--diff` of the round-7 head's corpus against this branch's, both
+re-measured with this round's script: 188 unchanged, 6 changed; the round-7 head's re-measured
+figures are identical to its committed corpus) and eleven configs in the converter's figures,
+which the corpus measures from this round on (`conv_layers` [encoder, decoder], `conv_kv_size`,
+`conv_state_bytes`; origin/main's converter prices no state, recorded 0):
+
+* **An encoder-decoder's decoder is read under its own spellings** (`layer_plan.decoder_view`,
+  `encoder_decoder_stacks`), by `calculate_kv_cache` / `kv_cache_breakdown`, `calculate_memory`'s
+  encoder-decoder getters (and so the engine estimate), the FRD-027 facts, the GenZ loader and the
+  converter (docs/LAYER_KINDS.md, "Encoder-decoder models"). The six in the corpus, all hub
+  configs in the HuggingFace cache:
+
+  | config | figure | round-7 head | this branch | truth (decoder self-attention) |
+  |---|---|---|---|---|
+  | whisper-large-v3-turbo (32 enc / 4 dec, 20 heads of 64) | `calculate_kv_cache` @ 4k | 0 | 0.0839 GB | 2 x 4 x 20 x 64 x 4,096 x 2 B = 0.0839 GB |
+  | | breakdown / facts layers | 32 / 32 | 4 / 4 | 4 |
+  | | GenZ `get_kv_size`, serving B a token | ValueError | 10,240 / 20,480 | 10,240 |
+  | | converter `get_kv_size`, layers | 32,768, [32, 4] | 10,240, [32, 4] | |
+  | whisper-base (6 / 6, 8 heads, `d_model` 512) | `calculate_kv_cache` @ 4k | 0 | 0.0503 GB | 6,144 x 4,096 x 2 B |
+  | | GenZ / converter `get_kv_size` | 49,152 / 49,152 (7B defaults) | 6,144 / 6,144 | 6,144 |
+  | | GenZ decode weights | 2,205 MiB | 86.6 MiB | (the decoder and embeddings) |
+  | whisper-tiny.en (4 / 4, 6 heads, 384) | `calculate_kv_cache` @ 4k | 0 | 0.0252 GB | 3,072 x 4,096 x 2 B |
+  | | GenZ / converter `get_kv_size` | 32,768 / 32,768 | 3,072 / 3,072 | 3,072 |
+  | moonshine-base (8 / 8, `decoder_num_*`) | converter `get_kv_size`, layers | 3,328, [4, 4] | 6,656, [8, 8] | 6,656 |
+  | | `calculate_memory` KV @ 4k | 0.0745 GB | 0.0945 GB | + the encoder term, below |
+  | moonshine-tiny (6 / 6) | converter `get_kv_size`, layers | 1,728, [3, 3] | 3,456, [6, 6] | 3,456 |
+  | cohere-transcribe (48-layer `encoder_config`, 8-layer top-level decoder) | converter `get_kv_size`, layers | 8,192, [4, 4] | 16,384, [48, 8] | 16,384 |
+  | | `calculate_memory` KV @ 4k, params | 0.183 GB, 576.6M | 0.564 GB, 580.8M | |
+
+  `calculate_kv_cache`, the facts and GenZ already read moonshine and cohere right (their
+  decoder sits under the decoder-only names); the converter halved them. `calculate_memory`'s
+  encoder-decoder path charges decoder self-attention, cross-attention over the encoder's
+  `max_source_positions` (1,500 when unstated) and an encoder self-attention term of the same
+  shape (an over-estimate it always had: an encoder keeps no cache while the decoder runs). It
+  now takes the encoder's depth and width from the encoder's own key or block, so moonshine
+  (8 encoder layers, read as 0) gains that term (+0.020 GB), and cohere gains it for its 48
+  encoder layers (+0.368 GB) with its cross-attention at the encoder's 1,280 width rather than
+  the decoder's 1,024 (+0.012 GB of KV, +4.2M cross-attention K/V parameters = 8 x 2 x 1,024 x 256).
+  Whisper's path read `decoder_layers` / `decoder_attention_heads` already and does not move.
+  Outside the corpus (tests/fixtures/encoder_decoder, `tests/test_encoder_decoder_stack.py`):
+  flan-t5-xl (T5's `num_layers` / `num_decoder_layers` / `num_heads` / `d_kv`) -- converter 12
+  decoder layers and 49,152 elements -> 24 and 98,304; `calculate_memory`'s decoder 4 layers of 20
+  heads (Whisper defaults) -> 24 of 32, its decoder KV 0.134 -> 0.805 GB at 4k; facts 16 heads ->
+  32; GenZ ValueError -> 98,304. Dia-1.6B-0626 (nested `encoder_config` / `decoder_config`) --
+  converter 9 decoder layers, 9,216 -> 18 and 18,432; `calculate_kv_cache` 0 -> 18,432 a token;
+  `calculate_memory`'s decoder 4 layers of 20 -> 18 of 4 KV heads. BART (transformers 5.12's
+  `to_dict`, no `num_hidden_layers`): `calculate_kv_cache` 0 -> 24,576 a token, GenZ ValueError ->
+  24,576.
+* **The converter keeps the all-recurrent stack's state and the MLA latent** the HF loader passes
+  (`recurrent_state`, `kv_lora_rank`, `q_lora_rank`, `qk_rope_head_dim`, `qk_nope_head_dim`,
+  `v_head_dim`). Mamba-Codestral-7B `get_state_bytes(2)` 271,581,184 -> 272,367,616 B (Mamba-2's
+  B/C groups in the conv buffer: 2 x 8 x 128 x 3 x 2 B x 64 layers = 786,432 B); converter
+  `get_kv_size` DeepSeek-V3-Base (a database row) and DeepSeek-V3.2 874,496 -> 35,136 (61 x (512
+  + 64)), DeepSeek-V2-Lite 110,592 -> 15,552, Kimi Linear 32,256 -> 4,032 -- each the HF loader's
+  figure. A test now holds the converter to the loader's depth, KV and state on every hybrid
+  fixture; the reviewer's `conv.py` over the corpus finds no config left where the two read the
+  config and differ in depth, window, head width, KV heads, KV or state (9 differ only in how a
+  uniform stack is labelled; 11 the loader refuses and the converter reads as it stands).
+* **A GGUF window pattern shorter than the stack** windows the layers it reaches, the rest full,
+  beside a per-layer KV array as without one (it raised IndexError). No GGUF in the corpus has
+  one (llama.cpp writes `n_layer` entries).
+* **The converter against origin/main**, now in the table below: 40 configs move, every one the
+  HF loader's figure on this branch. Rounds 1-7 moved 31 (Kimi Linear and Mamba-Codestral moved
+  again in round 8, which moved 9 more): the hybrids' recurrent layers hold no KV and their state
+  is charged (Qwen3.5 / 3.6 and their derivatives, Qwen3-Next, LFM2, Kimi Linear,
+  MiniMax-Text-01, Jamba, Bamba, granite-4.0-h, Nemotron-H / Nano, Zamba2, Hymba, Falcon-H1,
+  SambaY, the Qwen3.5-2B GGUF; the pure SSMs mamba-2.8b, Mamba-Codestral and the database's
+  falcon-mamba-7b: KV 0, state 293.6 MB), the decoder read from under `text_config` (Gemma-3-27b:
+  62 layers and its window, not the 32-layer 7B default; MOSS-Transcribe, higgs-audio,
+  Voxtral-Realtime) and GPT-Neo's depth (24, not 32). On every corpus config GenZ reads, the
+  converter's `conv_kv_size` equals `genz_kv_size` and its `conv_state_bytes` equals
+  `serving_state_bytes`.
+* **The headline** above counted 193 configs (134 unchanged) where round 7's line counted 194 rows
+  with the marker (135): the same measurement on two bases. It now states one.
+
+Found while checking round 8, not changed by it (present on origin/main): a GPT-2-style config
+(`n_layer`, `n_head`, `n_embd`) is refused by GenZ and read by the converter as a 7B default, and
+the decoder's cross-attention cache is charged by `calculate_memory` only, at the encoder's width
+(docs/LAYER_KINDS.md, "What is conservative").
+
 The full per-config table (before = origin/main, after = this branch) follows.
 
 ## config:chaos-pressure/gpt-oss-20b/config.json (decoder-only)
@@ -476,6 +585,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 262144 | 16384 |
+| conv_state_bytes | 0 | 51511296 |
 | disagg_transfer_bytes_640 | 83886080 | 72482816 |
 | eng_None_32768_state_mb | 0.0 | 51.511296 |
 | eng_None_32768_total_mb | 21954.286067 | 22005.797363 |
@@ -498,6 +609,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 4096 | 1536 |
+| conv_state_bytes | 0 | 15360 |
 | disagg_transfer_bytes_640 | 5242880 | 1981440 |
 | eng_None_32768_state_mb | 0.0 | 0.01536 |
 | eng_None_32768_total_mb | 325.305754 | 325.321114 |
@@ -520,6 +633,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 4096 | 1536 |
+| conv_state_bytes | 0 | 15360 |
 | disagg_transfer_bytes_640 | 5242880 | 1981440 |
 | eng_None_32768_state_mb | 0.0 | 0.01536 |
 | eng_None_32768_total_mb | 325.305754 | 325.321114 |
@@ -538,10 +653,19 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | serving_requests_8gib_1k | 1024 | 2717 |
 | serving_state_bytes | 0 | 15360 |
 
+## config:models--OpenMOSS-Team--MOSS-Transcribe-Diarize/snapshots/704aa4a9c304e8520be88901e0d1960158ef5b15/config.json (audio-llm)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 57344 |
+| conv_layers | [0, 32] | [0, 28] |
+
 ## config:models--Qwen--Qwen3.5-4B-Base/snapshots/1001bb4d826a52d1f399e183466143f4da7b741b/config.json (multimodal)
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 262144 | 16384 |
+| conv_state_bytes | 0 | 51511296 |
 | disagg_transfer_bytes_640 | 83886080 | 72482816 |
 | eng_None_32768_state_mb | 0.0 | 51.511296 |
 | eng_None_32768_total_mb | 11478.217318 | 11529.728614 |
@@ -564,6 +688,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 262144 | 16384 |
+| conv_state_bytes | 0 | 51511296 |
 | disagg_transfer_bytes_640 | 83886080 | 72482816 |
 | eng_None_32768_state_mb | 0.0 | 51.511296 |
 | eng_None_32768_total_mb | 11478.217318 | 11529.728614 |
@@ -588,6 +714,13 @@ The full per-config table (before = origin/main, after = this branch) follows.
 |---|---|---|
 | kv_full_layers | 8 | 22 |
 | kv_sliding_layers | 14 | 0 |
+
+## config:models--bosonai--higgs-audio-v3-tts-4b/snapshots/239f63fb7b02b1aa085f98d9efae5e35cc5523e8/config.json (unknown)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 73728 |
+| conv_layers | [0, 32] | [0, 36] |
 
 ## config:models--convaiinnovations--laya-multilingual/snapshots/e4e9ddf21a7b1903b7acffd8814ad4307bf63a67/encoder/config.json (decoder-only)
 
@@ -621,6 +754,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 262144 | 16384 |
+| conv_state_bytes | 0 | 51511296 |
 | disagg_transfer_bytes_640 | 83886080 | 72482816 |
 | eng_None_32768_state_mb | 0.0 | 51.511296 |
 | eng_None_32768_total_mb | 11478.217318 | 11529.728614 |
@@ -650,8 +785,120 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 196608 | 53248 |
+| conv_layers | [0, 32] | [0, 26] |
 | facts_full_attention | true | false |
 | facts_layers | [26, 0, 0, null] | [0, 26, 0, 8192] |
+
+## config:models--onnx-community--cohere-transcribe-03-2026-ONNX/snapshots/31b1c6211c9000d76b077ddd23b74c9090badeba/config.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 8192 | 16384 |
+| conv_layers | [4, 4] | [48, 8] |
+| eng_None_32768_kv_mb | 1122.893824 | 1503.821824 |
+| eng_None_32768_params | 576643072 | 580837376 |
+| eng_None_32768_total_mb | 2417.108582 | 2806.42519 |
+| eng_None_4096_kv_mb | 183.369728 | 564.297728 |
+| eng_None_4096_params | 576643072 | 580837376 |
+| eng_None_4096_total_mb | 1407.120179 | 1796.436787 |
+| eng_llamacpp_32768_kv_mb | 1122.893824 | 1503.821824 |
+| eng_llamacpp_32768_params | 576643072 | 580837376 |
+| eng_llamacpp_32768_total_mb | 2417.108582 | 2806.42519 |
+| eng_llamacpp_4096_kv_mb | 183.369728 | 564.297728 |
+| eng_llamacpp_4096_params | 576643072 | 580837376 |
+| eng_llamacpp_4096_total_mb | 1407.120179 | 1796.436787 |
+| report_kv_gb | 0.183369728 | 0.564297728 |
+| report_params | 576643072 | 580837376 |
+| report_total_gb | 1.459883786 | 1.925846794 |
+| report_weight_gb | 1.153286144 | 1.161674752 |
+
+## config:models--onnx-community--moonshine-base-ONNX/snapshots/b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad/config.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 3328 | 6656 |
+| conv_layers | [4, 4] | [8, 8] |
+| eng_None_32768_kv_mb | 456.175616 | 476.143616 |
+| eng_None_32768_total_mb | 753.298125 | 773.266125 |
+| eng_None_4096_kv_mb | 74.493952 | 94.461952 |
+| eng_None_4096_total_mb | 326.63255 | 346.60055 |
+| eng_llamacpp_32768_kv_mb | 456.175616 | 476.143616 |
+| eng_llamacpp_32768_total_mb | 753.298125 | 773.266125 |
+| eng_llamacpp_4096_kv_mb | 74.493952 | 94.461952 |
+| eng_llamacpp_4096_total_mb | 326.63255 | 346.60055 |
+| report_kv_gb | 0.074493952 | 0.094461952 |
+| report_total_gb | 0.351430523 | 0.375392123 |
+
+## config:models--onnx-community--moonshine-tiny-ONNX/snapshots/a6da1241cd305dcd64eab1edbd615f2bb9aabb95/config.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 1728 | 3456 |
+| conv_layers | [3, 3] | [6, 6] |
+| eng_None_32768_kv_mb | 236.860416 | 247.228416 |
+| eng_None_32768_total_mb | 399.278822 | 409.646822 |
+| eng_None_4096_kv_mb | 38.679552 | 49.047552 |
+| eng_None_4096_total_mb | 169.955251 | 180.323251 |
+| eng_llamacpp_32768_kv_mb | 236.860416 | 247.228416 |
+| eng_llamacpp_32768_total_mb | 399.278822 | 409.646822 |
+| eng_llamacpp_4096_kv_mb | 38.679552 | 49.047552 |
+| eng_llamacpp_4096_total_mb | 169.955251 | 180.323251 |
+| report_kv_gb | 0.038679552 | 0.049047552 |
+| report_total_gb | 0.184591703 | 0.197033303 |
+
+## config:models--onnx-community--whisper-base/snapshots/1846881b6b3a3024392c1eea3ad983695bc23925/config.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 49152 | 6144 |
+| disagg_transfer_bytes_640 | 62914560 | 7864320 |
+| genz_chunked_kv_mb | 432.0 | 54.0 |
+| genz_decode_kv_mb | 384.0 | 48.0 |
+| genz_decode_weights_mb | 2205.195312 | 86.649414 |
+| genz_kv_size | 49152 | 6144 |
+| kv_gb@32768 | 0.0 | 0.402653184 |
+| kv_gb@4096 | 0.0 | 0.050331648 |
+| serving_bytes_per_token | 98304 | 12288 |
+| serving_requests_8gib_1k | 85 | 682 |
+
+## config:models--onnx-community--whisper-large-v3-turbo/snapshots/360ebcde2559d60bb474678be3c1de9ef347d01a/config.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 32768 | 10240 |
+| disagg_transfer_bytes_640 | null | 13107200 |
+| facts_layers | [32, 0, 0, null] | [4, 0, 0, null] |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
+| genz_chunked_kv_mb | null | 90.0 |
+| genz_decode_kv_mb | null | 80.0 |
+| genz_decode_weights_mb | null | 276.625977 |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
+| genz_ffn_kinds | null | {"Dense": 4} |
+| genz_kv_size | null | 10240 |
+| genz_layer_kinds | null | {"MHA-global": 4} |
+| kv_full_layers | 32 | 4 |
+| kv_gb@32768 | 0.0 | 0.67108864 |
+| kv_gb@4096 | 0.0 | 0.08388608 |
+| serving_bytes_per_token | null | 20480 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
+| serving_requests_8gib_1k | null | 409 |
+| serving_state_bytes | null | 0 |
+
+## config:models--onnx-community--whisper-tiny.en/snapshots/2575352d61be1bf7225cf8f8b268a4678025fc58/config.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 32768 | 3072 |
+| disagg_transfer_bytes_640 | 41943040 | 3932160 |
+| genz_chunked_kv_mb | 288.0 | 27.0 |
+| genz_decode_kv_mb | 256.0 | 24.0 |
+| genz_decode_weights_mb | 1605.1875 | 51.486328 |
+| genz_kv_size | 32768 | 3072 |
+| kv_gb@32768 | 0.0 | 0.201326592 |
+| kv_gb@4096 | 0.0 | 0.025165824 |
+| serving_bytes_per_token | 65536 | 6144 |
+| serving_requests_8gib_1k | 128 | 1365 |
 
 ## config:models--openai--gpt-oss-120b/snapshots/b5c939de8f754692c1647ca79fbf85e8c1e70f8a/config.json (decoder-only)
 
@@ -669,6 +916,7 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 874496 | 35136 |
 | genz_chunked_kv_mb | 7686.0 | 171.5625 |
 | genz_decode_weights_mb | 1335494.375 | 1273239.875 |
 | genz_ffn_kinds | {"MoE": 61} | {"Dense": 3, "MoE": 58} |
@@ -686,6 +934,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 524288 | 0 |
+| conv_state_bytes | 0 | 293601280 |
 | disagg_transfer_bytes_640 | 671088640 | 293601280 |
 | eng_None_32768_state_mb | 0.0 | 293.60128 |
 | eng_None_32768_total_mb | 109466.73705 | 109760.33833 |
@@ -704,6 +954,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 131072 | 98304 |
+| conv_layers | [0, 32] | [0, 24] |
 | disagg_transfer_bytes_640 | null | 125829120 |
 | eng_None_32768_kv_mb | 0.0 | 6442.450944 |
 | eng_None_32768_params | 706906112 | 1310885888 |
@@ -745,6 +997,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 30720 | 8192 |
+| conv_state_bytes | 0 | 270336 |
 | disagg_transfer_bytes_640 | 39321600 | 10756096 |
 | eng_None_32768_state_mb | 0.0 | 0.270336 |
 | eng_None_32768_total_mb | 6219.245158 | 6219.515494 |
@@ -767,6 +1021,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 163840 | 20480 |
+| conv_state_bytes | 0 | 293601280 |
 | disagg_transfer_bytes_640 | 209715200 | 319815680 |
 | eng_None_32768_state_mb | 0.0 | 293.60128 |
 | eng_None_32768_total_mb | 917067.869389 | 917361.470669 |
@@ -798,6 +1054,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 49152 | 12288 |
+| conv_state_bytes | 0 | 77266944 |
 | disagg_transfer_bytes_640 | 62914560 | 92995584 |
 | eng_None_32768_state_mb | 0.0 | 77.266944 |
 | eng_None_32768_total_mb | 160595.413299 | 160672.680243 |
@@ -820,6 +1078,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 262144 | 16384 |
+| conv_state_bytes | 0 | 51511296 |
 | disagg_transfer_bytes_640 | 83886080 | 72482816 |
 | eng_None_32768_state_mb | 0.0 | 51.511296 |
 | eng_None_32768_total_mb | 11478.217318 | 11529.728614 |
@@ -842,6 +1102,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 262144 | 32768 |
+| conv_layers | [0, 32] | [0, 64] |
+| conv_state_bytes | 0 | 153944064 |
 | disagg_transfer_bytes_640 | 167772160 | 195887104 |
 | eng_None_32768_state_mb | 0.0 | 153.944064 |
 | eng_None_32768_total_mb | 58973.596557 | 59127.540621 |
@@ -864,6 +1127,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 276480 | 92160 |
+| conv_state_bytes | 0 | 72479232 |
 | disagg_transfer_bytes_640 | 353894400 | 190444032 |
 | eng_None_32768_kv_mb | 3019.89888 | 6039.79776 |
 | eng_None_32768_params | 2446020000 | 2577092000 |
@@ -901,6 +1166,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 65536 | 8192 |
+| conv_state_bytes | 0 | 16056320 |
 | disagg_transfer_bytes_640 | 83886080 | 26542080 |
 | eng_None_32768_state_mb | 0.0 | 16.05632 |
 | eng_None_32768_total_mb | 107731.409306 | 107747.465626 |
@@ -924,6 +1191,7 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 874496 | 35136 |
 | genz_chunked_kv_mb | 7686.0 | 171.5625 |
 | genz_decode_weights_mb | 1335494.375 | 1273239.875 |
 | genz_ffn_kinds | {"MoE": 61} | {"Dense": 3, "MoE": 58} |
@@ -934,6 +1202,7 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 110592 | 15552 |
 | genz_chunked_kv_mb | 972.0 | 75.9375 |
 | genz_decode_kv_mb | null | 67.5 |
 | genz_decode_weights_mb | null | 28699.5 |
@@ -946,6 +1215,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 65536 | 6144 |
+| conv_state_bytes | 0 | 123104768 |
 | disagg_transfer_bytes_640 | 83886080 | 130969088 |
 | eng_None_32768_state_mb | 0.0 | 123.104768 |
 | eng_None_32768_total_mb | 20768.962816 | 20892.067584 |
@@ -968,6 +1239,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 81920 | 8192 |
+| conv_state_bytes | 0 | 152819712 |
 | disagg_transfer_bytes_640 | 104857600 | 163305472 |
 | eng_None_32768_state_mb | 0.0 | 152.819712 |
 | eng_None_32768_total_mb | 63985.84279 | 64138.662502 |
@@ -997,6 +1270,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 81920 | 40960 |
+| conv_state_bytes | 0 | 5734400 |
 | disagg_transfer_bytes_640 | 104857600 | 58163200 |
 | eng_None_32768_kv_mb | 83.88608 | 2684.35456 |
 | eng_None_32768_params | 4329313280 | 4674606080 |
@@ -1039,6 +1314,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 262144 | 0 |
+| conv_state_bytes | 0 | 272367616 |
 | disagg_transfer_bytes_640 | 335544320 | 272367616 |
 | eng_None_32768_state_mb | 0.0 | 272.367616 |
 | eng_None_32768_total_mb | 15136.10281 | 15408.470426 |
@@ -1057,6 +1334,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 124416 | 4032 |
+| conv_state_bytes | 0 | 43417600 |
 | disagg_transfer_bytes_640 | 19906560 | 48578560 |
 | eng_None_32768_state_mb | 0.0 | 43.4176 |
 | eng_None_32768_total_mb | 98400.864307 | 98444.281907 |
@@ -1081,6 +1360,7 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_state_bytes | 0 | 7168000 |
 | disagg_transfer_bytes_640 | 26214400 | 33382400 |
 | eng_None_32768_state_mb | 0.0 | 7.168 |
 | eng_None_32768_total_mb | 4875.103206 | 4882.271206 |
@@ -1101,6 +1381,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 114688 | 8192 |
+| conv_state_bytes | 0 | 143548416 |
 | disagg_transfer_bytes_640 | 146800640 | 154034176 |
 | eng_None_32768_state_mb | 0.0 | 143.548416 |
 | eng_None_32768_total_mb | 20370.048768 | 20513.597184 |
@@ -1124,6 +1406,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 106496 | 8192 |
+| conv_state_bytes | 0 | 102137856 |
 | disagg_transfer_bytes_640 | 136314880 | 112623616 |
 | eng_None_32768_state_mb | 0.0 | 102.137856 |
 | eng_None_32768_total_mb | 17894.134989 | 17996.272845 |
@@ -1153,6 +1437,9 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 262144 | 32768 |
+| conv_layers | [0, 32] | [0, 64] |
+| conv_state_bytes | 0 | 153944064 |
 | disagg_transfer_bytes_640 | 167772160 | 195887104 |
 | eng_None_32768_state_mb | 0.0 | 153.944064 |
 | eng_None_32768_total_mb | 58973.596557 | 59127.540621 |
@@ -1175,6 +1462,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 327680 | 0 |
+| conv_state_bytes | 0 | 22937600 |
 | disagg_transfer_bytes_640 | 419430400 | 22937600 |
 | eng_None_32768_state_mb | 0.0 | 22.9376 |
 | eng_None_32768_total_mb | 5890.000896 | 5912.938496 |
@@ -1193,6 +1482,7 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_state_bytes | 0 | 304201728 |
 | disagg_transfer_bytes_640 | 94371840 | 398573568 |
 | eng_None_32768_state_mb | 0.0 | 304.201728 |
 | eng_None_32768_total_mb | 73265.91703 | 73570.118758 |
@@ -1213,6 +1503,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 262144 | 253952 |
+| conv_layers | [0, 32] | [0, 62] |
 | facts_full_attention | true | false |
 | facts_layers | [62, 0, 0, null] | [10, 52, 0, 1024] |
 | genz_chunked_kv_mb | 2232.0 | 984.0 |
@@ -1324,6 +1616,8 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| conv_kv_size | 24576 | 6144 |
+| conv_state_bytes | 0 | 19537920 |
 | disagg_transfer_bytes_640 | 31457280 | 27402240 |
 | eng_None_32768_kv_mb | 1610.612736 | 402.653184 |
 | eng_None_32768_params | 1901268992 | 1855758390 |
