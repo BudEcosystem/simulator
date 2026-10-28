@@ -10,9 +10,12 @@ checkpoint resolve to the same plan through the one table in :mod:`layer_plan`:
 * ``{arch}.full_attention_interval`` -- every N-th layer attends, the rest are recurrent
   (``(il + 1) % N != 0`` is recurrent, as llama.cpp marks it).
 * ``{arch}.attention.head_count_kv`` as a per-layer ARRAY -- a layer with 0 KV heads holds no
-  KV cache (Jamba, granite-hybrid, LFM2, Nemotron-H). It is recurrent when the file states a
-  recurrent mixer, unless the stack gives FFNs their own slots (some layer has neither KV
-  heads nor an FFN): then a 0-KV layer WITH an FFN is an FFN-only slot.
+  KV cache (Jamba, granite-hybrid, LFM2, Nemotron-H, Deci). The stack gives FFNs their own
+  slots when its KV layers run no FFN (``feed_forward_length`` 0 on every layer with KV heads)
+  and some 0-KV layer runs one (Nemotron-H): then a 0-KV layer WITH an FFN is an FFN-only slot
+  (``mlp``). Any other 0-KV layer is recurrent when the file states a recurrent mixer, else a
+  layer whose mixer holds nothing (``no_op``: Deci's attention no-op or linear replacement),
+  which in a stack without FFN slots runs its FFN like every other layer.
 * recurrent keys with a scalar KV-head count and no interval -- attention and the mixer in
   every layer (Falcon-H1's parallel hybrid).
 * ``{arch}.attention.sliding_window`` + ``sliding_window_pattern`` (a per-layer bool array, or
@@ -95,8 +98,14 @@ def hf_layer_keys_from_gguf(get: Callable[[str], Any], n_layers: int) -> Dict[st
     names: Optional[List[str]] = None
     interval = get("full_attention_interval")
     if kv_list is not None and len(kv_list) >= n_layers and any(k == 0 for k in kv_list[:n_layers]):
-        own_ffn_slots = ff_list is not None and any(
-            kv_list[i] == 0 and ff_list[i] == 0 for i in range(min(n_layers, len(ff_list)))
+        # FFNs have their own slots when the layers that attend run none and a 0-KV layer runs
+        # one. A stack whose attention layers carry FFNs (Deci, Jamba) pairs an FFN with each
+        # layer: naming its 0-KV layers FFN-only slots took the FFN off every attention layer.
+        own_ffn_slots = (
+            ff_list is not None
+            and len(ff_list) >= n_layers
+            and all(ff_list[i] == 0 for i in range(n_layers) if kv_list[i] > 0)
+            and any(kv_list[i] == 0 and ff_list[i] > 0 for i in range(n_layers))
         )
         names = []
         for i in range(n_layers):
@@ -107,7 +116,7 @@ def hf_layer_keys_from_gguf(get: Callable[[str], Any], n_layers: int) -> Dict[st
             elif recurrent_name:
                 names.append(recurrent_name)
             else:
-                names.append("mlp")
+                names.append("no_op")
     elif isinstance(interval, int) and interval > 1 and recurrent_name:
         names = [
             "full_attention" if (i + 1) % interval == 0 else recurrent_name for i in range(n_layers)

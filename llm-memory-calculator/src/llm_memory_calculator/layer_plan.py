@@ -67,7 +67,7 @@ _AUTO = "auto"
 # is `attention_chunk_size`.
 ATTN_CHUNKED = "chunked"
 
-LAYER_KINDS: Dict[str, Dict[str, Optional[str]]] = {
+LAYER_KINDS: Dict[str, Dict[str, Any]] = {
     # softmax attention over every token
     "full_attention": {"attn": ATTN_FULL, "recurrent": None},
     "attention": {"attn": ATTN_FULL, "recurrent": None},
@@ -105,12 +105,17 @@ LAYER_KINDS: Dict[str, Dict[str, Optional[str]]] = {
     "shortconv": {"attn": None, "recurrent": MECH_SHORTCONV},
     # attention and a Mamba mixer in the same layer (Zamba / Zamba2)
     "hybrid": {"attn": ATTN_FULL, "recurrent": MECH_MAMBA2},
-    # an FFN-only slot (Nemotron-H's MoE / MLP layers): no mixer, no cache
-    "moe": {"attn": None, "recurrent": None},
-    "dense": {"attn": None, "recurrent": None},
-    "mlp": {"attn": None, "recurrent": None},
-    "mlp_only": {"attn": None, "recurrent": None},
-    "ffn": {"attn": None, "recurrent": None},
+    # an FFN-only slot (Nemotron-H's MoE / MLP layers): no mixer, no cache. A stack that names
+    # one gives the FFN its own layer (`ffn_slot`): only the slots carry an FFN
+    "moe": {"attn": None, "recurrent": None, "ffn_slot": True},
+    "dense": {"attn": None, "recurrent": None, "ffn_slot": True},
+    "mlp": {"attn": None, "recurrent": None, "ffn_slot": True},
+    "mlp_only": {"attn": None, "recurrent": None, "ffn_slot": True},
+    "ffn": {"attn": None, "recurrent": None, "ffn_slot": True},
+    # a layer whose mixer holds nothing -- no KV, no state -- and that runs its FFN like every
+    # other layer of its stack (a GGUF's head_count_kv-0 layer with no recurrent mixer: Deci's
+    # attention no-op or linear replacement). Not an FFN-only slot
+    "no_op": {"attn": None, "recurrent": None},
 }
 
 # The config keys that let a mechanism be sized from the model itself. If none
@@ -464,8 +469,9 @@ def _charge_unstated(plan, start: int, n: int, key: str, notes: List[str]) -> No
 def _apply_layer_names(plan, names, tc, n, notes, key="layer_types"):
     """Fill both axes from a list of per-layer kind names; flag unknown names.
 
-    A stack that names FFN-only slots (Nemotron-H's ``moe`` / ``mlp``) gives the FFN its own
-    layer: then only those slots carry one, and the mixers carry none. Every other stack pairs
+    A stack that names FFN-only slots (Nemotron-H's ``moe`` / ``mlp``: the table's ``ffn_slot``
+    kinds) gives the FFN its own layer: then only those slots carry one, and the mixers (and
+    ``no_op`` layers) carry none. Every other stack pairs
     an FFN with each mixer. The answer is left in ``plan["_ffn"]`` (None = every layer).
     A list shorter than the depth charges the layers it does not reach full attention.
     """
@@ -479,7 +485,7 @@ def _apply_layer_names(plan, names, tc, n, notes, key="layer_types"):
         k = _classify_layer_type_string(lt)
         if k.get("unknown"):
             unknown.append(k["unknown"])
-        ffn_only.append(not k.get("unknown") and k["attn"] is None and k["recurrent"] is None)
+        ffn_only.append(bool(not k.get("unknown") and k.get("ffn_slot")))
         plan["attn"][i] = ATTN_SLIDING if k["attn"] == ATTN_CHUNKED else k["attn"]
         if k["attn"] == ATTN_CHUNKED:
             plan.setdefault("_chunked", True)

@@ -31,6 +31,10 @@ class SimConfig:
     block_tokens: int  # tokens per page
     attn_groups: int = 1  # pages per block of tokens (a hybrid holds one per attention group)
     state_blocks: float = 0.0  # pages a sequence's recurrent state holds, whatever its length
+    #: windowed groups (a stack of full and sliding layers): a sequence holds pages in each, at most
+    #: ``sliding_group_blocks`` (0: unbounded)
+    sliding_groups: int = 0
+    sliding_group_blocks: int = 0
     api_ms: float = 0.0  # what the API server adds to the first token and the end-to-end time
     #: a request reaches the engine this long after the client sends it (HTTP, tokenizing the prompt), and the client
     #: sees a completion this long after the engine's last step. Together they keep a benchmark's waves synchronized:
@@ -158,11 +162,16 @@ def simulate(
                 waiting.append(item[1])
 
     def pages_for(tokens: int) -> int:
-        return cfg.attn_groups * math.ceil(tokens / max(cfg.block_tokens, 1)) + state
+        blocks = math.ceil(tokens / max(cfg.block_tokens, 1))
+        sliding = 0
+        if cfg.sliding_groups:
+            cap = cfg.sliding_group_blocks
+            sliding = cfg.sliding_groups * (min(blocks, cap) if cap else blocks)
+        return cfg.attn_groups * blocks + sliding + state
 
-    def holds(pages: int) -> int:
-        """The tokens ``pages`` hold: whole blocks across every attention group, after the state pages."""
-        return ((pages - state) // max(cfg.attn_groups, 1)) * max(cfg.block_tokens, 1)
+    def holds(tokens: int) -> int:
+        """The tokens the pages allocated for ``tokens`` hold: its last block filled."""
+        return math.ceil(tokens / max(cfg.block_tokens, 1)) * max(cfg.block_tokens, 1)
 
     def release(r: _Req) -> None:
         nonlocal free
@@ -195,7 +204,7 @@ def simulate(
         if delta > 0:
             free -= delta
             r.pages += delta
-        r.holds = holds(r.pages)
+        r.holds = holds(tokens)
         return True
 
     for _ in range(min(concurrency, len(reqs))):

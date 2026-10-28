@@ -60,21 +60,37 @@ def shared_slice_mib(
     for _ in range(16):
         dev = device.with_mode(HardwareMode(kind="shared", slice_bytes=mib * MIB))
         lim = predictor.limits(probe, model, dev, draft=draft)
-        if lim.block_bytes and lim.block_tokens:
-            per_token = lim.block_bytes / lim.block_tokens
-        else:
-            per_token = float(model.kv_bytes_per_token())
         # the pool must hold the load plus the memory band (FR-GND-6: how wrong a boot prediction has been here)
         band = float(lim.memory_band_bytes or 0.0)
-        if (
-            lim.boots
-            and lim.kv_tokens >= need
-            and float(lim.kv_pool_bytes) - band >= need * per_token
-        ):
+        grouped = bool(
+            lim.block_bytes
+            and lim.block_tokens
+            and (
+                getattr(lim, "sliding_groups", 0)
+                or lim.state_bytes_per_sequence
+                or (lim.attn_groups or 1) > 1
+            )
+        )
+        if grouped:
+            # a block covers one group of layers, and a sequence holds blocks in every group (full, sliding up to
+            # the window, recurrent state): count the load in blocks, not in one group's tokens
+            need_blocks = math.ceil(
+                max(int(concurrency), 1) * lim.blocks_per_sequence(max(int(request_tokens), 1)) * SLICE_KV_HEADROOM
+            )
+            need_bytes = need_blocks * float(lim.block_bytes)
+            holds = lim.num_blocks >= need_blocks
+        else:
+            if lim.block_bytes and lim.block_tokens:
+                per_token = lim.block_bytes / lim.block_tokens
+            else:
+                per_token = float(model.kv_bytes_per_token())
+            need_bytes = need * per_token
+            holds = lim.kv_tokens >= need
+        if lim.boots and holds and float(lim.kv_pool_bytes) - band >= need_bytes:
             return mib, True
         # grow by the larger deficit: the KV pool short of the load (negative when the weights don't fit), or the
         # worst failing boot check (e.g. the CUDA-graph profiling transient)
-        pool_short = need * per_token + band - float(lim.kv_pool_bytes)
+        pool_short = need_bytes + band - float(lim.kv_pool_bytes)
         worst = max([-float(c.margin_bytes) for c in lim.failures] + [0.0])
         grow = max(pool_short, worst, SLICE_STEP_MIB * MIB) / fraction
         new = min(cap, int(math.ceil((mib * MIB + grow) / (SLICE_STEP_MIB * MIB))) * SLICE_STEP_MIB)

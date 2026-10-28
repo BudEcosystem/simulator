@@ -69,10 +69,12 @@ _DECODER_GEOMETRY_KEYS = ("num_hidden_layers", "hidden_size")
 
 
 def _looks_like_decoder(block: object) -> bool:
-    """True when a config block carries a decoder's depth and width."""
-    return isinstance(block, dict) and all(
-        block.get(k) is not None for k in _DECODER_GEOMETRY_KEYS
-    )
+    """True when a config block carries a decoder's depth and width. The depth is the one the
+    layer-kind table reads: `num_hidden_layers`, or the length of a per-layer list when the config
+    states only that (transformers 5.12's Nemotron-H saves `layers_block_type` and no count)."""
+    from llm_memory_calculator.layer_plan import depth
+
+    return isinstance(block, dict) and block.get("hidden_size") is not None and depth(block) > 0
 
 
 def _find_decoder_subconfig(cfg: dict, _depth: int = 0):
@@ -169,7 +171,7 @@ def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1
     attn_kinds = [a for a in kinds["attn"] if a is not None]
     if not kinds["mechanisms"] and not any(a == ATTN_SLIDING for a in attn_kinds) and all(
         kinds["ffn"]
-    ) and len(set(moe)) == 1:
+    ) and len(attn_kinds) == len(kinds["attn"]) and len(set(moe)) == 1:
         return None  # every layer full attention with the same FFN: uniform after all
     hidden = int(hf_config.get('hidden_size') or 0)
     # A dense layer among routed ones is built at its own width when the config names one;
@@ -198,6 +200,60 @@ def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1
             recurrent_params=params.get(mech) if mech else None,
         ))
     return out
+
+
+def graph_layer_kinds(hf_config: dict, num_layers: int, num_experts: int = 1, hidden_size: int = 0,
+                      mamba_d_state=None, layer_configs=None) -> dict:
+    """What the GenZ graph takes from the layer-kind table, for the HF loader and BudSimulator's
+    model converter alike: the per-layer configs, the window of the windowed layers, and whether
+    GenZ's own all-Mamba stack is used (``mamba_d_state``, ``recurrent_state``).
+
+    Read from the one layer-kind table the memory calculator uses, so the performance graph
+    charges attention -- and a KV cache -- only on the layers that have one. Building every layer
+    as attention charged Qwen3.5's Gated DeltaNet layers a full KV cache (4x its real KV).
+    ``layer_configs`` given (a Deci-style per-block config) are kept.
+    """
+    from llm_memory_calculator.layer_plan import layer_kinds
+
+    if layer_configs is None:
+        layer_configs = layer_configs_from_hf(hf_config, num_layers, num_experts)
+
+    # What a windowed layer keeps, from the same table: `sliding_window` or its other
+    # spellings, and Llama 4's `attention_chunk_size` for its chunked layers. Reading
+    # `sliding_window` alone graphed chunked layers over the whole context.
+    sliding_window = hf_config.get('sliding_window', None)
+    if layer_configs and any(lc.attention_type == "MHA-local" for lc in layer_configs):
+        sliding_window = layer_kinds(hf_config).get("sliding_window") or sliding_window
+
+    # A pure state-space stack keeps GenZ's own Mamba operators (no layer_configs); the state
+    # each of its layers carries comes from the same table and shapes as every other mixer's.
+    # GenZ's own stack builder turns EVERY layer into Mamba once `mamba_d_state` is set, so a
+    # state key alone is not let through: with no per-layer configs, GenZ graphs Mamba only
+    # when the table names recurrent layers and no attention layer. A stack with attention
+    # layers is graphed as attention, with its KV (an upper bound) -- never as a KV-free Mamba
+    # stack the serving path charges 0.
+    recurrent_state = None
+    if layer_configs is None and mamba_d_state is not None:
+        from llm_memory_calculator.state_memory import _state_dtype_bytes, recurrent_state_shape
+
+        kinds = layer_kinds(hf_config)
+        mechs = [m for m in kinds["recurrent"] if m]
+        if mechs and not any(a is not None for a in kinds["attn"]):
+            recurrent_state = dict(
+                recurrent_state_shape(mechs[0], hf_config, int(hidden_size or 0)),
+                state_bytes=_state_dtype_bytes(hf_config),
+            )
+        else:
+            if mechs:
+                warnings.warn(
+                    f"the layer-kind table reads {len(kinds['attn'])} layers with attention and "
+                    f"recurrent mixers, but the graph has {num_layers}: every layer is graphed "
+                    "as attention (KV an upper bound)",
+                    stacklevel=2,
+                )
+            mamba_d_state = None
+    return dict(layer_configs=layer_configs, sliding_window=sliding_window,
+                mamba_d_state=mamba_d_state, recurrent_state=recurrent_state)
 
 
 def _ffn_parallelism(cfg, model_config, parallelism_config):
@@ -239,9 +295,11 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
     # WRONG MODEL -- which is invisible until someone measures the real deployment.
     # Nesting is handled above; this warns about every remaining way a checkpoint can
     # fail to resolve, so a new dialect shows up in the logs instead of in the numbers.
+    from llm_memory_calculator.layer_plan import depth as _stated_depth
+
     _missing_geometry = [
         key for key in ('hidden_size', 'num_hidden_layers', 'num_attention_heads')
-        if hf_config.get(key) is None
+        if (_stated_depth(hf_config) if key == 'num_hidden_layers' else hf_config.get(key)) in (None, 0)
     ]
     if _missing_geometry:
         warnings.warn(
@@ -254,7 +312,8 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
 
     vocab_size = hf_config.get('vocab_size', 32000)
     hidden_size = hf_config.get('hidden_size', 4096)
-    num_layers = hf_config.get('num_hidden_layers', 32)
+    # The depth the layer-kind table reads, so the per-layer configs below always match it
+    num_layers = _stated_depth(hf_config) or 32
     num_heads = hf_config.get('num_attention_heads', 32)
 
     # Handle different naming conventions for intermediate size
@@ -412,41 +471,12 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
     # ============================================================
     # Per-layer kinds (hybrids, interleaved windows, KV-free layers)
     # ============================================================
-    # Read from the one layer-kind table the memory calculator uses, so the
-    # performance graph charges attention -- and a KV cache -- only on the
-    # layers that have one. Building every layer as attention charged
-    # Qwen3.5's Gated DeltaNet layers a full KV cache (4x its real KV).
-    if layer_configs is None:
-        layer_configs = layer_configs_from_hf(hf_config, num_layers, num_experts)
-
-    # What a windowed layer keeps, from the same table: `sliding_window` or its other
-    # spellings, and Llama 4's `attention_chunk_size` for its chunked layers. Reading
-    # `sliding_window` alone graphed chunked layers over the whole context.
-    sliding_window = hf_config.get('sliding_window', None)
-    if layer_configs and any(lc.attention_type == "MHA-local" for lc in layer_configs):
-        from llm_memory_calculator.layer_plan import layer_kinds
-
-        sliding_window = layer_kinds(hf_config).get("sliding_window") or sliding_window
-
-    # A pure state-space stack keeps GenZ's own Mamba operators (no layer_configs); the state
-    # each of its layers carries comes from the same table and shapes as every other mixer's.
-    # GenZ's own stack builder turns EVERY layer into Mamba once `mamba_d_state` is set, so a
-    # state key alone is not let through: with no per-layer configs, GenZ graphs Mamba only
-    # where the table names a recurrent layer. A stack the table reads as attention is graphed
-    # as attention, with its KV -- not as a KV-free Mamba stack the serving path charges 0.
-    recurrent_state = None
-    if layer_configs is None and mamba_d_state is not None:
-        from llm_memory_calculator.layer_plan import layer_kinds
-        from llm_memory_calculator.state_memory import _state_dtype_bytes, recurrent_state_shape
-
-        mechs = [m for m in layer_kinds(hf_config)["recurrent"] if m]
-        if mechs:
-            recurrent_state = dict(
-                recurrent_state_shape(mechs[0], hf_config, int(hidden_size or 0)),
-                state_bytes=_state_dtype_bytes(hf_config),
-            )
-        else:
-            mamba_d_state = None
+    plan = graph_layer_kinds(hf_config, num_layers, num_experts, hidden_size, mamba_d_state,
+                             layer_configs=layer_configs)
+    layer_configs = plan["layer_configs"]
+    sliding_window = plan["sliding_window"]
+    mamba_d_state = plan["mamba_d_state"]
+    recurrent_state = plan["recurrent_state"]
 
     # Create ModelConfig with all extracted attributes
     return ModelConfig(

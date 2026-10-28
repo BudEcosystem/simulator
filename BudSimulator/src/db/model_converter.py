@@ -8,8 +8,11 @@ from typing import Dict, Any, Optional, List
 import logging
 
 from llm_memory_calculator.genz.Models.default_models import ModelConfig
-from llm_memory_calculator.genz.Models.get_language_model import layer_configs_from_hf
-from llm_memory_calculator.layer_plan import attention_head_dim
+from llm_memory_calculator.genz.Models.get_language_model import (
+    graph_layer_kinds,
+    resolve_decoder_config,
+)
+from llm_memory_calculator.layer_plan import attention_head_dim, depth
 from llm_memory_calculator.genz.Models.model_quality import QualityMetricsCollection, MMLU, MATH, GSM8K, Hellaswag, TriviaQA
 
 
@@ -54,11 +57,20 @@ class ModelConverter:
         if not model_id:
             model_id = hf_config.get('model_id', 'unknown')
         
+        # A multimodal config nests the decoder (`text_config`, ...): read its geometry, as the
+        # HF loader does. A config whose decoder cannot be found is read as it stands.
+        try:
+            hf_config = resolve_decoder_config(hf_config)
+        except ValueError:
+            pass
+
         # Basic parameters
         vocab_size = hf_config.get('vocab_size', 32000)
         hidden_size = hf_config.get('hidden_size', 4096)
         intermediate_size = hf_config.get('intermediate_size', 11008)
-        num_hidden_layers = hf_config.get('num_hidden_layers', 32)
+        # The depth the layer-kind table reads: `num_hidden_layers`, or the length of a
+        # per-layer list when that is all the config states (transformers 5.12's Nemotron-H)
+        num_hidden_layers = depth(hf_config) or 32
         num_attention_heads = hf_config.get('num_attention_heads', 32)
         num_key_value_heads = hf_config.get('num_key_value_heads', num_attention_heads)
         
@@ -72,9 +84,6 @@ class ModelConverter:
         max_model_len = hf_config.get('max_position_embeddings', 2048)
         if 'max_seq_len' in hf_config:
             max_model_len = hf_config['max_seq_len']
-        
-        # Sliding window
-        sliding_window = hf_config.get('sliding_window')
         
         # Activation function
         hidden_act = hf_config.get('activation_function', 
@@ -148,9 +157,14 @@ class ModelConverter:
                 quality_collection = QualityMetricsCollection(metrics)
         
         # Per-layer kinds from the config's own keys (hybrids, interleaved windows,
-        # KV-free layers), through the same reader the HF loader uses, so a model
+        # KV-free layers), the windowed layers' window under any spelling, and whether GenZ's
+        # all-Mamba stack applies -- through the same reader the HF loader uses, so a model
         # synced from the database is graphed exactly like one loaded from a config.
-        layer_configs = layer_configs_from_hf(hf_config, num_decoder_layers, num_experts)
+        plan = graph_layer_kinds(hf_config, num_decoder_layers, num_experts, hidden_size,
+                                 mamba_d_state)
+        layer_configs = plan["layer_configs"]
+        sliding_window = plan["sliding_window"]
+        mamba_d_state = plan["mamba_d_state"]
 
         # Create GenZ ModelConfig
         config = ModelConfig(

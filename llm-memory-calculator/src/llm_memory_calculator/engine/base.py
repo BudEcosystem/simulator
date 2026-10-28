@@ -8,6 +8,7 @@ check), ``validate`` (the pairwise check over the record's ``conflicts``) and ``
 
 from __future__ import annotations
 
+import math
 import re
 
 from dataclasses import dataclass, field
@@ -198,6 +199,10 @@ class Limits:
     attn_groups: int = (
         1  # attention KV-cache groups; each running sequence holds its blocks in every one
     )
+    # windowed KV-cache groups (vLLM's hybrid allocator: a stack of full and sliding layers); each running sequence
+    # also holds its blocks in every one of these, up to ``sliding_group_blocks`` each (0: no window read, unbounded)
+    sliding_groups: int = 0
+    sliding_group_blocks: int = 0
     memory_band_bytes: float = 0.0
     # the most sequences whose CUDA-graph profiling allocation fits (None: the whole capture fits, or none is made)
     transient_ceiling: Optional[int] = None
@@ -206,6 +211,18 @@ class Limits:
     resolved: Dict[str, Any] = field(
         default_factory=dict
     )  # the effective value of every setting, defaults filled
+
+    def blocks_per_sequence(self, tokens: float) -> float:
+        """Blocks one running sequence of ``tokens`` holds: its blocks in every attention group, in every windowed
+        group (at most the window's), and its fixed recurrent state."""
+        blocks = math.ceil(max(float(tokens), 0.0) / max(self.block_tokens, 1))
+        per = max(self.attn_groups, 1) * blocks
+        if self.sliding_groups:
+            cap = self.sliding_group_blocks
+            per += self.sliding_groups * (min(blocks, cap) if cap else blocks)
+        if self.state_bytes_per_sequence and self.block_bytes:
+            per += self.state_bytes_per_sequence / self.block_bytes
+        return per
 
     @property
     def boots(self) -> bool:

@@ -1480,3 +1480,265 @@ def test_the_prefix_cache_prices_a_token_like_the_serving_memory_model(name):
         assert analyzer._kv_bytes_per_token == _memory_model(c).bytes_per_token_kv
     if name == "Qwen_Qwen3.5-4B":
         assert analyzer._kv_bytes_per_token == 32768
+
+
+# ---------------------------------------------------------------------------------------------
+# The vLLM planner's concurrency on a stack of full and sliding layers
+
+# Gemma-2-9B's hub config.json: no `layer_types`; its config class alternates sliding and full
+GEMMA2_9B_HUB = dict(
+    model_type="gemma2", architectures=["Gemma2ForCausalLM"], hidden_size=3584,
+    num_hidden_layers=42, num_attention_heads=16, num_key_value_heads=8, head_dim=256,
+    intermediate_size=14336, sliding_window=4096, vocab_size=256000,
+    max_position_embeddings=8192, query_pre_attn_scalar=256, torch_dtype="bfloat16",
+)
+
+MIXED_WINDOW_CASES = {
+    "gemma-3-27b": lambda: cfg("unsloth_gemma-3-27b-it"),
+    "gemma-2-9b-hub": lambda: dict(GEMMA2_9B_HUB),
+}
+
+
+def _vllm_engine(record="vllm-0.30-upstream"):
+    from llm_memory_calculator.device import catalogue
+    from llm_memory_calculator.engine import EngineRecord, engine_for
+
+    rec = json.loads((FIXTURES / "planner" / "records" / f"{record}.json").read_text())
+    return engine_for(EngineRecord.from_dict(rec)), catalogue.get("h100xm-80c-vgpu")
+
+
+def _allocator_capacity(engine, facts, device, tokens, settings=None):
+    """Sequences of ``tokens`` vLLM's hybrid KV-cache allocator holds at once: every sequence
+    takes its blocks in each full group and, up to the window plus one, in each sliding group,
+    all from one pool of `num_blocks`."""
+    import math
+
+    settings = settings or {}
+    lim = engine.limits(settings, facts, device)
+    geo = engine.geometry(engine.resolve(settings, facts, device), facts)
+    blocks = math.ceil(tokens / geo.block_tokens)
+    window = facts.layers.sliding_window
+    assert geo.sliding_groups and window
+    per = geo.attn_groups * blocks + geo.sliding_groups * min(blocks, math.ceil(window / 16) + 1)
+    return lim.num_blocks // per
+
+
+@pytest.mark.parametrize("case", sorted(MIXED_WINDOW_CASES))
+@pytest.mark.parametrize("record", ["vllm-0.30-upstream", "bud-vllm-0.10.0"])
+@pytest.mark.parametrize("inp", [1024, 4096])
+def test_the_vllm_planner_admits_no_more_sequences_than_every_kv_group_holds(case, record, inp):
+    """The facts report a stack of full and sliding layers as two kinds, so vLLM's geometry lays
+    out full and sliding KV-cache groups that share one pool. `predict()` sized its concurrency
+    as `kv_tokens // tokens`, which ignores the blocks each sequence holds in every sliding group:
+    Gemma-3-27b ran 160 sequences of 1,280 tokens where the allocator fits 27 (main, which read the
+    stack as all full, said 25). Every sequence is charged its blocks in every group."""
+    from llm_memory_calculator.engine.base import Workload
+    from llm_memory_calculator.model.facts import ModelFacts
+
+    engine, device = _vllm_engine(record)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        facts = ModelFacts.from_config(MIXED_WINDOW_CASES[case]())
+        assert facts.layers.full and facts.layers.sliding
+        tokens = inp + 256
+        capacity = _allocator_capacity(engine, facts, device, tokens)
+        p = engine.predict({}, Workload(concurrency=1024, input_tokens=inp, output_tokens=256),
+                           facts, device)
+    assert 1 <= p.running <= capacity
+    assert p.running >= 0.9 * capacity  # and not needlessly below it
+
+
+def test_the_profile_scheduler_charges_every_sliding_group_too():
+    """The profile path (`perf.predict.sim_config` and the step scheduler) sized a sequence's
+    pages by its attention groups only. It takes the same per-group count as the planner."""
+    from llm_memory_calculator.model.facts import ModelFacts
+    from llm_memory_calculator.perf.predict import sim_config
+    from llm_memory_calculator.perf.sched import simulate
+
+    class Profile:
+        api_ms = 0.0
+
+    class Steps:
+        def decode_ms(self, b, ctx):
+            return 10.0
+
+        def chunk_ms(self, tokens, request_len):
+            return 10.0
+
+    engine, device = _vllm_engine()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        facts = ModelFacts.from_config(cfg("unsloth_gemma-3-27b-it"))
+        config = sim_config(engine, {}, facts, device, Profile())
+        at_admission = _allocator_capacity(engine, facts, device, 1024)
+        at_full_length = _allocator_capacity(engine, facts, device, 1024 + 256)
+    result = simulate(Steps(), config, [(1024, 256)] * 400, concurrency=400)
+    # admitted at their prompt's pages, preempted as they grow past the pool
+    assert result.max_running <= at_admission
+    assert result.mean_running <= at_full_length
+
+
+def test_a_shared_slice_holds_the_load_in_every_kv_group():
+    """`shared_slice_mib` checked the pool against `concurrency x tokens` at one group's bytes a
+    token, so a mixed full/sliding stack was given a slice its sliding groups do not fit in."""
+    import math
+
+    from llm_memory_calculator.model.facts import ModelFacts
+    from llm_memory_calculator.runtime.modules.capacity import (SLICE_KV_HEADROOM,
+                                                                 shared_slice_mib)
+    from llm_memory_calculator.device import HardwareMode
+
+    engine, device = _vllm_engine()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        facts = ModelFacts.from_config(cfg("unsloth_gemma-3-27b-it"))
+        mib, fits = shared_slice_mib(engine, facts, device, {}, concurrency=16, request_tokens=4352)
+        assert fits
+        sliced = device.with_mode(HardwareMode(kind="shared", slice_bytes=mib * 2**20))
+        capacity = _allocator_capacity(engine, facts, sliced, 4352, {"context.max_tokens": 4352})
+    assert capacity >= math.ceil(16 * SLICE_KV_HEADROOM) - 1
+
+
+# ---------------------------------------------------------------------------------------------
+# A depth stated only by the per-layer list, in the GenZ graph and the serving path
+
+_PATTERN_TO_BLOCK = {"M": "mamba", "-": "mlp", "*": "attention", "E": "moe"}
+
+
+def nemotron_h_saved_by_transformers_5():
+    """Nemotron-H-8B as transformers 5.12's `NemotronHConfig.save_pretrained` writes it: the
+    layout as `layers_block_type`, and no `num_hidden_layers`."""
+    c = cfg("nvidia_Nemotron-H-8B-Base-8K")
+    pattern = c.pop("hybrid_override_pattern")
+    c.pop("num_hidden_layers")
+    c["layers_block_type"] = [_PATTERN_TO_BLOCK[ch] for ch in pattern]
+    return c
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_genz_and_serving_take_the_depth_from_the_per_layer_list(nested):
+    """With no `num_hidden_layers`, GenZ fell back to 32 layers, the per-layer configs did not
+    match that depth, and the state key made every layer Mamba: `get_kv_size` 0, so the serving
+    memory model, the prefix cache and the disaggregation transfer charged no KV at all for its 4
+    attention layers (main: 32 layers of KV). GenZ reads the depth the table reads. A config that
+    also carries a nested block (a `quantization_config`) is still read as the decoder."""
+    from llm_memory_calculator.genz.Models.get_language_model import get_configs
+
+    c = nemotron_h_saved_by_transformers_5()
+    if nested:
+        c["quantization_config"] = {"quant_method": "fp8", "weight_block_size": [128, 128]}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        mc = get_configs(c)
+        assert mc.num_decoder_layers == 52
+        assert mc.layer_configs is not None and len(mc.layer_configs) == 52
+        attn = [lc for lc in mc.layer_configs if lc.attention_type == "MHA-global"]
+        assert len(attn) == 4
+        mm = _memory_model(c)
+    per_token = 4 * per_layer_token(8, 128)
+    assert mm.bytes_per_token_kv == per_token == 16384
+    assert kv_bytes(c, 4096) == per_token * 4096
+    assert mm.state_bytes_per_sequence == pytest.approx(state_bytes(c), abs=1)
+
+
+def test_genz_never_graphs_attention_layers_as_mamba():
+    """Whatever keeps the per-layer configs from being built, a stack the table reads with
+    attention layers is not handed to GenZ's all-Mamba builder: that charges its KV nothing."""
+    from llm_memory_calculator.genz.Models.get_language_model import graph_layer_kinds
+
+    c = cfg("nvidia_Nemotron-H-8B-Base-8K")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        plan = graph_layer_kinds(c, num_layers=48, num_experts=1, hidden_size=4096,
+                                 mamba_d_state=128)  # a depth the layout does not match
+    assert plan["layer_configs"] is None
+    assert plan["mamba_d_state"] is None  # graphed as attention: over, never under
+
+
+# ---------------------------------------------------------------------------------------------
+# A GGUF's 0-KV layers that are not FFN-only slots
+
+_DECI_HEADS = [64, 0, 64, 64, 64, 64, 64, 64]
+_DECI_KV = [8, 0, 0, 8, 4, 8, 8, 8]  # an attention no-op (1) and a linear replacement (2)
+
+
+def _deci_meta(ff):
+    return {"attention.head_count": _DECI_HEADS, "attention.head_count_kv": _DECI_KV,
+            "feed_forward_length": ff}
+
+
+@pytest.mark.parametrize("ff", [
+    [28672, 14336] + [28672] * 6,  # every layer runs its FFN
+    [28672, 14336, 28672, 28672, 28672, 0, 28672, 28672],  # an FFN no-op on an attention layer
+    [28672, 0, 28672, 28672, 28672, 28672, 28672, 28672],  # a layer with neither
+], ids=["all-ffn", "ffn-noop", "both-noop"])
+def test_a_gguf_layer_without_kv_or_a_mixer_keeps_the_stack_s_ffns(ff):
+    """llama.cpp's Deci GGUFs (Llama-3.x-Nemotron Super / Ultra) state head_count_kv 0 for an
+    attention no-op or a linear replacement. The reader named such a layer `mlp`, the FFN-only
+    slot of a stack that gives FFNs their own layers, so every attention layer lost its FFN in
+    the GenZ graph. A stack gives FFNs their own slots only when its KV layers run none; a 0-KV
+    layer of any other stack is a layer with no mixer that still runs its own FFN."""
+    from llm_memory_calculator.gguf_layers import hf_layer_keys_from_gguf
+
+    keys = hf_layer_keys_from_gguf(_gguf(_deci_meta(ff)), 8)
+    c = dict(model_type="deci", hidden_size=8192, num_hidden_layers=8, num_attention_heads=64,
+             num_key_value_heads=8, head_dim=128, intermediate_size=28672, vocab_size=128256,
+             **keys)
+    kinds = layer_kinds(c)
+    assert [a is not None for a in kinds["attn"]] == [k > 0 for k in _DECI_KV]
+    assert kinds["recurrent"] == [None] * 8
+    # every layer that attends keeps its FFN (an FFN no-op is over-counted, never dropped)
+    assert all(kinds["ffn"][i] for i in range(8) if _DECI_KV[i] > 0)
+
+
+def test_a_gguf_whose_kv_layers_run_no_ffn_still_reads_ffn_only_slots():
+    """Nemotron-H's GGUF: Mamba and attention layers state no FFN, the `-` slots carry it."""
+    from llm_memory_calculator.gguf_layers import hf_layer_keys_from_gguf
+
+    kv = [0, 0, 8, 0]
+    ff = [0, 21504, 0, 21504]
+    meta = {"attention.head_count": 32, "attention.head_count_kv": kv, "feed_forward_length": ff,
+            "ssm.state_size": 128, "ssm.conv_kernel": 4, "ssm.inner_size": 8192,
+            "ssm.group_count": 8, "ssm.time_step_rank": 128}
+    keys = hf_layer_keys_from_gguf(_gguf(meta), 4)
+    assert keys["layer_types"] == ["mamba", "mlp", "full_attention", "mlp"]
+
+
+def test_genz_graphs_every_ffn_of_a_deci_gguf(tmp_path):
+    """End to end through `bud_component.gguf_to_hf_config` and the GenZ graph: 6 of 8 FFNs
+    were graphed (`no_op` on every attention layer)."""
+    import sys
+
+    gguf = pytest.importorskip("gguf")
+    import numpy as np
+
+    path = str(tmp_path / "deci.gguf")
+    w = gguf.GGUFWriter(path, "deci")
+    for k, v in dict(block_count=8, embedding_length=8192, context_length=131072,
+                     vocab_size=128256).items():
+        w.add_uint32(f"deci.{k}", v)
+    w.add_float32("deci.rope.freq_base", 500000.0)
+    w.add_uint32("deci.rope.dimension_count", 128)
+    for k, v in _deci_meta([28672, 14336] + [28672] * 6).items():
+        w.add_array(f"deci.{k}", v)
+    for name in ["token_embd.weight", "output.weight"] + [f"blk.{i}.ffn_gate.weight"
+                                                          for i in range(8)]:
+        w.add_tensor(name, np.zeros((4,), dtype=np.float32))
+    w.write_header_to_file(); w.write_kv_data_to_file(); w.write_tensors_to_file(); w.close()
+
+    root = Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(root))
+    try:
+        import bud_component
+    finally:
+        sys.path.pop(0)
+    from llm_memory_calculator.genz.Models.get_language_model import get_configs
+
+    c, _, _ = bud_component.gguf_to_hf_config(path)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        mc = get_configs(c)
+    assert mc.layer_configs is not None
+    assert [lc.ffn_type != "no_op" for lc in mc.layer_configs] == [True] * 8
+    assert [lc.attention_type == "MHA-global" for lc in mc.layer_configs] == [
+        k > 0 for k in _DECI_KV]

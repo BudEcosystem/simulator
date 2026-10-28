@@ -38,6 +38,8 @@ def sim_config(engine: Any, settings: Any, model: Any, device: Any, profile: Ste
         kv_blocks=max(blocks, 1),
         block_tokens=max(int(lim.block_tokens), 1),
         attn_groups=int(lim.attn_groups or 1),
+        sliding_groups=int(getattr(lim, "sliding_groups", 0) or 0),
+        sliding_group_blocks=int(getattr(lim, "sliding_group_blocks", 0) or 0),
         state_blocks=state,
         arrive_ms=half,
         return_ms=half,

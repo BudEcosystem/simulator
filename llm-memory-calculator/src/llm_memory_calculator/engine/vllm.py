@@ -477,6 +477,12 @@ class VLLMEngine:
         num_blocks = max(int(pool // geo.block_bytes), 0) if geo.block_bytes > 0 else 0
         k = r.spec_k if r.spec_method else 0
         checks: List[BootCheck] = []
+        # a sliding group holds at most the window's blocks plus the one it is filling (0: no window, unbounded)
+        sliding_group_blocks = (
+            math.ceil(model.layers.sliding_window / DENSE_BLOCK) + 1
+            if (geo.sliding_groups and model.layers.sliding_window)
+            else 0
+        )
 
         # recurrent blocks one request holds beyond its attention blocks (vLLM 0.30 hybrid allocator:
         # 2 per recurrent group, 9 + k with MTP -- fitted to the s-mtp1..3 / s-mbt32k refusals)
@@ -489,9 +495,7 @@ class VLLMEngine:
         else:
             sliding_blocks = 0
             if geo.sliding_groups and model.layers.sliding_window:
-                sliding_blocks = geo.sliding_groups * (
-                    math.ceil(model.layers.sliding_window / DENSE_BLOCK) + 1
-                )
+                sliding_blocks = geo.sliding_groups * sliding_group_blocks
             rec_per_request = sliding_blocks
             state_per_seq = 0.0
             sequence_ceiling = max(num_blocks // max(geo.attn_groups, 1), 0)
@@ -591,6 +595,8 @@ class VLLMEngine:
             sequence_ceiling=int(sequence_ceiling),
             state_bytes_per_sequence=float(state_per_seq),
             attn_groups=max(int(geo.attn_groups), 1),
+            sliding_groups=int(geo.sliding_groups),
+            sliding_group_blocks=int(sliding_group_blocks),
             max_bootable_context=int(max(max_context, 0)),
             profiling_transient_bytes=float(transient),
             transient_ceiling=transient_ceiling,
@@ -760,15 +766,12 @@ class VLLMEngine:
         per_seq_tokens = inp + out
 
         def kv_capacity(tokens: float) -> int:
-            """Sequences of ``tokens`` the KV pool holds at once (hybrid: plus 1 + k blocks per recurrent group)."""
+            """Sequences of ``tokens`` the KV pool holds at once: a sequence holds its blocks in every attention group,
+            in every sliding group (up to the window) and, in a hybrid, 1 + k blocks per recurrent group."""
             if not (lim.kv_tokens and tokens):
                 return c
-            if lim.state_bytes_per_sequence and lim.block_bytes:
-                per_seq_blocks = (
-                    lim.attn_groups * math.ceil(tokens / max(lim.block_tokens, 1))
-                    + lim.state_bytes_per_sequence / lim.block_bytes
-                )
-                return int(lim.num_blocks // max(per_seq_blocks, 1))
+            if (lim.state_bytes_per_sequence or lim.sliding_groups) and lim.block_bytes:
+                return int(lim.num_blocks // max(lim.blocks_per_sequence(tokens), 1))
             return int(lim.kv_tokens // tokens)
 
         hard_cap = min(r.max_running, lim.sequence_ceiling or r.max_running)
