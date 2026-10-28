@@ -23,6 +23,7 @@ and never forms one.
 from typing import Any, Dict, Optional
 
 from .config_normalizer import ConfigNormalizer
+from .layer_plan import attention_head_dim
 
 # vLLM V1's default --max-num-batched-tokens. Engines differ (TRT-LLM commonly
 # 8192, SGLang 8192, older vLLM 2048/512) but they are all within a small factor,
@@ -66,7 +67,7 @@ def _attention_working_width(config: Dict[str, Any], hidden: int) -> int:
     """Widest concurrent attention-path buffer, in elements per token."""
     n_heads = int(_get(config, "num_attention_heads", "n_head", default=max(1, hidden // 128)))
     n_kv = int(_get(config, "num_key_value_heads", "num_kv_heads", default=n_heads))
-    head_dim = int(_get(config, "head_dim", default=0) or max(1, hidden // max(1, n_heads)))
+    head_dim = int(attention_head_dim(config, n_heads, hidden) or max(1, hidden // max(1, n_heads)))
 
     q_dim = n_heads * head_dim
     # Qwen3.5/3.6 gate the attention output, so q_proj emits q and its gate.

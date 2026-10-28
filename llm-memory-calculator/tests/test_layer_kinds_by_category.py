@@ -1096,3 +1096,253 @@ def test_kimi_layer_lists_are_one_indexed_even_without_kda_layers():
     n = kimi["num_hidden_layers"]
     full = {i for i, a in enumerate(plan["attn"]) if a == "full"}
     assert full == {i - 1 for i in lac["full_attn_layers"] if 1 <= i <= n}
+
+
+# --------------------------------------- how wide each KV layer is: the attention's own head
+
+
+def _class_head_dim(tc):
+    """The head width transformers' own config class gives this config: its `head_dim`, which
+    the class may alias to another key (Zamba / Zamba2: `attention_head_dim`). None when the
+    installed transformers does not know the type or cannot build it."""
+    transformers = pytest.importorskip("transformers")
+    from transformers import CONFIG_MAPPING
+
+    mt = tc.get("model_type")
+    try:
+        cls = CONFIG_MAPPING[mt]
+    except Exception:
+        return None
+    drop = {"model_type", "architectures", "transformers_version", "auto_map", "text_config",
+            "vision_config", "audio_config", "torch_dtype", "dtype"}
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            obj = cls(**{k: v for k, v in tc.items() if k not in drop})
+        hd = getattr(obj, "head_dim", None)
+        if not (isinstance(hd, int) and hd > 0):
+            # A release that keeps the width under the class's own name without aliasing
+            # `head_dim` (4.50's Zamba2Config: `attention_head_dim`, which its modelling reads).
+            hd = getattr(obj, "attention_head_dim", None)
+        if not (isinstance(hd, int) and hd > 0):
+            # A class with no head width at all: its modelling takes hidden_size / heads.
+            hd = obj.hidden_size // obj.num_attention_heads
+    except Exception:
+        return None
+    return int(hd) if isinstance(hd, int) and hd > 0 else None
+
+
+def _kv_layers(config):
+    k = layer_kinds(config)
+    return sum(1 for a, s in zip(k["attn"], k["kv_shared"]) if a is not None and not s)
+
+
+HYBRID_WITH_ATTENTION = sorted(
+    p.stem for p in HYBRID.glob("*.json")
+    if "kv_lora_rank" not in json.loads(p.read_text())
+)
+
+
+@pytest.mark.parametrize("name", HYBRID_WITH_ATTENTION)
+def test_every_kv_reader_sizes_a_layer_by_the_configs_own_attention_head(name):
+    """Each KV layer holds `2 x kv_heads x head_dim` per token, with head_dim what the model's
+    own transformers config class gives -- Zamba2's `attention_head_dim` (160), not
+    hidden_size / heads (80). Every reader read `head_dim` or derived hidden / heads, so Zamba2's
+    KV was half its size in the calculator, the engine estimate, GenZ, the serving memory model
+    and the disaggregation transfer alike."""
+    from llm_memory_calculator.genz.Models.get_language_model import get_configs
+    from llm_memory_calculator.model.facts import ModelFacts
+
+    c = cfg(name)
+    tc = c["text_config"] if isinstance(c.get("text_config"), dict) else c
+    hd = _class_head_dim(tc)
+    if hd is None:
+        pytest.skip(f"transformers cannot build a config class for {tc.get('model_type')!r}")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        n = _kv_layers(c)
+        if not n:
+            pytest.skip("no KV layer")
+        kv_heads = (tc.get("num_key_value_heads") or tc.get("num_attention_heads")
+                    or tc.get("num_heads"))
+        per_token = n * per_layer_token(kv_heads, hd)
+        assert kv_bytes(c, 1) == per_token, "calculator"
+        assert ModelMemoryCalculator().kv_cache_breakdown(c, 1, 1, "bf16")[
+            "marginal_bytes_per_token"] == pytest.approx(per_token), "breakdown"
+        assert ModelFacts.from_config(dict(c)).kv_bytes_per_token() == per_token, "facts"
+        try:
+            mc = get_configs(c)
+        except ValueError:
+            return  # GenZ refuses the config loudly (GPT-Neo's `num_layers`): nothing to size
+        assert mc.get_kv_size() * 2 == per_token, "GenZ"
+        assert _memory_model(c).bytes_per_token_kv == per_token, "serving"
+
+
+def test_zamba2_kv_is_its_nine_shared_attention_invocations_at_head_dim_160():
+    """Zamba2-2.7B: k_proj / v_proj are Linear(5120, 32 x 160) (transformers' Zamba2Attention:
+    head_dim = config.attention_head_dim). 9 hybrid layers x 2 x 32 x 160 x 2 B = 184,320 B a
+    token; the branch charged 92,160 and admitted 51 1,024-token requests into 8 GiB, not 32."""
+    c = cfg("Zyphra_Zamba2-2.7B")
+    assert kv_bytes(c, 1) == 9 * 2 * 32 * 160 * 2 == 184_320
+    mm = _memory_model(c)
+    assert mm.bytes_per_token_kv == 184_320
+    assert 8 * GiB // (1024 * mm.bytes_per_token_kv + mm.state_bytes_per_sequence) == 32
+
+
+def test_zamba_v1_saved_by_its_config_class_is_sized_at_its_attention_width():
+    """ZambaConfig defaults: attention_hidden_size = 2 x hidden, attention_head_dim = 2 x hidden
+    / heads (464 here). The calculator charged 193,024 B a token against 386,048."""
+    transformers = pytest.importorskip("transformers")
+    zc = transformers.ZambaConfig().to_dict()
+    assert zc["attention_head_dim"] == 2 * zc["hidden_size"] // zc["num_attention_heads"]
+    hybrid = sum(1 for t in zc["layers_block_type"] if t == "hybrid")
+    expected = hybrid * per_layer_token(zc["num_key_value_heads"], zc["attention_head_dim"])
+    assert expected == 386_048
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert kv_bytes(zc, 1) == expected
+        # the same config with the derived keys left out: the class derives them
+        bare = {k: v for k, v in zc.items() if k not in ("attention_head_dim", "attention_hidden_size")}
+        assert kv_bytes(bare, 1) == expected
+
+
+def test_the_head_width_spellings_cover_every_transformers_alias():
+    """transformers aliases `head_dim` to another key in some config classes (`attribute_map`).
+    The calculator reads each of those spellings without transformers installed."""
+    transformers = pytest.importorskip("transformers")
+    from transformers import CONFIG_MAPPING
+
+    from llm_memory_calculator.layer_plan import HEAD_DIM_KEYS
+
+    aliases = set()
+    for mt in CONFIG_MAPPING.keys():
+        try:
+            amap = getattr(CONFIG_MAPPING[mt], "attribute_map", {}) or {}
+        except Exception:
+            continue
+        if amap.get("head_dim"):
+            aliases.add(amap["head_dim"])
+    assert aliases, "transformers states no head_dim alias any more"
+    # GLM-4-MoE-Lite aliases head_dim to its RoPE width: an MLA model, whose cache is the
+    # latent (kv_lora_rank + qk_rope_head_dim), sized by the MLA path, not by a head width.
+    assert aliases - {"qk_rope_head_dim"} <= set(HEAD_DIM_KEYS)
+
+
+def test_zamba2_attention_weights_take_the_attention_width():
+    """Zamba2's shared attention reads the concatenated 2 x hidden input: q/k/v are
+    Linear(5120, 5120), o is Linear(5120, 2560). Counted at hidden / heads they were a quarter."""
+    from llm_memory_calculator.parameter_counter import UniversalParameterCounter
+
+    c = cfg("Zyphra_Zamba2-2.7B")
+    per_block = 3 * 5120 * 5120 + 5120 * 2560
+    assert UniversalParameterCounter()._calculate_attention_params(c, 1, 2560) == per_block
+
+
+# ------------------------------------- state keys and attention heads, but no layout key
+
+
+UNKNOWN_HYBRID = dict(
+    model_type="newhybrid", hidden_size=2048, num_hidden_layers=24, num_attention_heads=16,
+    num_key_value_heads=4, head_dim=128, intermediate_size=5632, vocab_size=32000,
+    max_position_embeddings=131072, hidden_act="silu", ssm_state_size=128, mamba_n_heads=64,
+    mamba_head_dim=64, n_groups=8, conv_kernel=4,
+)
+
+
+def test_an_unknown_hybrid_without_a_layout_is_charged_attention_and_state_everywhere():
+    """A config stating SSM state AND attention heads, but no key saying which layers are which:
+    every layer is charged both (the parallel-hybrid reading, an upper bound), and said so. GenZ
+    graphed it as pure Mamba, so the serving path charged it 0 KV a token while the calculator
+    charged 24 full layers and no state -- the readers disagreed and the serving side
+    under-counted."""
+    with pytest.warns(UserWarning, match="layout"):
+        kinds = layer_kinds(UNKNOWN_HYBRID)
+    assert kinds["attn"] == ["full"] * 24
+    assert all(kinds["recurrent"])
+    assert any("layout" in n for n in kinds["notes"])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        per_token = 24 * per_layer_token(4, 128)
+        assert kv_bytes(UNKNOWN_HYBRID, 1) == per_token
+        state = state_bytes(UNKNOWN_HYBRID)
+        assert state > 0
+        from llm_memory_calculator.genz.Models.get_language_model import get_configs
+
+        mc = get_configs(UNKNOWN_HYBRID)
+        assert [lt[0] for lt in mc.layer_type] == ["MHA-global"] * 24
+        assert mc.get_kv_size() * 2 == per_token
+        mm = _memory_model(UNKNOWN_HYBRID)
+        assert mm.bytes_per_token_kv == per_token
+        assert mm.state_bytes_per_sequence == pytest.approx(state, abs=1)
+
+
+def test_genz_graphs_no_mamba_layer_the_table_does_not_name():
+    """GenZ took any SSM state key as 'every layer is Mamba'. A stack the table reads as plain
+    attention (here: a state key on a config that states a full-attention layer list) is graphed
+    as attention, with its KV."""
+    from llm_memory_calculator.genz.Models.get_language_model import get_configs
+
+    c = dict(UNKNOWN_HYBRID, layer_types=["full_attention"] * 24)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        mc = get_configs(c)
+        assert "Mamba" not in {lt[0] for lt in mc.layer_type}
+        assert mc.get_kv_size() * 2 == 24 * per_layer_token(4, 128)
+
+
+def test_a_family_name_does_not_make_a_config_with_attention_heads_attention_free():
+    """model_type `mamba` with 16 attention heads: the name decided 'pure SSM' and charged 0 KV
+    whatever the heads. The structural keys decide; the name only when they are all absent."""
+    c = dict(model_type="mamba", hidden_size=2048, num_hidden_layers=24, num_attention_heads=16,
+             num_key_value_heads=16, state_size=16, vocab_size=32000, intermediate_size=4096)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert kv_bytes(c, 4096) == 24 * per_layer_token(16, 128) * 4096
+    # with no attention heads at all, the name still reads as a pure SSM
+    bare = {k: v for k, v in c.items() if k not in ("num_attention_heads", "num_key_value_heads")}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert kv_bytes(bare, 4096) == 0
+
+
+# ------------------------------------- a window the config class does not place
+
+
+def test_max_window_layers_places_the_window_when_the_class_states_no_layout(monkeypatch):
+    """transformers 4.53's Qwen2MoeConfig states no `layer_types`, while its modelling windows
+    only layers >= max_window_layers. The class's silence was read as 'every layer takes the
+    window' -- 24 sliding layers, an under-count. `max_window_layers` is the config's own
+    statement (transformers' docstring: the first max_window_layers layers use full attention,
+    any layer after uses SWA), so it places the window."""
+    transformers = pytest.importorskip("transformers")
+    from transformers import CONFIG_MAPPING
+
+    import llm_memory_calculator.layer_plan as lp
+
+    class Qwen2MoeConfig453:  # what transformers 4.53's Qwen2MoeConfig exposes: no layer_types
+        def __init__(self, **kw):
+            self.__dict__.update({k: v for k, v in kw.items() if k != "layer_types"})
+
+    monkeypatch.setattr(transformers, "__version__", "4.53.0")
+    monkeypatch.setitem(CONFIG_MAPPING._extra_content, "qwen2_moe", Qwen2MoeConfig453)
+    monkeypatch.setattr(lp, "_CLASS_LAYOUT_CACHE", {})
+    c = dict(model_type="qwen2_moe", hidden_size=2048, num_hidden_layers=24,
+             num_attention_heads=16, num_key_value_heads=16, use_sliding_window=True,
+             sliding_window=4096, max_window_layers=21, num_experts=60, vocab_size=1000,
+             intermediate_size=5632, moe_intermediate_size=1408)
+    kinds = layer_kinds(c)
+    assert kinds["attn"] == ["full"] * 21 + ["sliding"] * 3
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        per = per_layer_token(16, 128)
+        assert kv_bytes(c, 32768) == 21 * per * 32768 + 3 * per * 32768  # engine default: no saving
+        assert kv_bytes(c, 32768, engine={"heterogeneous_kv_layout": True}) == pytest.approx(
+            21 * per * 32768 + 3 * per * 4096)
+
+
+def test_a_uniform_window_without_max_window_layers_still_slides_every_layer():
+    """Mistral states a window and no layout key; its class states no list. Every layer slides."""
+    needs_transformers_layouts()
+    c = dict(model_type="mistral", hidden_size=4096, num_hidden_layers=32, num_attention_heads=32,
+             num_key_value_heads=8, sliding_window=4096, vocab_size=32000, intermediate_size=14336)
+    assert layer_kinds(c)["attn"] == ["sliding"] * 32

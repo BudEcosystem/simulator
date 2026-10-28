@@ -12,6 +12,7 @@ from .layer_plan import (
     ATTN_SLIDING,
     MECH_MAMBA1,
     MECH_MAMBA2,
+    attention_head_dim,
     layer_kinds,
     resolve_layer_plan,
 )
@@ -418,7 +419,7 @@ class ModelMemoryCalculator:
         num_layers = config.get("num_hidden_layers", 24)
         num_heads = config.get("num_attention_heads", 32)
         num_kv_heads = config.get("num_key_value_heads", num_heads)
-        head_dim = config.get("head_dim") or (hidden_size // num_heads)
+        head_dim = attention_head_dim(config, num_heads, hidden_size) or (hidden_size // num_heads)
 
         # Check if embeddings are tied
         tie_embeddings = config.get("tie_word_embeddings", False)
@@ -859,7 +860,9 @@ class ModelMemoryCalculator:
         num_key_value_heads = config.get(
             "num_key_value_heads", config.get("num_kv_heads", num_attention_heads)
         )
-        head_dim = config.get("head_dim") or (hidden_size // num_attention_heads)
+        head_dim = attention_head_dim(config, num_attention_heads, hidden_size) or (
+            hidden_size // num_attention_heads
+        )
 
         if attention_type == "mla":
             # One compressed latent per token per layer; no factor of 2.
@@ -907,7 +910,9 @@ class ModelMemoryCalculator:
         )
         # Read explicit head_dim; models such as Qwen3 decouple it from
         # hidden_size // num_heads (128 vs 64), and deriving it halves the cache.
-        head_dim = config.get("head_dim") or (hidden_size // num_attention_heads)
+        head_dim = attention_head_dim(config, num_attention_heads, hidden_size) or (
+            hidden_size // num_attention_heads
+        )
 
         # Count only attention layers for hybrid models
         if self.model_type == "hybrid":
@@ -932,7 +937,9 @@ class ModelMemoryCalculator:
         num_attention_heads = config.get(
             "num_attention_heads", config.get("n_head", 12)
         )
-        head_dim = config.get("head_dim") or (hidden_size // num_attention_heads)
+        head_dim = attention_head_dim(config, num_attention_heads, hidden_size) or (
+            hidden_size // num_attention_heads
+        )
 
         # Count only attention layers for hybrid models
         if self.model_type == "hybrid":
@@ -958,7 +965,9 @@ class ModelMemoryCalculator:
         num_key_value_heads = config.get(
             "num_key_value_heads", config.get("num_kv_heads", num_attention_heads)
         )
-        head_dim = config.get("head_dim") or (hidden_size // num_attention_heads)
+        head_dim = attention_head_dim(config, num_attention_heads, hidden_size) or (
+            hidden_size // num_attention_heads
+        )
 
         # Count only attention layers for hybrid models
         if self.model_type == "hybrid":
@@ -1772,7 +1781,7 @@ class ModelMemoryCalculator:
         """
         hidden = int(core.get("hidden_size", core.get("d_model", 0)) or 0)
         heads = int(core.get("num_attention_heads", 0) or 0)
-        head_dim = int(core.get("head_dim", 0) or 0)
+        head_dim = int(attention_head_dim(core, heads, hidden or None) or 0) if heads else 0
         if not head_dim and heads and hidden:
             head_dim = hidden // heads
         kv_heads = int(core.get("num_key_value_heads", heads) or 0)

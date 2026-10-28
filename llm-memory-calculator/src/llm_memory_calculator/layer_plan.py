@@ -196,6 +196,137 @@ def _window(tc: Dict[str, Any]) -> Optional[int]:
     return int(w) if isinstance(w, (int, float)) and not isinstance(w, bool) and w > 0 else None
 
 
+#: Spellings of one attention head's width, in the order they are believed. transformers aliases
+#: `head_dim` to another key in some config classes (`attribute_map`, 5.12): Zamba and Zamba2 to
+#: `attention_head_dim`, JetMoE to `kv_channels`, the T5 family to `d_kv`. Zamba2's hub config
+#: also ships Megatron's `kv_channels: 80` beside `attention_head_dim: 160`; transformers builds
+#: k_proj / v_proj at 160, so `attention_head_dim` is read first. (GLM-4-MoE-Lite's alias,
+#: `qk_rope_head_dim`, is MLA's RoPE width: an MLA cache is the latent, sized by its own path.)
+HEAD_DIM_KEYS = ("head_dim", "attention_head_dim", "kv_channels", "d_kv")
+
+#: Spellings of the attention head count.
+ATTENTION_HEAD_KEYS = ("num_attention_heads", "n_head", "n_heads", "num_attention_head")
+
+
+def _pos_int(v) -> Optional[int]:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or v <= 0 or int(v) != v:
+        return None
+    return int(v)
+
+
+_CLASS_HEAD_DIM_CACHE: Dict[str, Optional[int]] = {}
+
+
+def _config_class_head_dim(tc: Dict[str, Any]) -> Optional[int]:
+    """The head width the model type's own config class derives, for a class that keeps it under
+    another name (`attribute_map["head_dim"]`, or a width argument of its constructor) and a
+    config that does not state it. ZambaConfig derives `attention_head_dim = 2 x hidden_size /
+    heads`: its attention reads the hidden state concatenated with the input embeddings. None
+    when transformers is absent, does not know the type, or the class has no other name for the
+    width (then hidden_size / heads is what its modelling uses too)."""
+    mt = str(tc.get("model_type") or "")
+    if not mt or tc.get("kv_lora_rank"):
+        # MLA keeps a latent, not per-head K and V; its class's head_dim alias is the RoPE width.
+        return None
+    try:
+        import json
+
+        key = json.dumps(tc, sort_keys=True, default=str)
+    except Exception:
+        key = None
+    if key is not None and key in _CLASS_HEAD_DIM_CACHE:
+        return _CLASS_HEAD_DIM_CACHE[key]
+    result = None
+    names: List[str] = []
+    try:
+        from transformers import CONFIG_MAPPING
+
+        cls = CONFIG_MAPPING[mt]
+        alias = (getattr(cls, "attribute_map", None) or {}).get("head_dim")
+        if alias and alias != "head_dim":
+            names.append(alias)
+        # A release whose class keeps the width under its own name without aliasing `head_dim`
+        # (transformers 4.50's ZambaConfig) still takes it as a constructor argument.
+        import inspect
+
+        params = inspect.signature(cls.__init__).parameters
+        names += [k for k in HEAD_DIM_KEYS[1:] if k in params and k not in names]
+    except Exception:
+        cls = None
+    if cls is not None and names:
+        import logging
+
+        drop = {"model_type", "transformers_version", "architectures", "auto_map", "text_config",
+                "vision_config", "audio_config"}
+        whole = {k: v for k, v in tc.items() if k not in drop and not k.startswith("_")}
+        reduced = {k: whole[k] for k in ("hidden_size", "num_attention_heads", "num_key_value_heads",
+                                         "num_hidden_layers", "attention_hidden_size") if k in whole}
+        tf_log = logging.getLogger("transformers")
+        level = tf_log.level
+        tf_log.setLevel(logging.ERROR)
+        try:
+            for kwargs in (whole, reduced):
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        obj = cls(**kwargs)
+                except Exception:
+                    continue
+                result = next((v for v in (_pos_int(getattr(obj, k, None)) for k in names) if v), None)
+                break
+        finally:
+            tf_log.setLevel(level)
+    if key is not None:
+        _CLASS_HEAD_DIM_CACHE[key] = result
+    return result
+
+
+def attention_head_dim(
+    config: Dict[str, Any], heads: Optional[int] = None, hidden: Optional[int] = None
+) -> Optional[int]:
+    """The width of one attention head, as the model's own attention builds its K and V.
+
+    In order: a stated width under any of its spellings (``HEAD_DIM_KEYS``); the attention's own
+    input width over the heads (`attention_hidden_size`, Zamba's 2 x hidden); the width the
+    model type's config class derives under another name (transformers installed); and only then
+    hidden_size / heads. Reading `head_dim` alone and deriving the rest from hidden_size sized
+    Zamba2's KV at half: its heads are 160 wide, not 2560 / 32 = 80.
+
+    ``heads`` and ``hidden`` are the caller's head count and hidden size (with its own
+    defaults); the config's are read when they are None. The config given is read as it is --
+    a caller sizing a decoder passes the decoder's (text) config. None when neither a width nor
+    a head count is known.
+    """
+    tc = config if isinstance(config, dict) else {}
+    for k in HEAD_DIM_KEYS:
+        v = _pos_int(tc.get(k))
+        if v:
+            return v
+    heads = _pos_int(heads) or _pos_int(_first(tc, *ATTENTION_HEAD_KEYS))
+    if not heads:
+        return None
+    width = _pos_int(tc.get("attention_hidden_size"))
+    if width:
+        return width // heads
+    derived = _config_class_head_dim(tc)
+    if derived:
+        return derived
+    hidden = _pos_int(hidden) or _pos_int(_first(tc, "hidden_size", "d_model", "n_embd"))
+    return hidden // heads if hidden else None
+
+
+def attention_input_width(config: Dict[str, Any], hidden_size: int) -> int:
+    """What an attention layer's Q / K / V projections read: `attention_hidden_size` when an
+    attention-bearing config states it (Zamba feeds its shared attention the hidden state
+    concatenated with the embeddings, 2 x hidden), else the hidden size."""
+    tc = config if isinstance(config, dict) else {}
+    if _pos_int(_first(tc, *ATTENTION_HEAD_KEYS)):
+        width = _pos_int(tc.get("attention_hidden_size"))
+        if width:
+            return width
+    return int(hidden_size)
+
+
 def encoder_tokens(config: Dict[str, Any]) -> Optional[int]:
     """Tokens a cross-attention layer caches per request: the encoder's output.
 
@@ -536,45 +667,7 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             plan["recurrent"][i] = MECH_MAMBA1
         return _finish(plan, config, "global_attn_idx", notes, parallel=True)
 
-    # --- 10. Falcon-H1: parallel hybrid with no layer pattern at all. Mamba
-    # keys present + no interleave dialect means every layer is both. ---------
-    if "mamba_d_state" in tc and "num_attention_heads" in tc and not layer_types:
-        for i in range(n):
-            plan["attn"][i] = ATTN_FULL
-            plan["recurrent"][i] = MECH_MAMBA2
-        return _finish(plan, config, "parallel_hybrid", notes, parallel=True)
-
-    # --- 11. Pure SSM: no attention anywhere. Structural first -- state keys
-    # and no attention-head count of any spelling -- so a new SSM family is
-    # recognised without being listed; the model_type list stays as a fallback
-    # for configs that name the family but omit the state keys. ---------------
-    no_attention_heads = not any(
-        tc.get(k) for k in ("num_attention_heads", "n_head", "n_heads", "num_attention_head")
-    )
-    has_ssm_state = any(
-        tc.get(k) is not None for k in ("state_size", "d_state", "ssm_state_size", "mamba_d_state")
-    )
-    if (has_ssm_state and no_attention_heads) or model_type in (
-        "mamba", "mamba2", "falcon_mamba", "s4", "ssm", "state-space"
-    ):
-        mech = MECH_MAMBA2 if (model_type == "mamba2" or "n_groups" in tc) else MECH_MAMBA1
-        for i in range(n):
-            plan["recurrent"][i] = mech
-        # A pure SSM stack has no FFN at all -- the gated mixer *is* the block.
-        # Charging one per layer nearly doubled Mamba-Codestral (13.7B vs 7.3B).
-        return _finish(plan, config, "pure_ssm", notes, ffn=[False] * n)
-
-    # --- 12. Attention-free recurrent stacks other than Mamba, by the keys
-    # that size their state: RWKV (`attention_hidden_size` with no attention
-    # heads) and xLSTM's matrix memory (`qk_dim_factor` / `v_dim_factor`). ----
-    if no_attention_heads and ("qk_dim_factor" in tc or "v_dim_factor" in tc):
-        plan["recurrent"] = [MECH_MLSTM] * n
-        return _finish(plan, config, "mlstm_stack", notes)
-    if no_attention_heads and "attention_hidden_size" in tc:
-        plan["recurrent"] = [MECH_RWKV] * n
-        return _finish(plan, config, "rwkv_stack", notes)
-
-    # --- 13. Cross-attention layers interleaved with self-attention (Mllama's
+    # --- 10. Cross-attention layers interleaved with self-attention (Mllama's
     # `cross_attention_layers`): their cache holds the encoder's tokens. -------
     cal = tc.get("cross_attention_layers")
     if isinstance(cal, list) and cal:
@@ -583,7 +676,7 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             plan["attn"][i] = ATTN_CROSS if i in s else ATTN_FULL
         return _finish(plan, config, "cross_attention_layers", notes, keep_uniform=True)
 
-    # --- SambaY / Phi-4-flash: an upper bound, never an under-count ----------
+    # --- 11. SambaY / Phi-4-flash: an upper bound, never an under-count ----------
     # SambaY interleaves Mamba with sliding-window attention in its self-decoder,
     # then its YOCO cross-decoder reuses ONE full-attention KV cache -- written by
     # a single layer and read by the cross-attention layers after it -- which
@@ -623,6 +716,53 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             approximate=True,
         )
 
+    # The structural fallbacks: no key above states the layout, so the config's own
+    # dimension keys decide -- an SSM state, attention heads, or both. A family name decides
+    # nothing while a structural key is present.
+    no_attention_heads = not any(tc.get(k) for k in ATTENTION_HEAD_KEYS)
+    has_ssm_state = any(
+        tc.get(k) is not None for k in ("state_size", "d_state", "ssm_state_size", "mamba_d_state")
+    )
+
+    # --- 12. Parallel hybrid: an SSM state AND attention heads, no layout key. Falcon-H1 is
+    # exactly this (every layer runs attention and Mamba-2 side by side). For any other config
+    # of this shape it is the upper bound: every layer charged a growing KV and a fixed state,
+    # never a layer left free. Graphing it as pure Mamba charged a serving request 0 KV. ------
+    if has_ssm_state and not no_attention_heads:
+        for i in range(n):
+            plan["attn"][i] = ATTN_FULL
+            plan["recurrent"][i] = MECH_MAMBA2
+        msg = (
+            "the config states an SSM state and attention heads but no layout key saying which "
+            "layers are which; every layer is charged attention KV AND recurrent state (the "
+            "parallel-hybrid reading, as Falcon-H1 runs) -- an upper bound if the model "
+            "interleaves instead."
+        )
+        warnings.warn(msg, stacklevel=2)
+        return _finish(plan, config, "parallel_hybrid", notes + [msg], parallel=True)
+
+    # --- 13. Pure SSM: no attention heads of any spelling, and an SSM state -- or, with no
+    # state key either, a state-space family name (configs that omit the state keys). --------
+    if no_attention_heads and (has_ssm_state or model_type in (
+        "mamba", "mamba2", "falcon_mamba", "s4", "ssm", "state-space"
+    )):
+        mech = MECH_MAMBA2 if (model_type == "mamba2" or "n_groups" in tc) else MECH_MAMBA1
+        for i in range(n):
+            plan["recurrent"][i] = mech
+        # A pure SSM stack has no FFN at all -- the gated mixer *is* the block.
+        # Charging one per layer nearly doubled Mamba-Codestral (13.7B vs 7.3B).
+        return _finish(plan, config, "pure_ssm", notes, ffn=[False] * n)
+
+    # --- 14. Attention-free recurrent stacks other than Mamba, by the keys
+    # that size their state: RWKV (`attention_hidden_size` with no attention
+    # heads) and xLSTM's matrix memory (`qk_dim_factor` / `v_dim_factor`). ----
+    if no_attention_heads and ("qk_dim_factor" in tc or "v_dim_factor" in tc):
+        plan["recurrent"] = [MECH_MLSTM] * n
+        return _finish(plan, config, "mlstm_stack", notes)
+    if no_attention_heads and "attention_hidden_size" in tc:
+        plan["recurrent"] = [MECH_RWKV] * n
+        return _finish(plan, config, "rwkv_stack", notes)
+
     return None
 
 
@@ -657,7 +797,10 @@ _LAYOUT_KEYS = (
 _CLASS_LAYOUT_CACHE: Dict[str, Any] = {}
 
 #: The first transformers release whose config classes derive ``layer_types`` (Gemma2Config,
-#: Qwen2Config, ...). Before it no class states one, for any family.
+#: Qwen2Config, ...). Before it no class states one, for any family. Classes gained the list in
+#: different releases after it (4.53's Qwen2MoeConfig still has none), so from 4.53 on a class
+#: that states none is read as "every layer takes the window" only when the config's own
+#: `max_window_layers` does not say otherwise (``max_window_layers_layout``).
 LAYER_LAYOUTS_SINCE = (4, 53)
 
 
@@ -743,6 +886,25 @@ def _config_class_layer_types(tc: Dict[str, Any]):
     return result
 
 
+def max_window_layers_layout(tc: Dict[str, Any]) -> Optional[List[str]]:
+    """Per-layer names from `max_window_layers`, or None.
+
+    transformers documents the key (Qwen2 / Qwen2-MoE / Qwen3 families): "the first
+    `max_window_layers` layers will use full attention, while any additional layer afterwards
+    will use SWA". It is the config's own statement that the window is NOT on every layer, so
+    a config class that derives no `layer_types` (transformers 4.53's Qwen2MoeConfig, whose
+    modelling windows only layers >= max_window_layers) does not make the window uniform. It
+    only ever takes the window off layers: a release whose modelling windows every layer
+    anyway (Qwen3-MoE) is over-counted, never under-counted. None when the key is absent or
+    states no full layer (then the window is uniform).
+    """
+    n = depth(tc)
+    mwl = tc.get("max_window_layers")
+    if not (n and isinstance(mwl, int) and not isinstance(mwl, bool) and mwl > 0):
+        return None
+    return ["full_attention" if i < mwl else "sliding_attention" for i in range(n)]
+
+
 def stated_layer_types(tc: Dict[str, Any]):
     """``(names, source, notes)``: the per-layer kind names a decoder config states.
 
@@ -751,7 +913,8 @@ def stated_layer_types(tc: Dict[str, Any]):
     not reach are charged full attention, noted and warned; a period
     (``sliding_window_pattern``); and, for a
     config that carries a window but no layout, the layout its own config class derives
-    (transformers). A window whose layers no source places -- the model type is unknown to
+    (transformers); a class that derives none leaves the window uniform unless the config
+    states `max_window_layers` (``max_window_layers_layout``). A window whose layers no source places -- the model type is unknown to
     the installed transformers, the release predates 4.53 (whose classes derive no layout
     for any type), or transformers is not installed -- is charged on NO layer: every layer
     is full attention, the over-estimate, and the notes and a warning say so. Clamping every
@@ -772,6 +935,9 @@ def stated_layer_types(tc: Dict[str, Any]):
     if names:
         return names, "config_class", []
     if known:
+        names = max_window_layers_layout(tc)
+        if names:
+            return names, "max_window_layers", []
         return None, "uniform", []
     if resolve_layer_plan(tc) is not None:
         # A hybrid dialect (Hymba's global indices, SambaY's Mamba spacing) places the

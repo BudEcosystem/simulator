@@ -9,6 +9,7 @@ import logging
 
 from llm_memory_calculator.genz.Models.default_models import ModelConfig
 from llm_memory_calculator.genz.Models.get_language_model import layer_configs_from_hf
+from llm_memory_calculator.layer_plan import attention_head_dim
 from llm_memory_calculator.genz.Models.model_quality import QualityMetricsCollection, MMLU, MATH, GSM8K, Hellaswag, TriviaQA
 
 
@@ -61,8 +62,9 @@ class ModelConverter:
         num_attention_heads = hf_config.get('num_attention_heads', 32)
         num_key_value_heads = hf_config.get('num_key_value_heads', num_attention_heads)
         
-        # Head dimension
-        head_dim = hf_config.get('head_dim')
+        # Head dimension: the one reader the calculator and GenZ use (`head_dim` or its other
+        # spellings, e.g. Zamba2's `attention_head_dim`, before hidden_size / heads).
+        head_dim = attention_head_dim(hf_config, num_attention_heads, hidden_size)
         if head_dim is None and num_attention_heads > 0:
             head_dim = hidden_size // num_attention_heads
         

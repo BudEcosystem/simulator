@@ -3,7 +3,12 @@
 import warnings
 from typing import Dict, Any, Union
 from .config_normalizer import ConfigNormalizer
-from .layer_plan import layer_kinds, resolve_layer_plan
+from .layer_plan import (
+    attention_head_dim,
+    attention_input_width,
+    layer_kinds,
+    resolve_layer_plan,
+)
 from .mixer_params import recurrent_mixer_params
 
 
@@ -324,19 +329,24 @@ class UniversalParameterCounter:
         num_key_value_heads = (
             config.get('num_key_value_heads') or config.get('num_kv_heads') or num_attention_heads
         )
-        head_dim = config.get('head_dim') or (hidden_size // num_attention_heads)
-        
+        head_dim = attention_head_dim(config, num_attention_heads, hidden_size) or (
+            hidden_size // num_attention_heads
+        )
+        # What Q / K / V read: the hidden state, or the attention's own wider input (Zamba's
+        # 2 x hidden concatenation). O writes back to the hidden size.
+        in_width = attention_input_width(config, hidden_size)
+
         # Q, K, V, O projections
         q_size = num_attention_heads * head_dim
         kv_size = num_key_value_heads * head_dim
-        
+
         # Some models have different projection sizes
         q_proj_size = config.get('q_proj_size', q_size)
         kv_proj_size = config.get('kv_proj_size', kv_size)
-        
+
         return num_layers * (
-            hidden_size * q_proj_size +  # Q projection
-            hidden_size * kv_proj_size * 2 +  # K, V projections
+            in_width * q_proj_size +  # Q projection
+            in_width * kv_proj_size * 2 +  # K, V projections
             q_proj_size * hidden_size  # O projection
         )
     

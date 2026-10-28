@@ -259,8 +259,14 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
     # Handle KV heads
     num_kv_heads = hf_config.get('num_key_value_heads', num_heads)
 
-    # Handle head dim
-    head_dim = hf_config.get('head_dim', hidden_size // num_heads if num_heads > 0 else 128)
+    # Head width, as the model's attention builds K and V: `head_dim` or its other spellings
+    # (Zamba2's `attention_head_dim`), the attention's own input width over the heads, and only
+    # then hidden_size / heads -- the one reader the calculator uses too.
+    from llm_memory_calculator.layer_plan import attention_head_dim
+
+    head_dim = attention_head_dim(hf_config, num_heads, hidden_size) or (
+        hidden_size // num_heads if num_heads > 0 else 128
+    )
 
     # Get max position embeddings
     max_seq_len = hf_config.get('max_position_embeddings',
@@ -418,6 +424,10 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
 
     # A pure state-space stack keeps GenZ's own Mamba operators (no layer_configs); the state
     # each of its layers carries comes from the same table and shapes as every other mixer's.
+    # GenZ's own stack builder turns EVERY layer into Mamba once `mamba_d_state` is set, so a
+    # state key alone is not let through: with no per-layer configs, GenZ graphs Mamba only
+    # where the table names a recurrent layer. A stack the table reads as attention is graphed
+    # as attention, with its KV -- not as a KV-free Mamba stack the serving path charges 0.
     recurrent_state = None
     if layer_configs is None and mamba_d_state is not None:
         from llm_memory_calculator.layer_plan import layer_kinds
@@ -429,6 +439,8 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
                 recurrent_state_shape(mechs[0], hf_config, int(hidden_size or 0)),
                 state_bytes=_state_dtype_bytes(hf_config),
             )
+        else:
+            mamba_d_state = None
 
     # Create ModelConfig with all extracted attributes
     return ModelConfig(

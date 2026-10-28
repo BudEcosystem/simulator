@@ -23,6 +23,7 @@ from ..layer_plan import (
     ATTN_CROSS,
     ATTN_FULL,
     ATTN_SLIDING,
+    attention_head_dim,
     layer_kinds,
     resolve_layer_plan,
 )
@@ -738,7 +739,7 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
         or 1
     )
     nkv = int(_get(text, "num_key_value_heads", "num_kv_heads", default=nh) or nh)
-    hd = int(_get(text, "head_dim", default=0) or (h // max(nh, 1)))
+    hd = int(attention_head_dim(text, nh, h) or (h // max(nh, 1)))
     vocab = int(
         _get(text, "vocab_size", default=_get(config, "vocab_size", default=32000)) or 32000
     )
