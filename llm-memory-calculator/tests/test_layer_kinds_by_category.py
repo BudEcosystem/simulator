@@ -1346,3 +1346,137 @@ def test_a_uniform_window_without_max_window_layers_still_slides_every_layer():
     c = dict(model_type="mistral", hidden_size=4096, num_hidden_layers=32, num_attention_heads=32,
              num_key_value_heads=8, sliding_window=4096, vocab_size=32000, intermediate_size=14336)
     assert layer_kinds(c)["attn"] == ["sliding"] * 32
+
+
+# ------------------------------------- review round 5: a dense layer's width, an unread window, the prefix cache
+
+
+def _genz_weights_mb(config, tmp_path):
+    from llm_memory_calculator.genz.Models.get_language_model import (
+        create_full_decode_model,
+        get_configs,
+    )
+    from llm_memory_calculator.genz.analyse_model import get_model_df, get_summary_table
+
+    for sub in ("model", "sparsity"):
+        (tmp_path / sub).mkdir(exist_ok=True)
+    path = create_full_decode_model(name=get_configs(config), input_sequence_length=1024,
+                                    output_gen_tokens=0, data_path=str(tmp_path))
+    df = get_model_df(path, batch_size=1, data_path=str(tmp_path), model_characterstics=True)
+    return float(get_summary_table(df, model_characterstics=True)["Total Weights (MB)"].values[0])
+
+
+_DENSE_W, _EXPERT_W, _HIDDEN, _DEPTH = 1024, 256, 512, 8
+_MOE_BASE = dict(hidden_size=_HIDDEN, num_hidden_layers=_DEPTH, num_attention_heads=8,
+                 num_key_value_heads=2, head_dim=64, intermediate_size=_EXPERT_W,
+                 num_experts_per_tok=1, vocab_size=1000, hidden_act="silu")
+# transformers 5.12: an MoE model whose `intermediate_size` is the EXPERT width names its dense
+# layers' width under another key -- Llama 4 builds them at `intermediate_size_mlp`
+# (Llama4TextDecoderLayer), MiniMax-M3 at `dense_intermediate_size`, Cohere2-MoE at
+# `prefix_dense_intermediate_size` (their DecoderLayer's dense MLP).
+DENSE_WIDTH_CASES = {
+    "llama4_interleaved": (
+        dict(_MOE_BASE, model_type="llama4_text", num_local_experts=4,
+             interleave_moe_layer_step=2, intermediate_size_mlp=_DENSE_W),
+        "intermediate_size_mlp", [i % 2 == 0 for i in range(_DEPTH)],
+    ),
+    "minimax_m3_mlp_layer_types": (
+        dict(_MOE_BASE, model_type="minimax_m3_vl_text", num_local_experts=4,
+             mlp_layer_types=["dense"] * 2 + ["sparse"] * 6, dense_intermediate_size=_DENSE_W),
+        "dense_intermediate_size", [True] * 2 + [False] * 6,
+    ),
+    "cohere2_moe_prefix_dense": (
+        dict(_MOE_BASE, model_type="cohere2_moe", num_experts=4,
+             mlp_layer_types=["dense"] * 3 + ["sparse"] * 5, prefix_dense_intermediate_size=_DENSE_W),
+        "prefix_dense_intermediate_size", [True] * 3 + [False] * 5,
+    ),
+}
+
+
+@pytest.mark.parametrize("case", list(DENSE_WIDTH_CASES))
+def test_a_dense_layer_of_an_moe_model_is_graphed_at_the_width_its_config_names(case, tmp_path):
+    """Llama-4-Maverick's 24 dense layers were graphed at the experts' 8,192 instead of
+    `intermediate_size_mlp`'s 16,384: 3.02B parameters (6 GB bf16) short, once MoE was placed
+    per layer. The dense width is read from the config's own key, for every family that names one."""
+    from llm_memory_calculator.genz.Models.get_language_model import get_configs
+
+    config, key, dense = DENSE_WIDTH_CASES[case]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        mc = get_configs(json.loads(json.dumps(config)))
+        assert [lc.ffn_type for lc in mc.layer_configs] == ["Dense" if d else "MoE" for d in dense]
+        for i, d in enumerate(dense):
+            view = mc.get_layer_view(i)
+            if d:
+                assert (view.num_experts, view.intermediate_size) == (1, _DENSE_W)
+            else:
+                assert (view.num_experts, view.moe_intermediate_size) == (4, _EXPERT_W)
+        narrow = dict(config, **{key: _EXPERT_W})
+        grown = _genz_weights_mb(config, tmp_path) - _genz_weights_mb(narrow, tmp_path)
+    matrices = mc.num_ffi + 1  # gate + up + down for a gated MLP
+    assert grown * MiB == pytest.approx(
+        sum(dense) * matrices * _HIDDEN * (_DENSE_W - _EXPERT_W) * 2, rel=1e-9)
+
+
+def _vllm_kv_tokens(config):
+    from llm_memory_calculator.device import catalogue
+    from llm_memory_calculator.engine import EngineRecord, engine_for
+    from llm_memory_calculator.model.facts import ModelFacts
+
+    record = json.loads((FIXTURES / "planner" / "records" / "vllm-0.30-upstream.json").read_text())
+    engine = engine_for(EngineRecord.from_dict(record))
+    limits = engine.limits({"model.max_len": 8192}, ModelFacts.from_config(config),
+                           catalogue.get("h100xm-80c-vgpu"))
+    return limits.kv_tokens
+
+
+def test_sliding_layers_whose_window_is_not_read_are_charged_in_full_everywhere():
+    """`layer_types` names sliding layers, but the window sits under a key the table does not read
+    (ModernBERT's `local_attention`) or nowhere. The facts reported sliding layers with no window,
+    and the vLLM planner charged such a layer zero blocks -- while the calculator charged it in
+    full. An unknown window is no window: every reader charges those layers full attention."""
+    from llm_memory_calculator.model.facts import ModelFacts
+
+    n = 32
+    base = dict(model_type="futurenet_x", hidden_size=4096, num_hidden_layers=n,
+                num_attention_heads=32, num_key_value_heads=8, head_dim=128,
+                intermediate_size=14336, vocab_size=32000)
+    named = dict(base, layer_types=["sliding_attention" if i % 2 else "full_attention"
+                                    for i in range(n)], local_attention=128)
+    with pytest.warns(UserWarning, match="window"):
+        kinds = layer_kinds(named)
+    assert kinds["attn"] == ["full"] * n
+    assert any("window" in note for note in kinds["notes"])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        layers = ModelFacts.from_config(named).layers
+        assert (layers.full, layers.sliding) == (n, 0)
+        assert kv_bytes(named, 4096) == n * per_layer_token(8, 128) * 4096
+        assert _vllm_kv_tokens(named) == _vllm_kv_tokens(base)
+    # a stated window still bounds the same layout
+    windowed = dict(named, sliding_window=4096)
+    assert layer_kinds(windowed)["attn"].count("sliding") == n // 2
+
+
+PREFIX_CASES = [
+    "Qwen_Qwen3.5-4B",  # Gated DeltaNet: 8 of 32 layers hold KV
+    "nvidia_Nemotron-H-8B-Base-8K",  # Mamba-2 and FFN-only slots: 4 of 52
+    "deepseek-ai_DeepSeek-V3.2-Exp",  # MLA: one latent per layer
+]
+
+
+@pytest.mark.parametrize("name", PREFIX_CASES)
+def test_the_prefix_cache_prices_a_token_like_the_serving_memory_model(name):
+    """BudSimulator's /cache/analyze priced a cached token as 2 x kv_heads x head_dim x every
+    decoder layer: 4x on Qwen3.5-4B (131,072 against 32,768 bytes), 13x on Nemotron-H-8B, and the
+    full heads instead of MLA's latent. It reads the same per-token KV as the memory model."""
+    from llm_memory_calculator.genz.Models.get_language_model import get_configs
+    from llm_memory_calculator.genz.serving.prefix_cache import PrefixCacheAnalyzer
+
+    c = cfg(name)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        analyzer = PrefixCacheAnalyzer(get_configs(c))
+        assert analyzer._kv_bytes_per_token == _memory_model(c).bytes_per_token_kv
+    if name == "Qwen_Qwen3.5-4B":
+        assert analyzer._kv_bytes_per_token == 32768

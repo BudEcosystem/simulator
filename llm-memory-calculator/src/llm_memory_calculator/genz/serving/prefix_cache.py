@@ -177,10 +177,16 @@ class PrefixCacheAnalyzer:
 
     def __init__(self, model_config, system_or_kv_bytes: int = 0,
                  cache_capacity_gb: float = 10.0):
+        get_kv_size = getattr(model_config, 'get_kv_size', None)
         if isinstance(system_or_kv_bytes, int) and system_or_kv_bytes > 0:
             self._kv_bytes_per_token = system_or_kv_bytes
+        elif callable(get_kv_size):
+            # The KV a cached token holds, over the layers that keep a cache (a recurrent or
+            # FFN-only layer keeps none; MLA keeps its latent) -- ModelConfig.get_kv_size, the
+            # figure the serving memory model prices a token by -- at 2 bytes (bf16).
+            self._kv_bytes_per_token = int(get_kv_size()) * 2
         else:
-            # Derive from model config
+            # A config with no layer table: its own heads over every decoder layer.
             num_kv_heads = getattr(model_config, 'num_key_value_heads', None)
             if num_kv_heads is None:
                 num_kv_heads = getattr(model_config, 'num_attention_heads', 32)

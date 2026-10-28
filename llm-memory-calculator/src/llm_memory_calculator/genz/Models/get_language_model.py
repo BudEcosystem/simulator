@@ -143,12 +143,14 @@ def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1
     * an FFN-only slot -> attention ``no_op``; a layer the plan gives no FFN -> FFN ``no_op``
     * an FFN on a layer that routes to experts -> ``MoE``, on any other layer of an MoE
       model -> ``Dense`` (``layer_plan.moe_layers``: Jamba's expert period, DeepSeek's and
-      Kimi's leading dense layers, Qwen's sparse step, ...)
+      Kimi's leading dense layers, Qwen's sparse step, ...), at the dense width the config
+      names apart from the experts' when it names one (``layer_plan.dense_ffn_width``:
+      Llama 4's ``intermediate_size_mlp``, ...)
 
     A pure state-space stack keeps GenZ's own Mamba operators (returns None).
     """
     from llm_memory_calculator.genz.Models.default_models import LayerConfig
-    from llm_memory_calculator.layer_plan import ATTN_SLIDING, layer_kinds
+    from llm_memory_calculator.layer_plan import ATTN_SLIDING, dense_ffn_width, layer_kinds
     from llm_memory_calculator.mixer_params import _DISPATCH as _MIXER_PARAMS
     from llm_memory_calculator.state_memory import _state_dtype_bytes, recurrent_state_shape
 
@@ -170,6 +172,9 @@ def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1
     ) and len(set(moe)) == 1:
         return None  # every layer full attention with the same FFN: uniform after all
     hidden = int(hf_config.get('hidden_size') or 0)
+    # A dense layer among routed ones is built at its own width when the config names one;
+    # otherwise at the model's intermediate_size (ModelConfig's own).
+    dense_width = dense_ffn_width(hf_config) if num_experts > 1 else None
     shapes, params = {}, {}
     out = []
     for attn, mech, ffn, routed in zip(kinds["attn"], kinds["recurrent"], kinds["ffn"], moe):
@@ -187,6 +192,7 @@ def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1
         out.append(LayerConfig(
             attention_type=attention_type,
             ffn_type=ffn_kind if ffn else "no_op",
+            intermediate_size=dense_width if ffn and not routed else None,
             recurrent=mech,
             recurrent_state=shapes.get(mech) if mech else None,
             recurrent_params=params.get(mech) if mech else None,

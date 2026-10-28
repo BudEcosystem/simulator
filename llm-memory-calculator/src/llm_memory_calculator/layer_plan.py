@@ -24,7 +24,7 @@ Jamba, Nemotron-H, ...) set exactly one axis per layer.
 
 import re
 import warnings
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # Recurrent mechanisms, by state geometry rather than by vendor name -- the
 # state shape is what the memory model needs, and several vendors share one.
@@ -1024,6 +1024,21 @@ def moe_layers(config: Dict[str, Any]) -> Optional[List[bool]]:
     return [i >= k and i % freq == 0 for i in range(n)]
 
 
+#: Spellings of the width of an MoE model's DENSE (non-routed) layers, for the families whose
+#: `intermediate_size` is the expert width (transformers 5.12): Llama 4 builds its dense layers at
+#: `intermediate_size_mlp`, MiniMax-M3 at `dense_intermediate_size`, Cohere2-MoE at
+#: `prefix_dense_intermediate_size`. A family that states none of these (Qwen MoE, DeepSeek, Jamba,
+#: Nemotron-H) builds them at `intermediate_size` and names the experts' width apart.
+DENSE_FFN_WIDTH_KEYS = ("intermediate_size_mlp", "dense_intermediate_size",
+                        "prefix_dense_intermediate_size")
+
+
+def dense_ffn_width(config: Dict[str, Any]) -> Optional[int]:
+    """The width a dense layer of an MoE model is built at, when the config names it apart from
+    `intermediate_size`; None when it does not (the dense layer is `intermediate_size` wide)."""
+    return _pos_int(_first(_text_config(config), *DENSE_FFN_WIDTH_KEYS))
+
+
 def layer_kinds(config: Dict[str, Any]) -> Dict[str, Any]:
     """Every layer's kind, for ANY decoder config -- the one answer callers use.
 
@@ -1060,10 +1075,7 @@ def layer_kinds(config: Dict[str, Any]) -> Dict[str, Any]:
         chunked = False
         blank["attn"] = [ATTN_SLIDING if _window(tc) else ATTN_FULL] * n
         source = "uniform"
-    window = _window(tc)
-    if chunked and not window:
-        chunk = tc.get("attention_chunk_size")
-        window = int(chunk) if isinstance(chunk, int) and chunk > 0 else None
+    window, _ = _sliding_bound(blank["attn"], tc, chunked, notes)
     return {
         "attn": blank["attn"],
         "recurrent": blank["recurrent"],
@@ -1076,6 +1088,35 @@ def layer_kinds(config: Dict[str, Any]) -> Dict[str, Any]:
         "notes": notes,
         "mechanisms": [],
     }
+
+
+def _sliding_bound(attn: List[Optional[str]], tc: Dict[str, Any], chunked: bool,
+                   notes: List[str]) -> Tuple[Optional[int], bool]:
+    """The tokens a sliding layer keeps: the window, or Llama 4's chunk for chunked layers.
+
+    A layout that names sliding layers while the window sits under a key this table does not
+    read (ModernBERT's `local_attention`) or nowhere leaves no bound: those layers are charged
+    FULL attention here, in place, so no reader can charge a windowed layer with no window less
+    than full (the vLLM planner charged it nothing). Returns (window, whether it charged any).
+    """
+    window = _window(tc)
+    if chunked and not window:
+        chunk = tc.get("attention_chunk_size")
+        window = int(chunk) if isinstance(chunk, int) and chunk > 0 else None
+    unbounded = [i for i, a in enumerate(attn) if a == ATTN_SLIDING]
+    if window or not unbounded:
+        return window, False
+    for i in unbounded:
+        attn[i] = ATTN_FULL
+    msg = (
+        f"{len(unbounded)} layers are named sliding/local, but the config states their window "
+        f"under none of {list(WINDOW_KEYS)} (nor `attention_chunk_size`), so they are charged "
+        "FULL-ATTENTION KV -- an over-estimate, not a measurement. State the window under one "
+        "of those keys to apply it."
+    )
+    notes.append(msg)
+    warnings.warn(msg, stacklevel=4)
+    return None, True
 
 
 def _finish(
@@ -1097,6 +1138,9 @@ def _finish(
     if plan.pop("_unknown", False):
         approximate = True
     chunked = plan.pop("_chunked", False)
+    notes = list(notes)
+    window, unbounded = _sliding_bound(attn, tc, chunked, notes)
+    approximate = approximate or unbounded
 
     # KV SHARING. The last `num_kv_shared_layers` layers (Gemma 3n) read the
     # cache an earlier layer of the same kind wrote and allocate none of their
@@ -1144,10 +1188,6 @@ def _finish(
             f"(num_kv_shared_layers={shared}) and are charged none of their own."
         ]
 
-    window = _window(tc)
-    if chunked and not window:
-        chunk = tc.get("attention_chunk_size")
-        window = int(chunk) if isinstance(chunk, int) and chunk > 0 else None
     enc_tokens = encoder_tokens(config) if n_cross else None
     if n_cross and enc_tokens is None:
         notes = notes + [
