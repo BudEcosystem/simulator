@@ -24,6 +24,8 @@ from ..layer_plan import (
     ATTN_FULL,
     ATTN_SLIDING,
     attention_head_dim,
+    cross_attention_bytes,
+    cross_attention_cache,
     decoder_view,
     encoder_decoder_stacks,
     layer_kinds,
@@ -180,6 +182,9 @@ class ModelFacts:
     draft_vocab: int = 0  # EAGLE3 drafts: the draft head's vocabulary
     shares_embedding: bool = False  # a draft that reads the target's embedding table
     config_digest: str = ""
+    # an encoder-decoder's cross-attention cache (layer_plan.cross_attention_cache): every decoder layer's K and V
+    # over the encoder's output, fixed per sequence
+    cross_attention: Optional[Mapping[str, Any]] = None
 
     # ------------------------------------------------------------------ construction
 
@@ -308,11 +313,21 @@ class ModelFacts:
 
     def kv_bytes_for_context(self, context: int, kv_dtype: str = "bf16") -> float:
         """KV bytes one sequence of ``context`` tokens holds and a decode step reads (sliding layers bounded
-        by the window)."""
+        by the window; an encoder-decoder's cross-attention cache over its encoder's output)."""
         per = self._kv_bytes_per_token_layer(kv_dtype)
         ctx = max(int(context), 0)
         window = self.layers.sliding_window or ctx
-        return float(per * (self.layers.full * ctx + self.layers.sliding * min(ctx, window)))
+        return float(
+            per * (self.layers.full * ctx + self.layers.sliding * min(ctx, window))
+            + self.cross_bytes_per_sequence(kv_dtype, ctx)
+        )
+
+    def cross_bytes_per_sequence(self, kv_dtype: str = "bf16", tokens: Optional[int] = None) -> float:
+        """An encoder-decoder's cross-attention cache for one sequence: every decoder layer's K and V over the
+        encoder's output -- its stated length (Whisper's 1,500 frames), else ``tokens`` (the caller's context:
+        a text encoder reads the prompt). 0 for any other model. It does not grow with the decoded tokens, so
+        ``kv_bytes_per_token`` leaves it out."""
+        return cross_attention_bytes(self.cross_attention, dtype_bytes(kv_dtype), tokens)
 
     def state_bytes_per_layer(self, state_dtype: str = "float32") -> float:
         """One recurrent layer's state for one sequence (recurrent at ``state_dtype``, conv at 16-bit)."""
@@ -723,6 +738,7 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     # An encoder-decoder's KV and decoder weights are its decoder's, under the decoder's own
     # spellings (Whisper's `decoder_layers`, T5's `num_heads`); its encoder is its own stack.
     stacks = encoder_decoder_stacks(config) if isinstance(config, dict) else None
+    cross = cross_attention_cache(config) if stacks is not None else None
     if stacks is not None:
         config = decoder_view(config)
     text = dict(_text(config))
@@ -890,4 +906,5 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
             _get(config, "share_embedding", "tie_embeddings_with_target", default=False)
         ),
         config_digest=digest,
+        cross_attention=cross,
     )

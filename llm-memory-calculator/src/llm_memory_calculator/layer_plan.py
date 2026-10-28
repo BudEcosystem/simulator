@@ -193,23 +193,43 @@ def depth(tc: Dict[str, Any]) -> int:
 #: The T5 family (T5, mT5, UMT5, LongT5, Switch) says `num_decoder_layers` beside `num_layers`,
 #: which is the ENCODER's depth, and `num_heads` / `d_model` / `d_ff` / `d_kv` for both. Moonshine
 #: says `decoder_num_hidden_layers` / `decoder_num_attention_heads` / `decoder_num_key_value_heads`.
-#: ProphetNet says `num_encoder_layers`. Dia and EncoderDecoderModel nest each stack in its own
-#: block (`encoder_config` / `decoder_config`, `encoder` / `decoder`); cohere_asr nests only the
-#: encoder and keeps the decoder at the top level.
+#: ProphetNet says `num_encoder_layers` / `num_decoder_layers` and `num_encoder_attention_heads`
+#: / `num_decoder_attention_heads`. Dia and EncoderDecoderModel nest each stack in its own block
+#: (`encoder_config` / `decoder_config`, `encoder` / `decoder`; MusicGen's encoder is its
+#: `text_encoder`); cohere_asr nests only the encoder and keeps the decoder at the top level. A
+#: multimodal model can nest a whole encoder-decoder under `text_config` (BLIP-2 / InstructBLIP
+#: with flan-T5, Florence-2): it is read there, as every other decoder is.
 DECODER_DEPTH_KEYS = ("decoder_layers", "num_decoder_layers", "decoder_num_hidden_layers")
 ENCODER_DEPTH_KEYS = ("encoder_layers", "num_encoder_layers", "encoder_num_hidden_layers")
-DECODER_HEAD_KEYS = ("decoder_attention_heads", "decoder_num_attention_heads")
+DECODER_HEAD_KEYS = ("decoder_attention_heads", "decoder_num_attention_heads",
+                     "num_decoder_attention_heads")
 DECODER_KV_HEAD_KEYS = ("decoder_num_key_value_heads",)
 DECODER_FFN_KEYS = ("decoder_ffn_dim",)
+ENCODER_HEAD_KEYS = ("encoder_attention_heads", "encoder_num_attention_heads",
+                     "num_encoder_attention_heads")
+ENCODER_KV_HEAD_KEYS = ("encoder_num_key_value_heads",)
+ENCODER_FFN_KEYS = ("encoder_ffn_dim",)
 NESTED_DECODER_KEYS = ("decoder_config", "decoder")
-NESTED_ENCODER_KEYS = ("encoder_config", "encoder")
+NESTED_ENCODER_KEYS = ("encoder_config", "encoder", "text_encoder")
+#: The cross-attention's own K / V geometry, where a decoder states it apart from its
+#: self-attention (Dia's `decoder_config`: 16 KV heads of 128 across, 4 for self-attention).
+#: Unstated, the cross-attention is built like the self-attention (Whisper, BART, T5, Moonshine).
+CROSS_KV_HEAD_KEYS = ("cross_num_key_value_heads", "cross_num_attention_heads")
+CROSS_HEAD_DIM_KEYS = ("cross_head_dim",)
+
+
+def _block_depth(block: Dict[str, Any]) -> int:
+    """A nested stack block's depth: its decoder-only spelling, else its own stack's (TrOCR's
+    decoder block says `decoder_layers`)."""
+    return depth(block) or _pos_int(_first(block, *DECODER_DEPTH_KEYS)) or _pos_int(
+        _first(block, *ENCODER_DEPTH_KEYS)) or 0
 
 
 def _stack_block(config: Dict[str, Any], keys) -> Optional[Dict[str, Any]]:
     """The nested block holding one stack (`encoder_config` / `decoder_config`, ...), or None."""
     for k in keys:
         v = config.get(k)
-        if isinstance(v, dict) and depth(v) > 0:
+        if isinstance(v, dict) and _block_depth(v) > 0:
             return v
     return None
 
@@ -219,18 +239,8 @@ def encoder_block(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return _stack_block(config, NESTED_ENCODER_KEYS) if isinstance(config, dict) else None
 
 
-def encoder_decoder_stacks(config: Dict[str, Any]) -> Optional[Dict[str, int]]:
-    """``{"encoder": layers, "decoder": layers}`` for an encoder-decoder config, else None.
-
-    A config is one when it says so (`is_encoder_decoder`), states a decoder depth of its own,
-    or nests both stacks. Each depth is the stack's own key, else its nested block's depth,
-    else the config's stated depth: transformers reads `num_hidden_layers` of an
-    encoder-decoder as one stack's depth (BART and Whisper map it to `encoder_layers`, T5 to
-    `num_layers`, and T5's decoder defaults to `num_layers`), never as the two stacks' sum. A
-    depth the config does not state is 0.
-    """
-    if not isinstance(config, dict):
-        return None
+def _own_stacks(config: Dict[str, Any]) -> Optional[Dict[str, int]]:
+    """The two depths a config block states for itself, or None when it is no encoder-decoder."""
     dec_key = _pos_int(_first(config, *DECODER_DEPTH_KEYS))
     enc_key = _pos_int(_first(config, *ENCODER_DEPTH_KEYS))
     dec_block = _stack_block(config, NESTED_DECODER_KEYS)
@@ -239,25 +249,47 @@ def encoder_decoder_stacks(config: Dict[str, Any]) -> Optional[Dict[str, int]]:
             or (dec_block is not None and enc_block is not None)):
         return None
     stated = depth(config)
-    decoder = dec_key or (depth(dec_block) if dec_block is not None else stated)
-    encoder = enc_key or (depth(enc_block) if enc_block is not None else stated)
+    decoder = dec_key or (_block_depth(dec_block) if dec_block is not None else stated)
+    encoder = enc_key or (_block_depth(enc_block) if enc_block is not None else stated)
     return {"encoder": int(encoder or 0), "decoder": int(decoder or 0)}
 
 
-def decoder_view(config: Dict[str, Any]) -> Dict[str, Any]:
-    """An encoder-decoder config with its DECODER's geometry under the decoder-only names.
+def _stacks_holder(config: Dict[str, Any]):
+    """``(block, stacks)``: the config block that states an encoder-decoder and its two depths.
 
-    The per-token KV cache is the decoder's self-attention: its depth, heads and width, which
-    such a config states under its own spellings (``DECODER_*_KEYS``, T5's ``num_heads`` /
-    ``d_model`` / ``d_ff``). Read under the decoder-only names alone they were missed: the
-    decoder was charged the encoder's depth, a default head count or none (Whisper and BART
-    were charged no KV at all). A decoder in its own block (Dia's `decoder_config`,
-    EncoderDecoderModel's `decoder`) is lifted over the top level, as a multimodal config's
-    `text_config` is. Any other config is returned as it is.
+    The config itself when it states a decoder; else its `text_config` when that is an
+    encoder-decoder (BLIP-2's flan-T5, Florence-2's BART-like language model: the outer config
+    may say `is_encoder_decoder` and state no stack of its own); else the config's own reading
+    (a flagged config with no decoder depth), or ``(None, None)``.
     """
-    stacks = encoder_decoder_stacks(config)
-    if stacks is None:
-        return config
+    if not isinstance(config, dict):
+        return None, None
+    own = _own_stacks(config)
+    if own and own["decoder"]:
+        return config, own
+    tc = config.get("text_config")
+    if isinstance(tc, dict):
+        inner = _own_stacks(tc)
+        if inner:
+            return tc, inner
+    return (config, own) if own else (None, None)
+
+
+def encoder_decoder_stacks(config: Dict[str, Any]) -> Optional[Dict[str, int]]:
+    """``{"encoder": layers, "decoder": layers}`` for an encoder-decoder config, else None.
+
+    A config is one when it says so (`is_encoder_decoder`), states a decoder depth of its own,
+    or nests both stacks -- itself or in its `text_config`. Each depth is the stack's own key,
+    else its nested block's depth, else the config's stated depth: transformers reads
+    `num_hidden_layers` of an encoder-decoder as one stack's depth (BART and Whisper map it to
+    `encoder_layers`, T5 to `num_layers`, and T5's decoder defaults to `num_layers`), never as
+    the two stacks' sum. A depth the config does not state is 0.
+    """
+    return _stacks_holder(config)[1]
+
+
+def _lift(config: Dict[str, Any], stacks: Dict[str, int]) -> Dict[str, Any]:
+    """One encoder-decoder block with its decoder's geometry under the decoder-only names."""
     view = dict(config)
     block = _stack_block(config, NESTED_DECODER_KEYS)
     if block is not None:
@@ -282,6 +314,168 @@ def decoder_view(config: Dict[str, Any]) -> Dict[str, Any]:
     elif not _pos_int(view.get("intermediate_size")) and _pos_int(view.get("d_ff")):
         view["intermediate_size"] = int(view["d_ff"])
     return view
+
+
+def decoder_view(config: Dict[str, Any]) -> Dict[str, Any]:
+    """An encoder-decoder config with its DECODER's geometry under the decoder-only names.
+
+    The per-token KV cache is the decoder's self-attention: its depth, heads and width, which
+    such a config states under its own spellings (``DECODER_*_KEYS``, T5's ``num_heads`` /
+    ``d_model`` / ``d_ff``). Read under the decoder-only names alone they were missed: the
+    decoder was charged the encoder's depth, a default head count or none (Whisper and BART
+    were charged no KV at all). A decoder in its own block (Dia's `decoder_config`,
+    EncoderDecoderModel's `decoder`) is lifted over the top level, as a multimodal config's
+    `text_config` is. An encoder-decoder nested as a `text_config` (BLIP-2's flan-T5) is viewed
+    in place, so every reader that looks there finds the decoder. Any other config is returned
+    as it is.
+    """
+    holder, stacks = _stacks_holder(config)
+    if stacks is None:
+        return config
+    view = _lift(holder, stacks)
+    if holder is config:
+        return view
+    return {**config, "text_config": view}
+
+
+def encoder_view(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """An encoder-decoder's ENCODER stack under the decoder-only names, or None.
+
+    Its depth (``encoder_decoder_stacks``), width, heads and FFN width, from its own block
+    (Dia's `encoder_config`, EncoderDecoderModel's `encoder`) or its own spellings
+    (``ENCODER_*_KEYS``; T5's `num_heads` / `d_model` / `d_ff`, shared by both stacks). The GenZ
+    prefill graph runs this stack once a request, over the encoder's tokens.
+    """
+    holder, stacks = _stacks_holder(config)
+    if not stacks or not stacks["encoder"]:
+        return None
+    block = _stack_block(holder, NESTED_ENCODER_KEYS)
+    src = block if block is not None else holder
+    view = {k: v for k, v in src.items() if not isinstance(v, dict)}
+    view["num_hidden_layers"] = stacks["encoder"]
+    heads = None if block is not None else _pos_int(_first(src, *ENCODER_HEAD_KEYS))
+    if heads:
+        view["num_attention_heads"] = heads
+        view["num_key_value_heads"] = _pos_int(_first(src, *ENCODER_KV_HEAD_KEYS)) or heads
+    else:
+        heads = _pos_int(_first(src, *ATTENTION_HEAD_KEYS)) or _pos_int(src.get("num_heads"))
+        if heads:
+            view["num_attention_heads"] = heads
+    width = _pos_int(_first(src, "hidden_size", "d_model", "n_embd"))
+    if width:
+        view["hidden_size"] = width
+    ffn = None if block is not None else _pos_int(_first(src, *ENCODER_FFN_KEYS))
+    ffn = ffn or _pos_int(_first(src, "intermediate_size", "d_ff", "encoder_ffn_dim"))
+    if ffn:
+        view["intermediate_size"] = ffn
+    # Head widths are the encoder's own (Dia's encoder `head_dim`; T5's `d_kv` for both).
+    if block is None:
+        for k in ("head_dim", "kv_channels", "attention_head_dim"):
+            view.pop(k, None)
+        if _pos_int(src.get("d_kv")):
+            view["head_dim"] = int(src["d_kv"])
+    return view
+
+
+def _image_tokens(vc: Any) -> Optional[int]:
+    """Tokens a vision tower outputs: patches per side squared plus the class token, per tile."""
+    if not isinstance(vc, dict):
+        return None
+    size, patch = vc.get("image_size"), vc.get("patch_size")
+    if not (isinstance(size, int) and isinstance(patch, int) and patch > 0):
+        return None
+    per_tile = (size // patch) ** 2 + 1
+    tiles = vc.get("max_num_tiles") or 1
+    return int(per_tile * int(tiles))
+
+
+#: Spellings of an encoder's output length, the tokens every decoder layer's cross-attention
+#: caches. Whisper and Speech2Text say `max_source_positions` (Whisper always pads to 30 s:
+#: 1,500 frames).
+ENCODER_TOKEN_KEYS = ("max_source_positions",)
+
+
+def _encoder_output_tokens(config: Dict[str, Any], holder: Dict[str, Any]):
+    """``(tokens, where from)`` the encoder hands the decoder, or ``(None, None)``.
+
+    `max_source_positions` (the config, its encoder block or `audio_config`); the encoder
+    block's own `max_position_embeddings` (Dia's 1,024-token text encoder: its positions bound
+    its input); an image encoder's patches (a VisionEncoderDecoder's ViT). A text encoder stated
+    flat (T5, BART, BLIP-2's flan-T5) reads the request's own prompt, whose length the config
+    cannot state: None, and each reader charges the cache over the sequence instead.
+    """
+    enc = _stack_block(holder, NESTED_ENCODER_KEYS)
+    for scope in (holder, enc, config, holder.get("audio_config"), config.get("audio_config")):
+        if isinstance(scope, dict):
+            v = _pos_int(_first(scope, *ENCODER_TOKEN_KEYS))
+            if v:
+                return v, "max_source_positions"
+    if enc is not None:
+        v = _pos_int(enc.get("max_position_embeddings"))
+        if v:
+            return v, "the encoder block's max_position_embeddings"
+    for scope in (enc, holder.get("encoder")):
+        v = _image_tokens(scope)
+        if v:
+            return v, "the image encoder's patches"
+    return None, None
+
+
+def _decoder_cross_attends(holder: Dict[str, Any]) -> bool:
+    """Whether the decoder attends to the encoder's output, as the config states it: the config
+    says `is_encoder_decoder` (transformers builds the decoder's cross-attention exactly then),
+    states a decoder stack of its own spelling (BART, T5, Whisper, Moonshine: their decoder
+    layers always hold one), or its decoder block says `add_cross_attention` or states a
+    cross-attention's geometry. Two nested stacks alone do not: an audio codec (Qwen3-TTS's
+    speech tokenizer) nests an encoder and a decoder that never attend to each other."""
+    if holder.get("is_encoder_decoder") is True or _pos_int(_first(holder, *DECODER_DEPTH_KEYS)):
+        return True
+    block = _stack_block(holder, NESTED_DECODER_KEYS) or {}
+    return bool(block.get("add_cross_attention")) or any(
+        k in block for k in CROSS_KV_HEAD_KEYS + CROSS_HEAD_DIM_KEYS)
+
+
+def cross_attention_cache(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """An encoder-decoder's cross-attention cache: what every reader of a request's KV charges
+    beside the decoder's self-attention, or None for any other config.
+
+    Each decoder layer keeps K and V over the encoder's output, computed once a request and
+    read at every decode step (transformers' `EncoderDecoderCache.cross_attention_cache`, vLLM's
+    `CrossAttentionSpec`). It does not grow with the generated text. Returns ``{"layers",
+    "kv_heads", "head_dim", "tokens", "tokens_from"}``: the decoder's depth, the
+    cross-attention's own K / V heads and head width (``CROSS_*_KEYS``, else the decoder's
+    self-attention's), and the encoder's output length (``_encoder_output_tokens``). ``tokens``
+    is None when the config does not state it: the readers then charge the cache over the whole
+    sequence, an upper bound for a text encoder (its input is the request's prompt).
+    """
+    holder, stacks = _stacks_holder(config)
+    if not stacks or not stacks["decoder"] or not _decoder_cross_attends(holder):
+        return None
+    view = _lift(holder, stacks)
+    heads = _pos_int(_first(view, *ATTENTION_HEAD_KEYS))
+    kv_heads = (_pos_int(_first(view, *CROSS_KV_HEAD_KEYS))
+                or _pos_int(view.get("num_key_value_heads")) or heads)
+    head_dim = _pos_int(_first(view, *CROSS_HEAD_DIM_KEYS)) or attention_head_dim(view, heads)
+    if not (kv_heads and head_dim):
+        return None
+    tokens, source = _encoder_output_tokens(config, holder)
+    return {"layers": int(stacks["decoder"]), "kv_heads": int(kv_heads),
+            "head_dim": int(head_dim), "tokens": tokens, "tokens_from": source}
+
+
+def cross_kv_width(cross: Optional[Dict[str, Any]]) -> int:
+    """K + V elements one encoder token adds to one decoder layer's cross-attention cache."""
+    return 2 * cross["kv_heads"] * cross["head_dim"] if cross else 0
+
+
+def cross_attention_bytes(cross: Optional[Dict[str, Any]], bytes_per_element: float,
+                          tokens: Optional[int] = None) -> float:
+    """One request's cross-attention cache in bytes: every decoder layer's K and V over the
+    encoder's ``tokens`` (the stated output length, else the caller's ``tokens``)."""
+    if not cross:
+        return 0.0
+    n = cross["tokens"] or tokens or 0
+    return float(cross["layers"] * cross_kv_width(cross) * n * bytes_per_element)
 
 
 #: Spellings of "how many tokens a windowed layer keeps". SmallThinker ships
@@ -436,15 +630,7 @@ def encoder_tokens(config: Dict[str, Any]) -> Optional[int]:
     squared, plus the class token, per tile. None when the config does not
     state it, and the caller then charges the full sequence instead.
     """
-    vc = config.get("vision_config")
-    if not isinstance(vc, dict):
-        return None
-    size, patch = vc.get("image_size"), vc.get("patch_size")
-    if not (isinstance(size, int) and isinstance(patch, int) and patch > 0):
-        return None
-    per_tile = (size // patch) ** 2 + 1
-    tiles = vc.get("max_num_tiles") or 1
-    return int(per_tile * int(tiles))
+    return _image_tokens(config.get("vision_config"))
 
 
 def _classify_layer_type_string(s: str) -> Dict[str, Optional[str]]:

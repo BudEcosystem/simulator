@@ -299,6 +299,7 @@ class DisaggregationAnalyzer:
         # TP=1 for transfer. Counting every decoder layer charged a hybrid's recurrent
         # layers a cache they do not have.
         bytes_per_token = config.get_kv_size() * 2
-        # The recurrent layers' fixed state moves with the KV (ModelConfig.get_state_bytes),
-        # once per request; a pure state-space model moves nothing else.
-        return bytes_per_token * (input_tokens + output_tokens) + config.get_state_bytes(2)
+        # The request's fixed bytes move with the KV, once per request
+        # (ModelConfig.get_request_fixed_bytes): the recurrent layers' state (a pure state-space
+        # model moves nothing else) and an encoder-decoder's cross-attention cache.
+        return bytes_per_token * (input_tokens + output_tokens) + config.get_request_fixed_bytes(2)

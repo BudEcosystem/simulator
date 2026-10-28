@@ -9,10 +9,11 @@ import logging
 
 from llm_memory_calculator.genz.Models.default_models import ModelConfig
 from llm_memory_calculator.genz.Models.get_language_model import (
+    encoder_decoder_fields,
     graph_layer_kinds,
     resolve_decoder_config,
 )
-from llm_memory_calculator.layer_plan import attention_head_dim, depth, encoder_decoder_stacks
+from llm_memory_calculator.layer_plan import attention_head_dim, depth
 from llm_memory_calculator.genz.Models.model_quality import QualityMetricsCollection, MMLU, MATH, GSM8K, Hellaswag, TriviaQA
 
 
@@ -57,9 +58,11 @@ class ModelConverter:
         if not model_id:
             model_id = hf_config.get('model_id', 'unknown')
         
-        # An encoder-decoder's two depths, from the config as stated (each stack's own key or
-        # block: T5's `num_layers` is the encoder's, Dia nests each stack).
-        stacks = encoder_decoder_stacks(hf_config)
+        # An encoder-decoder's encoder depth, cross-attention cache and encoder stack, from the
+        # config as stated (each stack's own key or block: T5's `num_layers` is the encoder's,
+        # Dia nests each stack, BLIP-2 nests a whole flan-T5 under `text_config`) -- the HF
+        # loader's own reader.
+        enc_dec = encoder_decoder_fields(hf_config)
 
         # A multimodal config nests the decoder (`text_config`, ...), an encoder-decoder states it
         # under its own spellings (`decoder_layers`, T5's `num_heads` / `d_model`, Dia's
@@ -122,7 +125,7 @@ class ModelConverter:
         
         # Encoder-decoder models: the depth read above is already the decoder's. The encoder's is
         # its own stack's, never a split of the decoder's (which halved Dia's and T5's decoder).
-        num_encoder_layers = stacks["encoder"] if stacks else 0
+        num_encoder_layers = enc_dec["num_encoder_layers"]
         num_decoder_layers = num_hidden_layers
         
         # Mamba parameters (for SSM models)
@@ -202,6 +205,9 @@ class ModelConverter:
             model_quality=quality_collection,
             layer_configs=layer_configs,
             recurrent_state=recurrent_state,
+            # An encoder-decoder's cross-attention cache and encoder stack
+            cross_attention=enc_dec["cross_attention"],
+            encoder=enc_dec["encoder"],
         )
         
         return config

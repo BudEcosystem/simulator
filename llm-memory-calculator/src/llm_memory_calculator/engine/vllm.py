@@ -499,6 +499,18 @@ class VLLMEngine:
             rec_per_request = sliding_blocks
             state_per_seq = 0.0
             sequence_ceiling = max(num_blocks // max(geo.attn_groups, 1), 0)
+        # an encoder-decoder's cross-attention cache (vLLM's CrossAttentionSpec group): every decoder layer's K and
+        # V over the encoder's output, held by each running sequence beside its self-attention blocks and fixed in
+        # its length -- the encoder's stated output, else the context a request may carry (a text encoder's input)
+        cross = getattr(model, "cross_bytes_per_sequence", None)
+        cross_per_seq = (
+            float(cross("bf16" if r.kv_dtype == "auto" else r.kv_dtype, r.context)) / max(r.tp, 1)
+            if callable(cross)
+            else 0.0
+        )
+        if cross_per_seq and geo.block_bytes:
+            rec_per_request += math.ceil(cross_per_seq / geo.block_bytes)
+            state_per_seq += cross_per_seq
         attn_blocks_available = max(num_blocks - rec_per_request, 0)
         if geo.hybrid:
             max_context = (attn_blocks_available // max(geo.attn_groups, 1)) * geo.block_tokens

@@ -405,3 +405,57 @@ def mla_attention_decode(model_config:ModelConfig, parallelism_config:Parallelis
 
     return layers
 
+
+
+def cross_attention(model_config: ModelConfig, parallelism_config: ParallelismConfig,
+                    query_tokens: int, reads, project_encoder: bool = False):
+    """An encoder-decoder decoder layer's cross-attention (``model_config.cross_attention``,
+    layer_plan.cross_attention_cache): its query and output projections over ``query_tokens``
+    decoder tokens, and, for each sequence in ``reads`` -- ``(queries, encoder tokens if the
+    config states none)`` --, its scores and values over that sequence's cached K / V of the
+    encoder's output (the cache the decode graph reads every step). ``project_encoder`` adds the
+    K / V projection of the encoder's output, which runs once a request, at prefill. Empty for
+    any other model."""
+    cross = getattr(model_config, "cross_attention", None)
+    if not cross:
+        return []
+    H = model_config.num_attention_heads
+    Hkv, Dq = cross["kv_heads"], cross["head_dim"]
+    D = model_config.hidden_size
+    encoder = getattr(model_config, "encoder", None) or {}
+    De = encoder.get("hidden_size") or D
+    tp = parallelism_config.tensor_parallel
+    per_node_H = max(ceil(H / tp), 1)
+    per_node_Hkv = max(ceil(Hkv / tp), 1)
+    layers = []
+    if project_encoder:
+        tokens = cross.get("tokens") or max((t for _, t in reads), default=0)
+        layers += [["Cross KV", 2 * per_node_Hkv * Dq, tokens, De, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+    layers += [["Cross Q", per_node_H * Dq, query_tokens, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+    for queries, fallback in reads:
+        kv = cross.get("tokens") or fallback
+        layers += [["Cross Logit", per_node_H, queries, kv, Dq, per_node_Hkv, ResidencyInfo.AC_onchip, OpType.Logit]]
+        layers += [["Cross Attend", per_node_H, queries, kv, Dq, per_node_Hkv, ResidencyInfo.AC_onchip, OpType.Attend]]
+    layers += [["Cross Out", D, query_tokens, per_node_H * Dq, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+    if tp > 1:
+        layers += [["Cross AR", query_tokens, D, 1, 1, tp, CollectiveType.AllReduce, OpType.Sync]]
+    return layers
+
+
+def encoder_attention(encoder_config: ModelConfig, parallelism_config: ParallelismConfig, tokens: int):
+    """One encoder layer's bidirectional self-attention over the encoder's ``tokens`` (every
+    query sees every key: plain Logit / Attend, not the causal prefill kind)."""
+    H = encoder_config.num_attention_heads
+    Hkv = encoder_config.num_key_value_heads
+    D = encoder_config.hidden_size
+    Dq = encoder_config.head_dim
+    tp = parallelism_config.tensor_parallel
+    per_node_H = max(ceil(H / tp), 1)
+    per_node_Hkv = max(ceil(Hkv / tp), 1)
+    layers = [["Enc QKV", (per_node_H * Dq + 2 * per_node_Hkv * Dq), tokens, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM],
+              ["Enc Logit", per_node_H, tokens, tokens, Dq, per_node_Hkv, ResidencyInfo.C_onchip, OpType.Logit],
+              ["Enc Attend", per_node_H, tokens, tokens, Dq, per_node_Hkv, ResidencyInfo.A_onchip, OpType.Attend],
+              ["Enc Out Proj", D, tokens, per_node_H * Dq, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+    if tp > 1:
+        layers += [["Enc MHA AR", tokens, D, 1, 1, tp, CollectiveType.AllReduce, OpType.Sync]]
+    return layers

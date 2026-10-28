@@ -13,7 +13,8 @@ from llm_memory_calculator.genz.Models.default_models import ModelConfig, MODEL_
 from llm_memory_calculator.huggingface_loader import HuggingFaceConfigLoader
 
 from llm_memory_calculator.genz.Models.utils import OpType, ResidencyInfo, CollectiveType, parse_einsum_expression
-from llm_memory_calculator.genz.Models.attention import (mha_flash_attention_prefill, mha_flash_attention_decode,
+from llm_memory_calculator.genz.Models.attention import (cross_attention, encoder_attention,
+    mha_flash_attention_prefill, mha_flash_attention_decode,
     mha_flash_attention_chunked, mha_flash_attention_prefill_local, mha_flash_attention_decode_local,
     mla_attention_prefill, mla_attention_decode, mla_attention_chunked, window_kv_sizes,
     linear_attention_prefill, linear_attention_decode)
@@ -82,17 +83,26 @@ def _find_decoder_subconfig(cfg: dict, _depth: int = 0):
 
     Conventional names first, then any nested block that is not another modality's
     encoder, then one level deeper (omni-style configs nest thinker_config.text_config).
+    Each block is read through ``layer_plan.decoder_view``: a nested encoder-decoder (BLIP-2's
+    and InstructBLIP's flan-T5, spelled `d_model` / `num_heads` / `num_decoder_layers`) is
+    its decoder, not a block without geometry -- passing it over graphed the 12-layer, 768-wide
+    Q-Former as the language model.
     """
+    from llm_memory_calculator.layer_plan import decoder_view
+
     if not isinstance(cfg, dict) or _depth > 2:
         return None
     for name in _DECODER_SUBCONFIG_NAMES:
-        if _looks_like_decoder(cfg.get(name)):
-            return cfg[name]
+        block = cfg.get(name)
+        view = decoder_view(block) if isinstance(block, dict) else block
+        if _looks_like_decoder(view):
+            return view
     for key, value in cfg.items():
         if not isinstance(value, dict) or any(h in key.lower() for h in _NON_DECODER_HINTS):
             continue
-        if _looks_like_decoder(value):
-            return value
+        view = decoder_view(value)
+        if _looks_like_decoder(view):
+            return view
     for key, value in cfg.items():
         if isinstance(value, dict) and not any(h in key.lower() for h in _NON_DECODER_HINTS):
             found = _find_decoder_subconfig(value, _depth + 1)
@@ -136,6 +146,41 @@ def resolve_decoder_config(hf_config: dict) -> dict:
     merged = dict(hf_config)
     merged.update({k: v for k, v in sub.items() if v is not None})
     return merged
+
+
+def encoder_decoder_fields(hf_config: dict) -> dict:
+    """What a GenZ ``ModelConfig`` takes from an encoder-decoder config, read from the config as
+    stated (before the decoder is hoisted), for the HF loader and BudSimulator's converter alike:
+    the encoder's depth, the decoder's cross-attention cache (``layer_plan.cross_attention_cache``)
+    and the encoder stack the prefill graph runs (``layer_plan.encoder_view``). Empty for any
+    other config."""
+    from llm_memory_calculator.layer_plan import (
+        attention_head_dim,
+        cross_attention_cache,
+        encoder_decoder_stacks,
+        encoder_view,
+    )
+
+    stacks = encoder_decoder_stacks(hf_config) if isinstance(hf_config, dict) else None
+    if not stacks:
+        return dict(num_encoder_layers=0, cross_attention=None, encoder=None)
+    cross = cross_attention_cache(hf_config)
+    encoder = None
+    # The encoder runs before the decoder only where the decoder attends to it (an audio codec's
+    # two nested stacks never meet: its prefill graph stays the decoder's).
+    view = encoder_view(hf_config) if cross else None
+    if view and view.get("hidden_size") and view.get("num_attention_heads"):
+        heads = int(view["num_attention_heads"])
+        hidden = int(view["hidden_size"])
+        encoder = dict(
+            layers=int(view["num_hidden_layers"]),
+            hidden_size=hidden,
+            num_attention_heads=heads,
+            num_key_value_heads=int(view.get("num_key_value_heads") or heads),
+            head_dim=int(attention_head_dim(view, heads, hidden) or hidden // heads),
+            intermediate_size=int(view.get("intermediate_size") or 4 * hidden),
+        )
+    return dict(num_encoder_layers=int(stacks["encoder"]), cross_attention=cross, encoder=encoder)
 
 
 def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1):
@@ -287,10 +332,8 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
     # block; hoist them so every lookup below sees the real geometry instead of the
     # module defaults. Flat configs pass through untouched. An encoder-decoder's encoder
     # depth is read before, from the config as stated.
-    from llm_memory_calculator.layer_plan import encoder_decoder_stacks
-
-    stacks = encoder_decoder_stacks(hf_config)
-    num_encoder_layers = stacks["encoder"] if stacks else 0
+    enc_dec = encoder_decoder_fields(hf_config)
+    num_encoder_layers = enc_dec["num_encoder_layers"]
     hf_config = resolve_decoder_config(hf_config)
 
     # Extract architecture type
@@ -537,6 +580,9 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         # Per-layer heterogeneous configs
         layer_configs=layer_configs,
         recurrent_state=recurrent_state,
+        # An encoder-decoder's cross-attention cache and encoder stack
+        cross_attention=enc_dec["cross_attention"],
+        encoder=enc_dec["encoder"],
         # Pre-quantized checkpoints store some weight roles below the caller's precision
         weight_precision=resolve_weight_precision(hf_config),
     )
@@ -658,6 +704,38 @@ def create_inference_moe_decode_layer(input_sequence_length, name='GPT-2', data_
         name = name.model
     return save_layers(layers=layers, data_path=data_path, name=name+"_decode_")
 
+def encoder_stack(model_config: ModelConfig, parallelism_config: ParallelismConfig,
+                  input_sequence_length: int) -> list:
+    """An encoder-decoder's encoder (``model_config.encoder``, layer_plan.encoder_view): its
+    layers once over the encoder's tokens -- the stated output length
+    (``cross_attention["tokens"]``), else the prompt, which a text encoder reads. Bidirectional
+    self-attention and a dense FFN at the encoder's own width. Empty for any other model.
+
+    The prefill graph is where a request runs its encoder, so it carries the encoder's weights
+    and compute; the decode graph streams the decoder's weights only (a decode step runs no
+    encoder layer, as it reads no input-embedding table -- its weights figure is a step's, not
+    the resident model's)."""
+    enc = getattr(model_config, "encoder", None)
+    if not enc or not enc.get("layers"):
+        return []
+    cross = getattr(model_config, "cross_attention", None) or {}
+    tokens = int(cross.get("tokens") or input_sequence_length)
+    view = copy(model_config)
+    view.hidden_size = enc["hidden_size"]
+    view.num_attention_heads = enc["num_attention_heads"]
+    view.num_key_value_heads = enc["num_key_value_heads"]
+    view.head_dim = enc["head_dim"]
+    view.intermediate_size = enc["intermediate_size"]
+    view.num_experts = 1
+    view.is_moe = False
+    view.layer_configs = None
+    layers = repeat_layers(enc["layers"])
+    layers += encoder_attention(view, parallelism_config, tokens)
+    layers += ffn_prefill(view, parallelism_config, tokens)
+    layers += end_repeat_layers(enc["layers"])
+    return layers
+
+
 def create_full_prefill_model(
     name: Union[str, ModelConfig] ='GPT-2', 
     input_sequence_length: int=1024,
@@ -706,12 +784,16 @@ def create_full_prefill_model(
             return recurrent_prefill(lc, cfg, parallelism_config, input_sequence_length)
         mixer = (recurrent_prefill(lc, cfg, parallelism_config, input_sequence_length)
                  if lc is not None and lc.recurrent else [])
+        # An encoder-decoder's decoder layer also attends to the encoder's output, whose K / V it
+        # projects once, here (empty for any other model)
+        cross = cross_attention(cfg, parallelism_config, input_sequence_length,
+                                [(input_sequence_length, input_sequence_length)], project_encoder=True)
         if cfg.is_mla and attn_type in ("MHA-global", "MHA-local"):
-            return mla_attention_prefill(cfg, parallelism_config, input_sequence_length) + mixer
+            return mla_attention_prefill(cfg, parallelism_config, input_sequence_length) + cross + mixer
         if attn_type == "MHA-global":
-            return mha_flash_attention_prefill(cfg, parallelism_config, input_sequence_length) + mixer
+            return mha_flash_attention_prefill(cfg, parallelism_config, input_sequence_length) + cross + mixer
         if attn_type == "MHA-local":
-            return mha_flash_attention_prefill_local(cfg, parallelism_config, input_sequence_length) + mixer
+            return mha_flash_attention_prefill_local(cfg, parallelism_config, input_sequence_length) + cross + mixer
         if attn_type == "Mamba":
             return mamba_prefill(cfg, parallelism_config, input_sequence_length)
         elif attn_type == "linear":
@@ -790,6 +872,8 @@ def create_full_prefill_model(
         return layers
 
     full_model = []
+    # An encoder-decoder runs its encoder once a request, at prefill, over the encoder's tokens
+    full_model += encoder_stack(model_config, parallelism_config, input_sequence_length)
     full_model += input_embedding(model_config, parallelism_config, input_sequence_length)
     if pipeline_stages > 1:
         layers_per_stage = ceil(model_config.num_decoder_layers / pipeline_stages)
@@ -869,12 +953,14 @@ def create_full_decode_model(
             return recurrent_decode(lc, cfg, parallelism_config)
         mixer = (recurrent_decode(lc, cfg, parallelism_config)
                  if lc is not None and lc.recurrent else [])
+        # An encoder-decoder's decoder layer reads its cross-attention cache every step
+        cross = cross_attention(cfg, parallelism_config, 1, [(1, input_sequence_length)])
         if cfg.is_mla and attn_type in ("MHA-global", "MHA-local"):
-            return mla_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens) + mixer
+            return mla_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens) + cross + mixer
         if attn_type == "MHA-global":
-            return mha_flash_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens) + mixer
+            return mha_flash_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens) + cross + mixer
         if attn_type == "MHA-local":
-            return mha_flash_attention_decode_local(cfg, parallelism_config, input_sequence_length, output_gen_tokens) + mixer
+            return mha_flash_attention_decode_local(cfg, parallelism_config, input_sequence_length, output_gen_tokens) + cross + mixer
         if attn_type == "Mamba":
             return mamba_decode(cfg, parallelism_config, input_sequence_length)
         elif attn_type == "linear":
@@ -994,10 +1080,23 @@ def create_full_chunked_model(name:str ='GPT-2',
             decode_length += 1
     chunk_size = prefill_length + decode_length
 
+    # An encoder-decoder's decoder layers each read every sequence's cross-attention cache in
+    # the step: one read per prefill chunk (its encoder's output; unstated, the context so far)
+    # and one per decoding sequence.
+    cross_reads = [(int(kv[1]), int(kv[0]) + int(kv[1])) for kv in prefill_kv_sizes]
+    for kv_size in decode_kv_sizes:
+        if isinstance(kv_size, tuple) and len(kv_size) == 4:
+            cross_reads.append((int(kv_size[1]), int(kv_size[2]) + int(kv_size[3])))
+        elif isinstance(kv_size, tuple) and len(kv_size) == 2:
+            cross_reads.append((int(kv_size[0]), int(kv_size[1])))
+        else:
+            cross_reads.append((1, int(kv_size)))
+
     def _get_attn_chunked(attn_type, cfg=None, lc=None):
         """One layer's token mixer over the chunk, by the layer's own kind -- the same kinds
         the prefill and decode graphs read (`layer_configs_from_hf`)."""
         cfg = cfg or model_config
+        cross = cross_attention(cfg, parallelism_config, chunk_size, cross_reads)
         if attn_type == "Recurrent":
             return recurrent_chunked(lc, cfg, parallelism_config, chunk_size,
                                      prefill_kv_sizes, decode_kv_sizes)
@@ -1009,7 +1108,7 @@ def create_full_chunked_model(name:str ='GPT-2',
             window = cfg.sliding_window if attn_type == "MHA-local" else None
             pre, dec = window_kv_sizes(prefill_kv_sizes, decode_kv_sizes, window)
             op = mla_attention_chunked if cfg.is_mla else mha_flash_attention_chunked
-            return op(cfg, parallelism_config, chunk_size, pre, dec) + mixer
+            return op(cfg, parallelism_config, chunk_size, pre, dec) + cross + mixer
         if attn_type == "Mamba":
             return mamba_prefill(cfg, parallelism_config, chunk_size)
         if attn_type == "linear":

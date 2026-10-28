@@ -4,10 +4,11 @@ Tracks memory allocation across tiers (HBM, DDR, CXL, NVME),
 handles KV block allocation/deallocation, and supports eviction
 and spilling between tiers.
 
-A request costs its KV blocks, which grow with its tokens, and -- in a model with recurrent
-layers (Mamba, Gated DeltaNet, short convolution, ...) -- a fixed per-sequence state that does
-not (``ModelConfig.get_state_bytes``). The state is charged once, with the request's first
-blocks, on the same tier, and freed with the request.
+A request costs its KV blocks, which grow with its tokens, and fixed bytes that do not
+(``ModelConfig.get_request_fixed_bytes``): in a model with recurrent layers (Mamba, Gated
+DeltaNet, short convolution, ...) their per-sequence state, and in an encoder-decoder the
+cross-attention cache over the encoder's output. They are charged once, with the request's
+first blocks, on the same tier, and freed with the request.
 """
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -88,7 +89,7 @@ class MemoryModel:
         and KV-free layers. Left out, the model falls back to its own GQA-only formula, kept only for existing callers.
 
         ``state_bytes_per_sequence`` is the per-rank fixed state of one request (recurrent layers).
-        Left out, it is ``ModelConfig.get_state_bytes`` at ``precision_bytes``, split by TP.
+        Left out, it is ``ModelConfig.get_request_fixed_bytes`` at ``precision_bytes``, split by TP.
         """
         self._bytes_per_token_kv_override = int(bytes_per_token_kv) if bytes_per_token_kv else None
         self._state_bytes_override = (
@@ -154,16 +155,21 @@ class MemoryModel:
     def state_bytes_per_sequence(self) -> int:
         """Fixed state bytes one request holds on this rank, whatever its length.
 
-        ``ModelConfig.get_state_bytes`` (the recurrent layers' state: the matrix at its state
-        dtype, the conv buffer at ``precision_bytes``) / TP, unless the caller passed it. 0 for a
-        model with no recurrent layer.
+        ``ModelConfig.get_request_fixed_bytes`` / TP, unless the caller passed it: the recurrent
+        layers' state (the matrix at its state dtype, the conv buffer at ``precision_bytes``)
+        and an encoder-decoder's cross-attention cache over its encoder's stated output. 0 for a
+        model with neither.
         """
         if self._state_bytes_override is None:
             # Computed once: the model and its precision do not change under the scheduler.
-            get_state_bytes = getattr(self._model_config, 'get_state_bytes', None)
+            # A request's fixed bytes: the recurrent state and an encoder-decoder's
+            # cross-attention cache over its encoder's output (ModelConfig.get_request_fixed_bytes).
+            fixed = getattr(self._model_config, 'get_request_fixed_bytes', None)
+            if not callable(fixed):
+                fixed = getattr(self._model_config, 'get_state_bytes', None)
             self._state_bytes_override = (
-                int(get_state_bytes(self._precision_bytes) // max(self._tensor_parallel, 1))
-                if callable(get_state_bytes) else 0
+                int(fixed(self._precision_bytes) // max(self._tensor_parallel, 1))
+                if callable(fixed) else 0
             )
         return self._state_bytes_override
 

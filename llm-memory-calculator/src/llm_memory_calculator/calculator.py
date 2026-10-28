@@ -13,6 +13,9 @@ from .layer_plan import (
     MECH_MAMBA1,
     MECH_MAMBA2,
     attention_head_dim,
+    cross_attention_bytes,
+    cross_attention_cache,
+    cross_kv_width,
     decoder_view,
     encoder_block,
     encoder_decoder_stacks,
@@ -502,6 +505,7 @@ class ModelMemoryCalculator:
         "GPU KV cache size" line.
         """
         caps = EngineKVCapabilities.resolve(engine_capabilities)
+        raw_config = config
         # An encoder-decoder's KV is its decoder's, under the decoder's own spellings.
         config = decoder_view(config)
         normalized = ConfigNormalizer.normalize_config(config)
@@ -607,6 +611,28 @@ class ModelMemoryCalculator:
             groups.append(
                 {"kind": ATTN_CROSS, "layers": num_cross, "effective_seq": enc or seq_length}
             )
+        # An encoder-decoder's decoder layers each keep a cross-attention cache over the
+        # encoder's output beside their self-attention: the encoder's stated output length,
+        # fixed per request, at the cross-attention's own K / V width (layer_plan's one reader).
+        cross = cross_attention_cache(raw_config)
+        if cross:
+            num_cross += cross["layers"]
+            groups.append(
+                {
+                    "kind": ATTN_CROSS,
+                    "layers": cross["layers"],
+                    "effective_seq": cross["tokens"] or seq_length,
+                    "kv_width": cross_kv_width(cross),
+                }
+            )
+            if not cross["tokens"]:
+                notes.append(
+                    f"{cross['layers']} decoder layers' cross-attention caches are charged the "
+                    f"whole {seq_length}-token sequence: the config does not state the encoder's "
+                    "output length (`max_source_positions`, an encoder block's "
+                    "`max_position_embeddings` or an image encoder's patches). An upper bound "
+                    "for a text encoder, whose input is the prompt."
+                )
 
         return {
             "source": source,
@@ -617,7 +643,10 @@ class ModelMemoryCalculator:
             # count is reported so a 2x error shows up as a layer count rather
             # than as an unexplained factor.
             "num_cross_layers": num_cross,
-            "num_no_kv_layers": max(depth - num_full - num_sliding - num_cross, 0),
+            "num_no_kv_layers": max(
+                depth - num_full - num_sliding - (num_cross - (cross["layers"] if cross else 0)), 0
+            ),
+            "cross_attention": cross,
             "sliding_window": window,
             "groups": groups,
             "heterogeneous_attention": heterogeneous,
@@ -677,13 +706,20 @@ class ModelMemoryCalculator:
         # Charging KV on a Gated-DeltaNet or Mamba layer over-counts by 3.75x
         # (LFM2) to 14x (Nemotron-H); charging a windowed layer only its window
         # on an engine that does not do that UNDER-counts by 2x (gpt-oss).
+        # An encoder-decoder's cross-attention groups carry their own K / V width.
+        cross_kv = sum(
+            self._group_kv(text_config, g, batch_size, g["effective_seq"], bytes_per_element,
+                           attention_type)
+            for g in kv_plan["groups"]
+            if "kv_width" in g
+        )
         if kv_plan["source"] != "uniform":
             if not kv_plan["groups"]:
                 return 0.0  # pure SSM: no attention layer, so no KV cache at all
             return sum(
-                self._calculate_kv_for_layers(
+                self._group_kv(
                     text_config,
-                    group["layers"],
+                    group,
                     batch_size,
                     group["effective_seq"],
                     bytes_per_element,
@@ -691,6 +727,43 @@ class ModelMemoryCalculator:
                 )
                 for group in kv_plan["groups"]
             )
+        return cross_kv + self._uniform_kv(
+            text_config, batch_size, seq_length, bytes_per_element, attention_type
+        )
+
+    def _group_kv(
+        self,
+        text_config: Dict[str, Any],
+        group: Dict[str, Any],
+        batch_size: int,
+        seq_length: int,
+        bytes_per_element: float,
+        attention_type: str,
+    ) -> float:
+        """One KV group's cache in GB: an encoder-decoder's cross-attention group at its own
+        K / V width (``kv_width``), any other group at the decoder's."""
+        if "kv_width" in group:
+            return (
+                batch_size * group["layers"] * seq_length * group["kv_width"] * bytes_per_element
+            ) / 1e9
+        return self._calculate_kv_for_layers(
+            text_config,
+            group["layers"],
+            batch_size,
+            seq_length,
+            bytes_per_element,
+            attention_type,
+        )
+
+    def _uniform_kv(
+        self,
+        text_config: Dict[str, Any],
+        batch_size: int,
+        seq_length: int,
+        bytes_per_element: float,
+        attention_type: str,
+    ) -> float:
+        """A uniform stack's self-attention KV in GB."""
 
         # Uniform stack: one kind for every layer, so a declared window applies
         # to all of them and needs no engine capability to be honored.
@@ -748,7 +821,9 @@ class ModelMemoryCalculator:
         )
         # Only groups still growing at this length add to the marginal cost.
         growing = sum(
-            g["layers"] for g in plan["groups"] if g["effective_seq"] >= seq_length
+            g["layers"]
+            for g in plan["groups"]
+            if g["effective_seq"] >= seq_length and "kv_width" not in g
         )
         marginal = (
             self._calculate_kv_for_layers(
@@ -758,6 +833,12 @@ class ModelMemoryCalculator:
             if growing and attention_type
             else 0.0
         )
+        if attention_type:
+            marginal += sum(
+                self._group_kv(text_config, g, 1, 1, bytes_per_element, attention_type) * 1e9
+                for g in plan["groups"]
+                if g["effective_seq"] >= seq_length and "kv_width" in g
+            )
         return dict(
             plan,
             attention_type=attention_type,
@@ -1425,11 +1506,19 @@ class ModelMemoryCalculator:
 
         Size: 2 × batch × decoder_layers × encoder_seq_len × d_model
         """
+        bytes_per_element = self._get_bytes_per_element(precision)
+        # An encoder-decoder that states its stacks: the one reader every other KV reader
+        # uses -- each decoder layer's K and V at the cross-attention's own width (Dia's 16 KV
+        # heads of 128, not its 1,024-wide encoder's), over the encoder's tokens.
+        cross = cross_attention_cache(config) if self._plain_encoder_decoder(config) else None
+        if cross:
+            return batch_size * cross_attention_bytes(
+                dict(cross, tokens=None), bytes_per_element, encoder_seq_length
+            ) / 1e9
+
         # Cross-attention uses encoder hidden size for K,V
         encoder_d_model = self._get_encoder_d_model(config)
         decoder_layers = self._get_decoder_layers(config)
-
-        bytes_per_element = self._get_bytes_per_element(precision)
 
         # 2 × batch × decoder_layers × encoder_seq_len × encoder_d_model
         elements = (
@@ -2083,6 +2172,14 @@ class ModelMemoryCalculator:
         if self.model_type in ["encoder-decoder", "audio-llm"]:
             # Get encoder sequence length (default from config or parameter)
             enc_seq_len = encoder_seq_length
+            plain_cross = (
+                cross_attention_cache(config) if self._plain_encoder_decoder(config) else None
+            )
+            if enc_seq_len is None and plain_cross:
+                # The encoder's stated output length, else the whole sequence (a text
+                # encoder's input is the prompt): the per-token readers' rule, not Whisper's
+                # 1,500 frames for every encoder.
+                enc_seq_len = plain_cross["tokens"] or seq_length
             if enc_seq_len is None:
                 if "audio_config" in config:
                     enc_seq_len = config["audio_config"].get(

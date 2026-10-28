@@ -14,7 +14,13 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Tuple
 
 from ..calculator import ModelMemoryCalculator
-from ..layer_plan import resolve_layer_plan
+from ..layer_plan import (
+    cross_attention_bytes,
+    cross_attention_cache,
+    decoder_view,
+    depth,
+    resolve_layer_plan,
+)
 from ..state_memory import calculate_recurrent_state_bytes
 from .constants import VLLM_BLOCK_SIZE, VLLM_KERNEL_BLOCK_ALIGNMENT
 
@@ -66,6 +72,11 @@ class KVGeometry:
     state_bytes_per_layer: float  # one recurrent layer's state for one sequence, whole model
     block_size: int  # vLLM's KV block, tokens
     tp: int = 1
+    # an encoder-decoder's cross-attention cache for one sequence, whole model: every decoder layer's K and V over
+    # the encoder's stated output. Fixed per request and not a prefix -- it is the encoder's output, which no
+    # prefix tier stores (vLLM keeps no prefix cache for an encoder-decoder) -- so ``prefix_bytes`` leaves it out.
+    # 0 when the encoder's length is unstated: the cache is then in ``bytes_per_token_*``, over the sequence.
+    cross_bytes_per_sequence: float = 0.0
 
     @classmethod
     def from_model(
@@ -88,8 +99,15 @@ class KVGeometry:
         )
         config = dict(model_config)
         plan = resolve_layer_plan(config)
-        text = _text_config(config)
-        layers = int(text.get("num_hidden_layers") or text.get("n_layer") or 0)
+        # an encoder-decoder's KV layers are its decoder's (Whisper large-v3-turbo: 4, not the encoder's 32)
+        text = _text_config(decoder_view(config))
+        layers = int(depth(text) or text.get("n_layer") or 0)
+        cross = cross_attention_cache(config)
+        cross_bytes = (
+            cross_attention_bytes(cross, ModelMemoryCalculator.PRECISION_BYTES.get(precision.lower(), 2))
+            if cross and cross["tokens"]
+            else 0.0
+        )
         if plan:
             kv_layers = int(plan.get("num_full_layers") or 0) or int(
                 plan.get("num_attention_layers") or 0
@@ -111,6 +129,7 @@ class KVGeometry:
             state_bytes_per_layer=state_per_layer,
             block_size=VLLM_BLOCK_SIZE,
             tp=max(int(tensor_parallel or 1), 1),
+            cross_bytes_per_sequence=float(cross_bytes),
         )
         return cls(**{**geometry.__dict__, "block_size": geometry.vllm_block_size()})
 

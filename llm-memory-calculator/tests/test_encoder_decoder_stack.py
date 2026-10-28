@@ -62,6 +62,35 @@ CASES = {
 }
 
 
+# name -> (K+V elements one encoder token adds over every decoder layer's cross-attention, the
+# encoder's output tokens the config states or None). Whisper's 1,500 frames are its
+# `max_source_positions`; Dia's cross-attention is 16 KV heads of 128 over its 1,024-position
+# text encoder; cohere_asr's 5,000 are its parakeet encoder block's `max_position_embeddings`.
+# T5, BART and Moonshine state no encoder length: their readers charge the cache over the sequence.
+CROSS = {
+    "dia": (18 * 2 * 16 * 128, 1024),
+    "whisper-turbo": (4 * 2 * 20 * 64, 1500),
+    "moonshine": (8 * 2 * 8 * 52, None),
+    "moonshine-asymmetric": (4 * 2 * 8 * 52, None),
+    "cohere-asr": (8 * 2 * 8 * 128, 5000),
+    "flan-t5-xl": (24 * 2 * 32 * 64, None),
+    "t5-asymmetric": (4 * 2 * 32 * 64, None),
+    "t5-unnamed": (24 * 2 * 32 * 64, None),
+    "bart": (12 * 2 * 16 * 64, None),
+}
+
+
+def _cross_per_token(case):
+    """Cross-attention elements a token adds where the encoder's length is unstated, else 0."""
+    width, tokens = CROSS[case]
+    return 0 if tokens else width
+
+
+def _cross_fixed_elements(case, seq):
+    width, tokens = CROSS[case]
+    return width * (tokens or seq)
+
+
 def _quiet(f, *a, **kw):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -81,7 +110,9 @@ def test_genz_graphs_the_decoder_an_encoder_decoder_config_states(case):
     make, enc, dec, width, kv = CASES[case]
     mc = _quiet(get_configs, make())
     assert (mc.num_encoder_layers, mc.num_decoder_layers, mc.hidden_size) == (enc, dec, width)
-    assert mc.get_kv_size() == kv
+    # the decoder's self-attention, and its cross-attention a token where the encoder's length
+    # is unstated (round 9; a stated length is a fixed per-request cost, `get_cross_kv_bytes`)
+    assert mc.get_kv_size() == kv + _cross_per_token(case)
 
 
 @pytest.mark.parametrize("case", sorted(CASES))
@@ -92,9 +123,12 @@ def test_the_calculator_charges_the_decoder_s_kv(case):
     calc = ModelMemoryCalculator()
     seq = 4096
     got = _quiet(calc.calculate_kv_cache, make(), 1, seq, "bf16")
-    assert got == pytest.approx(kv * seq * 2 / 1e9)
+    # the decoder's self-attention over the sequence, and (round 9) each decoder layer's
+    # cross-attention cache over the encoder's output
+    assert got == pytest.approx((kv * seq + _cross_fixed_elements(case, seq)) * 2 / 1e9)
     bd = _quiet(calc.kv_cache_breakdown, make(), 1, seq, "bf16")
     assert bd["num_layers"] == bd["num_full_layers"] == dec
+    assert bd["num_cross_layers"] == dec
 
 
 def test_a_decoder_only_config_is_read_as_it_stands():

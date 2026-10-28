@@ -138,6 +138,11 @@ class ModelConfig():
         # (state_memory.recurrent_state_shape, plus its "state_bytes"). None = derived from the
         # mamba_* fields as Mamba-1. Per-layer stacks carry theirs on each LayerConfig.
         recurrent_state: Optional[dict] = None,
+        # An encoder-decoder's cross-attention cache (layer_plan.cross_attention_cache: the
+        # decoder layers, the cross-attention's K / V heads and head width, the encoder's output
+        # tokens or None) and its encoder stack (layer_plan.encoder_view, for the prefill graph).
+        cross_attention: Optional[dict] = None,
+        encoder: Optional[dict] = None,
         **kwargs,
     ):
         self.model = model
@@ -145,6 +150,8 @@ class ModelConfig():
         self.max_model_len = max_model_len      ## Maximum length of the model
         self.num_decoder_layers = num_decoder_layers
         self.num_encoder_layers = num_encoder_layers
+        self.cross_attention = cross_attention
+        self.encoder = encoder
 
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
@@ -347,6 +354,41 @@ class ModelConfig():
         did) over-charged a hybrid by its recurrent fraction -- 4x on Qwen3.5.
         MLA keeps one latent of ``kv_lora_rank + qk_rope_head_dim`` per layer.
         """
+        return self._self_kv_size() + self._cross_kv_size_per_token()
+
+    def _cross_kv_size_per_token(self) -> int:
+        """An encoder-decoder's cross-attention elements per token, when the config does not
+        state the encoder's output length: the cache is then charged over the sequence (an
+        upper bound for a text encoder, whose input is the prompt). A stated length makes it a
+        fixed per-request cost instead (``get_cross_kv_bytes``)."""
+        cross = getattr(self, "cross_attention", None)
+        if not cross or cross.get("tokens"):
+            return 0
+        from llm_memory_calculator.layer_plan import cross_kv_width
+
+        return int(cross["layers"] * cross_kv_width(cross))
+
+    def get_cross_kv_bytes(self, precision_bytes: int = 2) -> int:
+        """The cross-attention cache one request of an encoder-decoder holds, in bytes: every
+        decoder layer's K and V over the encoder's stated output (Whisper's 1,500 frames),
+        computed once a request and read at every decode step -- fixed in the request's length,
+        like a recurrent state. 0 for any other model, or when the length is unstated (then
+        ``get_kv_size`` charges it per token)."""
+        cross = getattr(self, "cross_attention", None)
+        if not cross or not cross.get("tokens"):
+            return 0
+        from llm_memory_calculator.layer_plan import cross_attention_bytes
+
+        return int(cross_attention_bytes(cross, precision_bytes))
+
+    def get_request_fixed_bytes(self, precision_bytes: int = 2) -> int:
+        """Everything one request holds that does not grow with its tokens: the recurrent
+        layers' state (``get_state_bytes``) and an encoder-decoder's cross-attention cache
+        (``get_cross_kv_bytes``)."""
+        return int(self.get_state_bytes(precision_bytes) + self.get_cross_kv_bytes(precision_bytes))
+
+    def _self_kv_size(self) -> int:
+        """The decoder's self-attention elements per token (``get_kv_size`` without the cross)."""
         if self.layer_configs is not None:
             total = 0
             for i, lc in enumerate(self.layer_configs):
