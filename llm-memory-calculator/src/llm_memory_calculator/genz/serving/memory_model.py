@@ -3,6 +3,11 @@
 Tracks memory allocation across tiers (HBM, DDR, CXL, NVME),
 handles KV block allocation/deallocation, and supports eviction
 and spilling between tiers.
+
+A request costs its KV blocks, which grow with its tokens, and -- in a model with recurrent
+layers (Mamba, Gated DeltaNet, short convolution, ...) -- a fixed per-sequence state that does
+not (``ModelConfig.get_state_bytes``). The state is charged once, with the request's first
+blocks, on the same tier, and freed with the request.
 """
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -73,6 +78,7 @@ class MemoryModel:
         tensor_parallel: int = 1,
         precision_bytes: int = DEFAULT_PRECISION_BYTES,
         bytes_per_token_kv: Optional[int] = None,
+        state_bytes_per_sequence: Optional[int] = None,
     ):
         """Build the model.
 
@@ -80,8 +86,14 @@ class MemoryModel:
         :func:`llm_memory_calculator.kv_tiering.kv_bytes_per_token_per_rank`, which reads
         ``ModelMemoryCalculator.kv_cache_breakdown`` -- the one source of per-token KV, aware of MLA, windowed layers
         and KV-free layers. Left out, the model falls back to its own GQA-only formula, kept only for existing callers.
+
+        ``state_bytes_per_sequence`` is the per-rank fixed state of one request (recurrent layers).
+        Left out, it is ``ModelConfig.get_state_bytes`` at ``precision_bytes``, split by TP.
         """
         self._bytes_per_token_kv_override = int(bytes_per_token_kv) if bytes_per_token_kv else None
+        self._state_bytes_override = (
+            int(state_bytes_per_sequence) if state_bytes_per_sequence is not None else None
+        )
         self._model_config = model_config
         self._tier_configs = {tc.tier: tc for tc in tier_configs}
         self._block_size = block_size
@@ -96,10 +108,13 @@ class MemoryModel:
                 "capacity": tc.capacity_bytes,
                 "used": 0,
                 "weight_bytes": 0,
+                "state_bytes": 0,
             }
 
         # Per-request block tracking: {request_id: [(tier, num_blocks), ...]}
         self._request_blocks: Dict[int, List[Tuple[MemoryTier, int]]] = {}
+        # Per-request fixed state: {request_id: (tier, bytes)}
+        self._request_state: Dict[int, Tuple[MemoryTier, int]] = {}
 
         # LRU tracking: OrderedDict of request_id for eviction ordering
         self._lru_order: OrderedDict = OrderedDict()
@@ -134,6 +149,28 @@ class MemoryModel:
             return int(get_kv_size() * self._precision_bytes // self._tensor_parallel)
         return (2 * self._num_kv_heads * self._head_dim
                 * self._num_layers * self._precision_bytes // self._tensor_parallel)
+
+    @property
+    def state_bytes_per_sequence(self) -> int:
+        """Fixed state bytes one request holds on this rank, whatever its length.
+
+        ``ModelConfig.get_state_bytes`` (the recurrent layers' state: the matrix at its state
+        dtype, the conv buffer at ``precision_bytes``) / TP, unless the caller passed it. 0 for a
+        model with no recurrent layer.
+        """
+        if self._state_bytes_override is None:
+            # Computed once: the model and its precision do not change under the scheduler.
+            get_state_bytes = getattr(self._model_config, 'get_state_bytes', None)
+            self._state_bytes_override = (
+                int(get_state_bytes(self._precision_bytes) // max(self._tensor_parallel, 1))
+                if callable(get_state_bytes) else 0
+            )
+        return self._state_bytes_override
+
+    def request_bytes(self, num_tokens: int) -> int:
+        """Bytes a new request of ``num_tokens`` tokens takes: its KV blocks and its state."""
+        num_blocks = (num_tokens + self._block_size - 1) // self._block_size
+        return num_blocks * self.bytes_per_block + self.state_bytes_per_sequence
 
     @property
     def bytes_per_block(self) -> int:
@@ -184,7 +221,10 @@ class MemoryModel:
         if tier is None:
             tier = self.primary_tier
         num_blocks = (num_tokens + self._block_size - 1) // self._block_size
-        required_bytes = num_blocks * self.bytes_per_block
+        rid = getattr(request, 'request_id', request)
+        # A request's first blocks bring its fixed state with them, on the same tier.
+        state_bytes = 0 if rid in self._request_state else self.state_bytes_per_sequence
+        required_bytes = num_blocks * self.bytes_per_block + state_bytes
 
         # Build an ordered list of tiers to try: requested tier first, then hierarchy order
         tier_order = [
@@ -202,7 +242,9 @@ class MemoryModel:
             available = self._tier_state[candidate_tier]["capacity"] - self._tier_state[candidate_tier]["used"]
             if available >= required_bytes:
                 self._tier_state[candidate_tier]["used"] += required_bytes
-                rid = getattr(request, 'request_id', request)
+                if state_bytes:
+                    self._tier_state[candidate_tier]["state_bytes"] += state_bytes
+                    self._request_state[rid] = (candidate_tier, state_bytes)
                 if rid not in self._request_blocks:
                     self._request_blocks[rid] = []
                 self._request_blocks[rid].append((candidate_tier, num_blocks))
@@ -214,9 +256,18 @@ class MemoryModel:
             f"Cannot allocate {num_blocks} blocks ({required_bytes} bytes) in any tier"
         )
 
+    def _free_state(self, rid) -> None:
+        """Release a request's fixed state, wherever it was placed."""
+        placed = self._request_state.pop(rid, None)
+        if placed is not None:
+            tier, nbytes = placed
+            self._tier_state[tier]["used"] -= nbytes
+            self._tier_state[tier]["state_bytes"] -= nbytes
+
     def deallocate_kv_blocks(self, request) -> int:
-        """Free all KV cache blocks for a request. Returns total blocks freed."""
+        """Free all KV cache blocks for a request, and its state. Returns total blocks freed."""
         rid = getattr(request, 'request_id', request)
+        self._free_state(rid)
         if rid not in self._request_blocks:
             return 0
 
@@ -266,6 +317,8 @@ class MemoryModel:
                     del self._request_blocks[rid]
                     if rid in self._lru_order:
                         del self._lru_order[rid]
+                    # A request evicted whole loses its state too: it re-runs prefill.
+                    self._free_state(rid)
                     evicted_request_ids.append(rid)
         return evicted, evicted_request_ids
 
@@ -286,6 +339,8 @@ class MemoryModel:
             idx = tier_order.index(from_tier)
         except ValueError:
             return 0, from_tier
+        if self.bytes_per_block <= 0:
+            return 0, from_tier  # no KV to move (a pure state-space model)
 
         for next_idx in range(idx + 1, len(tier_order)):
             next_tier = tier_order[next_idx]
@@ -314,7 +369,8 @@ class MemoryModel:
                 "free_bytes": state["capacity"] - state["used"],
                 "utilization": state["used"] / state["capacity"] if state["capacity"] > 0 else 0.0,
                 "weight_bytes": state["weight_bytes"],
-                "kv_cache_bytes": state["used"] - state["weight_bytes"],
+                "kv_cache_bytes": state["used"] - state["weight_bytes"] - state["state_bytes"],
+                "state_bytes": state["state_bytes"],
                 "bandwidth_gbps": tc.bandwidth_gbps,
                 "latency_ns": tc.latency_ns,
             }

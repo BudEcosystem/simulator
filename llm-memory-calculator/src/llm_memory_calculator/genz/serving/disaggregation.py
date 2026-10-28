@@ -25,7 +25,7 @@ class DisaggregationAnalyzer:
         """SV6: memory-budget-bounded steady-state concurrency per instance.
 
         Same derivation as ``ClusterAnalyzer._build_b_eff``:
-        ``floor((primary_capacity - weight_bytes) / (bytes_per_token_kv * context))`` capped by
+        ``floor((primary_capacity - weight_bytes) / (bytes_per_token_kv * context + state_bytes_per_sequence))`` capped by
         ``max_batch_size``; returns 1 when a MemoryModel cannot be built. Applied IDENTICALLY to
         the prefill and decode pools, so it cancels in the bottleneck/utilization inequalities.
         """
@@ -49,7 +49,8 @@ class DisaggregationAnalyzer:
                 tensor_parallel=tensor_parallel,
             )
             weight_bytes = estimate_weight_bytes(model_config, self._precision, tensor_parallel)
-            footprint = mm.bytes_per_token_kv * max(context, 1)
+            # One request: its KV over the context plus its fixed recurrent state.
+            footprint = mm.bytes_per_token_kv * max(context, 1) + mm.state_bytes_per_sequence
             if footprint <= 0:
                 return 1
             avail = primary_capacity - weight_bytes
@@ -298,4 +299,6 @@ class DisaggregationAnalyzer:
         # TP=1 for transfer. Counting every decoder layer charged a hybrid's recurrent
         # layers a cache they do not have.
         bytes_per_token = config.get_kv_size() * 2
-        return bytes_per_token * (input_tokens + output_tokens)
+        # The recurrent layers' fixed state moves with the KV (ModelConfig.get_state_bytes),
+        # once per request; a pure state-space model moves nothing else.
+        return bytes_per_token * (input_tokens + output_tokens) + config.get_state_bytes(2)

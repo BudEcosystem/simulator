@@ -874,3 +874,225 @@ def test_the_genz_graph_bounds_chunked_layers_by_their_chunk(tmp_path):
     assert _chunked_kv_mb(c, tmp_path, 32768) - _chunked_kv_mb(c, tmp_path, 16384) == (
         pytest.approx(per_token_mib * 12 * 16384, rel=1e-6)
     )
+
+
+# ------------------------------------------- serving: the KV that grows and the state that does not
+#
+# A request in the serving memory model costs its KV blocks AND its recurrent state. Once the
+# recurrent layers stopped being charged KV, a serving path with no state term admitted too
+# many hybrid requests and charged a pure SSM nothing at all.
+
+SERVING_RECURRENT = [
+    "Qwen_Qwen3.5-4B",  # Gated DeltaNet + full attention, nested under text_config
+    "ibm-granite_granite-4.0-h-small",  # Mamba-2 + attention, by layer_types
+    "nvidia_Nemotron-H-8B-Base-8K",  # Mamba-2 + attention + FFN-only slots, by pattern
+    "tiiuae_Falcon-H1-34B-Instruct",  # parallel hybrid: KV and state on every layer
+    "LiquidAI_LFM2-2.6B",  # short convolution
+    "state-spaces_mamba-2.8b-hf",  # pure Mamba-1: no KV at all
+    "mistralai_Mamba-Codestral-7B-v0.1",  # pure Mamba-2
+]
+GiB = 1024**3
+
+
+def _memory_model(config, capacity=8 * GiB, tp=1, tiers=None):
+    from llm_memory_calculator.genz.Models.get_language_model import get_configs
+    from llm_memory_calculator.genz.serving.constants import MemoryTier
+    from llm_memory_calculator.genz.serving.memory_model import MemoryModel, MemoryTierConfig
+
+    tiers = tiers or [MemoryTierConfig(tier=MemoryTier.DEVICE_HBM, capacity_bytes=capacity)]
+    return MemoryModel(get_configs(config), tiers, tensor_parallel=tp, precision_bytes=2)
+
+
+@pytest.mark.parametrize("name", SERVING_RECURRENT)
+def test_the_serving_memory_model_charges_each_request_its_fixed_state(name):
+    """Measured by the reviewer on the branch: Qwen3.5-4B admitted 256 1,024-token requests into
+    8 GiB (truth ~101), granite-4.0-h-small 512 (truth ~50), mamba-2.8b without bound."""
+    c = cfg(name)
+    mm = _memory_model(c)
+    assert mm.state_bytes_per_sequence == pytest.approx(state_bytes(c), abs=1)
+    assert mm.state_bytes_per_sequence > 0
+    per_request = 1024 * mm.bytes_per_token_kv + mm.state_bytes_per_sequence
+    admitted = 0
+    with pytest.raises(MemoryError):
+        while admitted < 10**5:
+            mm.allocate_kv_blocks(admitted, 1024)
+            admitted += 1
+    assert admitted == 8 * GiB // per_request
+
+
+def test_the_serving_state_is_split_by_tensor_parallelism():
+    c = cfg("Qwen_Qwen3.5-4B")
+    assert _memory_model(c, tp=2).state_bytes_per_sequence == pytest.approx(
+        state_bytes(c) / 2, abs=1
+    )
+
+
+def test_a_dense_model_carries_no_serving_state():
+    llama = dict(model_type="llama", hidden_size=4096, num_hidden_layers=32,
+                 num_attention_heads=32, num_key_value_heads=8, intermediate_size=14336,
+                 vocab_size=128256)
+    mm = _memory_model(llama)
+    assert mm.state_bytes_per_sequence == 0
+    assert mm.bytes_per_token_kv == 32 * per_layer_token(8, 128)
+
+
+def test_the_serving_state_is_freed_with_its_request():
+    from llm_memory_calculator.genz.serving.constants import MemoryTier
+
+    mm = _memory_model(cfg("Qwen_Qwen3.5-4B"))
+    per_request = 1024 * mm.bytes_per_token_kv + mm.state_bytes_per_sequence
+
+    def used():
+        return mm.memory_snapshot()[MemoryTier.DEVICE_HBM.value]["used_bytes"]
+
+    mm.allocate_kv_blocks(1, 1024)
+    mm.allocate_kv_blocks(2, 1024)
+    assert used() == 2 * per_request
+    mm.deallocate_kv_blocks(1)
+    assert used() == per_request
+    evicted, gone = mm.evict_blocks(MemoryTier.DEVICE_HBM, 64)
+    assert (evicted, gone) == (64, [2])
+    assert used() == 0
+
+
+def test_a_pure_ssm_spills_without_dividing_by_its_zero_kv():
+    from llm_memory_calculator.genz.serving.constants import MemoryTier
+    from llm_memory_calculator.genz.serving.memory_model import MemoryTierConfig
+
+    mm = _memory_model(cfg("state-spaces_mamba-2.8b-hf"), tiers=[
+        MemoryTierConfig(tier=MemoryTier.DEVICE_HBM, capacity_bytes=GiB),
+        MemoryTierConfig(tier=MemoryTier.HOST_DDR, capacity_bytes=GiB),
+    ])
+    mm.allocate_kv_blocks(1, 1024)
+    assert mm.spill_to_next_tier(MemoryTier.DEVICE_HBM, 4) == (0, MemoryTier.DEVICE_HBM)
+
+
+def test_the_scheduler_fails_a_request_whose_state_alone_exceeds_every_tier():
+    """The permanent-failure check priced a request by its KV blocks only, so a pure SSM
+    request (0 KV) was never failed however small the memory."""
+    mm = _memory_model(cfg("state-spaces_mamba-2.8b-hf"), capacity=1024 * 1024)
+    assert mm.request_bytes(1024) == mm.state_bytes_per_sequence
+    assert mm.request_bytes(1024) > mm.total_capacity_bytes
+
+
+@pytest.mark.parametrize("name", SERVING_RECURRENT)
+@pytest.mark.parametrize("analyzer", ["cluster", "disaggregation"])
+def test_serving_concurrency_counts_the_fixed_state(name, analyzer):
+    """B_eff = (capacity - weights) // (KV per token x context + state). A pure SSM's footprint
+    was 0, which the analyzers read as 'cannot size' and answered 1 (serial)."""
+    from llm_memory_calculator.genz.Models.get_language_model import get_configs
+    from llm_memory_calculator.genz.serving.cluster import ClusterAnalyzer
+    from llm_memory_calculator.genz.serving.constants import GB_TO_BYTES
+    from llm_memory_calculator.genz.serving.disaggregation import DisaggregationAnalyzer
+    from llm_memory_calculator.genz.serving.memory_model import estimate_weight_bytes
+    from llm_memory_calculator.hardware import get_hardware_config
+
+    c = cfg(name)
+    hw = "A100_80GB_GPU"
+    cls = ClusterAnalyzer if analyzer == "cluster" else DisaggregationAnalyzer
+    a = cls(model=c, hardware=hw)
+    mm = _memory_model(c)
+    cap = int(get_hardware_config(hw)["Memory_size"] * GB_TO_BYTES)
+    weights = estimate_weight_bytes(get_configs(c), "bf16", 1)
+    context = 4096
+    footprint = mm.bytes_per_token_kv * context + mm.state_bytes_per_sequence
+    expected = max(1, (cap - weights) // footprint) if cap > weights else 1
+    assert a._build_b_eff(context, max_batch_size=10**7) == min(expected, 10**7)
+
+
+@pytest.mark.parametrize("name", SERVING_RECURRENT)
+def test_the_disaggregated_transfer_carries_the_state(name):
+    """Prefill hands decode the KV and the recurrent state; the transfer counted the KV only, so a
+    pure SSM moved 0 bytes."""
+    from llm_memory_calculator.genz.Models.get_language_model import get_configs
+    from llm_memory_calculator.genz.serving.disaggregation import DisaggregationAnalyzer
+
+    c = cfg(name)
+    a = DisaggregationAnalyzer(model=c, hardware="A100_80GB_GPU")
+    kv = get_configs(c).get_kv_size() * 2 * (512 + 128)
+    assert a._estimate_kv_bytes(512, 128) == pytest.approx(kv + state_bytes(c), abs=1)
+
+
+# ------------------------------------------- a layout stated under another key, and a short list
+
+
+def test_gpt_neo_alternates_its_window_by_attention_types():
+    """GPT-Neo states its global/local layout in `attention_types` (its config class expands it
+    into `attention_layers`), not in `layer_types`; its config class states no `layer_types`, so
+    the class-silence rule read every layer as windowed: 4.5x low at 2,048 tokens."""
+    from llm_memory_calculator.model.facts import ModelFacts
+
+    neo = cfg("EleutherAI_gpt-neo-1.3B")
+    k = layer_kinds(neo)
+    assert k["attn"] == ["full", "sliding"] * 12
+    assert k["sliding_window"] == 256
+    f = ModelFacts.from_config(neo)
+    assert (f.layers.full, f.layers.sliding, f.layers.sliding_window) == (12, 12, 256)
+    per = per_layer_token(16, 128)
+    assert f.kv_bytes_for_context(2048) == 12 * 2048 * per + 12 * 256 * per
+
+
+def test_gpt_neo_attention_types_alone_state_the_layout():
+    neo = {k: v for k, v in cfg("EleutherAI_gpt-neo-1.3B").items() if k != "attention_layers"}
+    neo["attention_types"] = [[["global"], 2], [["global", "local"], 11]]
+    assert layer_kinds(neo)["attn"] == ["full"] * 2 + ["full", "sliding"] * 11
+
+
+def test_the_calculator_charges_gpt_neo_its_global_and_local_kv():
+    """GPT-Neo spells its head count `num_heads`; the calculator found no attention heads and
+    charged no KV at all."""
+    neo = cfg("EleutherAI_gpt-neo-1.3B")
+    per = per_layer_token(16, 128)
+    caps = {"heterogeneous_kv_layout": True}
+    assert kv_bytes(neo, 2048, engine=caps) == pytest.approx(12 * 2048 * per + 12 * 256 * per)
+    assert kv_bytes(neo, 2048) == pytest.approx(24 * 2048 * per)
+
+
+def test_gpt_neo_is_not_taken_for_a_hybrid_by_its_attention_layers_key():
+    """`attention_layers` is GPT-Neo's per-layer list of global / local attention, not a hybrid
+    marker: reading it as one guessed a Mamba state on every layer (1.7 MB on origin/main)."""
+    neo = cfg("EleutherAI_gpt-neo-1.3B")
+    assert ModelMemoryCalculator().detect_model_type(neo) == "decoder-only"
+    assert state_bytes(neo) == 0
+
+
+def test_a_per_layer_list_shorter_than_the_depth_charges_the_rest_full_and_says_so():
+    """A `layer_types` list that names 16 of 32 layers left the other 16 free."""
+    from llm_memory_calculator.model.facts import ModelFacts
+
+    short = dict(model_type="llama", hidden_size=4096, num_hidden_layers=32,
+                 num_attention_heads=32, num_key_value_heads=8, intermediate_size=14336,
+                 vocab_size=32000, layer_types=["full_attention"] * 16)
+    with pytest.warns(UserWarning, match="16 of 32 layers"):
+        k = layer_kinds(short)
+    assert k["attn"] == ["full"] * 32
+    assert any("16 of 32 layers" in n for n in k["notes"])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert kv_bytes(short, 4096) == pytest.approx(32 * 4096 * per_layer_token(8, 128))
+        f = ModelFacts.from_config(short)
+    assert (f.layers.full, f.layers.sliding) == (32, 0)
+
+
+def test_a_short_hybrid_list_keeps_its_stated_kinds_and_charges_the_rest_full():
+    hybrid = dict(cfg("Qwen_Qwen3.5-4B")["text_config"])
+    stated = hybrid["layer_types"][:16]
+    hybrid["layer_types"] = stated
+    with pytest.warns(UserWarning, match="16 of 32 layers"):
+        plan = resolve_layer_plan(hybrid)
+    assert plan["attn"][16:] == ["full"] * 16
+    assert plan["recurrent"][:16] == ["gdn" if t == "linear_attention" else None for t in stated]
+    assert plan["approximate"]
+
+
+def test_kimi_layer_lists_are_one_indexed_even_without_kda_layers():
+    """Kimi's modelling code tests `layer_idx + 1` against the lists. Without `kda_layers` the
+    one-indexing guess needed min == 1 and dropped the last full layer (index 27 of 27)."""
+    kimi = cfg("moonshotai_Kimi-Linear-48B-A3B-Instruct")
+    lac = dict(kimi["linear_attn_config"])
+    lac.pop("kda_layers", None)
+    kimi = dict(kimi, linear_attn_config=lac)
+    plan = resolve_layer_plan(kimi)
+    n = kimi["num_hidden_layers"]
+    full = {i for i, a in enumerate(plan["attn"]) if a == "full"}
+    assert full == {i - 1 for i in lac["full_attn_layers"] if 1 <= i <= n}

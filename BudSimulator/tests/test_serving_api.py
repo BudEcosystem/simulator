@@ -65,6 +65,27 @@ class TestMemoryTiersEndpoint:
         assert "host_ddr" in data["tiers"]
         assert "nvme" in data["tiers"]
 
+    def test_a_dense_model_has_no_fixed_state(self, client):
+        resp = client.post("/api/v2/memory/tiers", json={
+            "model": "meta-llama/Meta-Llama-3.1-8B",
+            "hardware": "A100_80GB_GPU",
+        })
+        assert resp.status_code == 200
+        assert resp.json()["state_bytes_per_sequence"] == 0
+
+    def test_a_state_space_model_reports_its_fixed_state(self, client):
+        """Mamba-2.8B holds no KV: each request costs its recurrent state instead -- 64 layers of
+        a 5,120 x 16 fp32 matrix and a 3-deep 5,120-wide conv buffer at 2 B. Reporting the KV
+        alone priced its requests at nothing."""
+        resp = client.post("/api/v2/memory/tiers", json={
+            "model": "state-spaces/mamba-2.8b-hf",
+            "hardware": "A100_80GB_GPU",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bytes_per_token_kv"] == 0
+        assert data["state_bytes_per_sequence"] == 64 * (5120 * 16 * 4 + 5120 * 3 * 2)
+
     def test_unknown_hardware(self, client):
         resp = client.post("/api/v2/memory/tiers", json={
             "model": "meta-llama/Meta-Llama-3.1-8B",

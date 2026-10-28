@@ -369,6 +369,9 @@ class TestMemorySnapshot:
             "utilization",
             "weight_bytes",
             "kv_cache_bytes",
+            # The recurrent layers' fixed per-request state, apart from the KV it used to be
+            # folded into (0 for a model without recurrent layers).
+            "state_bytes",
             "bandwidth_gbps",
             "latency_ns",
         }

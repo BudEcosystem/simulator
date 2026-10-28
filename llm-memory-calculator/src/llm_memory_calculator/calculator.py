@@ -219,8 +219,10 @@ class ModelMemoryCalculator:
         if config.get("is_encoder_decoder", False):
             return "encoder-decoder"
 
-        # Check for hybrid architectures
-        if "mamba_config" in config or "attention_layers" in config:
+        # Check for hybrid architectures. (`attention_layers` is not a hybrid marker: it is
+        # GPT-Neo's per-layer list of global / local attention, which the layer table reads;
+        # taking it for one guessed a Mamba state on every GPT-Neo layer.)
+        if "mamba_config" in config:
             return "hybrid"
 
         # Structural fallback: let the config's own layer layout speak. New
@@ -231,11 +233,14 @@ class ModelMemoryCalculator:
         if plan is not None and plan.get("num_recurrent_layers"):
             return "hybrid" if plan.get("num_attention_layers") else "state-space"
 
-        # Infer from config structure if model_type not specified
+        # Infer from config structure if model_type not specified. Read through the
+        # normalizer, so a head count or depth spelled the family's own way (GPT-Neo's
+        # `num_heads` / `num_layers`) still reads as a transformer.
+        shape = ConfigNormalizer.normalize_config(config)
         if (
-            "num_attention_heads" in config
-            and "hidden_size" in config
-            and "num_hidden_layers" in config
+            shape.get("num_attention_heads")
+            and "hidden_size" in shape
+            and shape.get("num_hidden_layers")
         ):
             # It's likely a transformer model
             if config.get("is_decoder", True) and not config.get(

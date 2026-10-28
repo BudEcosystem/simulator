@@ -24,7 +24,8 @@ Figures, per config: the calculator's KV / state / weights / totals; the engine 
 parameters); the FRD-027 `ModelFacts` layer counts; GenZ's per-layer attention and FFN kinds,
 its KV elements per token (`get_kv_size`, which the disaggregation KV transfer multiplies by
 2 bytes), its decode and chunked graphs' KV and weights; and the serving `MemoryModel`'s KV
-bytes per token.
+bytes per token, per-request state, the 1,024-token requests 8 GiB admits, and the
+disaggregation transfer for 640 tokens.
 """
 
 import argparse
@@ -226,8 +227,20 @@ def measure_genz(cfg_or_name, genz_data):
         from llm_memory_calculator.genz.Models.get_language_model import get_configs
         from llm_memory_calculator.genz.serving.memory_model import MemoryModel
 
-        mm = MemoryModel(get_configs(cfg_or_name), [], tensor_parallel=1, precision_bytes=2)
+        mc = get_configs(cfg_or_name)
+        mm = MemoryModel(mc, [], tensor_parallel=1, precision_bytes=2)
         out["serving_bytes_per_token"] = int(mm.bytes_per_token_kv)
+        # A request's fixed recurrent state (absent before the serving path counted it: 0), the
+        # 1,024-token requests that fit 8 GiB, and the prefill-to-decode transfer for 512 + 128
+        # tokens (KV x 2 B, plus the state where the tree counts it).
+        state = int(getattr(mm, "state_bytes_per_sequence", 0) or 0)
+        out["serving_state_bytes"] = state
+        per_request = -(-1024 // 16) * 16 * mm.bytes_per_token_kv + state
+        out["serving_requests_8gib_1k"] = (8 * 1024**3 // per_request) if per_request else None
+        get_state = getattr(mc, "get_state_bytes", None)
+        out["disagg_transfer_bytes_640"] = int(
+            mc.get_kv_size() * 2 * 640 + (get_state(2) if callable(get_state) else 0)
+        )
     except Exception as e:
         out["serving_error"] = f"{type(e).__name__}: {str(e)[:200]}"
     return out

@@ -29,7 +29,7 @@ class ClusterAnalyzer:
                      max_batch_size: Optional[int] = None) -> int:
         """SV6: steady-state continuous-batching concurrency the memory budget pins.
 
-        ``B_eff = floor((primary_tier_capacity - weight_bytes) / (bytes_per_token_kv * context))``,
+        ``B_eff = floor((primary_tier_capacity - weight_bytes) / (bytes_per_token_kv * context + state_bytes_per_sequence))``,
         capped by ``SchedulerConfig.max_batch_size``. ``bytes_per_token_kv`` is the canonical
         ``MemoryModel`` formula; ``weight_bytes`` the single-source estimator. Returns 1 (the old
         serial behaviour) when a MemoryModel cannot be built (unknown model / mocked config), so
@@ -57,7 +57,8 @@ class ClusterAnalyzer:
             )
             weight_bytes = estimate_weight_bytes(model_config, self._precision, tensor_parallel)
             self.last_weight_bytes = weight_bytes
-            footprint = mm.bytes_per_token_kv * max(context, 1)
+            # One request: its KV over the context plus its fixed recurrent state.
+            footprint = mm.bytes_per_token_kv * max(context, 1) + mm.state_bytes_per_sequence
             if footprint <= 0:
                 return 1
             avail = primary_capacity - weight_bytes

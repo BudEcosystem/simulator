@@ -124,8 +124,13 @@ class BatchScheduler:
             # evict->QUEUED retry path below is for requests that DO fit but are momentarily blocked.
             total_cap = getattr(self._memory_model, 'total_capacity_bytes', None)
             if total_cap is not None:
-                num_blocks = (req.input_tokens + self._memory_model._block_size - 1) // self._memory_model._block_size
-                required_bytes = num_blocks * self._memory_model.bytes_per_block
+                request_bytes = getattr(type(self._memory_model), 'request_bytes', None)
+                if callable(request_bytes):
+                    # KV blocks plus the request's fixed recurrent state.
+                    required_bytes = self._memory_model.request_bytes(req.input_tokens)
+                else:
+                    num_blocks = (req.input_tokens + self._memory_model._block_size - 1) // self._memory_model._block_size
+                    required_bytes = num_blocks * self._memory_model.bytes_per_block
                 if required_bytes > total_cap:
                     req.set_failed(current_time_ns)
                     self._failed.append(req)

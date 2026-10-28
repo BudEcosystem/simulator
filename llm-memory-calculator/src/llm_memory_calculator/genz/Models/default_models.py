@@ -134,6 +134,10 @@ class ModelConfig():
         # When provided, must have exactly num_decoder_layers entries.
         layer_configs: Optional[list] = None,     # list[LayerConfig]
         weight_precision: Optional[dict] = None,  # role -> bytes/param from quantization_config
+        # The state one "Mamba" layer of a uniform or periodic stack carries for one sequence
+        # (state_memory.recurrent_state_shape, plus its "state_bytes"). None = derived from the
+        # mamba_* fields as Mamba-1. Per-layer stacks carry theirs on each LayerConfig.
+        recurrent_state: Optional[dict] = None,
         **kwargs,
     ):
         self.model = model
@@ -177,6 +181,7 @@ class ModelConfig():
         self.mamba_conv_bias = mamba_conv_bias
         self.mamba_proj_bias = mamba_proj_bias
         self.is_mamba = (mamba_d_state is not None)
+        self.recurrent_state = recurrent_state
 
 
         # Multi-Type Model Parameters
@@ -361,6 +366,48 @@ class ModelConfig():
             # MLA stores compressed KV: (kv_lora_rank + qk_rope_head_dim) per token per layer
             return kv_layers * (self.kv_lora_rank + (self.qk_rope_head_dim or 0))
         return 2 * kv_layers * self.head_dim * self.num_key_value_heads
+
+    def _mamba_state_shape(self) -> dict:
+        """The state of one GenZ "Mamba" layer, for a uniform or periodic stack."""
+        if self.recurrent_state:
+            return self.recurrent_state
+        from llm_memory_calculator.layer_plan import MECH_MAMBA1
+        from llm_memory_calculator.state_memory import recurrent_state_shape
+
+        dims = {"state_size": self.mamba_d_state, "expand": self.mamba_expand,
+                "conv_kernel": self.mamba_d_conv}
+        return recurrent_state_shape(
+            MECH_MAMBA1, {k: v for k, v in dims.items() if v is not None}, self.hidden_size
+        )
+
+    def get_state_bytes(self, precision_bytes: int = 2) -> int:
+        """The fixed state one sequence holds, in bytes, summed over the recurrent layers.
+
+        A Mamba / Gated DeltaNet / short-conv / ... layer keeps no per-token KV
+        (``get_kv_size``) but a state that does not grow with the context: the recurrent
+        matrix at its state dtype (fp32 unless the config says otherwise) and the conv buffer
+        at ``precision_bytes``. The same shapes and bytes as
+        ``ModelMemoryCalculator.calculate_state_memory``. A serving model that charges the KV
+        alone admits too many hybrid requests and a pure SSM's requests for nothing.
+        """
+        from llm_memory_calculator.state_memory import shape_state_bytes
+
+        def priced(shape):
+            parts = shape_state_bytes(shape, int(shape.get("state_bytes") or 4), precision_bytes)
+            return parts["recurrent"] + parts["conv"]
+
+        if self.layer_configs is not None:
+            return int(sum(
+                priced(lc.recurrent_state)
+                for lc in self.layer_configs
+                if lc.recurrent and lc.recurrent_state
+            ))
+        period = max(len(self.layer_type), 1)
+        in_period = sum(1 for lt in self.layer_type if lt[0] == "Mamba")
+        if not in_period:
+            return 0
+        layers = self.num_decoder_layers * in_period // period
+        return int(layers * priced(self._mamba_state_shape()))
 
     def __str__(self):
         return str(vars(self))

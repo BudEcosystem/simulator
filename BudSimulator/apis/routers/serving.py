@@ -42,6 +42,9 @@ class MemoryTierResponse(BaseModel):
     hardware: str
     bytes_per_token_kv: int
     bytes_per_block: int
+    # Fixed per-request state of the recurrent layers (Mamba, Gated DeltaNet, ...); 0 for a
+    # model without any. A request costs its KV blocks plus this.
+    state_bytes_per_sequence: int = 0
     tiers: Dict[str, Any]
 
 class PowerEstimateRequest(BaseModel):
@@ -140,6 +143,7 @@ async def analyze_memory_tiers(req: MemoryTierRequest):
             hardware=req.hardware,
             bytes_per_token_kv=mm.bytes_per_token_kv,
             bytes_per_block=mm.bytes_per_block,
+            state_bytes_per_sequence=mm.state_bytes_per_sequence,
             tiers=mm.memory_snapshot(),
         )
     except HTTPException:

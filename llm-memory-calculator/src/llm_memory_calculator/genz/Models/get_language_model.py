@@ -416,6 +416,20 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
 
         sliding_window = layer_kinds(hf_config).get("sliding_window") or sliding_window
 
+    # A pure state-space stack keeps GenZ's own Mamba operators (no layer_configs); the state
+    # each of its layers carries comes from the same table and shapes as every other mixer's.
+    recurrent_state = None
+    if layer_configs is None and mamba_d_state is not None:
+        from llm_memory_calculator.layer_plan import layer_kinds
+        from llm_memory_calculator.state_memory import _state_dtype_bytes, recurrent_state_shape
+
+        mechs = [m for m in layer_kinds(hf_config)["recurrent"] if m]
+        if mechs:
+            recurrent_state = dict(
+                recurrent_state_shape(mechs[0], hf_config, int(hidden_size or 0)),
+                state_bytes=_state_dtype_bytes(hf_config),
+            )
+
     # Create ModelConfig with all extracted attributes
     return ModelConfig(
         model=model_name,
@@ -461,6 +475,7 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         v_head_dim=hf_config.get('v_head_dim', None),
         # Per-layer heterogeneous configs
         layer_configs=layer_configs,
+        recurrent_state=recurrent_state,
         # Pre-quantized checkpoints store some weight roles below the caller's precision
         weight_precision=resolve_weight_precision(hf_config),
     )

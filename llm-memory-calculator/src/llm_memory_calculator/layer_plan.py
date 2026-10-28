@@ -166,7 +166,7 @@ def _blank(n: int) -> Dict[str, Any]:
 #: so a reader that requires the scalar loses the whole layout.
 _PER_LAYER_LIST_KEYS = (
     "layer_types", "layers_block_type", "hybrid_override_pattern", "attn_type_list",
-    "sliding_window_layout", "mlp_layer_types",
+    "sliding_window_layout", "mlp_layer_types", "attention_layers",
 )
 
 
@@ -258,16 +258,93 @@ def _recurrent_mechanism(name: Optional[str], tc: Dict[str, Any], layer_name: st
     return MECH_GDN
 
 
-def _apply_layer_names(plan, names, tc, n, notes):
+def _expand_attention_types(value) -> Optional[List[str]]:
+    """GPT-Neo's compact layout, ``[[["global", "local"], 12], ...]``: each entry a pattern of
+    kind names and how many times it repeats, in order (``GPTNeoConfig.
+    expand_attention_types_params``). None for anything else."""
+    if not (isinstance(value, (list, tuple)) and value):
+        return None
+    out: List[str] = []
+    for item in value:
+        if not (isinstance(item, (list, tuple)) and len(item) == 2):
+            return None
+        pattern, repeat = item
+        if not (isinstance(pattern, (list, tuple)) and pattern
+                and all(isinstance(x, str) for x in pattern) and isinstance(repeat, int)):
+            return None
+        out.extend(list(pattern) * repeat)
+    return out or None
+
+
+def per_layer_names(tc: Dict[str, Any]):
+    """``(names, key)``: every layer's kind name, from whichever key the config states it in.
+
+    `layer_types` is transformers' own key. GPT-Neo states the same thing as `attention_types`
+    (a compact pattern its config class expands into `attention_layers`, which the hub config
+    also ships). The names resolve through LAYER_KINDS like any other list. ``(None, None)``
+    when the config states no per-layer list.
+    """
+    names = tc.get("layer_types")
+    if isinstance(names, list) and names:
+        return list(names), "layer_types"
+    names = _expand_attention_types(tc.get("attention_types"))
+    if names:
+        return names, "attention_types"
+    names = tc.get("attention_layers")
+    if isinstance(names, list) and names and all(isinstance(x, str) for x in names):
+        return list(names), "attention_layers"
+    return None, None
+
+
+def unstated_layers_note(stated: int, n: int, key: str) -> str:
+    """The note (and warning) for a per-layer list that names fewer layers than the depth."""
+    return (
+        f"`{key}` names {stated} of {n} layers; the other {n - stated} are charged "
+        "FULL-ATTENTION KV -- an over-estimate, not a measurement. The list should name "
+        "every layer."
+    )
+
+
+def _fit_names(names, n: int, key: str):
+    """``(names, notes)``: a per-layer list fitted to the depth. Layers the list does not reach
+    are charged full attention, with a note and a warning -- never left free."""
+    names = list(names)
+    if len(names) >= n:
+        return names[:n], []
+    msg = unstated_layers_note(len(names), n, key)
+    warnings.warn(msg, stacklevel=3)
+    return names + ["full_attention"] * (n - len(names)), [msg]
+
+
+def _charge_unstated(plan, start: int, n: int, key: str, notes: List[str]) -> None:
+    """Layers ``start..n-1`` that an index-free per-layer list did not reach: full attention,
+    noted, warned, and the plan marked approximate."""
+    if start >= n:
+        return
+    msg = unstated_layers_note(start, n, key)
+    warnings.warn(msg, stacklevel=3)
+    notes.append(msg)
+    for i in range(start, n):
+        plan["attn"][i] = ATTN_FULL
+        plan["recurrent"][i] = None
+    plan["_unknown"] = True
+
+
+def _apply_layer_names(plan, names, tc, n, notes, key="layer_types"):
     """Fill both axes from a list of per-layer kind names; flag unknown names.
 
     A stack that names FFN-only slots (Nemotron-H's ``moe`` / ``mlp``) gives the FFN its own
     layer: then only those slots carry one, and the mixers carry none. Every other stack pairs
     an FFN with each mixer. The answer is left in ``plan["_ffn"]`` (None = every layer).
+    A list shorter than the depth charges the layers it does not reach full attention.
     """
+    names, short = _fit_names(names, n, key)
+    if short:
+        notes.extend(short)
+        plan["_unknown"] = True
     unknown = []
     ffn_only = []
-    for i, lt in enumerate(list(names)[:n]):
+    for i, lt in enumerate(names):
         k = _classify_layer_type_string(lt)
         if k.get("unknown"):
             unknown.append(k["unknown"])
@@ -310,10 +387,10 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     # --- 1. Explicit per-layer list (HF standard: Qwen3.5/3.6, granite-4, LFM2,
     # gpt-oss, Gemma-3n, MiniMax, Llama 4). Names resolve through LAYER_KINDS;
     # a recurrent name's mechanism comes from the config's own keys. -----------
-    layer_types = tc.get("layer_types")
-    if isinstance(layer_types, list) and layer_types:
-        _apply_layer_names(plan, layer_types, tc, n, notes)
-        return _finish(plan, config, "layer_types", notes, ffn=plan.pop("_ffn", None))
+    layer_types, names_key = per_layer_names(tc)
+    if layer_types:
+        _apply_layer_names(plan, layer_types, tc, n, notes, names_key)
+        return _finish(plan, config, names_key, notes, ffn=plan.pop("_ffn", None))
 
     # --- 1a. A block-type pattern that repeats over the depth (RecurrentGemma's
     # `block_types`, e.g. ["recurrent", "recurrent", "attention"]). Its one
@@ -339,6 +416,7 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if isinstance(swl, list) and swl and set(swl) <= {0, 1}:
         for i, is_swa in enumerate(swl[:n]):
             plan["attn"][i] = ATTN_SLIDING if is_swa else ATTN_FULL
+        _charge_unstated(plan, len(swl), n, "sliding_window_layout", notes)
         return _finish(plan, config, "sliding_window_layout", notes)
 
     # --- 2. Kimi Linear: explicit index lists, ONE-INDEXED -------------------
@@ -346,10 +424,11 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if isinstance(lac, dict) and lac.get("full_attn_layers"):
         full = set(lac["full_attn_layers"])
         kda = set(lac.get("kda_layers") or [])
-        # The two lists together cover 1..n inclusive, not 0..n-1. Reading them
-        # as 0-indexed silently drops the last layer and shifts every other one.
-        one_indexed = (full | kda) and min(full | kda) == 1 and max(full | kda) == n
-        off = 1 if one_indexed else 0
+        # ONE-indexed: Kimi's modelling code tests `layer_idx + 1` against the lists, which
+        # together cover 1..n. Reading them as 0-indexed silently drops the last layer and
+        # shifts every other one. Only a list naming layer 0 is read as 0-indexed. (Requiring
+        # min == 1 dropped the last full layer whenever `kda_layers` was absent.)
+        off = 0 if 0 in (full | kda) else 1
         for i in range(n):
             plan["attn"][i] = ATTN_FULL if (i + off) in full else None
             plan["recurrent"][i] = None if (i + off) in full else MECH_KDA
@@ -363,6 +442,7 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 plan["attn"][i] = ATTN_FULL
             else:
                 plan["recurrent"][i] = MECH_LIGHTNING
+        _charge_unstated(plan, len(atl), n, "attn_type_list", notes)
         return _finish(plan, config, "attn_type_list", notes)
 
     # --- 4. Nemotron-H: a pattern string, one character per layer, in transformers'
@@ -375,7 +455,7 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         # layers instead of the 25 that have one is a ~2.2x over-count on the
         # single largest parameter block in the model.
         names = [_NEMOTRON_PATTERN.get(ch, ch) for ch in pat]
-        _apply_layer_names(plan, names, tc, n, notes)
+        _apply_layer_names(plan, names, tc, n, notes, "hybrid_override_pattern")
         ffn = plan.pop("_ffn", None) or [False] * n
         return _finish(plan, config, "hybrid_override_pattern", notes, ffn=ffn)
 
@@ -385,10 +465,10 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     # beside that layer's Mamba mixer. -----------------------------------------
     lbt = tc.get("layers_block_type")
     if isinstance(lbt, list) and lbt and not any(str(t).lower() == "hybrid" for t in lbt):
-        _apply_layer_names(plan, lbt, tc, n, notes)
+        _apply_layer_names(plan, lbt, tc, n, notes, "layers_block_type")
         return _finish(plan, config, "layers_block_type", notes, ffn=plan.pop("_ffn", None))
     if isinstance(lbt, list) and lbt:
-        _apply_layer_names(plan, lbt, tc, n, notes)
+        _apply_layer_names(plan, lbt, tc, n, notes, "layers_block_type")
         plan.pop("_ffn", None)
         # The MLP is the shared block's: it runs on every layer that invokes the block
         # (every layer with attention, an unknown name included, as charged), and on no
@@ -644,6 +724,12 @@ def _config_class_layer_types(tc: Dict[str, Any]):
                 except Exception:
                     continue
                 names = getattr(obj, "layer_types", None)
+                if not (isinstance(names, (list, tuple)) and names):
+                    # The same list under another key (GPT-Neo's `attention_layers`).
+                    try:
+                        names = per_layer_names(obj.to_dict())[0]
+                    except Exception:
+                        names = None
                 n = depth(tc)
                 if isinstance(names, (list, tuple)) and names and (not n or len(names) == n):
                     result = (True, [str(x) for x in names])
@@ -660,7 +746,10 @@ def _config_class_layer_types(tc: Dict[str, Any]):
 def stated_layer_types(tc: Dict[str, Any]):
     """``(names, source, notes)``: the per-layer kind names a decoder config states.
 
-    In order: an explicit ``layer_types``; a period (``sliding_window_pattern``); and, for a
+    In order: an explicit per-layer list (``per_layer_names``: ``layer_types``, or GPT-Neo's
+    ``attention_types`` / ``attention_layers``), fitted to the depth -- layers a short list does
+    not reach are charged full attention, noted and warned; a period
+    (``sliding_window_pattern``); and, for a
     config that carries a window but no layout, the layout its own config class derives
     (transformers). A window whose layers no source places -- the model type is unknown to
     the installed transformers, the release predates 4.53 (whose classes derive no layout
@@ -670,9 +759,10 @@ def stated_layer_types(tc: Dict[str, Any]):
     is exactly that shape). ``names`` is None for a uniform stack the window, if any, applies
     to as a whole.
     """
-    names = tc.get("layer_types")
-    if isinstance(names, list) and names:
-        return list(names), "layer_types", []
+    names, key = per_layer_names(tc)
+    if names:
+        names, notes = _fit_names(names, depth(tc), key)
+        return names, "layer_types", notes
     names = synthesized_layer_types(tc)
     if names:
         return names, "sliding_window_pattern", []

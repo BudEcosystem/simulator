@@ -143,14 +143,21 @@ def _round64(x: float) -> int:
     return int(-(-int(round(x)) // 64) * 64)
 
 
+def shape_state_bytes(shape: Dict[str, int], state_bytes: int, conv_bytes: int) -> Dict[str, float]:
+    """Bytes of one layer's state from its shape (``recurrent_state_shape``): the recurrent matrix
+    and its vectors at ``state_bytes`` per element, the conv buffer at ``conv_bytes``. The memory
+    calculator and the GenZ serving model both price a shape here, so they cannot disagree."""
+    heads, kd, vd = (int(shape.get(k) or 0) for k in ("heads", "key_dim", "value_dim"))
+    recurrent = (heads * kd * vd + int(shape.get("extra") or 0)) * state_bytes
+    return {"recurrent": float(recurrent), "conv": float(int(shape.get("conv") or 0) * conv_bytes)}
+
+
 def _per_layer_bytes(
     mech: str, config: Dict[str, Any], hidden_size: int, model_bytes: int
 ) -> Dict[str, float]:
     """Recurrent + conv bytes for ONE layer of the given mechanism, one sequence."""
     shape = recurrent_state_shape(mech, config, hidden_size)
-    ssm_bytes = _state_dtype_bytes(config)
-    recurrent = (shape["heads"] * shape["key_dim"] * shape["value_dim"] + shape["extra"]) * ssm_bytes
-    return {"recurrent": float(recurrent), "conv": float(shape["conv"] * model_bytes)}
+    return shape_state_bytes(shape, _state_dtype_bytes(config), model_bytes)
 
 
 def calculate_recurrent_state_bytes(
