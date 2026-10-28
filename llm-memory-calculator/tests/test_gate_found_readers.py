@@ -115,3 +115,21 @@ def test_gemma3_4b_built_in_states_its_head_width(tmp_path):
     out = _genz("google/gemma-3-4B", tmp_path)
     truth = (5 * 4096 + 29 * 1024) * 2048 * 2 / MIB
     assert out["genz_decode_kv_mb"] >= truth
+
+
+# ---------------------------------------------------------------- round 13: new figures held too
+
+#: transformers 5.12's HunYuanMoEV1ForCausalLM on the fixture (meta device): every parameter.
+HUNYUAN_A13B_PARAMS = 80_393_183_232
+
+
+def test_the_facts_count_a_stated_qk_norm():
+    """Hunyuan-A13B states `use_qk_norm`: a query and a key RMSNorm of head_dim per attention
+    layer. The facts read only `qk_norm` (and a Qwen3 type), so the weights fell 6,144
+    parameters below transformers' count once the facts' vLLM figures stopped raising."""
+    cfg = _config("hybrid_configs/tencent_Hunyuan-A13B-Instruct.json")
+    assert ModelFacts.from_config(copy.deepcopy(cfg)).weight_bytes() >= 2 * HUNYUAN_A13B_PARAMS
+    off = dict(cfg, use_qk_norm=False)
+    gap = ModelFacts.from_config(copy.deepcopy(cfg)).weight_bytes() \
+        - ModelFacts.from_config(off).weight_bytes()
+    assert gap == 2 * 32 * 2 * 128

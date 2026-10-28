@@ -1,5 +1,5 @@
 {
-"about": "origin/main (c17ef891) measured by scripts/kv_corpus.py over the committed corpus: prepopulated.db's rows with a config, every fixture under tests/fixtures, the built-in synthetic shapes and GenZ's built-in models. The baseline tests/test_kv_gate.py holds the branch's figures against.",
+"about": "origin/main (c17ef891) measured by scripts/kv_corpus.py over the committed corpus: prepopulated.db's rows with a config, every fixture under tests/fixtures (the GGUF reader on tests/fixtures/gguf's metadata-only GGUFs), the built-in synthetic shapes and GenZ's built-in models. The baseline tests/test_kv_gate.py holds the branch's figures against.",
 "origin_main": "c17ef891da9300a2b80630a5a0671025d768728c",
 "rows": [
 {
@@ -14148,6 +14148,521 @@ true
 ],
 "vllm_running_1024": 766,
 "vllm_running_8192": 116
+},
+{
+"attention_type": "gqa",
+"conv_kv_size": 24576,
+"conv_layers": [
+0,
+24
+],
+"conv_prefill_weights_mb": 4148.0,
+"conv_state_bytes": 0,
+"decode_fit_refused": true,
+"disagg_transfer_bytes_640": 31457280,
+"eng_None_32768_kv_mb": 1610.612736,
+"eng_None_32768_params": 1901268992,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 5775.538586,
+"eng_None_4096_kv_mb": 201.326592,
+"eng_None_4096_params": 1901268992,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 4185.058509,
+"eng_llamacpp_32768_kv_mb": 1610.612736,
+"eng_llamacpp_32768_params": 1901268992,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 5775.538586,
+"eng_llamacpp_4096_kv_mb": 201.326592,
+"eng_llamacpp_4096_params": 1901268992,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 4185.058509,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 201326592,
+"facts_kv_bytes_per_token": 49152,
+"facts_layers": [
+24,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 4349718528,
+"genz_chunked_kv_mb": 216.0,
+"genz_decode_kv_mb": 192.0,
+"genz_decode_weights_mb": 2602.0,
+"genz_ffn_kinds": {
+"Dense": 24
+},
+"genz_kv_size": 24576,
+"genz_layer_kinds": {
+"MHA-global": 24
+},
+"genz_prefill_kv_mb": 192.0,
+"genz_prefill_weights_mb": 3572.0,
+"gguf_config_keys": [
+"head_dim",
+"hidden_size",
+"intermediate_size",
+"max_position_embeddings",
+"model_type",
+"num_attention_heads",
+"num_hidden_layers",
+"num_key_value_heads",
+"vocab_size"
+],
+"gguf_tensor_params": 320,
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 24,
+"kv_gb@32768": 1.610612736,
+"kv_gb@4096": 0.201326592,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+49152.0,
+24,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+49152.0,
+24,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "decoder-only",
+"name": "gguf:Qwen3.5-2B-Q4_K_M.metadata.gguf",
+"prefix_kv_bytes_per_token": 49152,
+"report_kv_gb": 0.201326592,
+"report_params": 1901268992,
+"report_state_gb": 0.0,
+"report_total_gb": 4.261562614,
+"report_weight_gb": 3.802537984,
+"runtime_chunked": [
+3.259829,
+3572.0,
+36.0
+],
+"runtime_decode": [
+2.991388,
+2602.0,
+24.188
+],
+"runtime_prefill": [
+8.208606,
+3572.0,
+24.0
+],
+"serving_bytes_per_token": 49152,
+"serving_requests_8gib_1k": 170,
+"serving_state_bytes": 0,
+"sim_max_running": 400,
+"slice_mib_16x4352": [
+14080,
+true
+],
+"state_gb": 0.0,
+"vllm_limits": [
+88602,
+1417632,
+88602,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 1024,
+"vllm_running_8192": 167
+},
+{
+"attention_type": "gqa",
+"conv_kv_size": 20480,
+"conv_layers": [
+0,
+32
+],
+"conv_prefill_weights_mb": 780.46875,
+"conv_state_bytes": 0,
+"decode_fit_refused": true,
+"disagg_transfer_bytes_640": 26214400,
+"eng_None_32768_kv_mb": 1342.17728,
+"eng_None_32768_params": 369808320,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 2239.08032,
+"eng_None_4096_kv_mb": 167.77216,
+"eng_None_4096_params": 369808320,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 986.032,
+"eng_llamacpp_32768_kv_mb": 1342.17728,
+"eng_llamacpp_32768_params": 369808320,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 2239.08032,
+"eng_llamacpp_4096_kv_mb": 167.77216,
+"eng_llamacpp_4096_params": 369808320,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 986.032,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 167772160,
+"facts_kv_bytes_per_token": 40960,
+"facts_layers": [
+32,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 818505600,
+"genz_chunked_kv_mb": 180.0,
+"genz_decode_kv_mb": 160.0,
+"genz_decode_weights_mb": 690.234375,
+"genz_ffn_kinds": {
+"Dense": 32
+},
+"genz_kv_size": 20480,
+"genz_layer_kinds": {
+"MHA-global": 32
+},
+"genz_prefill_kv_mb": 160.0,
+"genz_prefill_weights_mb": 780.46875,
+"gguf_config_keys": [
+"head_dim",
+"hidden_size",
+"intermediate_size",
+"max_position_embeddings",
+"model_type",
+"num_attention_heads",
+"num_hidden_layers",
+"num_key_value_heads",
+"vocab_size"
+],
+"gguf_tensor_params": 291,
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 32,
+"kv_gb@32768": 1.34217728,
+"kv_gb@4096": 0.16777216,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+40960.0,
+32,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+40960.0,
+32,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "decoder-only",
+"name": "gguf:SmolVLM-500M-Instruct-Q8_0.metadata.gguf",
+"prefix_kv_bytes_per_token": 40960,
+"report_kv_gb": 0.16777216,
+"report_params": 369808320,
+"report_state_gb": 0.0,
+"report_total_gb": 1.035315072,
+"report_weight_gb": 0.73961664,
+"runtime_chunked": [
+0.745595,
+780.469,
+30.0
+],
+"runtime_decode": [
+1.948926,
+690.234,
+20.156
+],
+"runtime_prefill": [
+3.448083,
+780.469,
+20.0
+],
+"serving_bytes_per_token": 40960,
+"serving_requests_8gib_1k": 204,
+"serving_state_bytes": 0,
+"sim_max_running": 400,
+"slice_mib_16x4352": [
+8192,
+true
+],
+"state_gb": 0.0,
+"vllm_limits": [
+113686,
+1818976,
+113686,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 1024,
+"vllm_running_8192": 215
+},
+{
+"attention_type": "gqa",
+"conv_kv_size": 24576,
+"conv_layers": [
+0,
+24
+],
+"conv_prefill_weights_mb": 4563.28125,
+"conv_state_bytes": 0,
+"decode_fit_refused": true,
+"disagg_transfer_bytes_640": 31457280,
+"eng_None_32768_kv_mb": 1610.612736,
+"eng_None_32768_params": 1992044160,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 5945.764301,
+"eng_None_4096_kv_mb": 201.326592,
+"eng_None_4096_params": 1992044160,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 4360.946534,
+"eng_llamacpp_32768_kv_mb": 1610.612736,
+"eng_llamacpp_32768_params": 1992044160,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 5945.764301,
+"eng_llamacpp_4096_kv_mb": 201.326592,
+"eng_llamacpp_4096_params": 1992044160,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 4360.946534,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 201326592,
+"facts_kv_bytes_per_token": 49152,
+"facts_layers": [
+24,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 4785229440,
+"genz_chunked_kv_mb": 216.0,
+"genz_decode_kv_mb": 192.0,
+"genz_decode_weights_mb": 3078.984375,
+"genz_ffn_kinds": {
+"Dense": 24
+},
+"genz_kv_size": 24576,
+"genz_layer_kinds": {
+"MHA-global": 24
+},
+"genz_prefill_kv_mb": 192.0,
+"genz_prefill_weights_mb": 4183.59375,
+"gguf_config_keys": [
+"head_dim",
+"hidden_size",
+"intermediate_size",
+"max_position_embeddings",
+"model_type",
+"num_attention_heads",
+"num_hidden_layers",
+"num_key_value_heads",
+"vocab_size"
+],
+"gguf_tensor_params": 459,
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 24,
+"kv_gb@32768": 1.610612736,
+"kv_gb@4096": 0.201326592,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+49152.0,
+24,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+49152.0,
+24,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "decoder-only",
+"name": "gguf:gpt-oss-20b-MXFP4.metadata.gguf",
+"prefix_kv_bytes_per_token": 49152,
+"report_kv_gb": 0.201326592,
+"report_params": 1992044160,
+"report_state_gb": 0.0,
+"report_total_gb": 4.436318177,
+"report_weight_gb": 3.98408832,
+"runtime_chunked": [
+3.861015,
+4183.594,
+36.0
+],
+"runtime_decode": [
+3.282565,
+3078.984,
+24.188
+],
+"runtime_prefill": [
+9.452835,
+4183.594,
+24.0
+],
+"serving_bytes_per_token": 49152,
+"serving_requests_8gib_1k": 170,
+"serving_state_bytes": 0,
+"sim_max_running": 400,
+"slice_mib_16x4352": [
+14336,
+true
+],
+"state_gb": 0.0,
+"vllm_limits": [
+88043,
+1408688,
+88043,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 1024,
+"vllm_running_8192": 166
+},
+{
+"attention_type": "mha",
+"conv_kv_size": 18432,
+"conv_layers": [
+0,
+12
+],
+"conv_prefill_weights_mb": 305.419922,
+"conv_state_bytes": 0,
+"decode_fit_refused": true,
+"disagg_transfer_bytes_640": 23592960,
+"eng_None_32768_kv_mb": 1207.959552,
+"eng_None_32768_params": 109986816,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 1594.027622,
+"eng_None_4096_kv_mb": 150.994944,
+"eng_None_4096_params": 109986816,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 454.015795,
+"eng_llamacpp_32768_kv_mb": 1207.959552,
+"eng_llamacpp_32768_params": 109986816,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 1594.027622,
+"eng_llamacpp_4096_kv_mb": 150.994944,
+"eng_llamacpp_4096_params": 109986816,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 454.015795,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 150994944,
+"facts_kv_bytes_per_token": 36864,
+"facts_layers": [
+12,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 320294400,
+"genz_chunked_kv_mb": 162.0,
+"genz_decode_kv_mb": 144.0,
+"genz_decode_weights_mb": 206.709961,
+"genz_ffn_kinds": {
+"Dense": 12
+},
+"genz_kv_size": 18432,
+"genz_layer_kinds": {
+"MHA-global": 12
+},
+"genz_prefill_kv_mb": 144.0,
+"genz_prefill_weights_mb": 251.419922,
+"gguf_config_keys": [
+"hidden_size",
+"intermediate_size",
+"max_position_embeddings",
+"model_type",
+"num_attention_heads",
+"num_hidden_layers",
+"num_key_value_heads",
+"vocab_size"
+],
+"gguf_tensor_params": 112,
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 12,
+"kv_gb@32768": 1.207959552,
+"kv_gb@4096": 0.150994944,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+36864.0,
+12,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+36864.0,
+12,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "decoder-only",
+"name": "gguf:nomic-embed-text-v1.5.Q8_0.metadata.gguf",
+"prefix_kv_bytes_per_token": 36864,
+"report_kv_gb": 0.150994944,
+"report_params": 109986816,
+"report_state_gb": 0.0,
+"report_total_gb": 0.500824228,
+"report_weight_gb": 0.219973632,
+"runtime_chunked": [
+0.250125,
+251.42,
+27.0
+],
+"runtime_decode": [
+1.332179,
+206.71,
+18.141
+],
+"runtime_prefill": [
+1.851672,
+251.42,
+18.0
+],
+"serving_bytes_per_token": 36864,
+"serving_requests_8gib_1k": 227,
+"serving_state_bytes": 0,
+"sim_max_running": 400,
+"slice_mib_16x4352": [
+8704,
+true
+],
+"state_gb": 0.0,
+"vllm_limits": [
+126489,
+2023824,
+126489,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 1024,
+"vllm_running_8192": 239
 },
 {
 "decode_fit_refused": true,

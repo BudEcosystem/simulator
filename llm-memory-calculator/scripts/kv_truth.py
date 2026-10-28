@@ -7,8 +7,8 @@ weights) and reads off what the GPU must hold:
 * ``params``: every parameter of the model class (`ForConditionalGeneration` /
   `ForCausalLM` / the base model, in that order), and ``lm_params``: the language model alone
   (a multimodal decoder-only model's text model and LM head; an encoder-decoder is whole) --
-  what GenZ graphs; ``input_embedding``: the token embedding's parameters (a decode step only
-  gathers from it).
+  what GenZ graphs; ``input_embedding``: the token embedding's parameters, and ``gathered``: every
+  embedding table's (token, learned positions, codebooks), which a decode step only gathers from.
 * ``kv``: per decoder layer, the K and V elements one token adds to its self-attention cache
   and the window that bounds it -- the widths from the layer's own K / V projections (or the
   fused QKV less its queries, or MLA's cached latent), the kinds and windows from the cache
@@ -25,15 +25,17 @@ its source (``tests/fixtures/kv_gate/truths.json``, ``--manual``).
         --manual ../tests/fixtures/kv_gate/truths.json --causes ../tests/fixtures/kv_gate/causes.json \
         --out ../tests/fixtures/kv_gate/allowlist.json <the corpus arguments kv_corpus.py took>
     python kv_truth.py config.json            # one config's truth profile
+    python kv_truth.py --checkpoint inclusionAI/Ling-flash-2.0   # a checkpoint's tensor counts
 """
 
 import json
 import logging
 import warnings
 
-#: K / V projection names, per family (transformers 5.12): separate projections.
-_K_NAMES = ("k_proj", "key", "k", "wk", "k_lin")
-_V_NAMES = ("v_proj", "value", "v", "wv", "v_lin")
+#: K / V projection names, per family (transformers 5.12): separate projections (ProphetNet's
+#: `key_proj` / `value_proj`).
+_K_NAMES = ("k_proj", "key", "k", "wk", "k_lin", "key_proj")
+_V_NAMES = ("v_proj", "value", "v", "wv", "v_lin", "value_proj")
 #: Fused projections: (name, which parts it holds).
 _FUSED = {"qkv_proj": "qkv", "c_attn": "qkv", "query_key_value": "qkv", "Wqkv": "qkv",
           "qkv": "qkv", "in_proj": None, "kv_proj": "kv", "wkv": "kv"}
@@ -78,8 +80,12 @@ def _linear_out(mod):
 
 
 def _layer_kv_width(layer, heads_width):
-    """K + V elements one token adds to this layer's self-attention cache, or 0."""
+    """K + V elements one token adds to this layer's self-attention cache: 0 for a layer with no
+    softmax self-attention, None for one whose attention projects K and V under names this table
+    does not know (undetermined, so the figure gets no truth -- never 0, which would accept any
+    figure)."""
     k = v = latent = fused = 0
+    projections = 0  # linear maps inside a softmax self-attention module
     parents = {path: type(mod).__name__.lower() for path, mod in layer.named_modules()}
     for path, mod in layer.named_modules():
         low = path.lower()
@@ -94,6 +100,7 @@ def _layer_kv_width(layer, heads_width):
         out = _linear_out(mod)
         if out is None or not attention:
             continue
+        projections += 1
         if leaf in _LATENT:
             latent += out
         elif leaf in _K_NAMES:
@@ -104,12 +111,68 @@ def _layer_kv_width(layer, heads_width):
             fused += out - (heads_width if _FUSED[leaf] == "qkv" else 0)
     if latent:
         return latent
-    return k + v + fused
+    width = k + v + fused
+    if projections and not width:
+        return None
+    return width
+
+
+def _is_cross(path, parent):
+    return any(c.lower() in path.lower() for c in _CROSS) or "cross" in parent
+
+
+def _layer_cross_kv_width(layer):
+    """K + V elements one encoder token adds to this layer's cross-attention cache (its K / V
+    projections of the encoder's output), 0 for a layer without one."""
+    width = 0
+    parents = {path: type(mod).__name__.lower() for path, mod in layer.named_modules()}
+    for path, mod in layer.named_modules():
+        parent = parents.get(path.rsplit(".", 1)[0] if "." in path else "", "")
+        if not _is_cross(path, parent):
+            continue
+        leaf = path.split(".")[-1]
+        out = _linear_out(mod)
+        if out is not None and (leaf in _K_NAMES or leaf in _V_NAMES):
+            width += out
+        elif out is not None and _FUSED.get(leaf) == "kv":
+            width += out
+    return width
+
+
+def _layer_state(layer):
+    """``[conv, matrix]``: the elements a sequence's recurrent state holds in this layer, read off
+    transformers' own mixer modules -- the causal depthwise convolution's ring buffer (each
+    `Conv1d` with one input channel per group: channels x (kernel - 1)) and the recurrent matrix
+    (Gated DeltaNet: `num_v_heads x head_k_dim x head_v_dim`; Mamba-2: `num_heads x head_dim x
+    ssm_state_size`; Zamba: `n_mamba_heads x mamba_head_dim x ssm_state_size`; Mamba-1:
+    `intermediate_size x ssm_state_size`). ``[0, 0]`` for a layer with neither."""
+    import torch
+
+    conv = matrix = 0
+    for path, mod in layer.named_modules():
+        parent_cross = _is_cross(path, "")
+        if parent_cross:
+            continue
+        if isinstance(mod, torch.nn.Conv1d) and mod.groups == mod.in_channels \
+                and mod.kernel_size[0] > 1:
+            conv += int(mod.in_channels) * (int(mod.kernel_size[0]) - 1)
+        g = lambda k: getattr(mod, k, None)  # noqa: E731
+        if all(isinstance(g(k), int) for k in ("num_v_heads", "head_k_dim", "head_v_dim")):
+            matrix += g("num_v_heads") * g("head_k_dim") * g("head_v_dim")
+        elif all(isinstance(g(k), int) for k in ("num_heads", "head_dim", "ssm_state_size")):
+            matrix += g("num_heads") * g("head_dim") * g("ssm_state_size")
+        elif all(isinstance(g(k), int) for k in ("n_mamba_heads", "mamba_head_dim",
+                                                  "ssm_state_size")):
+            matrix += g("n_mamba_heads") * g("mamba_head_dim") * g("ssm_state_size")
+        elif all(isinstance(g(k), int) for k in ("intermediate_size", "ssm_state_size")):
+            matrix += g("intermediate_size") * g("ssm_state_size")
+    return [conv, matrix]
 
 
 def _decoder_layers(model, n, decoder_only=False):
-    """The decoder's layer list: a ModuleList of the decoder's depth ``n`` (any depth when ``n``
-    is 0) outside a vision or audio tower -- an encoder-decoder's decoder's, else the one
+    """The decoder's layer list: a ModuleList of blocks (each holding modules of its own -- not a
+    list of output heads, MusicGen's `lm_heads`) of the decoder's depth ``n`` (any depth when
+    ``n`` is 0) outside a vision or audio tower -- an encoder-decoder's decoder's, else the one
     outside any encoder."""
     import torch
 
@@ -117,7 +180,7 @@ def _decoder_layers(model, n, decoder_only=False):
     for path, mod in model.named_modules():
         if not isinstance(mod, torch.nn.ModuleList) or (n and len(mod) != n) or len(mod) < 1:
             continue
-        if not len(list(mod[0].parameters())):
+        if not len(list(mod[0].parameters())) or not len(list(mod[0].children())):
             continue
         low = path.lower()
         if any(t in low for t in ("vision", "visual", "audio", "qformer", "tower")):
@@ -170,6 +233,18 @@ def truth_profile(cfg_dict):
         out["input_embedding"] = int(model.get_input_embeddings().weight.numel())
     except Exception:  # noqa: BLE001
         out["input_embedding"] = 0
+    # every table a step looks rows up in rather than multiplies by (the token embedding, a
+    # learned position table, an audio decoder's codebook embeddings): a decode step gathers one
+    # row from each, and GenZ's decode graph graphs no operator for a gather
+    import torch
+
+    lm_ids, seen, gathered = {id(p) for p in lm_set}, set(), 0
+    for mod in model.modules():
+        w = getattr(mod, "weight", None)
+        if isinstance(mod, torch.nn.Embedding) and id(w) in lm_ids and id(w) not in seen:
+            seen.add(id(w))
+            gathered += int(w.numel())
+    out["gathered"] = max(gathered, out["input_embedding"])
     # per-layer KV
     try:
         from transformers import DynamicCache
@@ -202,12 +277,81 @@ def truth_profile(cfg_dict):
             width = _layer_kv_width(layers[i], heads * hd) if layers is not None else None
             if kind == "none":
                 width = 0
+            elif width == 0 and layers is not None and any(_layer_state(layers[i])):
+                # the cache expects attention here, the class built a recurrent / conv mixer: a
+                # layer name the class does not read (LFM2 builds a `sliding_attention` layer as
+                # a short convolution) -- transformers does not build this config as written
+                width = None
             kv.append([kind, window, width])
         out["kv"] = kv
         out["kv_layers_found"] = layers is not None
+        if layers is not None:
+            # what a sequence holds whatever its length: each layer's recurrent state, and the
+            # K / V each encoder token adds to the decoder's cross-attention caches
+            out["state"] = [_layer_state(layer) for layer in layers]
+            out["cross_kv"] = sum(_layer_cross_kv_width(layer) for layer in layers)
     except Exception as e:  # noqa: BLE001
         out["kv_error"] = f"{type(e).__name__}: {str(e)[:200]}"
     return out
+
+
+#: A token embedding's tensor name, last component(s), in a checkpoint.
+_EMBEDDING_TENSORS = ("embed_tokens.weight", "word_embeddings.weight", "wte.weight",
+                      "embedding.weight", "tok_embeddings.weight")
+
+
+def _hub_get(url, headers=None, tries=10):
+    import time
+    import urllib.request
+
+    for attempt in range(tries):
+        try:
+            req = urllib.request.Request(url, headers=headers or {})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.read()
+        except Exception:  # noqa: BLE001
+            if attempt == tries - 1:
+                raise
+            time.sleep(min(5 * (attempt + 1), 30))
+    return b""
+
+
+def checkpoint_profile(repo, revision="main"):
+    """A truth from a hub checkpoint's own tensors: every safetensors shard's header (its first
+    bytes, read with HTTP range requests -- no weights downloaded) gives each tensor's shape.
+    ``params`` counts every tensor once (a tied head is stored once), ``lm_matrix_params`` the
+    tensors of two or more dimensions, ``input_embedding`` the token embedding's."""
+    import struct
+
+    api = json.loads(_hub_get(f"https://huggingface.co/api/models/{repo}/revision/{revision}"))
+    sha = api.get("sha") or revision
+    shards = sorted(s["rfilename"] for s in api.get("siblings", [])
+                    if s["rfilename"].endswith(".safetensors"))
+    def header(shard):
+        url = f"https://huggingface.co/{repo}/resolve/{sha}/{shard}"
+        n = struct.unpack("<Q", _hub_get(url, {"Range": "bytes=0-7"})[:8])[0]
+        return json.loads(_hub_get(url, {"Range": f"bytes=8-{7 + n}"}))
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        headers = list(pool.map(header, shards))
+    params = matrices = embedding = 0
+    for header in headers:
+        for name, t in header.items():
+            if name == "__metadata__":
+                continue
+            count = 1
+            for d in t["shape"]:
+                count *= int(d)
+            params += count
+            if len(t["shape"]) >= 2:
+                matrices += count
+            if any(name.endswith(e) for e in _EMBEDDING_TENSORS) and "position" not in name:
+                embedding = max(embedding, count)
+    return {"params": params, "lm_params": params, "lm_matrix_params": matrices,
+            "input_embedding": embedding, "checkpoint": f"{repo}@{sha}",
+            "shards": len(shards)}
 
 
 def kv_elements(profile, tokens=None):
@@ -252,6 +396,37 @@ def _scaled(value, unit):
     return None if value is None else value / unit
 
 
+def _fixed_bytes(profile, cross):
+    """Bytes a sequence holds whatever its length, at 2 B an element (transformers' caches hold
+    the state in the model's dtype; an engine that keeps the matrix in fp32 holds more): the
+    recurrent state (``state``, per layer ``[conv, matrix]``, or a hand-written ``state_bytes``),
+    and with ``cross`` the cross-attention cache of the encoder's ``encoder_tokens`` (written by
+    hand, with its arithmetic: the tower's patches, the audio frames). None when a part is not
+    determined: a built profile without its layers, a hand profile whose layers include one
+    without a cache (``none``: recurrent, or KV-shared) and no ``state_bytes``, a
+    cross-attention cache whose encoder length nobody wrote down."""
+    if "state_bytes" in profile:
+        state = profile["state_bytes"]
+    elif "state" in profile:
+        state = 2 * sum(conv + matrix for conv, matrix in profile["state"])
+    elif any(e[0] == "none" for e in profile.get("kv", [])):
+        return None
+    else:
+        state = 0
+    if not cross:
+        return state
+    cross_kv = profile.get("cross_kv", 0) or 0
+    if not cross_kv:
+        return state
+    if profile.get("encoder_tokens") is None:
+        return None
+    return state + 2 * cross_kv * int(profile["encoder_tokens"])
+
+
+#: The fixed per-sequence figures that carry a fixed-length encoder's cross-attention cache.
+STATE_WITH_CROSS = r"^(serving_state_bytes|conv_state_bytes|vllm_limits\[5\])$"
+
+
 def figure_truth(profile, reader):
     """``(truth, source)`` for one corpus figure, or ``(None, why)``."""
     import re
@@ -262,6 +437,7 @@ def figure_truth(profile, reader):
     params = p.get("params")
     lm = p.get("lm_matrix_params", p.get("lm_params", params))
     emb = p.get("input_embedding", 0) or 0
+    gathered = p.get("gathered", emb) or emb
     src = p.get("source") or f"transformers 5.12 {p.get('class', '')}"
     if reader in p.get("figures", {}):  # a figure's truth written by hand
         v = p["figures"][reader]
@@ -288,15 +464,26 @@ def figure_truth(profile, reader):
         (r"^slice_mib_16x4352\[0\]$", lambda: _scaled(
             None if _kv_bytes(p, 4352) is None else 16 * _kv_bytes(p, 4352), MIB),
          "16 sequences' KV at 4,352 tokens (MiB)"),
-        (r"^(genz_prefill_weights_mb|conv_prefill_weights_mb|runtime_prefill\[1\])$",
+        # the prefill and chunked graphs look their tokens up in the input embedding and hold it
+        # (create_full_chunked_model graphs input_embedding)
+        (r"^(genz_prefill_weights_mb|conv_prefill_weights_mb|runtime_(prefill|chunked)\[1\])$",
          lambda: _scaled(None if lm is None else 2 * lm, MIB),
          "the language model's weight matrices (MiB; GenZ graphs no norm or bias vector)"),
-        (r"^(genz_decode_weights_mb|runtime_(decode|chunked)\[1\])$",
-         lambda: _scaled(None if lm is None else 2 * (lm - emb), MIB),
-         "the language model's weight matrices less the input embedding a decode step gathers"
-         " from (MiB)"),
+        (r"^(genz_decode_weights_mb|runtime_decode\[1\])$",
+         lambda: _scaled(None if lm is None else 2 * (lm - gathered), MIB),
+         "the language model's weight matrices less the tables a decode step gathers a row from"
+         " -- the input embedding, a learned position table, codebook embeddings (MiB)"),
         (r"^facts_weight_bytes$", lambda: None if params is None or p.get("quantized")
          else 2 * params, "the model's weights at 2 B"),
+        (STATE_WITH_CROSS,
+         lambda: _fixed_bytes(p, cross=True), "a sequence's fixed bytes: its recurrent state and"
+         " the cross-attention cache of a fixed-length encoder (2 B an element)"),
+        (r"^facts_state_bytes$", lambda: _fixed_bytes(p, cross=False),
+         "a sequence's recurrent state (2 B an element)"),
+        (r"^(state_gb|report_state_gb)$", lambda: _scaled(_fixed_bytes(p, cross=False), GB),
+         "a sequence's recurrent state (GB, 2 B an element)"),
+        (r"^eng_\w+_\d+_state_mb$", lambda: _scaled(_fixed_bytes(p, cross=False), MB),
+         "a sequence's recurrent state (MB, 2 B an element)"),
         (r"^(report_params|eng_\w+_params)$", lambda: params, "the model's parameters"),
         (r"^report_weight_gb$", lambda: _scaled(None if params is None else 2 * params, GB),
          "the model's weights (GB)"),
@@ -312,6 +499,10 @@ def figure_truth(profile, reader):
             v = value()
             if v is None:
                 return None, f"{what}: not determined by {src}"
+            if re.match(STATE_WITH_CROSS, reader) and p.get("cross_kv"):
+                what += (f"; {p['cross_kv']:,} cross-attention K+V elements an encoder token, "
+                         f"{p.get('encoder_tokens'):,} encoder tokens ("
+                         f"{p.get('encoder_tokens_source', 'stated by hand')})")
             return v, f"{what}: {src}"
     return None, f"no ground-truth rule for {reader}"
 
@@ -334,14 +525,17 @@ def _held_by(reader):
 
 
 def allowlist_from(main_rows, branch_rows, configs, manual, causes):
-    """Allowlist entries for every unsafe move between two corpus runs, each with its ground
-    truth (``truth_profile`` of the row's config, or a hand-written profile in ``manual``), and
-    the truth-only entries the capacity moves are held by."""
+    """Allowlist entries for every unsafe move between two corpus runs -- and every figure one
+    run produced and the other did not (``kv_corpus.lost_and_new``) -- each with its ground
+    truth (``truth_profile`` of the row's config, or a hand-written profile in ``manual``), a lost
+    figure with the error that replaced it, and the truth-only entries the capacity moves are
+    held by."""
     import re
 
     import kv_corpus
 
-    moves = kv_corpus.unsafe_moves(main_rows, branch_rows)
+    moves = [m + ("moved",) for m in kv_corpus.unsafe_moves(main_rows, branch_rows)]
+    moves += kv_corpus.lost_and_new(main_rows, branch_rows)
     branch = {r["name"]: r for r in branch_rows}
     main = {r["name"]: r for r in main_rows}
     profiles = {}
@@ -357,10 +551,31 @@ def allowlist_from(main_rows, branch_rows, configs, manual, causes):
         return profiles[name]
 
     entries = {}
-    for name, reader, x, y, kind in moves:
+    for name, reader, x, y, kind, change in moves:
         e = {"config": name, "reader": reader, "main": x, "branch": y, "kind": kind,
              "cause": _cause(causes, name, reader) or derived_cause(main.get(name, {}),
                                                                    branch.get(name, {}), reader)}
+        if change != "moved":
+            e["change"] = change
+        if change == "lost":
+            # the branch's reader raises where origin/main's gave a figure: the entry names the
+            # error (its first words, before any figure in it) and, for a weight or KV figure,
+            # the truth the error is read against
+            err = kv_corpus._error_of(branch.get(name, {}), reader) or ""
+            e["error"] = re.split(r"\d", err, maxsplit=1)[0][:80]
+            if kind == "memory":
+                e["truth"], e["source"] = figure_truth(profile(name), reader)
+            if not _cause(causes, name, reader):
+                e["cause"] = f"the branch's reader raises: {err[:200]}"
+                if isinstance(e.get("truth"), (int, float)):
+                    e["cause"] += (f"; the figure it replaced is held to {e['truth']:,.3f} "
+                                   f"({e['source']}), origin/main's {x:,.3f}")
+            entries[(name, reader)] = e
+            continue
+        if change == "new" and not _cause(causes, name, reader):
+            errs = sorted(k for k, v in main.get(name, {}).items() if k.endswith("error") and v)
+            e["cause"] = ("origin/main gave no figure" + (" (its readers raised: " + ", ".join(
+                errs) + ")" if errs else "") + "; the branch's is held to its ground truth")
         if kind == "memory":
             e["truth"], e["source"] = figure_truth(profile(name), reader)
             if re.match(GRAPH_WEIGHTS, reader):
@@ -500,6 +715,17 @@ def corpus_configs(args):
     return configs
 
 
+ALLOWLIST_ABOUT = (
+    "Every figure the branch moves in the unsafe direction against origin/main (a memory figure "
+    "down, a capacity figure up), every figure the branch reports that origin/main did not "
+    "(change: new) and every figure origin/main reported that the branch does not (change: lost, "
+    "with the error the branch now records), over the whole corpus (committed rows -- the GGUF "
+    "fixtures among them -- and this machine's HF cache, model folders and GGUFs), each with both "
+    "figures, its ground truth and the truth's source, and its cause; and the memory figures each "
+    "capacity figure is held by. Written by scripts/kv_truth.py --allowlist-from from two "
+    "kv_corpus.py runs; read by kv_corpus.py --gate and tests/test_kv_gate.py.")
+
+
 def main():
     import argparse
     import os
@@ -518,14 +744,22 @@ def main():
     ap.add_argument("--models")
     ap.add_argument("--repo-root", default=os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__)))))
+    ap.add_argument("--checkpoint", nargs="+", metavar="REPO[@REV]",
+                    help="a hub checkpoint's tensor counts, from its safetensors headers")
     args = ap.parse_args()
+    if args.checkpoint:
+        for spec in args.checkpoint:
+            repo, _, rev = spec.partition("@")
+            json.dump(checkpoint_profile(repo, rev or "main"), sys.stdout)
+            print()
+        return
     if args.allowlist_from:
         manual = json.load(open(args.manual)) if args.manual else {}
         causes = json.load(open(args.causes)) if args.causes else []
         entries = allowlist_from(json.load(open(args.allowlist_from[0])),
                                  json.load(open(args.allowlist_from[1])),
                                  corpus_configs(args), manual.get("profiles", {}), causes)
-        json.dump({"about": __doc__.split("\n\n")[0], "entries": entries},
+        json.dump({"about": ALLOWLIST_ABOUT, "entries": entries},
                   open(args.out, "w"), indent=1, sort_keys=True, default=str)
         print(f"{len(entries)} entries -> {args.out}")
         return

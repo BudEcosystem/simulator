@@ -105,6 +105,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 llm_memory_calculator = [
     "py.typed",
+    # the config-class defaults layer_plan.config_class_default reads (scripts/config_class_defaults.py)
+    "config_class_defaults.json",
     # FRD-027 / FRD-025 data shipped with the package: the grounding store, vendored engine records, the runtime-spec
     # and settings schemas, and the validation records (a pip install drops any file not listed here)
     "grounding/data/*/*.json",

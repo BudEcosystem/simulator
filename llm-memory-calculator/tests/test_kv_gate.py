@@ -2,8 +2,8 @@
 allowlist names it, with both figures and the ground truth the branch's figure is held to.
 
 The corpus is every config this repository ships: prepopulated.db's rows, every fixture under
-tests/fixtures (the hub configs among them), the harness's synthetic shapes and GenZ's built-in
-models -- measured by scripts/kv_corpus.py through every reader of a model's memory (the
+tests/fixtures (the hub configs among them, and tests/fixtures/gguf's metadata-only GGUFs, read
+through the GGUF reader), the harness's synthetic shapes and GenZ's built-in models -- measured by scripts/kv_corpus.py through every reader of a model's memory (the
 calculator, the engine estimate, the FRD-027 facts and its vLLM planner, GenZ's graphs and runtime
 modelling, the serving and disaggregation paths, the prefix cache, the KV planner and
 BudSimulator's converter). tests/fixtures/kv_gate/origin-main.json is the same harness's
@@ -14,7 +14,12 @@ tokens and running sequences, the serving path's requests, the scheduler's peak)
 unless tests/fixtures/kv_gate/allowlist.json names it -- config, reader, origin/main's and the
 branch's figures -- and the branch's figure is at least its ground truth (transformers' own model
 for the config, the checkpoint's tensors, or the config arithmetic the entry cites), or, for a
-capacity, the memory figures it is sized from are each held to theirs. The same check runs over
+capacity, the memory figures it is sized from are each held to theirs. A figure the branch
+reports and origin/main did not is held the same way; a figure origin/main reported and the
+branch does not fails unless its entry names the error the branch now records for it. A figure
+whose reader cannot import a third-party module in this environment (`gguf`, `lxml`) is not
+measured here, and the test says so; it needs neither transformers nor torch (the config-class
+defaults ship with the package). The same check runs over
 the machine's HF cache and model folders with ``kv_corpus.py --gate``
 (docs/proofs/kv-layer-kinds-corpus-diff.md).
 """
@@ -23,6 +28,7 @@ import argparse
 import json
 import os
 import sys
+import warnings
 
 import pytest
 
@@ -65,9 +71,28 @@ def test_the_branch_measures_every_config_origin_main_did(baseline, branch_rows)
     assert not missing, missing
 
 
+def test_the_gguf_fixtures_are_read_through_the_gguf_reader(baseline, branch_rows):
+    """The committed corpus runs the GGUF reader (bud_component.gguf_to_hf_config with
+    gguf_layers.hf_layer_keys_from_gguf) on metadata-only copies of real GGUFs."""
+    pytest.importorskip("gguf")
+    rows = {r["name"]: r for r in branch_rows}
+    ggufs = [r["name"] for r in baseline if r["name"].startswith("gguf:")]
+    assert ggufs, "no GGUF fixture in the baseline"
+    for name in ggufs:
+        assert "gguf_error" not in rows[name], rows[name].get("gguf_error")
+        assert rows[name].get("gguf_config_keys"), name
+
+
 def test_no_unsafe_move_outside_the_allowlist(baseline, branch_rows, allowlist):
-    failures = kv_corpus.gate(baseline, branch_rows, allowlist,
-                              names=[r["name"] for r in baseline])
+    """Every figure is held; a figure whose reader cannot import a third-party module here (the
+    GGUF reader's `gguf`, the converter's `lxml`) is not measured in this environment, and says
+    so -- a reader that raises anything else fails."""
+    names = [r["name"] for r in baseline]
+    skipped = kv_corpus.unavailable_readers(baseline, branch_rows, names)
+    if skipped:
+        warnings.warn("not measured here (not installed): " + ", ".join(
+            f"{m}: {n} figures" for m, n in sorted(skipped.items())))
+    failures = kv_corpus.gate(baseline, branch_rows, allowlist, names=names)
     assert not failures, f"{len(failures)} gate failures:\n" + "\n".join(failures[:60])
 
 
@@ -79,7 +104,10 @@ def test_every_allowlist_entry_names_its_figures_truth_and_cause(allowlist):
             bad.append(f"{where}: config, reader and both figures")
         if not e.get("cause"):
             bad.append(f"{where}: no cause")
-        if e.get("kind") == "memory":
+        if e.get("change") == "lost":
+            if not e.get("error"):
+                bad.append(f"{where}: a lost figure names no error")
+        elif e.get("kind") == "memory":
             if not isinstance(e.get("truth"), (int, float)) or not e.get("source"):
                 bad.append(f"{where}: no ground truth or source")
             elif e["branch"] < e["truth"] * (1 - float(e.get("vectors", 0.0))):
@@ -108,3 +136,37 @@ def test_the_gate_fails_what_it_should():
     stale = dict(entry, branch=0.45)
     assert any("allowlist says" in f
                for f in kv_corpus.gate(main, branch, {"entries": [stale, held, cap]}))
+
+
+def test_the_gate_fails_a_figure_lost_or_new_that_the_allowlist_does_not_hold():
+    """A figure origin/main produced that the branch does not (its reader now raises) fails
+    unless the allowlist names it with the error the branch records; a figure the branch reports
+    that origin/main did not is held to its ground truth like a drop."""
+    main = [{"name": "m", "runtime_prefill": [1.0, 100.0, 2.0], "kv_gb@4096": 1.0}]
+    branch = [{"name": "m", "runtime_prefill_error": "ValueError: All params would not fit",
+               "kv_gb@4096": 1.0, "serving_state_bytes": 50}]
+    failures = kv_corpus.gate(main, branch, {})
+    assert sum("not in the allowlist" in f for f in failures) == 3, failures
+    lost = [{"config": "m", "reader": f"runtime_prefill[{i}]", "main": v, "branch": None,
+             "change": "lost", "error": "ValueError: All params would not fit", "cause": "c"}
+            for i, v in ((1, 100.0), (2, 2.0))]
+    new = {"config": "m", "reader": "serving_state_bytes", "main": None, "branch": 50,
+           "change": "new", "kind": "memory", "truth": 40, "source": "s", "cause": "c"}
+    assert kv_corpus.gate(main, branch, {"entries": lost + [new]}) == []
+    other = [dict(e, error="TypeError") for e in lost]
+    assert any("the branch's error is" in f
+               for f in kv_corpus.gate(main, branch, {"entries": other + [new]}))
+    low = dict(new, truth=60)
+    assert any("below its ground truth" in f
+               for f in kv_corpus.gate(main, branch, {"entries": lost + [low]}))
+
+
+def test_a_reader_whose_dependency_is_not_installed_is_not_measured_but_a_crash_fails():
+    main = [{"name": "m", "conv_kv_size": 10, "conv_state_bytes": 0}]
+    absent = [{"name": "m", "conv_error": "ModuleNotFoundError: No module named 'lxml'"}]
+    assert kv_corpus.gate(main, absent, {}) == []
+    assert kv_corpus.unavailable_readers(main, absent) == {"lxml": 2}
+    own = [{"name": "m", "conv_error": "ModuleNotFoundError: No module named 'llm_memory_calculator.x'"}]
+    crash = [{"name": "m", "conv_error": "TypeError: unsupported operand"}]
+    assert len(kv_corpus.gate(main, own, {})) == 2
+    assert len(kv_corpus.gate(main, crash, {})) == 2

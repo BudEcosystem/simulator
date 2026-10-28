@@ -22,6 +22,7 @@ from typing import Any, Dict, FrozenSet, Mapping, Optional, Tuple
 from ..layer_plan import (
     ATTN_FULL,
     ATTN_SLIDING,
+    TOWER_CLASS_KEYS as _TOWER_CLASS_KEYS,
     attention_head_dim,
     attention_heads,
     attention_output_gate,
@@ -32,6 +33,7 @@ from ..layer_plan import (
     routed_expert_count,
     routed_expert_width,
     shared_expert_width,
+    stated_qk_norm,
     layer_kinds,
     resolve_layer_plan,
 )
@@ -589,7 +591,7 @@ def _attention_params(
     small = 0
     if text.get("attention_bias"):
         small += (nh * hd * gate) + 2 * nkv * hd + h
-    if "qwen3" in str(text.get("model_type") or "") or text.get("qk_norm"):
+    if "qwen3" in str(text.get("model_type") or "") or stated_qk_norm(dict(text)):
         small += 2 * hd
     return q + kv + o, small
 
@@ -666,11 +668,6 @@ def _moe_layer_count(text: Mapping[str, Any], n_layers: int) -> int:
         for i in range(n_layers)
         if i >= first_dense and i not in mlp_only and (i + 1) % sparse_step == 0
     )
-
-
-#: Tower keys whose class default stands in for a config that leaves them out.
-_TOWER_CLASS_KEYS = ("num_global_layers", "vision_output_dim", "intermediate_size",
-                     "supported_aspect_ratios", "max_num_tiles", "image_size", "patch_size")
 
 
 def _vision_params(config: Mapping[str, Any]) -> int:

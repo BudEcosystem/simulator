@@ -1,5 +1,5 @@
 {
- "about": "Ground truths written by hand for the KV gate's allowlist (scripts/kv_truth.py --manual): rows transformers 5.12 cannot build as their config is written. 'base: transformers' builds the row's config with 'build_from' / 'build_as' / 'drop_keys' applied, and the other fields replace what that build reads; every other truth is config arithmetic, its formula in 'source'.",
+ "about": "Ground truths written by hand for the KV gate's allowlist (scripts/kv_truth.py --manual): rows transformers 5.12 cannot build as their config is written, and what no model build states. 'base: transformers' builds the row's config with 'build_from' / 'build_as' / 'drop_keys' applied, and the other fields replace or add to what that build reads; every other truth is a checkpoint's own tensors (scripts/kv_truth.py --checkpoint REPO reads each safetensors shard's header), a GGUF's tensors, or config arithmetic, its formula in 'source' -- never a model card's rounded total. 'encoder_tokens' (with 'encoder_tokens_source') is a fixed-length encoder's output length, the arithmetic of its tower or its audio window, which a sequence's fixed cross-attention cache is held to; 'state_bytes' a recurrent state written by hand.",
  "profiles": {
   "synth:blip2-flan-t5-xl": {
    "base": "transformers",
@@ -30,7 +30,9 @@
      "model_type": "florence_vision"
     }
    },
-   "source": "transformers 5.12 Florence2ForConditionalGeneration"
+   "source": "transformers 5.12 Florence2ForConditionalGeneration",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "the encoder reads the request's own input -- the tokens a request states, the image's tokens ahead of the prompt among them -- so its cross-attention cache grows with that input and is charged a token at a time (serving_bytes_per_token); nothing of it is fixed"
   },
   "fixture:MiniMaxAI_MiniMax-Text-01.json": {
    "base": "transformers",
@@ -186,9 +188,9 @@
    "source": "transformers 5.12 Zamba2ForCausalLM built with its shared-block tying lifted (5.12 rejects the tie spec on the meta device), each of the num_mem_blocks=2 shared transformer blocks counted once; KV on the 9 hybrid_layer_ids, 32 KV heads x attention_head_dim 160"
   },
   "fixture:microsoft_Phi-4-mini-flash-reasoning.json": {
-   "params": 3850000000,
-   "lm_params": 3850000000,
-   "lm_matrix_params": 3850000000,
+   "params": 3852562944,
+   "lm_params": 3852562944,
+   "lm_matrix_params": 3851980800,
    "input_embedding": 512163840,
    "kv": [
     [
@@ -210,12 +212,12 @@
      23
     ]
    ],
-   "source": "the hub's modeling_phi4flash.py (SambaY): the self-decoder's 8 attention layers slide (sliding_window=512) beside 8 Mamba layers; one full-attention layer writes the KV the cross-decoder's layers read (none of their own); 20 KV heads x 64 (2560 / 40). Parameters: the model card's 3.8B (config arithmetic 3.85B)"
+   "source": "the checkpoint's tensors (microsoft/Phi-4-mini-flash-reasoning@1dff8163d28ec880ca2411c474ddc0a927792810: 3,852,562,944 parameters, 3,851,980,800 in matrices, a 512,163,840-element token embedding; each safetensors shard's header read by scripts/kv_truth.py --checkpoint); KV: the hub's modeling_phi4flash.py (SambaY): the self-decoder's 8 attention layers slide (sliding_window=512) beside 8 Mamba layers; one full-attention layer writes the KV the cross-decoder's layers read (none of their own); 20 KV heads x 64 (2560 / 40)"
   },
   "fixture:moonshotai_Kimi-Linear-48B-A3B-Instruct.json": {
-   "params": 48000000000,
-   "lm_params": 48000000000,
-   "lm_matrix_params": 48000000000,
+   "params": 49122681728,
+   "lm_params": 49122681728,
+   "lm_matrix_params": 49122460288,
    "input_embedding": 377487360,
    "kv": [
     [
@@ -231,12 +233,12 @@
      20
     ]
    ],
-   "source": "the hub's modeling_kimi.py: MLA on linear_attn_config.full_attn_layers (7), a latent of kv_lora_rank 512 + qk_rope_head_dim 64 per token; Kimi Delta Attention on the 20 kda_layers (a fixed state). Parameters: the model card's 48B total"
+   "source": "the checkpoint's tensors (moonshotai/Kimi-Linear-48B-A3B-Instruct@e1df551a447157d4658b573f9a695d57658590e9: 49,122,681,728 parameters, 49,122,460,288 in matrices, a 377,487,360-element token embedding; each safetensors shard's header read by scripts/kv_truth.py --checkpoint); KV: the hub's modeling_kimi.py: MLA on linear_attn_config.full_attn_layers (7), a latent of kv_lora_rank 512 + qk_rope_head_dim 64 per token; Kimi Delta Attention on the 20 kda_layers (a fixed state)"
   },
   "fixture:inclusionAI_Ling-flash-2.0.json": {
-   "params": 100000000000,
-   "lm_params": 100000000000,
-   "lm_matrix_params": 100000000000,
+   "params": 102889705216,
+   "lm_params": 102889705216,
+   "lm_matrix_params": 102889422848,
    "input_embedding": 643825664,
    "kv": [
     [
@@ -246,7 +248,7 @@
      32
     ]
    ],
-   "source": "the model card's 100B total parameters; KV: 4 KV heads x 128 x 2 on every layer"
+   "source": "the checkpoint's tensors (inclusionAI/Ling-flash-2.0@96f9b7a73e531b0ca05f8839ea9f271948ad8ea4: 102,889,705,216 parameters, 102,889,422,848 in matrices, a 643,825,664-element token embedding; each safetensors shard's header read by scripts/kv_truth.py --checkpoint), which is the config arithmetic: 32 layers of a fused QKV 4096 x (4096 + 2 x 512), a 4096 x 4096 output and two 128-wide QK norms; layer 0 a 9216-wide SwiGLU; 31 MoE layers of 256 routed and 1 shared 1024-wide SwiGLU experts, a 256-way router and its expert bias; an untied 157,184 x 4096 embedding and head; KV: 4 KV heads x 128 x 2 on every layer"
   },
   "synth:chatglm3": {
    "params": 6243584000,
@@ -320,10 +322,10 @@
      15
     ]
    ],
-   "source": "the hub's modeling_hymba.py: full attention on global_attn_idx (0, 15, 31), a 1024 window elsewhere, each kv_reuse_group's layers sharing one cache (14 groups); 5 KV heads x 64 x 2. Parameters: the model card's 1.52B",
-   "params": 1520000000,
-   "lm_params": 1520000000,
-   "lm_matrix_params": 1520000000,
+   "source": "the checkpoint's tensors (nvidia/Hymba-1.5B-Base@c085c63815412892a7af9d0b53fad3421b2abdf8: 1,522,797,824 parameters, 1,522,177,600 in matrices, a 51,201,600-element token embedding; each safetensors shard's header read by scripts/kv_truth.py --checkpoint); KV: the hub's modeling_hymba.py: full attention on global_attn_idx (0, 15, 31), a 1024 window elsewhere, each kv_reuse_group's layers sharing one cache (14 groups); 5 KV heads x 64 x 2",
+   "params": 1522797824,
+   "lm_params": 1522797824,
+   "lm_matrix_params": 1522177600,
    "input_embedding": 51201600
   },
   "config:models--OpenMOSS-Team--MOSS-Transcribe-Diarize/snapshots/704aa4a9c304e8520be88901e0d1960158ef5b15/config.json": {
@@ -557,7 +559,11 @@
      1
     ]
    ],
-   "source": "the hub config's block_configs (genz/Models/Model_sets/nvidia.py): 54 attention blocks of 64 / n_heads_in_group KV heads x 128, the linear-replaced and no-op blocks none"
+   "source": "the checkpoint's tensors (nvidia/Llama-3_1-Nemotron-51B-Instruct@f4d9431910e03eaffbe351ede20cdbb25d9765c2: 51,501,015,040 parameters, 51,499,761,664 in matrices, a 1,050,673,152-element token embedding; each safetensors shard's header read by scripts/kv_truth.py --checkpoint); KV: the hub config's block_configs (genz/Models/Model_sets/nvidia.py): 54 attention blocks of 64 / n_heads_in_group KV heads x 128, the linear-replaced and no-op blocks none",
+   "params": 51501015040,
+   "lm_params": 51501015040,
+   "lm_matrix_params": 51499761664,
+   "input_embedding": 1050673152
   },
   "genz:Qwen/Qwen1.5-MoE-A2.7B": {
    "params": 14315784192,
@@ -591,6 +597,143 @@
      "pad_token_id": null
     }
    }
+  },
+  "gguf:Qwen3.5-2B-Q4_K_M.metadata.gguf": {
+   "params": 1881825088,
+   "lm_params": 1881825088,
+   "lm_matrix_params": 1881718784,
+   "input_embedding": 508559360,
+   "quantized": true,
+   "kv": [
+    [
+     "full",
+     null,
+     1024,
+     6
+    ],
+    [
+     "none",
+     null,
+     0,
+     18
+    ]
+   ],
+   "figures": {
+    "facts_weight_bytes": {
+     "truth": 1269873920,
+     "source": "the source GGUF's tensor bytes (Q4_K_M)"
+    }
+   },
+   "source": "the source GGUF's own tensors (/home/bud/models: Qwen3.5-2B-Q4_K_M.gguf, of which tests/fixtures/gguf/Qwen3.5-2B-Q4_K_M.metadata.gguf is the metadata, scripts/gguf_metadata_fixture.py); KV: full_attention_interval 4 -> 6 attention layers of 2 x 2 x 256, Gated DeltaNet elsewhere"
+  },
+  "gguf:nomic-embed-text-v1.5.Q8_0.metadata.gguf": {
+   "params": 136727040,
+   "lm_params": 136727040,
+   "lm_matrix_params": 136688640,
+   "input_embedding": 23440896,
+   "quantized": true,
+   "kv": [],
+   "figures": {
+    "facts_weight_bytes": {
+     "truth": 145389792,
+     "source": "the source GGUF's tensor bytes (Q8_0)"
+    }
+   },
+   "source": "the source GGUF's own tensors (/home/bud/models: nomic-embed-text-v1.5.Q8_0.gguf, of which tests/fixtures/gguf/nomic-embed-text-v1.5.Q8_0.metadata.gguf is the metadata, scripts/gguf_metadata_fixture.py); nomic-bert is a bidirectional encoder (an embedding model): no KV cache"
+  },
+  "fixture:bart_transformers-5.12-default.json": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "the encoder reads the request's own input -- the tokens a request states, -- so its cross-attention cache grows with that input and is charged a token at a time (serving_bytes_per_token); nothing of it is fixed"
+  },
+  "fixture:t5_flan-xl-geometry.json": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "the encoder reads the request's own input -- the tokens a request states, -- so its cross-attention cache grows with that input and is charged a token at a time (serving_bytes_per_token); nothing of it is fixed"
+  },
+  "fixture:blip2_flan-t5-xl_transformers-5.12.json": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "the encoder reads the request's own input -- the tokens a request states, the Q-Former's 32 query tokens ahead of the prompt among them -- so its cross-attention cache grows with that input and is charged a token at a time (serving_bytes_per_token); nothing of it is fixed"
+  },
+  "fixture:facebook_nougat-small_hub.json": {
+   "base": "transformers",
+   "encoder_tokens": 588,
+   "encoder_tokens_source": "the Swin encoder's output: image_size [896, 672] / patch_size 4, halved at each of its 3 merges -> (896/32) x (672/32) = 28 x 21 = 588 tokens"
+  },
+  "fixture:naver-clova-ix_donut-base_hub.json": {
+   "base": "transformers",
+   "encoder_tokens": 4800,
+   "encoder_tokens_source": "the Swin encoder's output: image_size [2560, 1920] / patch_size 4, halved at each of its 3 merges -> (2560/32) x (1920/32) = 80 x 60 = 4,800 tokens"
+  },
+  "fixture:google_deplot_hub.json": {
+   "base": "transformers",
+   "encoder_tokens": 4096,
+   "encoder_tokens_source": "the image encoder's vision_config.seq_len: 4,096 patches"
+  },
+  "fixture:pix2struct_transformers-5.12-default.json": {
+   "base": "transformers",
+   "encoder_tokens": 4096,
+   "encoder_tokens_source": "the image encoder's vision_config.seq_len: 4,096 patches"
+  },
+  "synth:pix2struct-seq-len": {
+   "base": "transformers",
+   "encoder_tokens": 2048,
+   "encoder_tokens_source": "the image encoder's vision_config.seq_len: 2,048 patches"
+  },
+  "fixture:mllama_transformers-5.12-default.json": {
+   "base": "transformers",
+   "encoder_tokens": 4100,
+   "encoder_tokens_source": "one image at the tower's max_num_tiles 4, each tile (448/14)^2 + 1 = 1,025 patch and class tokens: 4,100 tokens"
+  },
+  "synth:vision-enc-dec": {
+   "base": "transformers",
+   "encoder_tokens": 577,
+   "encoder_tokens_source": "the ViT encoder's output: (384/16)^2 = 576 patches and a class token"
+  },
+  "fixture:onnx-community_whisper-large-v3-turbo.json": {
+   "base": "transformers",
+   "encoder_tokens": 1500,
+   "encoder_tokens_source": "the audio encoder's max_source_positions: a 30 s window, 3,000 mel frames halved by its stride-2 convolution"
+  },
+  "config:models--onnx-community--whisper-large-v3-turbo/snapshots/360ebcde2559d60bb474678be3c1de9ef347d01a/config.json": {
+   "base": "transformers",
+   "encoder_tokens": 1500,
+   "encoder_tokens_source": "the audio encoder's max_source_positions: a 30 s window, 3,000 mel frames halved by its stride-2 convolution"
+  },
+  "config:models--LiquidAI--LFM2.5-Audio-1.5B-JP/snapshots/6c34b4d590f80563f8cb2939c2ebd7686d952394/audio_detokenizer/config.json": {
+   "kv": [
+    [
+     "sliding",
+     30,
+     512,
+     3
+    ],
+    [
+     "none",
+     null,
+     0,
+     5
+    ]
+   ],
+   "source": "the detokenizer's own checkpoint (audio_detokenizer/model.safetensors in the snapshot: lfm.layers.{2,4,6}.self_attn.k_proj and v_proj 256 x 512 each, so 512 K+V elements a token on each of the 3 sliding_attention layers, windowed at sliding_window 30; the 5 conv layers hold a fixed state). transformers 5.12's Lfm2 reads only full_attention and builds these layers as convolutions, so its model is not this checkpoint"
+  },
+  "config:models--LiquidAI--LFM2.5-Audio-1.5B/snapshots/c362a0625dfe45aa588dce5f0ada28a7e5707628/audio_detokenizer/config.json": {
+   "kv": [
+    [
+     "sliding",
+     30,
+     512,
+     3
+    ],
+    [
+     "none",
+     null,
+     0,
+     5
+    ]
+   ],
+   "source": "the detokenizer's own checkpoint (audio_detokenizer/model.safetensors in the snapshot: lfm.layers.{2,4,6}.self_attn.k_proj and v_proj 256 x 512 each, so 512 K+V elements a token on each of the 3 sliding_attention layers, windowed at sliding_window 30; the 5 conv layers hold a fixed state). transformers 5.12's Lfm2 reads only full_attention and builds these layers as convolutions, so its model is not this checkpoint"
   }
  }
 }

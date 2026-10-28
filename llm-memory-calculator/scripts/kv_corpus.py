@@ -12,8 +12,9 @@ so the same script measures both trees.
 
     python kv_corpus.py --diff before.json after.json --report diff.md
 
-    # THE GATE: every unsafe-direction move (a memory figure down, a capacity figure up) must be
-    # in the allowlist with both figures and a ground truth it is not below
+    # THE GATE: every unsafe-direction move (a memory figure down, a capacity figure up), and every
+    # figure one tree produced and the other did not, must be in the allowlist with both figures
+    # and a ground truth it is not below (a lost figure: the error that replaced it)
     python kv_corpus.py --gate main.json branch.json \
         --allowlist ../tests/fixtures/kv_gate/allowlist.json
     python kv_corpus.py --unsafe main.json branch.json        # list the moves as JSON
@@ -23,7 +24,7 @@ Corpus: every row of the BudSimulator database that carries a config (rows whose
 calculator's defaults), every hybrid fixture, every config.json in the HuggingFace cache and
 the model folders that names a decoder geometry and states a token vocabulary (one that states
 none -- a codec, a speech encoder -- is no language model: named in `_not_language_models`, not
-measured), every GGUF in the model folders (read
+measured), every GGUF in the model folders and the fixtures' metadata-only GGUFs (read
 through bud_component's GGUF reader, beside the file's own tensor count), and every built-in
 GenZ model. Model folders and caches are only read.
 
@@ -175,19 +176,26 @@ def collect(args):
 
 
 def collect_ggufs(args):
+    """Every GGUF the corpus reads: the fixture roots' (metadata-only copies of real files,
+    ``scripts/gguf_metadata_fixture.py``: tests/fixtures/gguf) and the model folders' (a file
+    under 10 MiB there is a stub or a vocabulary, not a model)."""
     out = []
-    if not args.models or not os.path.isdir(args.models):
-        return out
     seen = set()
-    for path in sorted(glob.glob(os.path.join(args.models, "**", "*.gguf"), recursive=True)):
-        real = os.path.realpath(path)
-        base = os.path.basename(path).lower()
-        if not os.path.isfile(real):  # dangling link into another machine's layout
+    roots = [(r, False) for r in (getattr(args, "fixtures", None) or [])]
+    roots.append((getattr(args, "models", None), True))
+    for root, sized in roots:
+        if not root or not os.path.isdir(root):
             continue
-        if real in seen or "mmproj" in base or os.path.getsize(real) < 10 * 1024 * 1024:
-            continue
-        seen.add(real)
-        out.append(path)
+        for path in sorted(glob.glob(os.path.join(root, "**", "*.gguf"), recursive=True)):
+            real = os.path.realpath(path)
+            base = os.path.basename(path).lower()
+            if not os.path.isfile(real):  # dangling link into another machine's layout
+                continue
+            if real in seen or "mmproj" in base or (
+                    sized and os.path.getsize(real) < 10 * 1024 * 1024):
+                continue
+            seen.add(real)
+            out.append(path)
     return out
 
 
@@ -960,23 +968,118 @@ def unsafe_moves(main_rows, branch_rows, names=None):
     return out
 
 
+def _figures(row):
+    """``{path: number}``: every numeric figure of a row."""
+    out = {}
+    for key, value in row.items():
+        out.update(_leaves(key, value))
+    return out
+
+
+def _error_of(row, path):
+    """The error a row records for the reader behind a figure (``runtime_prefill[1]`` ->
+    ``runtime_prefill_error``, ``facts_weight_bytes`` -> ``facts_weight_bytes_error`` or
+    ``facts_error``), or None."""
+    top = re.split(r"[\[.]", path)[0]
+    for key in (top + "_error", top.split("_")[0] + "_error"):
+        if row.get(key):
+            return str(row[key])
+    return None
+
+
+_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _repo_owned(module):
+    """Whether a top-level module name is this repository's own (a package or module under the
+    repo root, BudSimulator/ or the calculator's src/), not a third-party dependency."""
+    for root in (_REPO, os.path.join(_REPO, "BudSimulator"),
+                 os.path.join(_REPO, "llm-memory-calculator", "src")):
+        if os.path.isdir(os.path.join(root, module)) or os.path.isfile(
+                os.path.join(root, module + ".py")):
+            return True
+    return False
+
+
+def unavailable(row, path):
+    """The third-party module a figure's reader could not import in this environment (the GGUF
+    reader's `gguf`, the converter's `lxml`), or None. Such a figure is not measured here -- the
+    reader cannot run at all -- which is not a figure the branch lost; a reader that raises
+    anything else, or cannot import this repository's own code, is."""
+    import re as _re
+
+    err = _error_of(row, path) or row.get("gguf_error") or ""
+    m = _re.match(r"(ModuleNotFoundError|ImportError): No module named '([\w.]+)'", err)
+    if not m:
+        return None
+    top = m.group(2).split(".")[0]
+    return None if _repo_owned(top) else top
+
+
+def lost_and_new(main_rows, branch_rows, names=None):
+    """``[(config, reader, main, branch, kind, change)]``: every figure (memory or capacity) one
+    tree produced and the other did not, over the configs both measured (or ``names``) --
+    ``"lost"`` where origin/main had a figure and the branch has none (its reader raised, or
+    stopped reporting it), ``"new"`` where the branch reports a figure origin/main did not (its
+    reader raised on main, or main had no such reader). Either one can hide an under-count the
+    unsafe-move check never sees."""
+    main = {r["name"]: r for r in main_rows}
+    branch = {r["name"]: r for r in branch_rows}
+    out = []
+    for name in sorted(set(main) & set(branch) if names is None else names):
+        if name not in main or name not in branch:
+            continue
+        fa, fb = _figures(main[name]), _figures(branch[name])
+        for path in sorted(set(fa) ^ set(fb)):
+            kind = figure_kind(path)
+            if kind is None:
+                continue
+            if path in fa:
+                out.append((name, path, fa[path], None, kind, "lost"))
+            else:
+                out.append((name, path, None, fb[path], kind, "new"))
+    return out
+
+
 def _close(x, y):
     return x is not None and y is not None and abs(x - y) <= 1e-6 * max(1.0, abs(x), abs(y))
 
 
 def gate(main_rows, branch_rows, allowlist, names=None):
-    """The failures: an unsafe move no allowlist entry names, an entry whose figures are not the
-    measured ones, a memory entry without a ground truth or whose branch figure is below it, a
-    capacity entry whose memory figures (``held_by``) are not all held to their truths."""
+    """The failures: an unsafe move -- or a figure lost or new (``lost_and_new``) -- no allowlist
+    entry names, an entry whose figures are not the measured ones, a memory entry (moved or new)
+    without a ground truth or whose branch figure is below it, a capacity entry whose memory
+    figures (``held_by``) are not all held to their truths, a lost figure whose entry does not
+    name the error the branch now records for it."""
     entries = {(e["config"], e["reader"]): e for e in allowlist.get("entries", [])}
     failures = []
-    for name, path, x, y, kind in unsafe_moves(main_rows, branch_rows, names):
+    branch_by_name = {r["name"]: r for r in branch_rows}
+    changes = [(n, p, x, y, k, "moved") for n, p, x, y, k in
+               unsafe_moves(main_rows, branch_rows, names)]
+    changes += lost_and_new(main_rows, branch_rows, names)
+    for name, path, x, y, kind, change in changes:
+        if change == "lost" and unavailable(branch_by_name.get(name, {}), path):
+            continue  # not measured in this environment (unavailable_readers says which)
         e = entries.get((name, path))
         where = f"{name} {path}: origin/main {x} -> branch {y}"
         if e is None:
             failures.append(f"{where}: not in the allowlist")
             continue
-        if not (_close(e.get("main"), x) and _close(e.get("branch"), y)):
+        if e.get("change", "moved") != change:
+            failures.append(f"{where}: {change}, the allowlist says {e.get('change', 'moved')}")
+            continue
+        if change == "lost":
+            # the figure is gone: the entry names main's figure, the error the branch now
+            # records for that reader, and why that error is right
+            err = _error_of(branch_by_name.get(name, {}), path)
+            if not _close(e.get("main"), x):
+                failures.append(f"{where}: the allowlist says {e.get('main')} -> None")
+            elif not e.get("error") or not (err or "").startswith(e["error"]):
+                failures.append(f"{where}: the branch's error is {err!r}, the allowlist says "
+                                f"{e.get('error')!r}")
+            continue
+        if not ((change == "new" and e.get("main") is None) or _close(e.get("main"), x)) \
+                or not _close(e.get("branch"), y):
             failures.append(f"{where}: the allowlist says {e.get('main')} -> {e.get('branch')}")
             continue
         if kind == "memory":
@@ -999,6 +1102,18 @@ def gate(main_rows, branch_rows, allowlist, names=None):
                     failures.append(f"{where}: follows {reader}, below its ground truth "
                                     f"{h['truth']}")
     return failures
+
+
+def unavailable_readers(main_rows, branch_rows, names=None):
+    """``{module: figures}``: the figures origin/main has that this environment's branch run could
+    not measure, by the third-party module their reader could not import."""
+    branch = {r["name"]: r for r in branch_rows}
+    out = {}
+    for name, path, _, _, _, change in lost_and_new(main_rows, branch_rows, names):
+        mod = change == "lost" and unavailable(branch.get(name, {}), path)
+        if mod:
+            out[mod] = out.get(mod, 0) + 1
+    return out
 
 
 def _figure(rows, name, path):
@@ -1030,15 +1145,21 @@ def main():
                     help="list every unsafe-direction move as JSON")
     args = ap.parse_args()
     if args.unsafe:
-        moves = unsafe_moves(json.load(open(args.unsafe[0])), json.load(open(args.unsafe[1])))
-        print(json.dumps([dict(config=n, reader=p, main=x, branch=y, kind=k)
-                          for n, p, x, y, k in moves], indent=1))
+        a, b = json.load(open(args.unsafe[0])), json.load(open(args.unsafe[1]))
+        moves = [(n, p, x, y, k, "moved") for n, p, x, y, k in unsafe_moves(a, b)]
+        moves += lost_and_new(a, b)
+        print(json.dumps([dict(config=n, reader=p, main=x, branch=y, kind=k, change=c)
+                          for n, p, x, y, k, c in moves], indent=1))
         return
     if args.gate:
         allow = json.load(open(args.allowlist)) if args.allowlist else {}
         failures = gate(json.load(open(args.gate[0])), json.load(open(args.gate[1])), allow)
         for f in failures:
             print(f)
+        skipped = unavailable_readers(json.load(open(args.gate[0])), json.load(open(args.gate[1])))
+        if skipped:
+            print("not measured here (a reader's third-party module is not installed): "
+                  + ", ".join(f"{m}: {n} figures" for m, n in sorted(skipped.items())))
         print(f"{len(failures)} gate failures")
         sys.exit(1 if failures else 0)
     if args.diff:

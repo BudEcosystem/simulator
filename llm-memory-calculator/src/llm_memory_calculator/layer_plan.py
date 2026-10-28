@@ -1829,19 +1829,70 @@ def decoder_streams(config: Dict[str, Any]) -> int:
 #: Spellings of the FFN's activation (Gemma's `hidden_activation`, GPT-2's `activation_function`).
 ACTIVATION_KEYS = ("hidden_act", "activation_function", "hidden_activation")
 
+#: Spellings of "the attention normalises its queries and keys" (a norm at least head_dim wide
+#: each; the facts count head_dim): `qk_norm`, Hunyuan's `use_qk_norm`, Persimmon's / StableLM's
+#: `qk_layernorm`.
+QK_NORM_KEYS = ("qk_norm", "use_qk_norm", "qk_layernorm", "use_qk_layernorm")
+
+
+def stated_qk_norm(config: Dict[str, Any]) -> bool:
+    """Whether the config states a query / key norm under any of ``QK_NORM_KEYS``."""
+    tc = config if isinstance(config, dict) else {}
+    return any(bool(tc.get(k)) for k in QK_NORM_KEYS)
+
+
+#: An image tower's keys whose class default stands in for a tower config that leaves them out
+#: (Mllama's tower builds 8 global layers and a 7,680-wide output whether or not it says so).
+TOWER_CLASS_KEYS = ("num_global_layers", "vision_output_dim", "intermediate_size",
+                    "supported_aspect_ratios", "max_num_tiles", "image_size", "patch_size")
+
+#: Every key a reader asks a config class's default for (``config_class_default``): the shipped
+#: snapshot (``config_class_defaults.json``) holds each one for every model type transformers 5.12
+#: knows.
+CLASS_DEFAULT_KEYS = tuple(dict.fromkeys(
+    ("model_type", "tie_word_embeddings", "relative_attention_num_buckets") + ACTIVATION_KEYS
+    + ROPE_KEYS + TOWER_CLASS_KEYS))
+
 _CLASS_DEFAULT_CACHE: Dict[str, Any] = {}
+_CLASS_DEFAULT_SNAPSHOT: Dict[str, Any] = {}
+
+
+def _class_default_snapshot() -> Dict[str, Any]:
+    """The shipped config-class defaults (``scripts/config_class_defaults.py`` writes them from
+    transformers 5.12): ``{"keys": [...], "defaults": {model_type: {key: value}}}``, empty when
+    the file is missing."""
+    if not _CLASS_DEFAULT_SNAPSHOT:
+        import json
+        import os
+
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "config_class_defaults.json")
+        try:
+            with open(path) as f:
+                _CLASS_DEFAULT_SNAPSHOT.update(json.load(f))
+        except Exception:
+            _CLASS_DEFAULT_SNAPSHOT.update({"keys": [], "defaults": {}})
+    return _CLASS_DEFAULT_SNAPSHOT
 
 
 def config_class_default(model_type: str, name: str) -> Any:
-    """The default the model type's own config class gives ``name`` (transformers installed), or
-    None. What a config that leaves a key out means is its class's default: Llama4TextConfig's
-    `hidden_act` is "silu", so a Llama 4 config without one is gated."""
+    """The default the model type's own config class gives ``name``, or None. What a config that
+    leaves a key out means is its class's default: Llama4TextConfig's `hidden_act` is "silu", so a
+    Llama 4 config without one is gated.
+
+    Read from the shipped snapshot (``config_class_defaults.json``: transformers 5.12's classes)
+    for every model type and key it holds, so a figure does not depend on whether transformers
+    is installed or which release; from the installed transformers only for a model type or key
+    the snapshot does not hold (a class newer than 5.12)."""
     mt = str(model_type or "")
     key = mt + "\0" + name
     if key in _CLASS_DEFAULT_CACHE:
         return _CLASS_DEFAULT_CACHE[key]
     value = None
-    if mt:
+    snap = _class_default_snapshot()
+    if mt in snap.get("defaults", {}) and name in snap.get("keys", ()):
+        value = snap["defaults"][mt].get(name)
+    elif mt:
         try:
             import logging
 
