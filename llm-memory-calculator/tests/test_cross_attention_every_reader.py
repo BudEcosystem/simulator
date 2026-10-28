@@ -215,13 +215,15 @@ def test_a_nested_flan_t5_is_counted_with_its_own_heads_and_both_stacks():
     feed_forward_proj='gated-gelu')).to_dict(): transformers' meta-device count is 3,876,648,448
     (the flan-T5 2,783,959,040 of it). origin/main counted 1,720,216,064, the previous head
     1,595,173,376 (12 heads of 64, 12 layers, one stack). The counter reads T5's `num_heads` beside
-    its `d_kv`, both stacks, and the decoder's cross-attention; the Q-Former it does not count
-    (107M) is the rest of the gap."""
+    its `d_kv`, both stacks, and the decoder's cross-attention; since round 12 it counts the
+    Q-Former and its projection too (`stack_params.adapter_params`, 106.7M), which had been the rest
+    of the gap. What it now holds above the truth (66M, 1.7%) is its untied T5 head
+    (`never_tied_models`): an over-count, as before."""
     from llm_memory_calculator import calculate_memory
 
     cfg = _load("cross_attention", "blip2_flan-t5-xl_transformers-5.12")
     got = _quiet(calculate_memory, cfg, batch_size=1, seq_length=1024, precision="bf16").parameter_count
-    assert 0.95 * 3_876_648_448 <= got <= 1.01 * 3_876_648_448
+    assert 3_876_648_448 <= got <= 1.02 * 3_876_648_448
 
 
 def test_the_attention_head_count_is_read_with_the_head_width():

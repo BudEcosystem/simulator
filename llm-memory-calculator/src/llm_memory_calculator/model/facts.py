@@ -24,13 +24,18 @@ from ..layer_plan import (
     ATTN_SLIDING,
     attention_head_dim,
     attention_heads,
+    attention_output_gate,
     cross_attention_bytes,
     cross_attention_cache,
     decoder_view,
     encoder_decoder_stacks,
+    routed_expert_count,
+    routed_expert_width,
+    shared_expert_width,
     layer_kinds,
     resolve_layer_plan,
 )
+from ..stack_params import adapter_params, encoder_params
 from ..state_memory import _per_layer_bytes  # noqa: PLC2701 - the one per-mechanism state formula
 from .classes import arch_class, size_bucket
 from .recognise import recognised as _recognised
@@ -576,7 +581,8 @@ def _attention_params(
         kv = h * (kv_lora + rope) + kv_lora * nh * (nope + vh)
         o = nh * vh * h
         return q + kv + o, (q_lora + kv_lora)
-    gate = 2 if text.get("attn_output_gate") else 1
+    # a query-width output gate: stated, or built by the config class (layer_plan's one reader)
+    gate = 2 if attention_output_gate(dict(text)) else 1
     q = h * nh * hd * gate
     kv = 2 * h * nkv * hd
     o = nh * hd * h
@@ -619,17 +625,10 @@ def _ffn_params(
     ``ffn_layers`` is the layer plan's weight-counting FFN count: Nemotron-H's FFN slots, none
     in a pure SSM, one per shared block in Zamba (whose block runs on many layers)."""
     inter = int(_get(text, "intermediate_size", "ffn_dim", default=4 * h))
-    n_experts = int(
-        _get(
-            text,
-            "num_local_experts",
-            "n_routed_experts",
-            "num_experts",
-            "moe_num_experts",
-            default=0,
-        )
-        or 0
-    )
+    # the routed experts and their width under any spelling (layer_plan's readers): read from four
+    # spellings alone, SmallThinker's 64 `moe_num_primary_experts` of `moe_ffn_hidden_size` were
+    # a dense model (6.0B of 21.5B)
+    n_experts = routed_expert_count(dict(text))
     roles = {"dense_ffn": 0, "expert": 0, "shared_expert": 0, "router": 0}
     gated = str(text.get("hidden_act") or "silu") not in ("gelu_new_plain",)
     width = 3 if gated else 2
@@ -637,7 +636,7 @@ def _ffn_params(
         layers = n_layers if ffn_layers is None else int(ffn_layers)
         roles["dense_ffn"] = layers * width * h * inter
         return roles
-    moe_inter = int(_get(text, "moe_intermediate_size", "expert_intermediate_size", default=inter))
+    moe_inter = int(routed_expert_width(dict(text)) or inter)
     first_dense = int(_get(text, "first_k_dense_replace", default=0) or 0)
     sparse_step = int(_get(text, "decoder_sparse_step", default=1) or 1)
     mlp_only = set(text.get("mlp_only_layers") or ())
@@ -652,12 +651,8 @@ def _ffn_params(
     if str(text.get("model_type")) == "gpt_oss":
         per_expert += 2 * moe_inter + h  # gate_up and down biases
     roles["expert"] = len(moe_layers) * n_experts * per_expert
-    shared_inter = int(_get(text, "shared_expert_intermediate_size", default=0) or 0)
-    n_shared = int(_get(text, "n_shared_experts", "num_shared_experts", default=0) or 0)
-    if shared_inter:
-        roles["shared_expert"] = len(moe_layers) * width * h * shared_inter
-    elif n_shared:
-        roles["shared_expert"] = len(moe_layers) * n_shared * width * h * moe_inter
+    # the shared expert(s) beside the routed ones, under any spelling (layer_plan's one reader)
+    roles["shared_expert"] = len(moe_layers) * width * h * shared_expert_width(dict(text))
     roles["router"] = len(moe_layers) * (h * n_experts + n_experts)
     return roles
 
@@ -673,14 +668,28 @@ def _moe_layer_count(text: Mapping[str, Any], n_layers: int) -> int:
     )
 
 
+#: Tower keys whose class default stands in for a config that leaves them out.
+_TOWER_CLASS_KEYS = ("num_global_layers", "vision_output_dim", "intermediate_size",
+                     "supported_aspect_ratios", "max_num_tiles", "image_size", "patch_size")
+
+
 def _vision_params(config: Mapping[str, Any]) -> int:
     vision = config.get("vision_config")
     if not isinstance(vision, Mapping):
         return 0
+    # what the tower leaves out is its config class's default (Mllama's tower builds 8 global
+    # layers and a 7680-wide output whether or not the config says so)
+    from ..layer_plan import config_class_default
+
+    mt = vision.get("model_type")
+    vision = {**{k: config_class_default(mt, k) for k in _TOWER_CLASS_KEYS
+                 if config_class_default(mt, k) is not None}, **dict(vision)}
     vh = int(_get(vision, "hidden_size", "embed_dim", default=0) or 0)
     if not vh:
         return 0
-    depth = int(_get(vision, "depth", "num_hidden_layers", default=24))
+    # a tower's stated extra layers count too (Mllama's `num_global_layers` after its 32)
+    depth = int(_get(vision, "depth", "num_hidden_layers", default=24)) + int(
+        _get(vision, "num_global_layers", default=0) or 0)
     vi = int(_get(vision, "intermediate_size", "mlp_dim", default=4 * vh))
     patch = int(_get(vision, "patch_size", default=14))
     temporal = int(_get(vision, "temporal_patch_size", default=1))
@@ -690,9 +699,23 @@ def _vision_params(config: Mapping[str, Any]) -> int:
         _get(vision, "out_hidden_size", default=_get(_text(config), "hidden_size", default=vh))
     )
     pos = int(_get(vision, "num_position_embeddings", default=0) or 0)
+    tiles = int(_get(vision, "max_num_tiles", default=0) or 0)
+    image = _get(vision, "image_size", default=None)
+    if not pos and tiles and isinstance(image, int) and patch:
+        # a tiled tower (Mllama): a position per patch and class token, and per supported aspect
+        # ratio a position table over every tile's patches, and a pre- and post-tile embedding
+        per_tile = (image // patch) ** 2 + 1
+        ratios = len(vision.get("supported_aspect_ratios") or []) + 1
+        pos = per_tile + ratios * tiles * per_tile + 2 * ratios * tiles
     block = 4 * vh * vh + 4 * vh + 2 * vh * vi + vi + vh + 4 * vh
-    merged = vh * merge * merge
-    merger = merged * merged + merged + merged * out_h + out_h + 2 * vh
+    proj_in = int(_get(vision, "vision_output_dim", default=0) or 0)
+    if proj_in:
+        # the projector from the tower's stated output width (Mllama concatenates intermediate
+        # layers: 7680) to the language model's
+        merger = proj_in * out_h + out_h
+    else:
+        merged = vh * merge * merge
+        merger = merged * merged + merged + merged * out_h + out_h + 2 * vh
     return int(depth * block + channels * temporal * patch * patch * vh + vh + pos * vh + merger)
 
 
@@ -743,6 +766,7 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     # the cross-attention cache: an encoder-decoder's decoder layers, or a decoder-only stack's own
     # cross-attention layers (Mllama), from the one reader
     cross = cross_attention_cache(config)
+    whole = config
     if stacks is not None:
         config = decoder_view(config)
     text = dict(_text(config))
@@ -810,33 +834,30 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     roles.update({k: v for k, v in ffn.items() if v})
     roles["norm"] = (2 * n_layers + 1) * h
     if encoder_decoder:
-        enc_layers = int((stacks or {}).get("encoder") or _get(text, "encoder_layers", default=n_layers)
-                         or n_layers)
-        enc_ffn = int(_get(text, "encoder_ffn_dim", default=4 * h) or 4 * h)
-        roles["attention"] += (
-            enc_layers * 4 * h * h + n_layers * 4 * h * h
-        )  # encoder self + decoder cross
-        roles["dense_ffn"] = roles.get("dense_ffn", 0) + enc_layers * 2 * h * enc_ffn
+        # the decoder's cross-attention (Q / K / V / O at its width), and the encoder at its OWN
+        # geometry (stack_params.encoder_params: a hierarchical tower's stages, T5's gated FFN);
+        # sized at the decoder's width and its stated stage count, Donut's Swin encoder was 50M
+        # of its 74M
+        roles["attention"] += n_layers * 4 * h * h
+        enc = encoder_params(whole) if isinstance(whole, dict) else 0
+        if not enc:
+            enc_layers = int((stacks or {}).get("encoder")
+                             or _get(text, "encoder_layers", default=n_layers) or n_layers)
+            enc_ffn = int(_get(text, "encoder_ffn_dim", default=4 * h) or 4 * h)
+            enc = enc_layers * (4 * h * h + 2 * h * enc_ffn)
+        roles["encoder"] = roles.get("encoder", 0) + int(enc)
     roles = {k: int(v) for k, v in roles.items() if v}
 
-    n_experts = int(
-        _get(
-            text,
-            "num_local_experts",
-            "n_routed_experts",
-            "num_experts",
-            "moe_num_experts",
-            default=0,
-        )
-        or 0
-    )
-    k_experts = int(
-        _get(text, "num_experts_per_tok", "experts_per_token", "moe_topk", default=0) or 0
-    )
+    n_experts = routed_expert_count(dict(text))
+    k_experts = _get(text, "num_experts_per_tok", "experts_per_token", "num_experts_per_token",
+                     "moe_topk", "moe_num_active_primary_experts", default=0) or 0
+    k_experts = int(max(k_experts) if isinstance(k_experts, list) else k_experts)
     experts = (n_experts, k_experts or 1) if n_experts else None
 
     mtp_layers, mtp_roles = _mtp_params(text, h, attn_large, ffn, n_layers)
-    vision = _vision_params(config)
+    # the tower, and an adapter stack between it and the language model (BLIP-2's Q-Former and
+    # its projection: stack_params.adapter_params)
+    vision = _vision_params(config) + (adapter_params(whole) if isinstance(whole, dict) else 0)
     native, qc = _native_format(config)
     native_rb = _native_role_bytes(native, qc, {**roles, **mtp_roles})
 

@@ -218,6 +218,54 @@ CROSS_KV_HEAD_KEYS = ("cross_num_key_value_heads", "cross_num_attention_heads")
 CROSS_HEAD_DIM_KEYS = ("cross_head_dim",)
 
 
+#: A hierarchical tower's per-stage widths, where it states them (ConvNeXt / PVT `hidden_sizes`,
+#: some `embed_dims`); a Swin-family tower states only its first stage's `embed_dim` and doubles
+#: it at every stage after (SwinConfig: `hidden_size = embed_dim * 2 ** (len(depths) - 1)`).
+STAGE_WIDTH_KEYS = ("hidden_sizes", "embed_dims")
+
+
+def encoder_stages(block: Any) -> Optional[List[Dict[str, int]]]:
+    """A hierarchical tower's stages, ``[{"layers", "hidden_size", "num_attention_heads",
+    "intermediate_size"}, ...]``, or None for a uniform stack.
+
+    A tower that states its stages (`depths`: Swin, Donut-Swin, Swin2, FocalNet, NAT/DiNAT,
+    ConvNeXt, PVT) runs `depths[i]` blocks at stage i's own width -- its `hidden_sizes` /
+    `embed_dims`, else `embed_dim` x 2^i -- with an MLP `mlp_ratio` (default 4) times that wide,
+    and merges 2 x 2 neighbours between stages (``_image_tokens``). Read as one stack of
+    `num_layers` (Swin's STAGE count: 4) at the last stage's width, Donut's 20-block, 74M-parameter
+    encoder was sized as 4 blocks of 1,024 (50M)."""
+    if not isinstance(block, dict):
+        return None
+    depths = block.get("depths")
+    if not (isinstance(depths, (list, tuple)) and depths and all(_pos_int(d) for d in depths)):
+        return None
+    n = len(depths)
+    widths = None
+    for k in STAGE_WIDTH_KEYS:
+        v = block.get(k)
+        if isinstance(v, (list, tuple)) and len(v) == n and all(_pos_int(x) for x in v):
+            widths = [int(x) for x in v]
+            break
+    if widths is None:
+        base = _pos_int(block.get("embed_dim"))
+        if not base:
+            last = _pos_int(block.get("hidden_size"))
+            if not last:
+                return None
+            base = max(last // 2 ** (n - 1), 1)
+        widths = [base * 2 ** i for i in range(n)]
+    heads = block.get("num_heads", block.get("num_attention_heads"))
+    ratio = block.get("mlp_ratio") or 4
+    ratios = ratio if isinstance(ratio, (list, tuple)) and len(ratio) == n else [ratio] * n
+    stages = []
+    for i, (d, w) in enumerate(zip(depths, widths)):
+        h = heads[i] if isinstance(heads, (list, tuple)) and len(heads) == n else heads
+        stages.append({"layers": int(d), "hidden_size": int(w),
+                       "num_attention_heads": _pos_int(h) or max(w // 32, 1),
+                       "intermediate_size": int(float(ratios[i]) * w)})
+    return stages
+
+
 def _block_depth(block: Dict[str, Any], role: Optional[str] = None) -> int:
     """A nested stack block's depth, read for the ``role`` it plays ("decoder" / "encoder").
 
@@ -230,6 +278,10 @@ def _block_depth(block: Dict[str, Any], role: Optional[str] = None) -> int:
     depth (whether the block holds a stack at all)."""
     own, other = ((DECODER_DEPTH_KEYS, ENCODER_DEPTH_KEYS) if role != "encoder"
                   else (ENCODER_DEPTH_KEYS, DECODER_DEPTH_KEYS))
+    stages = encoder_stages(block)
+    if stages:
+        # a hierarchical tower's blocks, every stage's (its `num_layers` counts the stages)
+        return sum(st["layers"] for st in stages)
     if role is not None:
         v = _pos_int(_first(block, *own))
         if v:
@@ -440,6 +492,21 @@ def encoder_view(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     src = block if block is not None else holder
     view = {k: v for k, v in src.items() if not isinstance(v, dict)}
     view["num_hidden_layers"] = stacks["encoder"]
+    # an encoder in its own block embeds its own tokens (MusicGen's T5 text encoder, Dia's,
+    # EncoderDecoderModel's BERT); one stated flat shares the decoder's table (T5, BART)
+    view["own_embedding"] = bool(block is not None and _pos_int(block.get("vocab_size")))
+    # A generic composite (VisionEncoderDecoder / SpeechEncoderDecoder / EncoderDecoderModel's
+    # `encoder` + `decoder`, MusicGen's `text_encoder` + `decoder`) projects an encoder of another
+    # width to the decoder's (`enc_to_dec_proj`) unless the decoder states the width its
+    # cross-attention reads (`cross_attention_hidden_size`); its cross K / V then read the
+    # decoder's width. A model's own sub-configs (Dia's `encoder_config`) read the encoder's.
+    dec_block = holder.get("decoder") if isinstance(holder.get("decoder"), dict) else None
+    enc_key = next((k for k in ("encoder", "text_encoder") if holder.get(k) is block), None)
+    if block is not None and dec_block is not None and enc_key:
+        enc_w = _pos_int(_first(block, "hidden_size", "d_model", "n_embd"))
+        dec_w = _pos_int(_first(dec_block, "hidden_size", "d_model", "n_embd"))
+        if enc_w and dec_w and enc_w != dec_w and not dec_block.get("cross_attention_hidden_size"):
+            view["projected_to"] = dec_w
     heads = None if block is not None else _pos_int(_first(src, *ENCODER_HEAD_KEYS))
     if heads:
         view["num_attention_heads"] = heads
@@ -455,6 +522,15 @@ def encoder_view(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     ffn = ffn or _pos_int(_first(src, "intermediate_size", "d_ff", "encoder_ffn_dim"))
     if ffn:
         view["intermediate_size"] = ffn
+    # A hierarchical tower runs each stage at its own width (``encoder_stages``); the view's
+    # width is its last stage's, the one the decoder reads.
+    stages = encoder_stages(src)
+    if stages:
+        view["stages"] = stages
+        last = stages[-1]
+        view["hidden_size"] = last["hidden_size"]
+        view["num_attention_heads"] = last["num_attention_heads"]
+        view["intermediate_size"] = last["intermediate_size"]
     # Head widths are the encoder's own (Dia's encoder `head_dim`; T5's `d_kv` for both).
     if block is None:
         for k in ("head_dim", "kv_channels", "attention_head_dim"):
@@ -1499,11 +1575,137 @@ DENSE_FFN_WIDTH_KEYS = ("intermediate_size_mlp", "dense_intermediate_size",
                         "prefix_dense_intermediate_size")
 
 
+#: Spellings of a shared expert's own width (the whole MLP every MoE layer runs beside its routed
+#: experts), in transformers' config classes (5.12): Qwen2-MoE / Qwen3-Next / Qwen3.5-MoE /
+#: Laguna `shared_expert_intermediate_size`, Granite-MoE-Shared / Granite 4 / MiniMax-M3
+#: `shared_intermediate_size` (0: none), Nemotron-H and Bailing (Ling)
+#: `moe_shared_expert_intermediate_size`.
+SHARED_EXPERT_WIDTH_KEYS = ("shared_expert_intermediate_size", "shared_intermediate_size",
+                            "moe_shared_expert_intermediate_size")
+#: Spellings of a shared-expert COUNT, whose MLP is that many routed experts wide (DeepSeek V2 /
+#: V3 / V4, Kimi, GLM-4-MoE, dots1, Mistral 4 `n_shared_experts`; AFMoE, EXAONE-MoE, HY-V3,
+#: Cohere2-MoE `num_shared_experts`; ERNIE 4.5 / Aria `moe_num_shared_experts`; Hunyuan's
+#: per-layer `num_shared_expert`).
+SHARED_EXPERT_COUNT_KEYS = ("n_shared_experts", "num_shared_experts", "moe_num_shared_experts",
+                            "num_shared_expert")
+#: The width of one routed expert: `moe_intermediate_size` (or a per-layer list of it), else
+#: `expert_intermediate_size`, SmallThinker's `moe_ffn_hidden_size`, else -- Mixtral, Llama 4,
+#: Aria, Cohere2-MoE -- `intermediate_size`.
+EXPERT_WIDTH_KEYS = ("moe_intermediate_size", "expert_intermediate_size", "moe_ffn_hidden_size",
+                     "intermediate_size")
+#: Config classes whose modelling builds a shared expert that no config key states: the class
+#: itself is the statement (transformers 5.12, `Llama4TextMoe.shared_expert =
+#: Llama4TextMLP(config)`; `HunYuanMoEV1Moe.shared_mlp = HunYuanMoEV1MLP(config)`). One shared
+#: expert, one routed expert wide.
+CLASS_SHARED_EXPERTS = {"llama4_text": 1, "llama4": 1, "hunyuan_v1_moe": 1}
+
+
+def _largest(v) -> Optional[int]:
+    """A positive int, or the largest of a per-layer list of them (Hunyuan states its widths and
+    counts per layer): the conservative reading of a list."""
+    if isinstance(v, (list, tuple)):
+        vals = [_pos_int(x) for x in v]
+        vals = [x for x in vals if x]
+        return max(vals) if vals else None
+    return _pos_int(v)
+
+
+def routed_expert_count(config: Dict[str, Any]) -> int:
+    """The routed experts on an MoE layer (any spelling, ``_EXPERT_COUNT_KEYS``; the largest of a
+    per-layer list), 0 for a model without routed experts."""
+    n = _largest(_first(_text_config(config), *_EXPERT_COUNT_KEYS))
+    return n if n and n > 1 else 0
+
+
+def routed_expert_width(config: Dict[str, Any]) -> Optional[int]:
+    """The width of one routed expert (``EXPERT_WIDTH_KEYS``), or None when nothing states it."""
+    tc = _text_config(config)
+    for k in EXPERT_WIDTH_KEYS:
+        v = _largest(tc.get(k))
+        if v:
+            return v
+    return None
+
+
+def shared_expert_width(config: Dict[str, Any]) -> int:
+    """The total width of the shared expert(s) an MoE layer runs beside its routed experts, as
+    the model's own modelling builds it; 0 for none (or for a model without routed experts).
+
+    In order: a stated width (``SHARED_EXPERT_WIDTH_KEYS``, a stated 0 meaning none); a stated
+    count (``SHARED_EXPERT_COUNT_KEYS``) times one routed expert's width; the config class's own
+    count (``CLASS_SHARED_EXPERTS``) times that width. A graph without it sized DeepSeek-V3 2.55B
+    parameters below the checkpoint, and Llama 4 Maverick 3.0B below.
+    """
+    tc = _text_config(config)
+    if not routed_expert_count(config):
+        return 0
+    for k in SHARED_EXPERT_WIDTH_KEYS:
+        v = tc.get(k)
+        if v is None:
+            continue
+        w = _largest(v)
+        return w or 0
+    count = None
+    for k in SHARED_EXPERT_COUNT_KEYS:
+        v = tc.get(k)
+        if v is not None:
+            count = _largest(v) or 0
+            break
+    if count is None:
+        count = CLASS_SHARED_EXPERTS.get(str(tc.get("model_type") or "").lower(), 0)
+    width = routed_expert_width(config) or 0
+    return int(count * width)
+
+
 #: How a config states its FFN is gated (gate, up and down: three matrices) apart from its
 #: activation's name, in transformers' config classes (5.12): the T5 family (T5, mT5, UMT5,
 #: LongT5, UDOP, Pop2Piano) writes `feed_forward_proj: "gated-<act>"` and, since 4.25, the derived
 #: `is_gated_act`; DINOv3 says `use_gated_mlp`.
 GATED_FFN_FLAG_KEYS = ("is_gated_act", "use_gated_mlp")
+#: Families whose FFN is gated (gate, up, down) however their activation is spelled, or when the
+#: config states none: an architectural fact of each family's modelling (Gemma's GeGLU says
+#: `gelu_pytorch_tanh`; LFM2 names its matrices w1 / w2 / w3 and SmallThinker states no
+#: activation). Read by model type and by architecture name, by the parameter counter and the
+#: GenZ graph alike.
+GATED_FFN_MODEL_TYPES = frozenset({
+    'llama', 'llama4', 'mistral', 'mixtral', 'qwen2', 'qwen3', 'qwen2_moe', 'qwen3_moe',
+    # Qwen3.5 MoE, including the text tower of the multimodal wrapper. Without
+    # these, a 3-matrix (gate/up/down) expert is charged as 2 -- a 33%
+    # under-count -- resting entirely on `hidden_act` being present, which is
+    # exactly the unreliable signal this set exists to bypass.
+    'qwen3_5_moe', 'qwen3_5_moe_text', 'qwen3_next', 'qwen3_5',
+    'gemma', 'gemma2', 'gemma3', 'phi3', 'phi4', 'yi', 'deepseek', 'deepseek_v2', 'deepseek_v3',
+    'stablelm', 'starcoder2', 'cohere', 'command_r', 'olmo', 'olmo2', 'granite', 'minicpm',
+    'internlm2', 'baichuan', 'exaone',
+    # Hybrid/recurrent families. All of these ship SwiGLU FFNs but name
+    # the matrices w1/w2/w3 (LFM2) or omit `hidden_act` entirely, so the
+    # activation-string fallback misses them and charges 2 matrices
+    # instead of 3 -- a flat 33% under-count on the model's single
+    # largest weight block. LFM2-2.6B came out at 2.04B against 2.57B.
+    'lfm2', 'jamba', 'zamba', 'zamba2', 'bamba', 'falcon_h1',
+    'granitemoehybrid', 'kimi_linear', 'minimax_text_01', 'minimax_m1',
+    'minimax_m2', 'qwen3_5_text', 'hymba', 'plamo2', 'smallthinker',
+    'llama4_text', 'deepseek_v32', 'qwen3_moe', 'qwen3_5_moe_text', 'glm4_moe', 'gpt_oss',
+    # ChatGLM's dense_h_to_4h is 2 x ffn_hidden_size wide (SwiGLU), its config states no act
+    'chatglm', 'glm', 'glm4',
+
+})
+
+
+def gated_ffn_by_family(config: Dict[str, Any]) -> bool:
+    """Whether the config's family builds a gated FFN (``GATED_FFN_MODEL_TYPES``, by its model
+    type or its architecture's name)."""
+    tc = config if isinstance(config, dict) else {}
+    if str(tc.get("model_type") or "").lower() in GATED_FFN_MODEL_TYPES:
+        return True
+    arch = " ".join(str(a) for a in (tc.get("architectures") or [])).lower()
+    return bool(arch) and any(name in arch for name in GATED_FFN_MODEL_TYPES)
+
+
+#: Config classes whose FFN is gated whatever its activation is called: Pix2Struct's vision and
+#: text MLPs build `wi_0` and `wi_1` (transformers 5.12) and their configs say only
+#: `dense_act_fn: gelu_new`.
+CLASS_GATED_FFN = frozenset({"pix2struct_vision_model", "pix2struct_text_model"})
 GATED_FFN_PROJ_KEYS = ("feed_forward_proj",)
 
 
@@ -1522,7 +1724,158 @@ def stated_gated_ffn(config: Dict[str, Any]) -> Optional[bool]:
         v = tc.get(k)
         if isinstance(v, str) and v:
             return v.lower().startswith("gated-")
+    if str(tc.get("model_type") or "").lower() in CLASS_GATED_FFN:
+        return True
     return None
+
+
+#: Config classes whose attention gates its output from a second query-width projection that
+#: no config key of the class states (transformers 5.12, and llama.cpp's architectures for them: Qwen3-Next's and Qwen3.5's
+#: `q_proj = Linear(hidden, heads x head_dim x 2)`). A hub config may say so itself
+#: (`attn_output_gate`, Qwen3.5), and is read first.
+CLASS_GATED_ATTENTION = frozenset({"qwen3_next", "qwen3_5", "qwen3_5_text", "qwen3_5_moe",
+                                   "qwen3_5_moe_text",
+                                   # the same classes as llama.cpp names them in a GGUF
+                                   "qwen3next", "qwen35", "qwen35moe"})
+ATTENTION_OUTPUT_GATE_KEYS = ("attn_output_gate",)
+
+
+def attention_output_gate(config: Dict[str, Any]) -> bool:
+    """Whether the decoder's attention builds a query-width output gate beside its queries: the
+    config's own statement (``ATTENTION_OUTPUT_GATE_KEYS``), else its config class's modelling
+    (``CLASS_GATED_ATTENTION``). Left out, Qwen3-Next's 12 attention layers were sized 100M
+    parameters below the checkpoint."""
+    tc = _text_config(config) if isinstance(config, dict) else {}
+    for k in ATTENTION_OUTPUT_GATE_KEYS:
+        v = tc.get(k)
+        if isinstance(v, bool):
+            return v
+    return str(tc.get("model_type") or "").lower() in CLASS_GATED_ATTENTION
+
+
+#: Spellings of a decoder's FFN width and of its token vocabulary (ChatGLM's `ffn_hidden_size` and
+#: `padded_vocab_size`, GPT-2's `n_vocab`), first to last.
+FFN_WIDTH_KEYS = ("intermediate_size", "ffn_dim", "ffn_hidden_size", "mlp_dim", "d_ff")
+VOCAB_KEYS = ("vocab_size", "padded_vocab_size", "n_vocab")
+
+
+def ffn_width(config: Dict[str, Any], default: Optional[int] = None) -> Optional[int]:
+    """The decoder's FFN width under any of its spellings (``FFN_WIDTH_KEYS``), or ``default``."""
+    tc = config if isinstance(config, dict) else {}
+    return _pos_int(_first(tc, *FFN_WIDTH_KEYS)) or default
+
+
+def vocab_size(config: Dict[str, Any], default: Optional[int] = None) -> Optional[int]:
+    """The token vocabulary under any of its spellings (``VOCAB_KEYS``), or ``default``. Read
+    from `vocab_size` alone, ChatGLM3's 65,024 tokens were a default 32,000."""
+    tc = config if isinstance(config, dict) else {}
+    return _pos_int(_first(tc, *VOCAB_KEYS)) or default
+
+
+#: Keys that say a stack positions its tokens by rotation (RoPE) rather than a learned table.
+ROPE_KEYS = ("rope_theta", "rope_scaling", "rope_parameters", "rotary_pct", "rotary_emb_base",
+             "partial_rotary_factor", "rotary_dim")
+#: Spellings of a learned position table's length, first to last (Whisper's decoder says
+#: `max_target_positions`; GPT-2 `n_positions`).
+POSITION_LENGTH_KEYS = ("max_target_positions", "max_position_embeddings", "n_positions")
+
+
+def learned_positions(config: Dict[str, Any]) -> int:
+    """Rows of a learned absolute position table the decoder holds, 0 for none: a config whose
+    `position_embedding_type` is absolute (BERT-style decoders), or whose config class positions
+    by neither rotation (``ROPE_KEYS``, stated or the class's default) nor relative buckets nor
+    ALiBi (MBart / BART, Whisper, GPT-2). A class transformers does not know is read as holding
+    none, as before. Left out, Nougat's MBart decoder was 4.2M parameters short."""
+    tc = config if isinstance(config, dict) else {}
+    pet = str(tc.get("position_embedding_type") or "").lower()
+    if pet and pet != "absolute":
+        return 0
+    if any(tc.get(k) is not None for k in ROPE_KEYS) or tc.get("relative_attention_num_buckets") \
+            or tc.get("alibi") or tc.get("use_alibi"):
+        return 0
+    if pet != "absolute":
+        mt = tc.get("model_type")
+        if not mt or config_class_default(mt, "model_type") is None:
+            return 0  # a class transformers does not know: nothing said, nothing charged
+        if any(config_class_default(mt, k) is not None
+               for k in ROPE_KEYS + ("relative_attention_num_buckets",)):
+            return 0
+    return _pos_int(_first(tc, *POSITION_LENGTH_KEYS)) or 0
+
+
+def decoder_streams(config: Dict[str, Any]) -> int:
+    """How many parallel token streams the decoder embeds and predicts at once: an audio decoder's
+    codebooks (MusicGen's `num_codebooks`; Dia's decoder block's `num_channels`), each with its
+    own embedding table and output head. 1 for a text decoder. Read as one stream, Dia's 9 x 1,028
+    embeddings and logits were one table and one head."""
+    if not isinstance(config, dict):
+        return 1
+    for scope in (config, _text_config(config)):
+        v = _pos_int(scope.get("num_codebooks")) if isinstance(scope, dict) else None
+        if v:
+            return v
+    for scope in (config, _text_config(config)):
+        if not isinstance(scope, dict):
+            continue
+        for k in NESTED_DECODER_KEYS:
+            block = scope.get(k)
+            if isinstance(block, dict):
+                v = _pos_int(block.get("num_codebooks")) or _pos_int(block.get("num_channels"))
+                if v:
+                    return v
+    return 1
+
+
+#: Spellings of the FFN's activation (Gemma's `hidden_activation`, GPT-2's `activation_function`).
+ACTIVATION_KEYS = ("hidden_act", "activation_function", "hidden_activation")
+
+_CLASS_DEFAULT_CACHE: Dict[str, Any] = {}
+
+
+def config_class_default(model_type: str, name: str) -> Any:
+    """The default the model type's own config class gives ``name`` (transformers installed), or
+    None. What a config that leaves a key out means is its class's default: Llama4TextConfig's
+    `hidden_act` is "silu", so a Llama 4 config without one is gated."""
+    mt = str(model_type or "")
+    key = mt + "\0" + name
+    if key in _CLASS_DEFAULT_CACHE:
+        return _CLASS_DEFAULT_CACHE[key]
+    value = None
+    if mt:
+        try:
+            import logging
+
+            from transformers import CONFIG_MAPPING
+
+            tf_log = logging.getLogger("transformers")
+            level = tf_log.level
+            tf_log.setLevel(logging.ERROR)
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    value = getattr(CONFIG_MAPPING[mt](), name, None)
+            finally:
+                tf_log.setLevel(level)
+        except Exception:
+            value = None
+    _CLASS_DEFAULT_CACHE[key] = value
+    return value
+
+
+def ffn_activation(config: Dict[str, Any]) -> str:
+    """The FFN's activation, lower-cased: the config's own (``ACTIVATION_KEYS``), else its config
+    class's default (``config_class_default``), else ''. The config given is read as it is -- a
+    caller sizing a decoder passes the decoder's (text) config."""
+    tc = config if isinstance(config, dict) else {}
+    for k in ACTIVATION_KEYS:
+        v = tc.get(k)
+        if isinstance(v, str) and v:
+            return v.lower()
+    for k in ACTIVATION_KEYS:
+        v = config_class_default(tc.get("model_type"), k)
+        if isinstance(v, str) and v:
+            return v.lower()
+    return ""
 
 
 def dense_ffn_width(config: Dict[str, Any]) -> Optional[int]:

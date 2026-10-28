@@ -281,6 +281,7 @@ def resolve_weight_precision(hf_config: Any) -> Optional[Dict[str, float]]:
 
 
 _ATTENTION_OPS = frozenset({'QKV', 'Out Proj', 'Q Down', 'Q Up', 'KV Compress', 'KV Up', 'Attn Linear',
+                            'Index Q', 'Index K', 'Index W',
                             'Inproj', 'Out proj', 'xt proj', 'BC proj'})
 _FFN_OPS = frozenset({'up+gate', 'down'})
 

@@ -222,8 +222,15 @@ class ModelMemoryCalculator:
         if model_type in ["unet", "diffusion", "stable-diffusion", "dit"]:
             return "diffusion"
 
-        # Check for encoder-decoder
+        # Check for encoder-decoder: the config's flag, or the two stacks it states under an
+        # encoder-decoder's own spellings (layer_plan.encoder_decoder_stacks, the reader the KV
+        # cache, the cross-attention cache and the GenZ graph use). A flat mT5 config without
+        # `is_encoder_decoder` states `num_layers` and `num_decoder_layers`: read as a decoder
+        # alone here while every other reader saw both stacks, its parameters were one stack's.
         if config.get("is_encoder_decoder", False):
+            return "encoder-decoder"
+        stacks = encoder_decoder_stacks(config)
+        if stacks and stacks.get("encoder") and stacks.get("decoder"):
             return "encoder-decoder"
 
         # Check for hybrid architectures. (`attention_layers` is not a hybrid marker: it is

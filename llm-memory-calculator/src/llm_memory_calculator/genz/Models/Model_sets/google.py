@@ -65,7 +65,8 @@ gemma3_1b_config = ModelConfig(model='google/gemma-3-1B',
 
 gemma3_4b_config = ModelConfig(model='google/gemma-3-4B',
     hidden_size=2560, num_attention_heads=16, num_ffi = 2,
-    num_key_value_heads=4,
+    # the published config's head_dim (256), not hidden / heads (160)
+    num_key_value_heads=4, head_dim=256,
     intermediate_size=10240, num_decoder_layers=34,
     vocab_size=262144, max_model_len=128*1024, hidden_act="gelu_pytorch_tanh",
     sliding_window=1024,

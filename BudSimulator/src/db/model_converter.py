@@ -13,7 +13,18 @@ from llm_memory_calculator.genz.Models.get_language_model import (
     graph_layer_kinds,
     resolve_decoder_config,
 )
-from llm_memory_calculator.layer_plan import attention_head_dim, depth
+from llm_memory_calculator.layer_plan import (
+    attention_head_dim,
+    attention_output_gate,
+    decoder_streams,
+    depth,
+    ffn_width,
+    learned_positions,
+    routed_expert_count,
+    routed_expert_width,
+    shared_expert_width,
+    vocab_size as vocab_size_of,
+)
 from llm_memory_calculator.genz.Models.model_quality import QualityMetricsCollection, MMLU, MATH, GSM8K, Hellaswag, TriviaQA
 
 
@@ -68,15 +79,17 @@ class ModelConverter:
         # under its own spellings (`decoder_layers`, T5's `num_heads` / `d_model`, Dia's
         # `decoder_config`): read its geometry, as the HF loader does. A config whose decoder
         # cannot be found is read as it stands.
+        # an audio decoder's codebooks: as many embedding tables and output heads (Dia, MusicGen)
+        streams = decoder_streams(hf_config)
         try:
             hf_config = resolve_decoder_config(hf_config)
         except ValueError:
             pass
 
         # Basic parameters
-        vocab_size = hf_config.get('vocab_size', 32000)
+        vocab_size = vocab_size_of(hf_config, 32000) * streams
         hidden_size = hf_config.get('hidden_size', 4096)
-        intermediate_size = hf_config.get('intermediate_size', 11008)
+        intermediate_size = ffn_width(hf_config, 11008)
         # The depth the layer-kind table reads: `num_hidden_layers`, or the length of a
         # per-layer list when that is all the config states (transformers 5.12's Nemotron-H)
         num_hidden_layers = depth(hf_config) or 32
@@ -109,12 +122,17 @@ class ModelConverter:
         if 'swiglu' in hidden_act.lower() or 'silu' in hidden_act.lower():
             num_ffi = 2  # GenZ uses 2 for gated activations
         
-        # MoE parameters
-        num_experts = hf_config.get('num_experts', 
-                                   hf_config.get('num_local_experts', 1))
+        # MoE parameters, through the readers the HF loader and the calculator use: the routed
+        # experts under any spelling (DeepSeek's `n_routed_experts` was read as a dense model),
+        # one expert's width, and the shared expert(s) beside them
+        num_experts = routed_expert_count(hf_config) or 1
         expert_top_k = hf_config.get('num_experts_per_tok', 
                                     hf_config.get('top_k', 1))
-        moe_intermediate_size = hf_config.get('moe_intermediate_size', intermediate_size)
+        moe_intermediate_size = (routed_expert_width(hf_config) or intermediate_size) \
+            if num_experts > 1 else intermediate_size
+        shared_width = shared_expert_width(hf_config) if num_experts > 1 else 0
+        if shared_width:
+            ffn_implementation = 'deepseek'
         
         # Determine if this is an MoE model
         is_moe = num_experts > 1
@@ -191,6 +209,8 @@ class ModelConverter:
             num_experts=num_experts,
             expert_top_k=expert_top_k,
             moe_intermediate_size=moe_intermediate_size,
+            n_shared_experts=1 if shared_width else 0,
+            shared_expert_intermediate_size=shared_width or None,
             # Mamba parameters
             mamba_d_state=mamba_d_state,
             mamba_d_conv=mamba_d_conv,
@@ -201,6 +221,11 @@ class ModelConverter:
             qk_rope_head_dim=hf_config.get('qk_rope_head_dim'),
             qk_nope_head_dim=hf_config.get('qk_nope_head_dim'),
             v_head_dim=hf_config.get('v_head_dim'),
+            # DeepSeek Sparse Attention's indexer, and a query-width attention output gate
+            index_n_heads=hf_config.get('index_n_heads') if hf_config.get('kv_lora_rank') else None,
+            index_head_dim=hf_config.get('index_head_dim') if hf_config.get('kv_lora_rank') else None,
+            attention_output_gate=attention_output_gate(hf_config),
+            position_embeddings=learned_positions(hf_config),
             # Quality metrics
             model_quality=quality_collection,
             layer_configs=layer_configs,

@@ -152,7 +152,7 @@ def gguf_to_hf_config(path):
     # is -- llama.cpp's keys translated to the HF ones the layer plan reads, so a GGUF and its
     # source checkpoint resolve to the same layer kinds. Dropping them charged every layer of
     # a hybrid GGUF a full KV cache (4x on Qwen3.5).
-    cfg.update(hf_layer_keys_from_gguf(a, int(n_layers)))
+    cfg.update(hf_layer_keys_from_gguf(a, int(n_layers), arch))
 
     # CHAOS-#5: MoE — surface the expert geometry so GenZ models the ACTIVE-expert decode cost, not a
     # dense single expert (which under-predicts TPOT ~1.5-1.7x, so the strict SLO gate would admit

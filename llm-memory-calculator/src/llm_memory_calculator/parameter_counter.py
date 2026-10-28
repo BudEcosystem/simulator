@@ -7,17 +7,26 @@ from .layer_plan import (
     attention_head_dim,
     attention_heads,
     attention_input_width,
+    attention_output_gate,
     composed_text_config,
     cross_attention_cache,
     decoder_only_block,
+    GATED_FFN_MODEL_TYPES,
+    TOWER_KEYS,
+    config_class_default,
     decoder_view,
+    depth,
     encoder_decoder_stacks,
     encoder_view,
+    ffn_activation,
     layer_kinds,
+    moe_layers,
     resolve_layer_plan,
+    shared_expert_width,
     stated_gated_ffn,
 )
 from .mixer_params import recurrent_mixer_params
+from .stack_params import adapter_params, stack_params, tower_view
 
 
 class UniversalParameterCounter:
@@ -42,25 +51,7 @@ class UniversalParameterCounter:
         # ARCHITECTURAL FACT per each model's definition (not a tuned constant): Gemma uses GeGLU whose
         # activation is recorded as 'gelu_pytorch_tanh' (not 'geglu'), so model_type is the only reliable
         # signal. Primary detector; the activation-string list above is the secondary/general fallback.
-        self.gated_ffn_model_types = {
-            'llama', 'llama4', 'mistral', 'mixtral', 'qwen2', 'qwen3', 'qwen2_moe', 'qwen3_moe',
-            # Qwen3.5 MoE, including the text tower of the multimodal wrapper. Without
-            # these, a 3-matrix (gate/up/down) expert is charged as 2 -- a 33%
-            # under-count -- resting entirely on `hidden_act` being present, which is
-            # exactly the unreliable signal this set exists to bypass.
-            'qwen3_5_moe', 'qwen3_5_moe_text', 'qwen3_next', 'qwen3_5',
-            'gemma', 'gemma2', 'gemma3', 'phi3', 'phi4', 'yi', 'deepseek', 'deepseek_v2', 'deepseek_v3',
-            'stablelm', 'starcoder2', 'cohere', 'command_r', 'olmo', 'olmo2', 'granite', 'minicpm',
-            'internlm2', 'baichuan', 'exaone',
-            # Hybrid/recurrent families. All of these ship SwiGLU FFNs but name
-            # the matrices w1/w2/w3 (LFM2) or omit `hidden_act` entirely, so the
-            # activation-string fallback misses them and charges 2 matrices
-            # instead of 3 -- a flat 33% under-count on the model's single
-            # largest weight block. LFM2-2.6B came out at 2.04B against 2.57B.
-            'lfm2', 'jamba', 'zamba', 'zamba2', 'bamba', 'falcon_h1',
-            'granitemoehybrid', 'kimi_linear', 'minimax_text_01', 'minimax_m1',
-            'minimax_m2', 'qwen3_5_text', 'hymba', 'plamo2', 'smallthinker',
-        }
+        self.gated_ffn_model_types = GATED_FFN_MODEL_TYPES
         
         # Keys that indicate shared down projection in MoE models
         self.shared_down_keys = {
@@ -86,6 +77,16 @@ class UniversalParameterCounter:
         elif not isinstance(config, dict):
             raise ValueError("Config must be a dict or have __dict__ attribute")
         
+        # A wrapper around a language model and nothing else (a `text_config` beside no tower,
+        # the outer block stating no stack of its own) is that language model: counted from the
+        # block, where its depth may be a per-layer list alone (transformers 5.12's NemotronH).
+        # Read through the normalizer, the hoisted width met a default depth (247M for an 8.1B
+        # model).
+        tc = config.get('text_config')
+        if (isinstance(tc, dict) and not any(isinstance(config.get(k), dict) for k in TOWER_KEYS)
+                and not depth(config) and not encoder_decoder_stacks(config)):
+            return self._calculate_multimodal_params(config, respect_weight_tying)
+
         # Normalize config to handle various key formats
         config = ConfigNormalizer.normalize_config(config)
         
@@ -153,8 +154,14 @@ class UniversalParameterCounter:
         # `or []`: a config written by transformers' to_dict() states `architectures: null`
         architectures = config.get('architectures') or []
         
-        # First, check explicit tie_word_embeddings flag
-        tie_flag = config.get('tie_word_embeddings', True)
+        # First, check explicit tie_word_embeddings flag; a config that leaves it out takes its
+        # config class's default (layer_plan.config_class_default: Llama4TextConfig's False),
+        # else True as before
+        tie_flag = config.get('tie_word_embeddings')
+        if tie_flag is None:
+            tie_flag = config_class_default(model_type, 'tie_word_embeddings')
+            if not isinstance(tie_flag, bool):
+                tie_flag = True
         
         # Models that NEVER tie embeddings
         if model_type in self.never_tied_models:
@@ -355,8 +362,11 @@ class UniversalParameterCounter:
         q_proj_size = config.get('q_proj_size', q_size)
         kv_proj_size = config.get('kv_proj_size', kv_size)
 
+        # a query-width output gate beside the queries (layer_plan.attention_output_gate:
+        # Qwen3-Next's and Qwen3.5's q_proj is two query widths)
+        gate = q_proj_size if attention_output_gate(config) else 0
         return num_layers * (
-            in_width * q_proj_size +  # Q projection
+            in_width * (q_proj_size + gate) +  # Q projection (and its output gate)
             in_width * kv_proj_size * 2 +  # K, V projections
             q_proj_size * hidden_size  # O projection
         )
@@ -388,20 +398,27 @@ class UniversalParameterCounter:
         if arch and any(name in arch for name in self.gated_ffn_model_types):
             return True
 
-        act_fn = str(config.get('activation_function')
-                     or config.get('hidden_act')
-                     or config.get('hidden_activation')
-                     or 'gelu').lower()
+        # the activation the config states, else its config class's default
+        # (layer_plan.ffn_activation: Llama4TextConfig's "silu"), else GELU
+        act_fn = ffn_activation(config) or 'gelu'
+
         return any(variant in act_fn for variant in self.glu_variants)
 
     @staticmethod
     def _num_moe_layers(config: Dict[str, Any], num_layers: int) -> int:
         """Layers holding routed experts. DeepSeek keeps its first ``first_k_dense_replace`` layers
-        dense (V2-Lite: 1 of 27, V3: 3 of 61); counting them as MoE put V3 at 701B, not 671B."""
+        dense (V2-Lite: 1 of 27, V3: 3 of 61); counting them as MoE put V3 at 701B, not 671B.
+        Placed by layer_plan.moe_layers, the reader GenZ and the KV planner use, where it reads the
+        config's placement (ERNIE 4.5's `moe_layer_start_index`, Qwen MoE's `decoder_sparse_step`,
+        Llama 4's interleave, Jamba's expert period, a per-layer list); counted as every layer of
+        an MoE model, ERNIE-4.5-21B's dense first layer held 755M of experts it does not have."""
         n_routed_experts = config.get('n_routed_experts', config.get('num_experts', 1)) or 1
         moe_layer_freq = config.get('moe_layer_freq', 1)
         if n_routed_experts <= 1 or not moe_layer_freq or moe_layer_freq <= 0:
             return 0
+        flags = moe_layers(config)
+        if flags is not None and len(flags) == num_layers:
+            return sum(1 for f in flags if f)
         first_dense = int(config.get('first_k_dense_replace') or 0)
         return max(0, num_layers - first_dense) // moe_layer_freq
 
@@ -451,13 +468,11 @@ class UniversalParameterCounter:
             down_proj = hidden_size * moe_intermediate_size
             expert_params = num_moe_layers * n_routed_experts * (expert_ffn + down_proj)
         
-        # Shared experts (if any)
-        n_shared_experts = config.get('n_shared_experts', 0)
-        if n_shared_experts > 0:
-            shared_expert_params = num_moe_layers * n_shared_experts * (
-                (3 if is_glu else 2) * hidden_size * moe_intermediate_size
-            )
-            expert_params += shared_expert_params
+        # Shared experts (if any), under any spelling: layer_plan's one reader (DeepSeek's count
+        # x expert width, Qwen MoE's and Granite 4's stated width, Llama 4's class-built one)
+        shared_width = shared_expert_width(config)
+        if shared_width > 0:
+            expert_params += num_moe_layers * (3 if is_glu else 2) * hidden_size * shared_width
         
         return router_params + expert_params
     
@@ -615,21 +630,30 @@ class UniversalParameterCounter:
             channels = vision_config.get('num_channels', 3)
             vision_params = channels * patch_size * patch_size * hidden_size
             
-            # Position embeddings
-            vision_params += (num_patches + 1) * hidden_size  # +1 for CLS token
+            # Position embeddings: a ViT's per patch (+1 for CLS). A tower whose length is its
+            # `seq_len` (Pix2Struct's flattened variable-resolution patches) positions them by row
+            # and by column, `seq_len` rows each, behind a linear patch projection.
+            if vision_config.get('seq_len'):
+                seq_len = int(vision_config['seq_len'])
+                patch_in = int(vision_config.get('patch_embed_hidden_size') or hidden_size)
+                vision_params += 2 * seq_len * hidden_size + patch_in * hidden_size + hidden_size \
+                    - channels * patch_size * patch_size * hidden_size
+            else:
+                vision_params += (num_patches + 1) * hidden_size  # +1 for CLS token
             
-            # Vision transformer layers
-            for _ in range(num_layers):
-                # Attention
-                vision_params += 4 * hidden_size * hidden_size  # Q, K, V, O
-                # FFN
-                intermediate_size = vision_config.get('intermediate_size', hidden_size * 4)
-                vision_params += 2 * hidden_size * intermediate_size
-                # Layer norms
-                vision_params += 2 * hidden_size
-            
-            # Final norm
-            vision_params += hidden_size
+            # The tower's blocks at its own geometry (stack_params: any spelling of its widths
+            # and heads, its gated FFN, a hierarchical tower's stages, biases and norms); a
+            # default 4h^2 + 2h x ffn per layer left Pix2Struct's gated 2048-wide MLPs at 2/3
+            tower = stack_params(tower_view(vision_config))
+            if tower:
+                vision_params += tower
+            else:
+                for _ in range(num_layers):
+                    vision_params += 4 * hidden_size * hidden_size  # Q, K, V, O
+                    intermediate_size = vision_config.get('intermediate_size', hidden_size * 4)
+                    vision_params += 2 * hidden_size * intermediate_size
+                    vision_params += 2 * hidden_size
+                vision_params += hidden_size  # final norm
             
             # Projector (if specified)
             if 'projector_input_dim' in vision_config and 'projector_output_dim' in vision_config:
@@ -637,6 +661,10 @@ class UniversalParameterCounter:
             
             total_params += vision_params
         
+        # An adapter stack between the tower and the language model (BLIP-2's Q-Former and its
+        # projection, 106.7M parameters)
+        total_params += adapter_params(config)
+
         # Cross-modal projector (if not already counted)
         if 'multi_modal_projector_dim' in config:
             proj_in = config.get('vision_hidden_size', 768)

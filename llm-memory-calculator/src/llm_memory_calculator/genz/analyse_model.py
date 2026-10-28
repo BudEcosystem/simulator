@@ -72,7 +72,10 @@ def get_summary_table(df:pd.DataFrame, unit = Unit(), model_characterstics:bool=
             total_macs += df.loc[i,f'Num ops ({unit.unit_flop})'] * multiplier
             total_data += (df.loc[i,f'Input_a ({unit.unit_mem})'] + df.loc[i,f'Input_w ({unit.unit_mem})'] + df.loc[i,f'Output ({unit.unit_mem})']) * multiplier
             if i in attn_idx:
-                kv_cache += df.loc[i,f'Input_w ({unit.unit_mem})'] * multiplier
+                # MLA's expanded per-head K / V are computed from its latent ("MLA Latent", the
+                # cache), not held
+                if not str(df.loc[i, 'Layer Name']).endswith('(expanded)'):
+                    kv_cache += df.loc[i,f'Input_w ({unit.unit_mem})'] * multiplier
             elif i in mamba_idx:
                 if 'CONV1D' in df.loc[i, 'Op Type']:
                     kv_cache += df.loc[i,f'Input_w ({unit.unit_mem})'] * multiplier
@@ -161,20 +164,23 @@ def get_runtime_breakdown(df:pd.DataFrame) -> RuntimeBreakdown:
                             'Dispatch A2A', 'Collect A2A', 'FFN AR']
 
     for i in range(len(df)):
-        layer_name = df.loc[i, 'Layer Name']
+        # MLA's expanded score operators are booked as the attention they are
+        layer_name = str(df.loc[i, 'Layer Name']).removesuffix(' (expanded)')
         layer_latency = df.loc[i, f'Latency ({unit.unit_time})']
         if layer_name in ['embeddings', 'classifier']:
             runtime_breakdown.Embedding += layer_latency
         elif layer_name in ['QKV', 'Out Proj',
                             # MLA's projections (DeepSeek V2/V3, Kimi): the compressed Q pair or
                             # the full-rank Q Proj (q_lora_rank null), and the latent KV path.
-                            'Q Down', 'Q Up', 'Q Proj', 'KV Compress', 'KV Up'] + list(CROSS_PROJECTION_OPS):
+                            'Q Down', 'Q Up', 'Q Proj', 'KV Compress', 'KV Up',
+                            # DeepSeek Sparse Attention's indexer projections (V3.2)
+                            'Index Q', 'Index K', 'Index W'] + list(CROSS_PROJECTION_OPS):
             # ... and an encoder-decoder's cross-attention and encoder projections
             runtime_breakdown.MHA += layer_latency
             runtime_breakdown.QKVO_layers += layer_latency
         elif layer_name in ['Logit', 'Attend', 'Logit Pre', 'Logit Suf',
                             'Attend Pre', 'Attend Suf', 'Logit Dec', 'Attend Dec',
-                            'Attn Linear'] + list(CROSS_SCORE_OPS):  # DeciLM's linear attention; cross / encoder
+                            'Attn Linear', 'MLA Latent'] + list(CROSS_SCORE_OPS):  # DeciLM's linear attention; cross / encoder; MLA's cache read
             runtime_breakdown.MHA += layer_latency
             runtime_breakdown.LA_layers += layer_latency
         elif layer_name in ['Gate', 'up+gate', 'down', 'shared up+gate', 'shared down']:

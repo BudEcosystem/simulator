@@ -2,6 +2,14 @@ from llm_memory_calculator.genz.Models import ModelConfig, ResidencyInfo, OpType
 from llm_memory_calculator.genz.parallelism import ParallelismConfig
 from math import ceil
 
+def qkv_rows(model_config: ModelConfig, per_node_H: int, per_node_Hkv: int, Dq: int) -> int:
+    """The fused Q / K / V projection's output rows: the query heads, doubled where the attention
+    gates its output from a second query-width projection (``attention_output_gate``: Qwen3-Next
+    and Qwen3.5 build `q_proj` at 2 x heads x head_dim), and the K and V heads."""
+    gate = 2 if getattr(model_config, "attention_output_gate", False) else 1
+    return per_node_H * Dq * gate + 2 * per_node_Hkv * Dq
+
+
 def mha_flash_attention_prefill(model_config:ModelConfig, parallelism_config:ParallelismConfig, input_sequence_length:int):
     H = model_config.num_attention_heads
     Hkv = model_config.num_key_value_heads
@@ -17,7 +25,7 @@ def mha_flash_attention_prefill(model_config:ModelConfig, parallelism_config:Par
     # Reference: https://arxiv.org/pdf/2405.04434
 
     ## [Batch/dp, Seq/sp, Dmodel] * [2, Dmodel, Dq, Hkv/tp] + [Dmodel, Dq, Head/tp]= [Batch/dp, Seq/sp, 3, Dq, Head/tp]
-    QKV =           [["QKV", (per_node_H*Dq + 2*per_node_Hkv*Dq), input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+    QKV =           [["QKV", qkv_rows(model_config, per_node_H, per_node_Hkv, Dq), input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
 
     ## [Batch/dp, Seq, Dq, Head/tp] * [Batch/dp, Seq/sp, Dq, Head/tp] = [Batch/dp, Seq, Seq/sp, Head/tp]
     logit =         [["Logit",per_node_H, input_sequence_length, input_sequence_length//sp, Dq, per_node_Hkv, ResidencyInfo.C_onchip, OpType.Logit_Causal_PREFILL]]
@@ -50,7 +58,7 @@ def mha_flash_attention_prefill_local(model_config:ModelConfig, parallelism_conf
     # Local attention: each query token attends to at most sliding_window KV tokens
     kv_len = min(sw, input_sequence_length)
 
-    QKV =           [["QKV", (per_node_H*Dq + 2*per_node_Hkv*Dq), input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+    QKV =           [["QKV", qkv_rows(model_config, per_node_H, per_node_Hkv, Dq), input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
     logit =         [["Logit",per_node_H, input_sequence_length, kv_len//sp, Dq, per_node_Hkv, ResidencyInfo.C_onchip, OpType.Logit_Causal_PREFILL]]
     attend =        [["Attend",per_node_H, input_sequence_length, kv_len//sp, Dq, per_node_Hkv, ResidencyInfo.A_onchip, OpType.Attend_Causal_PREFILL]]
     output =        [["Out Proj", D, input_sequence_length//sp, (per_node_H) * Dq, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
@@ -78,7 +86,7 @@ def mha_flash_attention_decode_local(model_config:ModelConfig, parallelism_confi
     # Local attention: KV cache capped at sliding_window
     kv_len = min(sw, input_sequence_length)
 
-    query =         [["QKV", (per_node_H*Dq + 2*per_node_Hkv*Dq), 1, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    query =         [["QKV", qkv_rows(model_config, per_node_H, per_node_Hkv, Dq), 1, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
     logit_pre =     [["Logit Pre",per_node_H, 1, kv_len//sp, Dq, per_node_Hkv, ResidencyInfo.AC_onchip, OpType.Logit_BM_PREFILL]]
     attend_pre =    [["Attend Pre",per_node_H, 1, kv_len//sp, Dq, per_node_Hkv, ResidencyInfo.AC_onchip, OpType.Attend_BM_PREFILL]]
     logit_suf =     [["Logit Suf",per_node_H, 1, min(output_gen_tokens, sw), Dq, per_node_Hkv, ResidencyInfo.AC_onchip, OpType.Logit]]
@@ -104,7 +112,7 @@ def mha_flash_attention_decode(model_config:ModelConfig, parallelism_config:Para
     per_node_H = max(ceil(H / tp), 1)
     per_node_Hkv = max(ceil(Hkv / tp), 1)
 
-    query =         [["QKV", (per_node_H*Dq + 2*per_node_Hkv*Dq), 1, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    query =         [["QKV", qkv_rows(model_config, per_node_H, per_node_Hkv, Dq), 1, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
     logit_pre =     [["Logit Pre",per_node_H, 1, input_sequence_length//sp, Dq, per_node_Hkv, ResidencyInfo.AC_onchip, OpType.Logit_BM_PREFILL]]
     attend_pre =    [["Attend Pre",per_node_H, 1, input_sequence_length//sp, Dq, per_node_Hkv, ResidencyInfo.AC_onchip, OpType.Attend_BM_PREFILL]]
     logit_suf =     [["Logit Suf",per_node_H, 1, output_gen_tokens, Dq, per_node_Hkv, ResidencyInfo.AC_onchip, OpType.Logit]]
@@ -141,6 +149,36 @@ def window_kv_sizes(prefill_kv_sizes, decode_kv_sizes, window):
     return prefill, decode
 
 
+def mla_indexer_ops(model_config: ModelConfig, tokens: int, residency):
+    """DeepSeek Sparse Attention's lightning indexer beside MLA (V3.2's `index_n_heads` x
+    `index_head_dim`): its query up-projection from the query latent, its key projection and its
+    per-head weights, as transformers' `DeepseekV32Indexer` builds them (`wq_b`, `wk`,
+    `weights_proj`). None for an MLA without one. Leaving it out sized V3.2's graph 852M
+    parameters below the checkpoint."""
+    n = getattr(model_config, "index_n_heads", None)
+    d = getattr(model_config, "index_head_dim", None)
+    if not n or not d:
+        return []
+    D = model_config.hidden_size
+    q_in = model_config.q_lora_rank or D
+    return [["Index Q", n * d, tokens, q_in, 1, 1, residency, OpType.GEMM],
+            ["Index K", d, tokens, D, 1, 1, residency, OpType.GEMM],
+            ["Index W", n, tokens, D, 1, 1, residency, OpType.GEMM]]
+
+
+def mla_latent_op(model_config: ModelConfig, tokens: int, sequences: int = 1, op_type=OpType.Logit):
+    """What MLA caches: one latent of `kv_lora_rank + qk_rope_head_dim` per token, read once a step
+    for all heads (vLLM's and FlashMLA's absorbed attention). A score operator without queries
+    (no compute), so the graph's `KV Cache` is the latent; the expanded score operators beside it
+    (named "(expanded)") give the compute, and their per-head K and V are not a cache. Sized from
+    those, DeepSeek-V3's cache was 320 elements a token, not 576."""
+    width = (model_config.kv_lora_rank or 0) + (model_config.qk_rope_head_dim or 0)
+    if not width or tokens <= 0:
+        return []
+    return [["MLA Latent", max(int(sequences), 1), 0, int(tokens), width, max(int(sequences), 1),
+             ResidencyInfo.AC_onchip, op_type]]
+
+
 def mla_attention_chunked(model_config:ModelConfig, parallelism_config:ParallelismConfig,
                           chunk_size: int, prefill_kv_sizes, decode_kv_sizes):
     """Multi-head Latent Attention over a chunked step: MLA's projections over the chunk's
@@ -167,6 +205,7 @@ def mla_attention_chunked(model_config:ModelConfig, parallelism_config:Paralleli
     else:
         layers += [["Q Proj", q_out_dim, chunk_size, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
     layers += [["KV Compress", kv_lora_rank + rope, chunk_size, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    layers += mla_indexer_ops(model_config, chunk_size, ResidencyInfo.AC_onchip)
     kv_out_dim = per_node_H * (nope + v_head_dim)
     context = sum(p + c for p, c in prefill_kv_sizes)
     for kv in decode_kv_sizes:
@@ -179,22 +218,33 @@ def mla_attention_chunked(model_config:ModelConfig, parallelism_config:Paralleli
     layers += [["KV Up", kv_out_dim, max(context // sp, 1), kv_lora_rank, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
 
     for past, cur in prefill_kv_sizes:
-        layers += [["Logit Pre", per_node_H, cur, past + cur, Dq, 1, ResidencyInfo.C_onchip, OpType.Logit_Causal_PREFILL]]
-        layers += [["Attend Pre", per_node_H, cur, past + cur, v_head_dim, 1, ResidencyInfo.A_onchip, OpType.Attend_Causal_PREFILL]]
+        layers += [["Logit Pre (expanded)", per_node_H, cur, past + cur, Dq, 1, ResidencyInfo.C_onchip, OpType.Logit_Causal_PREFILL]]
+        layers += [["Attend Pre (expanded)", per_node_H, cur, past + cur, v_head_dim, 1, ResidencyInfo.A_onchip, OpType.Attend_Causal_PREFILL]]
     for kv in decode_kv_sizes:
         if isinstance(kv, tuple) and len(kv) == 4:
             pb, db, pctx, dctx = kv
-            layers += [["Logit Pre", pb * per_node_H, 1, pctx // sp, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit]]
-            layers += [["Attend Pre", pb * per_node_H, 1, pctx // sp, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend]]
-            layers += [["Logit Suf", db * per_node_H, 1, dctx, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit]]
-            layers += [["Attend Suf", db * per_node_H, 1, dctx, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend]]
+            layers += [["Logit Pre (expanded)", pb * per_node_H, 1, pctx // sp, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit]]
+            layers += [["Attend Pre (expanded)", pb * per_node_H, 1, pctx // sp, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend]]
+            layers += [["Logit Suf (expanded)", db * per_node_H, 1, dctx, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit]]
+            layers += [["Attend Suf (expanded)", db * per_node_H, 1, dctx, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend]]
         elif isinstance(kv, tuple) and len(kv) == 2:
             nb, ctx = kv
-            layers += [["Logit Dec", nb * per_node_H, 1, ctx, Dq, nb, ResidencyInfo.AC_onchip, OpType.Logit]]
-            layers += [["Attend Dec", nb * per_node_H, 1, ctx, v_head_dim, nb, ResidencyInfo.AC_onchip, OpType.Attend]]
+            layers += [["Logit Dec (expanded)", nb * per_node_H, 1, ctx, Dq, nb, ResidencyInfo.AC_onchip, OpType.Logit]]
+            layers += [["Attend Dec (expanded)", nb * per_node_H, 1, ctx, v_head_dim, nb, ResidencyInfo.AC_onchip, OpType.Attend]]
         else:
-            layers += [["Logit Dec", per_node_H, 1, kv, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit]]
-            layers += [["Attend Dec", per_node_H, 1, kv, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend]]
+            layers += [["Logit Dec (expanded)", per_node_H, 1, kv, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit]]
+            layers += [["Attend Dec (expanded)", per_node_H, 1, kv, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend]]
+    # The cache MLA keeps: one latent per token of every request's context (mla_latent_op)
+    for past, cur in prefill_kv_sizes:
+        layers += mla_latent_op(model_config, past + cur)
+    for kv in decode_kv_sizes:
+        if isinstance(kv, tuple) and len(kv) == 4:
+            pb, db, pctx, dctx = kv
+            layers += mla_latent_op(model_config, pctx // sp, pb) + mla_latent_op(model_config, dctx, db)
+        elif isinstance(kv, tuple) and len(kv) == 2:
+            layers += mla_latent_op(model_config, kv[1], kv[0])
+        else:
+            layers += mla_latent_op(model_config, kv)
     layers += [["Out Proj", D, chunk_size, per_node_H * v_head_dim, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
     if tp > 1:
         layers += [["MLA AR", chunk_size, D, 1, 1, tp, CollectiveType.AllReduce, OpType.Sync]]
@@ -235,7 +285,7 @@ def mha_flash_attention_chunked(model_config:ModelConfig, parallelism_config:Par
 
 
     layers = []
-    query =      [["QKV", (per_node_H*Dq + 2*per_node_Hkv*Dq), chunk_size, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    query =      [["QKV", qkv_rows(model_config, per_node_H, per_node_Hkv, Dq), chunk_size, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
     layers += query
 
     ## Prefill LA layers (causal: chunk of kv_size[1] queries attends causally to kv_size[0]+kv_size[1] keys)
@@ -332,6 +382,7 @@ def mla_attention_prefill(model_config:ModelConfig, parallelism_config:Paralleli
     # KV compression: [B, S, D] -> [B, S, kv_lora_rank + qk_rope_head_dim]
     kv_compressed_dim = kv_lora_rank + qk_rope_head_dim
     layers += [["KV Compress", kv_compressed_dim, input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+    layers += mla_indexer_ops(model_config, input_sequence_length//sp, ResidencyInfo.All_offchip)
 
     # KV up-projection: [B, S, kv_lora_rank] -> [B, S, H*(qk_nope_head_dim + v_head_dim)]
     kv_out_dim = per_node_H * (qk_nope_head_dim + v_head_dim)
@@ -339,10 +390,13 @@ def mla_attention_prefill(model_config:ModelConfig, parallelism_config:Paralleli
 
     # Logit: Q * K^T
     Dq = qk_nope_head_dim + qk_rope_head_dim
-    layers += [["Logit", per_node_H, input_sequence_length, input_sequence_length//sp, Dq, 1, ResidencyInfo.C_onchip, OpType.Logit_Causal_PREFILL]]
+    layers += [["Logit (expanded)", per_node_H, input_sequence_length, input_sequence_length//sp, Dq, 1, ResidencyInfo.C_onchip, OpType.Logit_Causal_PREFILL]]
 
     # Attend: softmax(QK^T) * V
-    layers += [["Attend", per_node_H, input_sequence_length, input_sequence_length//sp, v_head_dim, 1, ResidencyInfo.A_onchip, OpType.Attend_Causal_PREFILL]]
+    layers += [["Attend (expanded)", per_node_H, input_sequence_length, input_sequence_length//sp, v_head_dim, 1, ResidencyInfo.A_onchip, OpType.Attend_Causal_PREFILL]]
+
+    # The cache MLA keeps: one latent per token (mla_latent_op)
+    layers += mla_latent_op(model_config, input_sequence_length//sp)
 
     # Output projection: [B, S, H*v_head_dim] -> [B, S, D]
     layers += [["Out Proj", D, input_sequence_length//sp, per_node_H * v_head_dim, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
@@ -383,6 +437,7 @@ def mla_attention_decode(model_config:ModelConfig, parallelism_config:Parallelis
     # KV compression for the new token
     kv_compressed_dim = kv_lora_rank + qk_rope_head_dim
     layers += [["KV Compress", kv_compressed_dim, 1, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
+    layers += mla_indexer_ops(model_config, 1, ResidencyInfo.AC_onchip)
 
     # KV up-projection (applied to cached compressed KV for attention computation)
     kv_out_dim = per_node_H * (qk_nope_head_dim + v_head_dim)
@@ -390,12 +445,17 @@ def mla_attention_decode(model_config:ModelConfig, parallelism_config:Parallelis
 
     # Logit and Attend over prefill context
     Dq = qk_nope_head_dim + qk_rope_head_dim
-    layers += [["Logit Pre", per_node_H, 1, input_sequence_length//sp, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit_BM_PREFILL]]
-    layers += [["Attend Pre", per_node_H, 1, input_sequence_length//sp, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend_BM_PREFILL]]
+    layers += [["Logit Pre (expanded)", per_node_H, 1, input_sequence_length//sp, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit_BM_PREFILL]]
+    layers += [["Attend Pre (expanded)", per_node_H, 1, input_sequence_length//sp, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend_BM_PREFILL]]
 
     # Logit and Attend over generated tokens
-    layers += [["Logit Suf", per_node_H, 1, output_gen_tokens, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit]]
-    layers += [["Attend Suf", per_node_H, 1, output_gen_tokens, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend]]
+    layers += [["Logit Suf (expanded)", per_node_H, 1, output_gen_tokens, Dq, 1, ResidencyInfo.AC_onchip, OpType.Logit]]
+    layers += [["Attend Suf (expanded)", per_node_H, 1, output_gen_tokens, v_head_dim, 1, ResidencyInfo.AC_onchip, OpType.Attend]]
+
+    # The cache MLA keeps: one latent per token of the context (mla_latent_op), the prompt's
+    # shared by every beam as the expanded "Pre" operators read it
+    layers += mla_latent_op(model_config, input_sequence_length//sp, op_type=OpType.Logit_BM_PREFILL)
+    layers += mla_latent_op(model_config, output_gen_tokens)
 
     # Output projection
     layers += [["Out Proj", D, 1, per_node_H * v_head_dim, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
@@ -410,7 +470,8 @@ def mla_attention_decode(model_config:ModelConfig, parallelism_config:Parallelis
 #: The operators the cross-attention and encoder graphs emit, by what `get_runtime_breakdown`
 #: books them as: projections (MHA, QKVO), scores and values (MHA, the attention kernels), and
 #: the tensor-parallel all-reduce (MHA, collective).
-CROSS_PROJECTION_OPS = ("Cross KV", "Cross Q", "Cross Out", "Enc QKV", "Enc Out Proj")
+CROSS_PROJECTION_OPS = ("Cross KV", "Cross Q", "Cross Out", "Enc QKV", "Enc Out Proj", "Enc Merge",
+                        "Enc Proj", "Enc Embed")
 CROSS_SCORE_OPS = ("Cross Logit", "Cross Attend", "Enc Logit", "Enc Attend")
 CROSS_COLLECTIVE_OPS = ("Cross AR", "Enc MHA AR")
 
@@ -437,7 +498,7 @@ def cross_attention(model_config: ModelConfig, parallelism_config: ParallelismCo
     Hkv, Dq = cross["kv_heads"], cross["head_dim"]
     D = model_config.hidden_size
     encoder = getattr(model_config, "encoder", None) or {}
-    De = encoder.get("hidden_size") or D
+    De = encoder.get("projected_to") or encoder.get("hidden_size") or D
     tp = parallelism_config.tensor_parallel
     per_node_H = max(ceil(H / tp), 1)
     per_node_Hkv = max(ceil(Hkv / tp), 1)

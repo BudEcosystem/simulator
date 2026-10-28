@@ -1,0 +1,596 @@
+{
+ "about": "Ground truths written by hand for the KV gate's allowlist (scripts/kv_truth.py --manual): rows transformers 5.12 cannot build as their config is written. 'base: transformers' builds the row's config with 'build_from' / 'build_as' / 'drop_keys' applied, and the other fields replace what that build reads; every other truth is config arithmetic, its formula in 'source'.",
+ "profiles": {
+  "synth:blip2-flan-t5-xl": {
+   "base": "transformers",
+   "build_as": {
+    "model_type": "blip-2"
+   },
+   "source": "transformers 5.12 Blip2ForConditionalGeneration (the synthetic's model_type 'blip2' is the class's 'blip-2')"
+  },
+  "synth:instructblip-flan-t5-xl": {
+   "base": "transformers",
+   "build_as": {
+    "model_type": "instructblip"
+   },
+   "source": "transformers 5.12 InstructBlipForConditionalGeneration"
+  },
+  "synth:nemotronh-list-depth-nested": {
+   "base": "transformers",
+   "build_from": "text_config",
+   "source": "transformers 5.12 NemotronHForCausalLM (the wrapper's text_config)"
+  },
+  "synth:florence2": {
+   "base": "transformers",
+   "build_as": {
+    "text_config": {
+     "model_type": "bart"
+    },
+    "vision_config": {
+     "model_type": "florence_vision"
+    }
+   },
+   "source": "transformers 5.12 Florence2ForConditionalGeneration"
+  },
+  "fixture:MiniMaxAI_MiniMax-Text-01.json": {
+   "base": "transformers",
+   "build_as": {
+    "model_type": "minimax",
+    "layer_types": [
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "full_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "full_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "full_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "full_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "full_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "full_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "full_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "full_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "full_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "linear_attention",
+     "full_attention"
+    ]
+   },
+   "source": "transformers 5.12 MiniMaxForCausalLM (the hub's minimax_text_01), its layer_types from the hub's attn_type_list (1: softmax attention, 0: lightning linear attention)"
+  },
+  "fixture:EleutherAI_gpt-neo-1.3B.json": {
+   "base": "transformers",
+   "kv": [
+    [
+     "full",
+     null,
+     4096,
+     12
+    ],
+    [
+     "sliding",
+     256,
+     4096,
+     12
+    ]
+   ],
+   "figures": {
+    "state_gb": {
+     "truth": 0,
+     "source": "GPT-Neo holds no recurrent state"
+    },
+    "report_state_gb": {
+     "truth": 0,
+     "source": "GPT-Neo holds no recurrent state"
+    }
+   },
+   "source": "transformers 5.12 GPTNeoForCausalLM; its attention_types alternate global and local layers, a local layer attending within window_size=256 (an engine that bounds a windowed layer's cache holds 256 tokens; transformers' eager cache keeps every token)"
+  },
+  "synth:rwkv": {
+   "base": "transformers",
+   "kv": [],
+   "figures": {
+    "state_gb": {
+     "truth": 0.000786432,
+     "source": "RwkvModel's state: per layer two hidden-wide vectors in the model dtype and three in float32 (24 x 2048 x (2 x 2 + 3 x 4) B = 786,432 B)"
+    },
+    "report_state_gb": {
+     "truth": 0.000786432,
+     "source": "RwkvModel's state, as state_gb"
+    }
+   },
+   "source": "transformers 5.12 RwkvForCausalLM; RWKV holds no KV cache (its time-mix carries a fixed state)"
+  },
+  "fixture:Zyphra_Zamba2-2.7B.json": {
+   "params": 2844404640,
+   "lm_params": 2844404640,
+   "lm_matrix_params": 2843675648,
+   "input_embedding": 81920000,
+   "kv": [
+    [
+     "full",
+     null,
+     10240,
+     9
+    ],
+    [
+     "none",
+     null,
+     0,
+     45
+    ]
+   ],
+   "source": "transformers 5.12 Zamba2ForCausalLM built with its shared-block tying lifted (5.12 rejects the tie spec on the meta device), each of the num_mem_blocks=2 shared transformer blocks counted once; KV on the 9 hybrid_layer_ids, 32 KV heads x attention_head_dim 160"
+  },
+  "fixture:microsoft_Phi-4-mini-flash-reasoning.json": {
+   "params": 3850000000,
+   "lm_params": 3850000000,
+   "lm_matrix_params": 3850000000,
+   "input_embedding": 512163840,
+   "kv": [
+    [
+     "sliding",
+     512,
+     2560,
+     8
+    ],
+    [
+     "full",
+     null,
+     2560,
+     1
+    ],
+    [
+     "none",
+     null,
+     0,
+     23
+    ]
+   ],
+   "source": "the hub's modeling_phi4flash.py (SambaY): the self-decoder's 8 attention layers slide (sliding_window=512) beside 8 Mamba layers; one full-attention layer writes the KV the cross-decoder's layers read (none of their own); 20 KV heads x 64 (2560 / 40). Parameters: the model card's 3.8B (config arithmetic 3.85B)"
+  },
+  "fixture:moonshotai_Kimi-Linear-48B-A3B-Instruct.json": {
+   "params": 48000000000,
+   "lm_params": 48000000000,
+   "lm_matrix_params": 48000000000,
+   "input_embedding": 377487360,
+   "kv": [
+    [
+     "full",
+     null,
+     576,
+     7
+    ],
+    [
+     "none",
+     null,
+     0,
+     20
+    ]
+   ],
+   "source": "the hub's modeling_kimi.py: MLA on linear_attn_config.full_attn_layers (7), a latent of kv_lora_rank 512 + qk_rope_head_dim 64 per token; Kimi Delta Attention on the 20 kda_layers (a fixed state). Parameters: the model card's 48B total"
+  },
+  "fixture:inclusionAI_Ling-flash-2.0.json": {
+   "params": 100000000000,
+   "lm_params": 100000000000,
+   "lm_matrix_params": 100000000000,
+   "input_embedding": 643825664,
+   "kv": [
+    [
+     "full",
+     null,
+     1024,
+     32
+    ]
+   ],
+   "source": "the model card's 100B total parameters; KV: 4 KV heads x 128 x 2 on every layer"
+  },
+  "synth:chatglm3": {
+   "params": 6243584000,
+   "lm_params": 6243584000,
+   "lm_matrix_params": 6243221504,
+   "input_embedding": 266338304,
+   "kv": [
+    [
+     "full",
+     null,
+     512,
+     28
+    ]
+   ],
+   "source": "ChatGLM3-6B arithmetic (the hub's modeling_chatglm.py): per layer a fused QKV 4096 x (4096 + 2 x 2 x 128) with bias, dense 4096 x 4096, SwiGLU 4096 x 2 x 13696 and 13696 x 4096, two norms; 65024 x 4096 embedding and output layer: 6,243,584,000 (the published count). KV: multi_query_group_num 2 x kv_channels 128 x 2"
+  },
+  "db:deepseek-ai/deepseek-moe-16b-base": {
+   "params": 16375728128,
+   "lm_params": 16375728128,
+   "lm_matrix_params": 16375611392,
+   "input_embedding": 209715200,
+   "kv": [
+    [
+     "full",
+     null,
+     4096,
+     28
+    ]
+   ],
+   "source": "DeepSeek-MoE-16B arithmetic (the hub's modeling_deepseek.py): 28 layers of 2048-wide MHA (16 x 128), layer 0 a 10944-wide SwiGLU, 27 MoE layers of 64 routed + 2 shared 1408-wide SwiGLU experts and a 64-way router, 102400 x 2048 embedding and head: 16,375,728,128 (16.4B published)"
+  },
+  "fixture:PowerInfer_SmallThinker-21BA3B-Instruct.json": {
+   "params": 21506562560,
+   "lm_params": 21506562560,
+   "lm_matrix_params": 21506293760,
+   "input_embedding": 388956160,
+   "kv": [
+    [
+     "full",
+     null,
+     1024,
+     13
+    ],
+    [
+     "sliding",
+     4096,
+     1024,
+     39
+    ]
+   ],
+   "source": "SmallThinker-21BA3B arithmetic (the hub's modeling): 52 layers of 28 x 128 queries and 4 x 128 K / V, 64 gated experts 768 wide and a 64-way router per layer, an untied 151936 x 2560 embedding and head (21.5B published); sliding_window_layout 1 marks a layer windowed at sliding_window_size 4096"
+  },
+  "fixture:nvidia_Hymba-1.5B-Base.json": {
+   "kv": [
+    [
+     "full",
+     null,
+     640,
+     3
+    ],
+    [
+     "sliding",
+     1024,
+     640,
+     14
+    ],
+    [
+     "none",
+     null,
+     0,
+     15
+    ]
+   ],
+   "source": "the hub's modeling_hymba.py: full attention on global_attn_idx (0, 15, 31), a 1024 window elsewhere, each kv_reuse_group's layers sharing one cache (14 groups); 5 KV heads x 64 x 2. Parameters: the model card's 1.52B",
+   "params": 1520000000,
+   "lm_params": 1520000000,
+   "lm_matrix_params": 1520000000,
+   "input_embedding": 51201600
+  },
+  "config:models--OpenMOSS-Team--MOSS-Transcribe-Diarize/snapshots/704aa4a9c304e8520be88901e0d1960158ef5b15/config.json": {
+   "base": "transformers",
+   "build_from": "text_config",
+   "source": "transformers 5.12, the language model in its text_config (the audio towers are not graphed)"
+  },
+  "config:models--bosonai--higgs-audio-v3-tts-4b/snapshots/239f63fb7b02b1aa085f98d9efae5e35cc5523e8/config.json": {
+   "base": "transformers",
+   "build_from": "text_config",
+   "source": "transformers 5.12, the language model in its text_config (the audio towers are not graphed)"
+  },
+  "config:models--microsoft--VibeVoice-1.5B/snapshots/c00898d257e6b46004e3e2866a47534085fb685a/config.json": {
+   "base": "transformers",
+   "build_from": "decoder_config",
+   "source": "transformers 5.12, the language model in its decoder_config (the audio towers are not graphed)"
+  },
+  "config:models--Qwen--Qwen3-TTS-12Hz-0.6B-Base/snapshots/5d83992436eae1d760afd27aff78a71d676296fc/speech_tokenizer/config.json": {
+   "params": 170557441,
+   "lm_params": 170557441,
+   "lm_matrix_params": 170355808,
+   "input_embedding": 0,
+   "kv": [
+    [
+     "sliding",
+     72,
+     2048,
+     8
+    ]
+   ],
+   "source": "the speech tokenizer's own checkpoint (model.safetensors in the Qwen3-TTS-12Hz-0.6B-Base snapshot: 170,557,441 parameters); KV: the codec decoder's 8 transformer layers, 16 x 64 x 2, sliding_window 72"
+  },
+  "config:models--Qwen--Qwen3-TTS-12Hz-0.6B-CustomVoice/snapshots/85e237c12c027371202489a0ec509ded67b5e4b5/speech_tokenizer/config.json": {
+   "params": 170557441,
+   "lm_params": 170557441,
+   "lm_matrix_params": 170355808,
+   "input_embedding": 0,
+   "kv": [
+    [
+     "sliding",
+     72,
+     2048,
+     8
+    ]
+   ],
+   "source": "the speech tokenizer's own checkpoint (model.safetensors in the Qwen3-TTS-12Hz-0.6B-Base snapshot: 170,557,441 parameters); KV: the codec decoder's 8 transformer layers, 16 x 64 x 2, sliding_window 72"
+  },
+  "gguf:Qwen3.5-2B-Q4_K_M.gguf": {
+   "params": 1881825088,
+   "lm_params": 1881825088,
+   "lm_matrix_params": 1881718784,
+   "input_embedding": 508559360,
+   "quantized": true,
+   "kv": [
+    [
+     "full",
+     null,
+     1024,
+     6
+    ],
+    [
+     "none",
+     null,
+     0,
+     18
+    ]
+   ],
+   "figures": {
+    "facts_weight_bytes": {
+     "truth": 1269873920,
+     "source": "the GGUF's tensor bytes (Q4_K_M)"
+    }
+   },
+   "source": "the GGUF's own tensors (1,881,825,088 parameters); KV: full_attention_interval 4 -> 6 attention layers of 2 x 2 x 256, Gated DeltaNet elsewhere"
+  },
+  "gguf:nomic-embed-text-v1.5.Q8_0.gguf": {
+   "params": 136727040,
+   "lm_params": 136727040,
+   "lm_matrix_params": 136688640,
+   "input_embedding": 23440896,
+   "quantized": true,
+   "kv": [],
+   "figures": {
+    "facts_weight_bytes": {
+     "truth": 145389792,
+     "source": "the GGUF's tensor bytes (Q8_0)"
+    }
+   },
+   "source": "the GGUF's own tensors; nomic-bert is a bidirectional encoder (an embedding model): no KV cache"
+  },
+  "synth:enc-dec-llama-dec": {
+   "params": 1438000000,
+   "lm_params": 1438000000,
+   "lm_matrix_params": 1438000000,
+   "input_embedding": 65536000,
+   "kv": [
+    [
+     "full",
+     null,
+     1024,
+     16
+    ]
+   ],
+   "source": "config arithmetic, a lower bound: the BERT encoder (24 x 1024, 334M with its embeddings) and the Llama decoder (16 x 2048, 8 x 64 K / V, 8192 SwiGLU, untied 32000-token embedding and head: 1,104M), no cross-attention counted (LlamaForCausalLM builds none, so transformers refuses the composite)"
+  },
+  "synth:gguf-swa-short-pattern": {
+   "base": "transformers",
+   "drop_keys": [
+    "layer_types",
+    "sliding_window_pattern"
+   ],
+   "build_as": {
+    "sliding_window": 1024
+   },
+   "source": "transformers 5.12 Gemma3TextConfig's own layout (sliding_window_pattern 6: every 6th layer full, the rest windowed at 1024), the least KV any reading of a 6-long pattern over 34 layers gives"
+  },
+  "genz:state-spaces/mamba-130m-hf": {
+   "kv": [],
+   "source": "Mamba holds no KV cache (a fixed conv and SSM state)"
+  },
+  "genz:state-spaces/mamba-2.8b-hf": {
+   "kv": [],
+   "source": "Mamba holds no KV cache"
+  },
+  "genz:tiiuae/falcon-mamba-7b": {
+   "kv": [],
+   "source": "Falcon-Mamba holds no KV cache"
+  },
+  "genz:ai21labs/Jamba-v0.1": {
+   "kv": [
+    [
+     "full",
+     null,
+     2048,
+     4
+    ],
+    [
+     "none",
+     null,
+     0,
+     28
+    ]
+   ],
+   "source": "the hub config: attn_layer_period 8, offset 4 (4 of 32 layers attend), 8 KV heads x 128"
+  },
+  "genz:ai21labs/AI21-Jamba-1.5-Mini": {
+   "kv": [
+    [
+     "full",
+     null,
+     2048,
+     4
+    ],
+    [
+     "none",
+     null,
+     0,
+     28
+    ]
+   ],
+   "source": "the hub config: 4 of 32 layers attend, 8 KV heads x 128"
+  },
+  "genz:ai21labs/AI21-Jamba-1.5-Large": {
+   "kv": [
+    [
+     "full",
+     null,
+     2048,
+     9
+    ],
+    [
+     "none",
+     null,
+     0,
+     63
+    ]
+   ],
+   "source": "the hub config: 9 of 72 layers attend, 8 KV heads x 128"
+  },
+  "genz:deepseek-ai/DeepSeek-V2": {
+   "kv": [
+    [
+     "full",
+     null,
+     576,
+     60
+    ]
+   ],
+   "source": "the hub config: MLA on 60 layers, a latent of kv_lora_rank 512 + qk_rope_head_dim 64"
+  },
+  "genz:google/gemma-3-27B": {
+   "kv": [
+    [
+     "full",
+     null,
+     4096,
+     10
+    ],
+    [
+     "sliding",
+     1024,
+     4096,
+     52
+    ]
+   ],
+   "source": "the hub config: 62 layers, every 6th full, the rest windowed at 1024; 16 KV heads x 128"
+  },
+  "genz:google/gemma-3-4B": {
+   "kv": [
+    [
+     "full",
+     null,
+     2048,
+     5
+    ],
+    [
+     "sliding",
+     1024,
+     2048,
+     29
+    ]
+   ],
+   "source": "the hub config: 34 layers, every 6th full, the rest windowed at 1024; 4 KV heads x head_dim 256"
+  },
+  "genz:nvidia/Llama-3_1-Nemotron-51B-Instruct": {
+   "kv": [
+    [
+     "full",
+     null,
+     94976,
+     1
+    ]
+   ],
+   "source": "the hub config's block_configs (genz/Models/Model_sets/nvidia.py): 54 attention blocks of 64 / n_heads_in_group KV heads x 128, the linear-replaced and no-op blocks none"
+  },
+  "genz:Qwen/Qwen1.5-MoE-A2.7B": {
+   "params": 14315784192,
+   "lm_params": 14315784192,
+   "lm_matrix_params": 14315784192,
+   "input_embedding": 311164928,
+   "source": "transformers 5.12 Qwen2MoeForCausalLM on the hub config (tests/fixtures/planner/models/qwen1.5-moe-a2.7b.json)"
+  },
+  "synth:mllama-own-cross-layers": {
+   "base": "transformers",
+   "build_as": {
+    "vision_config": {
+     "supported_aspect_ratios": [
+      [
+       1,
+       1
+      ]
+     ]
+    },
+    "text_config": {
+     "pad_token_id": null
+    }
+   },
+   "source": "transformers 5.12 MllamaForConditionalGeneration (one tile, as the synthetic states, with the one aspect ratio a single tile supports; its pad token (128004, beyond the reduced 32000-token vocabulary) unset)"
+  },
+  "synth:mllama-own-cross-layers-no-tower-geometry": {
+   "base": "transformers",
+   "source": "transformers 5.12 MllamaForConditionalGeneration (the tower at its class defaults)",
+   "build_as": {
+    "text_config": {
+     "pad_token_id": null
+    }
+   }
+  }
+ }
+}

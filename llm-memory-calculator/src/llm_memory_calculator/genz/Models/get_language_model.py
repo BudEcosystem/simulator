@@ -185,6 +185,19 @@ def encoder_decoder_fields(hf_config: dict) -> dict:
             head_dim=int(attention_head_dim(view, heads, hidden) or hidden // heads),
             intermediate_size=int(view.get("intermediate_size") or 4 * hidden),
         )
+        if view.get("stages"):
+            # a hierarchical tower: each stage at its own width (layer_plan.encoder_stages)
+            encoder["stages"] = [dict(st) for st in view["stages"]]
+        if view.get("own_embedding"):
+            encoder["vocab_size"] = int(view["vocab_size"])
+        if view.get("projected_to"):
+            encoder["projected_to"] = int(view["projected_to"])
+        # a tower's patch or frame embedding and positions (stack_params.tower_embedding_params)
+        from llm_memory_calculator.stack_params import tower_embedding_params
+
+        extra = tower_embedding_params(view)
+        if extra:
+            encoder["embedding_params"] = int(extra)
     return dict(num_encoder_layers=int(stacks["encoder"]), cross_attention=cross, encoder=encoder)
 
 
@@ -329,6 +342,18 @@ def _ffn_parallelism(cfg, model_config, parallelism_config):
     return parallelism_config
 
 
+def _learned_positions(hf_config: dict) -> int:
+    from llm_memory_calculator.layer_plan import learned_positions
+
+    return learned_positions(hf_config)
+
+
+def _attention_output_gate(hf_config: dict) -> bool:
+    from llm_memory_calculator.layer_plan import attention_output_gate
+
+    return attention_output_gate(hf_config)
+
+
 def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> ModelConfig:
     """Convert HuggingFace config to ModelConfig format.
 
@@ -344,6 +369,10 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
     # depth is read before, from the config as stated.
     enc_dec = encoder_decoder_fields(hf_config)
     num_encoder_layers = enc_dec["num_encoder_layers"]
+    from llm_memory_calculator.layer_plan import decoder_streams
+
+    # an audio decoder's codebooks: as many embedding tables and output heads (Dia, MusicGen)
+    streams = decoder_streams(hf_config)
     hf_config = resolve_decoder_config(hf_config)
 
     # Extract architecture type
@@ -375,16 +404,16 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
             stacklevel=2,
         )
 
-    vocab_size = hf_config.get('vocab_size', 32000)
+    from llm_memory_calculator.layer_plan import ffn_width as _ffn_width, vocab_size as _vocab
+
+    vocab_size = _vocab(hf_config, 32000) * streams
     hidden_size = hf_config.get('hidden_size', 4096)
     # The depth the layer-kind table reads, so the per-layer configs below always match it
     num_layers = _stated_depth(hf_config) or 32
     num_heads = hf_config.get('num_attention_heads', 32)
 
     # Handle different naming conventions for intermediate size
-    intermediate_size = hf_config.get('intermediate_size',
-                                     hf_config.get('ffn_dim',
-                                     hf_config.get('mlp_dim', 11008)))
+    intermediate_size = _ffn_width(hf_config, 11008)
 
     # Handle KV heads
     num_kv_heads = hf_config.get('num_key_value_heads', num_heads)
@@ -406,27 +435,35 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
     # MoE (Mixture of Experts) Attribute Extraction
     # ============================================================
     # Different HF configs use different naming conventions
-    num_experts = hf_config.get('num_local_experts',  # Mixtral, Qwen
-                               hf_config.get('num_experts',  # DeepSeek
-                               hf_config.get('n_routed_experts',  # DeepSeek V2/V3
-                               1)))
+    # The routed experts and one expert's width under any spelling (layer_plan's readers, the
+    # calculator's and the facts' too: SmallThinker's `moe_num_primary_experts` of
+    # `moe_ffn_hidden_size`, Hunyuan's per-layer lists)
+    from llm_memory_calculator.layer_plan import routed_expert_count, routed_expert_width
+
+    num_experts = routed_expert_count(hf_config) or 1
 
     expert_top_k = hf_config.get('num_experts_per_tok',  # Mixtral, DeepSeek
                                 hf_config.get('num_experts_per_token',
                                 hf_config.get('expert_top_k',
-                                hf_config.get('top_k', 1 if num_experts <= 1 else 2))))
+                                hf_config.get('moe_num_active_primary_experts',
+                                hf_config.get('moe_topk',
+                                hf_config.get('top_k', 1 if num_experts <= 1 else 2))))))
+    if isinstance(expert_top_k, list):
+        expert_top_k = max(expert_top_k)
 
     # MoE intermediate size (per expert)
-    moe_intermediate_size = hf_config.get('moe_intermediate_size',  # DeepSeek V2/V3
-                                         hf_config.get('expert_intermediate_size',
-                                         intermediate_size))
+    moe_intermediate_size = (routed_expert_width(hf_config) or intermediate_size) \
+        if num_experts > 1 else intermediate_size
 
-    # Shared experts (DeepSeek V2/V3 specific)
-    n_shared_experts = hf_config.get('n_shared_experts',
-                                    hf_config.get('num_shared_experts', 0))
+    # Shared experts: the MLP every MoE layer runs beside its routed experts, under any spelling
+    # (layer_plan.shared_expert_width: DeepSeek's `n_shared_experts` x `moe_intermediate_size`,
+    # Qwen MoE's `shared_expert_intermediate_size`, Granite 4's `shared_intermediate_size`, Llama
+    # 4's class-built one). Graphed as one expert of the total width.
+    from llm_memory_calculator.layer_plan import shared_expert_width
 
-    shared_expert_intermediate_size = hf_config.get('shared_expert_intermediate_size',
-                                                   intermediate_size if n_shared_experts > 0 else None)
+    shared_width = shared_expert_width(hf_config) if num_experts > 1 else 0
+    n_shared_experts = 1 if shared_width else 0
+    shared_expert_intermediate_size = shared_width or None
 
     # MoE layer frequency (which layers have MoE)
     moe_layer_freq = hf_config.get('moe_layer_freq',
@@ -472,32 +509,33 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
     # ============================================================
     # FFN Implementation Selection
     # ============================================================
-    # DeepSeek models use a special FFN implementation with shared experts
-    ffn_implementation = "default"
-    if n_shared_experts > 0 or 'deepseek' in model_name.lower():
-        ffn_implementation = "deepseek"
+    # A model with shared experts runs them on every MoE layer (ffn.shared_expert_ops); the
+    # chunked graph's "deepseek" FFN also spreads a chunk's tokens over the experts they touch.
+    ffn_implementation = "deepseek" if n_shared_experts > 0 else "default"
 
     # ============================================================
     # Gated MLP detection (num_ffi)
     # ============================================================
     # Gated MLPs (SwiGLU/GeGLU) have 3 matrices per FFN (gate, up, down) -> num_ffi=2
     # (see Model_sets/mistral.py); plain MLPs have 2 (up, down) -> num_ffi=1.
-    hidden_act = str(hf_config.get('hidden_act', hf_config.get('activation_function', '')) or '').lower()
-    _GATED_MODEL_TYPES = {
-        'llama', 'mistral', 'mixtral', 'qwen2', 'qwen2_moe', 'qwen3', 'qwen3_moe',
-        'gemma', 'gemma2', 'gemma3', 'gpt_oss', 'deepseek_v2', 'deepseek_v3', 'phi3',
-    }
+    # The activation the config states, else its config class's default (Llama4TextConfig's
+    # "silu": a Llama 4 config without `hidden_act` is still gated).
+    from llm_memory_calculator.layer_plan import ffn_activation
+
+    hidden_act = ffn_activation(hf_config)
     # The config's own statement first (layer_plan.stated_gated_ffn: flan-T5's
     # `feed_forward_proj: gated-gelu` names its activation `gelu_new`), then the activation and
     # the model type.
-    from llm_memory_calculator.layer_plan import stated_gated_ffn
+    from llm_memory_calculator.layer_plan import gated_ffn_by_family, stated_gated_ffn
 
     is_gated_mlp = stated_gated_ffn(hf_config)
     if is_gated_mlp is None:
         is_gated_mlp = (
             hidden_act in ('silu', 'swiglu', 'geglu', 'gelu_glu', 'gated_gelu')
             or 'glu' in hidden_act
-            or model_type in _GATED_MODEL_TYPES
+            # the family's own modelling (layer_plan.GATED_FFN_MODEL_TYPES, the parameter
+            # counter's table too): SmallThinker states no activation and builds gate / up / down
+            or gated_ffn_by_family(hf_config)
         )
     num_ffi = 2 if is_gated_mlp else 1
 
@@ -563,7 +601,7 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         num_attention_heads=num_heads,
         head_dim=head_dim,
         num_key_value_heads=num_kv_heads,
-        hidden_act=hf_config.get('hidden_act', hf_config.get('activation_function', 'silu')),
+        hidden_act=hidden_act or 'silu',
         sliding_window=sliding_window,
         global_attn_every_n_layers=hf_config.get('global_attn_every_n_layers', None),
         ffn_implementation=ffn_implementation,
@@ -594,6 +632,10 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         qk_rope_head_dim=hf_config.get('qk_rope_head_dim', None),
         qk_nope_head_dim=hf_config.get('qk_nope_head_dim', None),
         v_head_dim=hf_config.get('v_head_dim', None),
+        attention_output_gate=_attention_output_gate(hf_config),
+        position_embeddings=_learned_positions(hf_config),
+        index_n_heads=hf_config.get('index_n_heads', None) if hf_config.get('kv_lora_rank') else None,
+        index_head_dim=hf_config.get('index_head_dim', None) if hf_config.get('kv_lora_rank') else None,
         # Per-layer heterogeneous configs
         layer_configs=layer_configs,
         recurrent_state=recurrent_state,
@@ -740,19 +782,55 @@ def encoder_stack(model_config: ModelConfig, parallelism_config: ParallelismConf
         return []
     cross = getattr(model_config, "cross_attention", None) or {}
     tokens = 0 if resident else int(cross.get("tokens") or input_sequence_length)
-    view = copy(model_config)
-    view.hidden_size = enc["hidden_size"]
-    view.num_attention_heads = enc["num_attention_heads"]
-    view.num_key_value_heads = enc["num_key_value_heads"]
-    view.head_dim = enc["head_dim"]
-    view.intermediate_size = enc["intermediate_size"]
-    view.num_experts = 1
-    view.is_moe = False
-    view.layer_configs = None
-    body = encoder_attention(view, parallelism_config, tokens) + ffn_prefill(view, parallelism_config, tokens)
-    if resident:
-        body = [op for op in body if op[-1] == OpType.GEMM]
-    return repeat_layers(enc["layers"]) + body + end_repeat_layers(enc["layers"])
+
+    def stack(layers, width, heads, kv_heads, head_dim, ffn, n_tokens):
+        view = copy(model_config)
+        view.hidden_size = width
+        view.num_attention_heads = heads
+        view.num_key_value_heads = kv_heads
+        view.head_dim = head_dim
+        view.intermediate_size = ffn
+        view.num_experts = 1
+        view.is_moe = False
+        view.layer_configs = None
+        view.n_shared_experts = 0
+        view.attention_output_gate = False
+        body = encoder_attention(view, parallelism_config, n_tokens) + ffn_prefill(view, parallelism_config, n_tokens)
+        if resident:
+            body = [op for op in body if op[-1] == OpType.GEMM]
+        return repeat_layers(layers) + body + end_repeat_layers(layers)
+
+    # an encoder with its own token table (layer_plan.encoder_view's `own_embedding`): held,
+    # looked up rather than multiplied (no tokens through it)
+    embed = ([["Enc Embed", enc["hidden_size"], 0, enc["vocab_size"], 1, 1,
+               ResidencyInfo.All_offchip, OpType.GEMM]] if enc.get("vocab_size") else [])
+    # a tower's patch / frame embedding and positions, held the same way
+    if enc.get("embedding_params"):
+        embed += [["Enc Embed", enc["hidden_size"], 0,
+                   -(-int(enc["embedding_params"]) // int(enc["hidden_size"])), 1, 1,
+                   ResidencyInfo.All_offchip, OpType.GEMM]]
+    # a composite's projection of the encoder's output to the decoder's width (enc_to_dec_proj)
+    if enc.get("projected_to"):
+        embed += [["Enc Proj", enc["projected_to"], tokens, enc["hidden_size"], 1, 1,
+                   ResidencyInfo.All_offchip, OpType.GEMM]]
+    stages = enc.get("stages")
+    if not stages:
+        return embed + stack(enc["layers"], enc["hidden_size"], enc["num_attention_heads"],
+                             enc["num_key_value_heads"], enc["head_dim"], enc["intermediate_size"],
+                             tokens)
+    # A hierarchical tower (Swin): each stage's blocks at its own width over its own tokens -- the
+    # last stage hands the decoder `tokens`, and each earlier stage holds 4x the next (2 x 2
+    # patch merging) -- with the merge between stages (Linear(4c, 2c)).
+    out = list(embed)
+    n = len(stages)
+    for i, st in enumerate(stages):
+        c, heads = int(st["hidden_size"]), int(st["num_attention_heads"])
+        stage_tokens = tokens * 4 ** (n - 1 - i)
+        out += stack(int(st["layers"]), c, heads, heads, max(c // heads, 1),
+                     int(st["intermediate_size"]), stage_tokens)
+        if i + 1 < n:
+            out += [["Enc Merge", 2 * c, stage_tokens // 4, 4 * c, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+    return out
 
 
 def create_full_prefill_model(

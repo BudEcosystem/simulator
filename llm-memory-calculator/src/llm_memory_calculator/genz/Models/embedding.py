@@ -8,7 +8,8 @@ def input_embedding(model_config:ModelConfig, parallelism_config:ParallelismConf
     sp = parallelism_config.sequence_parallel
 
     D = model_config.hidden_size
-    V = model_config.vocab_size
+    # the token table and a learned position table beside it (layer_plan.learned_positions)
+    V = model_config.vocab_size + int(getattr(model_config, "position_embeddings", 0) or 0)
 
     seq_len = max(1,input_sequence_length//sp) if input_sequence_length > 0 else 0
     emb =   [["embeddings", D, seq_len, V//tp, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]

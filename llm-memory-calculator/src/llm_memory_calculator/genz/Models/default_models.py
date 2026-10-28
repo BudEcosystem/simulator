@@ -130,6 +130,13 @@ class ModelConfig():
         qk_rope_head_dim: Optional[int] = None,  # RoPE head dimension
         qk_nope_head_dim: Optional[int] = None,  # Non-RoPE head dimension
         v_head_dim: Optional[int] = None,        # Value head dimension for MLA
+        # DeepSeek Sparse Attention's lightning indexer (V3.2: `index_n_heads` x `index_head_dim`)
+        index_n_heads: Optional[int] = None,
+        index_head_dim: Optional[int] = None,
+        # A query-width output gate in q_proj (layer_plan.attention_output_gate)
+        attention_output_gate: bool = False,
+        # Rows of a learned absolute position table (layer_plan.learned_positions)
+        position_embeddings: int = 0,
         # Per-layer configuration for heterogeneous models (e.g. Nemotron-51B / DeciLM)
         # When provided, must have exactly num_decoder_layers entries.
         layer_configs: Optional[list] = None,     # list[LayerConfig]
@@ -282,6 +289,10 @@ class ModelConfig():
         self.qk_rope_head_dim = qk_rope_head_dim
         self.qk_nope_head_dim = qk_nope_head_dim
         self.v_head_dim = v_head_dim
+        self.index_n_heads = index_n_heads
+        self.index_head_dim = index_head_dim
+        self.attention_output_gate = bool(attention_output_gate)
+        self.position_embeddings = int(position_embeddings or 0)
         # MLA detection: if any MLA-specific parameter is set, this is an MLA model
         self.is_mla = (kv_lora_rank is not None)
 

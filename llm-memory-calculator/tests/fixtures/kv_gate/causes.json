@@ -1,0 +1,57 @@
+[
+ {
+  "config": "deepseek|DeepSeek|v2-lite-mla",
+  "reader": "kv|bytes_per_token|disagg|runtime_\\w+\\[2\\]",
+  "cause": "MLA caches one latent per token per layer (kv_lora_rank + qk_rope_head_dim = 576), not per-head K and V; origin/main charged 128 heads' K and V"
+ },
+ {
+  "config": "deepseek|DeepSeek",
+  "reader": "weight|runtime_\\w+\\[1\\]",
+  "cause": "MoE placed per layer (first_k_dense_replace dense layers run one FFN), each MoE layer's shared expert and V3.2's indexer graphed; origin/main graphed every layer as MoE"
+ },
+ {
+  "config": "mamba|Mamba|falcon-mamba",
+  "reader": ".",
+  "cause": "a state-space stack holds no KV cache (a fixed conv and SSM state per sequence); origin/main charged every layer attention's KV"
+ },
+ {
+  "config": "gpt-oss",
+  "reader": ".",
+  "cause": "the chunked graph bounds the windowed layers (sliding_window 128) by their window; origin/main read every layer over the whole context"
+ },
+ {
+  "config": "whisper",
+  "reader": "kv|bytes_per_token|disagg|runtime_\\w+\\[2\\]",
+  "cause": "an encoder-decoder's per-token cache is its decoder's self-attention at the decoder's own depth and heads (decoder_layers, decoder_attention_heads); the cross-attention cache over the encoder's 1,500 frames is fixed per sequence"
+ },
+ {
+  "config": "whisper",
+  "reader": "weight|runtime_\\w+\\[1\\]",
+  "cause": "the decoder at its own depth (decoder_layers) and the encoder at its own (encoder_layers, with its convolutional frame embedding and positions); origin/main read the default 32-layer 4096-wide shape"
+ },
+ {
+  "config": "gemma-3|gemma3|gemma2|swa-",
+  "reader": ".",
+  "cause": "windowed layers (every layer but each 6th, or the stated pattern) bounded by the window"
+ },
+ {
+  "config": "Nemotron-51B",
+  "reader": ".",
+  "cause": "each block's own KV heads (64 / n_heads_in_group) and no cache on its linear-replaced attention blocks; origin/main charged every block 64 heads"
+ },
+ {
+  "config": "gpt-neo",
+  "reader": "state",
+  "cause": "GPT-Neo holds no recurrent state; origin/main guessed a Mamba state from its `attention_layers` list"
+ },
+ {
+  "config": "rwkv",
+  "reader": "state",
+  "cause": "RWKV's state is five hidden-wide vectors per layer, not origin/main's Mamba-shaped guess"
+ },
+ {
+  "config": "Qwen1.5-MoE",
+  "reader": ".",
+  "cause": "the chunked graph's shared expert at its stated width (one 5632-wide expert, not four); its weights are the model's"
+ }
+]

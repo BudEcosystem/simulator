@@ -149,7 +149,9 @@ DeepseekV2_moe_236b_config = ModelConfig(model='deepseek-ai/DeepSeek-V2',
     num_decoder_layers=60,
     expert_top_k=6, num_experts=160,
     moe_intermediate_size=1536,  # Per-expert intermediate
-    n_shared_experts=2, shared_expert_intermediate_size=12288,
+    # two shared experts, each one routed expert wide (DeepseekV2MoE: moe_intermediate_size x
+    # n_shared_experts), not the dense layer's 12288
+    n_shared_experts=2, shared_expert_intermediate_size=1536,
     first_k_dense_replace=1, ffn_implementation='deepseek',
     vocab_size=102400, max_model_len=128*1024, hidden_act="silu",
     # MLA-specific attributes (for config-based detection)
@@ -166,7 +168,8 @@ DeepseekV3_moe_671b_config = ModelConfig(model='deepseek-ai/DeepSeek-V3-Base',
     intermediate_size=18432, num_decoder_layers=61,
     expert_top_k=8, num_experts=256,
     moe_intermediate_size=2048,
-    n_shared_experts=1, shared_expert_intermediate_size=18432,
+    # one shared expert, one routed expert wide (DeepseekV3MoE), not the dense layer's 18432
+    n_shared_experts=1, shared_expert_intermediate_size=2048,
     first_k_dense_replace = 3,     ffn_implementation='deepseek',
     vocab_size=129280, max_model_len=160*1024,  hidden_act="silu",
     # MLA-specific attributes (for config-based detection)

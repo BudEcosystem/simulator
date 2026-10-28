@@ -47,11 +47,21 @@ def _positive(v: Any) -> Optional[int]:
     return int(v) if v is not None else None
 
 
-def hf_layer_keys_from_gguf(get: Callable[[str], Any], n_layers: int) -> Dict[str, Any]:
+#: llama.cpp architectures whose `ssm.*` keys describe a Gated DeltaNet (llama-model.cpp's
+#: qwen3next / qwen35 / qwen35moe builders): `ssm.group_count` key heads of `ssm.state_size`,
+#: `ssm.time_step_rank` value heads sharing `ssm.inner_size`, the `ssm.conv_kernel` short conv.
+#: Its state is the Mamba-2 formula's with these dimensions, but its weights are a GDN's (a
+#: fused q|k|v, an output gate, per-head decay and beta), so the mixer is named for what it is.
+GGUF_GATED_DELTANET_ARCHS = frozenset({"qwen3next", "qwen35", "qwen35moe"})
+
+
+def hf_layer_keys_from_gguf(get: Callable[[str], Any], n_layers: int,
+                            arch: Optional[str] = None) -> Dict[str, Any]:
     """HF-style layer-kind and recurrent-state keys from a GGUF's metadata.
 
-    ``get(suffix)`` returns the value of ``{arch}.{suffix}`` or None. Returns only the keys the
-    file justifies; an ordinary dense transformer gets ``{}``.
+    ``get(suffix)`` returns the value of ``{arch}.{suffix}`` or None; ``arch`` is the file's
+    `general.architecture`. Returns only the keys the file justifies; an ordinary dense
+    transformer gets ``{}``.
     """
     out: Dict[str, Any] = {}
     kv = get("attention.head_count_kv")
@@ -85,6 +95,15 @@ def hf_layer_keys_from_gguf(get: Callable[[str], Any], n_layers: int) -> Dict[st
                 out[key] = int(v)
         # No group count is Mamba-1: no B/C groups in the conv.
         out["ssm_n_groups"] = int(get("ssm.group_count") or 0)
+        if str(arch or "").lower() in GGUF_GATED_DELTANET_ARCHS and out["ssm_n_groups"]:
+            v_heads = int(get("ssm.time_step_rank") or out["ssm_n_groups"])
+            inner = int(get("ssm.inner_size") or 0)
+            recurrent_name = "linear_attention"
+            out.update(linear_num_key_heads=out["ssm_n_groups"],
+                       linear_num_value_heads=v_heads,
+                       linear_key_head_dim=int(ssm_state),
+                       linear_value_head_dim=max(inner // max(v_heads, 1), 1),
+                       linear_conv_kernel_dim=int(get("ssm.conv_kernel") or 4))
 
     window = get("attention.sliding_window")
     pattern = get("attention.sliding_window_pattern")

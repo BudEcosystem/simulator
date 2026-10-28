@@ -12,16 +12,25 @@ so the same script measures both trees.
 
     python kv_corpus.py --diff before.json after.json --report diff.md
 
+    # THE GATE: every unsafe-direction move (a memory figure down, a capacity figure up) must be
+    # in the allowlist with both figures and a ground truth it is not below
+    python kv_corpus.py --gate main.json branch.json \
+        --allowlist ../tests/fixtures/kv_gate/allowlist.json
+    python kv_corpus.py --unsafe main.json branch.json        # list the moves as JSON
+
 Corpus: every row of the BudSimulator database that carries a config (rows whose
 `config_json` is empty are counted and reported, not measured -- they would only measure the
 calculator's defaults), every hybrid fixture, every config.json in the HuggingFace cache and
-the model folders that names a decoder geometry, every GGUF in the model folders (read
+the model folders that names a decoder geometry and states a token vocabulary (one that states
+none -- a codec, a speech encoder -- is no language model: named in `_not_language_models`, not
+measured), every GGUF in the model folders (read
 through bud_component's GGUF reader, beside the file's own tensor count), and every built-in
 GenZ model. Model folders and caches are only read.
 
 Figures, per config: the calculator's KV / state / weights / totals; the engine estimate
 (`estimate_memory_for_engine`, llama.cpp and generic, at 4k and 32k: KV, state, total,
-parameters); the FRD-027 `ModelFacts` layer counts; GenZ's per-layer attention and FFN kinds,
+parameters); the FRD-027 `ModelFacts` layer counts, weight bytes (what the vLLM planner
+reserves), KV bytes a token and at 4k, and state bytes; GenZ's per-layer attention and FFN kinds,
 its KV elements per token (`get_kv_size`, which the disaggregation KV transfer multiplies by
 2 bytes), its decode and chunked graphs' KV and weights; and the serving `MemoryModel`'s KV
 bytes per token, per-request state, the 1,024-token requests 8 GiB admits, and the
@@ -30,8 +39,8 @@ runtime modelling (`prefill_moddeling`, `decode_moddeling` -- whose fit check ad
 graph's weights to its KV -- and `chunked_moddeling`, which `estimate_*_performance` wrap), each
 run to completion on a fixed 200 GB device, its latency, weights and KV, or its error, and the
 decode fit check on a device the resident model's weights alone overflow; with ``--repo-root``, BudSimulator's database
-converter (`ModelConverter.hf_to_genz`): its encoder / decoder depths, KV elements per token and
-per-sequence fixed bytes; and every other reader of the layer kinds: GenZ's prefill graph
+converter (`ModelConverter.hf_to_genz`): its encoder / decoder depths, KV elements per token,
+per-sequence fixed bytes and its graph's weights; and every other reader of the layer kinds: GenZ's prefill graph
 (weights, KV), the prefix-cache analyser's bytes per token, the KV planner's `KVGeometry`, the
 vLLM planner (`engine/vllm.py`: limits, and the running sequences `predict` gives 1,024 clients
 at 1k and 8k prompts), its profile scheduler (`perf.predict.sim_config` + `perf.sched.simulate`)
@@ -94,6 +103,20 @@ def _is_model_config(cfg):
 
 
 EMPTY_DB_ROWS = []
+#: Configs that state a stack's geometry but no token vocabulary anywhere (`vocab_size` or its
+#: spellings, on the config or a nested block): neural codecs and speech encoders (a speech
+#: tokenizer's codec decoder, w2v-BERT, Mimi). They are not language models, which every reader
+#: here sizes, so they are named in the output (``_not_language_models``) and not measured.
+NOT_LANGUAGE_MODELS = []
+_VOCAB_KEYS = ("vocab_size", "padded_vocab_size", "n_vocab")
+
+
+def _states_vocabulary(cfg, depth=0):
+    if not isinstance(cfg, dict) or depth > 3:
+        return False
+    if any(isinstance(cfg.get(k), int) and cfg.get(k) > 0 for k in _VOCAB_KEYS):
+        return True
+    return any(_states_vocabulary(v, depth + 1) for v in cfg.values() if isinstance(v, dict))
 
 
 def collect(args):
@@ -114,8 +137,8 @@ def collect(args):
     for root in args.fixtures or []:
         for path in sorted(glob.glob(os.path.join(root, "**", "*.json"), recursive=True)):
             real = os.path.realpath(path)
-            if real in seen_fixtures:
-                continue
+            if real in seen_fixtures or os.sep + "kv_gate" + os.sep in path:
+                continue  # the gate's own baseline, allowlist and truths are no model configs
             seen_fixtures.add(real)
             try:
                 cfg = json.load(open(path))
@@ -144,6 +167,9 @@ def collect(args):
                 continue
             if _is_model_config(cfg):
                 rel = os.path.relpath(path, root)
+                if not _states_vocabulary(cfg):
+                    NOT_LANGUAGE_MODELS.append("config:" + rel)
+                    continue
                 corpus.append(("config:" + rel, cfg))
     return corpus
 
@@ -208,6 +234,8 @@ def measure_config(name, cfg, genz_data):
 
 #: The tree whose BudSimulator converter is measured (``--repo-root``).
 REPO_ROOT = None
+#: Where the GenZ graphs are written (``--genz-data``).
+GENZ_DATA = None
 
 
 def measure_converter(cfg):
@@ -232,6 +260,22 @@ def measure_converter(cfg):
         # path's state is recorded. A request's fixed bytes: the state, and (round 9) an
         # encoder-decoder's cross-attention cache.
         out["conv_state_bytes"] = _fixed_bytes(mc)
+        # the weights of the model the converter graphs (its prefill graph)
+        try:
+            from llm_memory_calculator.genz.Models.get_language_model import (
+                create_full_prefill_model,
+            )
+            from llm_memory_calculator.genz.analyse_model import get_model_df, get_summary_table
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                path = create_full_prefill_model(name=mc, input_sequence_length=512,
+                                                 data_path=GENZ_DATA)
+                df = get_model_df(path, batch_size=1, data_path=GENZ_DATA,
+                                  model_characterstics=True)
+                st = get_summary_table(df, model_characterstics=True)
+            out["conv_prefill_weights_mb"] = round(float(st["Total Weights (MB)"].values[0]), 6)
+        except Exception as e:
+            out["conv_weights_error"] = f"{type(e).__name__}: {str(e)[:200]}"
     except Exception as e:
         out["conv_error"] = f"{type(e).__name__}: {str(e)[:200]}"
     finally:
@@ -553,6 +597,20 @@ def measure_engine_and_facts(cfg):
         layers = f.layers
         out["facts_layers"] = [layers.full, layers.sliding, layers.recurrent, layers.sliding_window]
         out["facts_full_attention"] = bool(f.full_attention)
+        # what the vLLM planner reserves for the weights before it sizes the KV blocks, and what
+        # it sizes them with: KV bytes per token (every attention layer), a sequence's KV at 4k
+        # (windows and the cross-attention cache applied) and its recurrent state
+        figures = {
+            "facts_weight_bytes": lambda: f.weight_bytes(),
+            "facts_kv_bytes_per_token": lambda: f.kv_bytes_per_token("bf16"),
+            "facts_kv_bytes_4096": lambda: f.kv_bytes_for_context(4096, "bf16"),
+            "facts_state_bytes": lambda: f.state_bytes_per_sequence(),
+        }
+        for key, figure in figures.items():
+            try:  # a tree without the figure records its error, not the others'
+                out[key] = int(figure())
+            except Exception as e:
+                out[key + "_error"] = f"{type(e).__name__}: {str(e)[:120]}"
     except Exception as e:
         out["facts_error"] = f"{type(e).__name__}: {str(e)[:200]}"
     return out
@@ -745,8 +803,18 @@ def measure_gguf(path, repo_root, genz_data):
 
 
 def run(args):
-    global REPO_ROOT
+    rows = measure_corpus(args)
+    json.dump(rows, open(args.out, "w"), indent=1, sort_keys=True, default=str)
+    print(f"{len(rows)} rows -> {args.out}")
+
+
+def measure_corpus(args):
+    """Every row's figures (see the module docstring), as a list of dicts."""
+    global REPO_ROOT, GENZ_DATA
     REPO_ROOT = args.repo_root
+    GENZ_DATA = args.genz_data
+    EMPTY_DB_ROWS.clear()
+    NOT_LANGUAGE_MODELS.clear()
     warnings.simplefilter("ignore")
     os.makedirs(os.path.join(args.genz_data, "model"), exist_ok=True)
     os.makedirs(os.path.join(args.genz_data, "sparsity"), exist_ok=True)
@@ -772,8 +840,10 @@ def run(args):
     if EMPTY_DB_ROWS:
         rows.append({"name": "_empty_db_rows", "count": len(EMPTY_DB_ROWS),
                      "model_ids": sorted(EMPTY_DB_ROWS)})
-    json.dump(rows, open(args.out, "w"), indent=1, sort_keys=True, default=str)
-    print(f"{len(rows)} rows -> {args.out}")
+    if NOT_LANGUAGE_MODELS:
+        rows.append({"name": "_not_language_models", "count": len(NOT_LANGUAGE_MODELS),
+                     "configs": sorted(NOT_LANGUAGE_MODELS)})
+    return rows
 
 
 def _num(v):
@@ -823,6 +893,124 @@ def diff(before_path, after_path, report):
     print(text[:4000])
 
 
+# ------------------------------------------------------------------------------------- the gate
+#
+# A figure moves in the UNSAFE direction when the branch sizes memory below origin/main (a KV,
+# state or weight figure goes down) or admits more than origin/main (a capacity figure goes up:
+# vLLM's blocks, tokens and running sequences, the serving path's requests, the scheduler's
+# peak). Each such move must be named in the allowlist -- config, reader (the figure), both
+# figures, and the ground truth the branch's figure is held against -- or the gate fails.
+#
+#   python kv_corpus.py --gate main.json branch.json --allowlist kv_gate_allowlist.json
+
+import re  # noqa: E402
+
+#: Capacity figures: higher admits more requests into the same memory.
+CAPACITY_FIGURES = re.compile(
+    r"^(vllm_limits\[[012]\]|vllm_running_\d+|serving_requests_\w+|sim_max_running)$")
+#: Neither memory nor capacity: kinds and layer counts, latencies (`runtime_*[0]`), vLLM's KV
+#: group counts, the KV planner's layer counts and block size, flags, GGUF bookkeeping.
+NOT_AN_AMOUNT = re.compile(
+    r"^(count|genz_layer_kinds\..*|genz_ffn_kinds\..*|kv_(full|sliding|free|cross)_layers"
+    r"|facts_layers\[\d+\]|conv_layers\[\d+\]|runtime_\w+\[0\]|vllm_limits\[[34]\]"
+    r"|kvgeo_\d+\[[124]\]|gguf_.*)$")
+
+
+def _leaves(key, value):
+    """Every numeric leaf of a row's figure, as ``(path, number)`` (booleans are flags)."""
+    if isinstance(value, bool) or value is None:
+        return
+    if isinstance(value, (int, float)):
+        yield key, value
+    elif isinstance(value, list):
+        for i, x in enumerate(value):
+            yield from _leaves(f"{key}[{i}]", x)
+    elif isinstance(value, dict):
+        for k, x in value.items():
+            yield from _leaves(f"{key}.{k}", x)
+
+
+def figure_kind(path):
+    """``"capacity"``, ``"memory"`` or None (not an amount)."""
+    if path.endswith("error") or NOT_AN_AMOUNT.match(path):
+        return None
+    return "capacity" if CAPACITY_FIGURES.match(path) else "memory"
+
+
+def unsafe_moves(main_rows, branch_rows, names=None):
+    """``[(config, reader, main, branch, kind)]``: every figure the branch moves in the unsafe
+    direction against origin/main, over the configs both measured (or ``names``)."""
+    main = {r["name"]: r for r in main_rows}
+    branch = {r["name"]: r for r in branch_rows}
+    out = []
+    for name in sorted(set(main) & set(branch) if names is None else names):
+        if name not in main or name not in branch:
+            continue
+        a, b = main[name], branch[name]
+        for key in sorted(set(a) & set(b)):
+            fa, fb = dict(_leaves(key, a[key])), dict(_leaves(key, b[key]))
+            for path in sorted(set(fa) & set(fb)):
+                kind = figure_kind(path)
+                if kind is None:
+                    continue
+                x, y = fa[path], fb[path]
+                tol = 1e-9 * max(1.0, abs(x))
+                if (kind == "capacity" and y > x + tol) or (kind == "memory" and y < x - tol):
+                    out.append((name, path, x, y, kind))
+    return out
+
+
+def _close(x, y):
+    return x is not None and y is not None and abs(x - y) <= 1e-6 * max(1.0, abs(x), abs(y))
+
+
+def gate(main_rows, branch_rows, allowlist, names=None):
+    """The failures: an unsafe move no allowlist entry names, an entry whose figures are not the
+    measured ones, a memory entry without a ground truth or whose branch figure is below it, a
+    capacity entry whose memory figures (``held_by``) are not all held to their truths."""
+    entries = {(e["config"], e["reader"]): e for e in allowlist.get("entries", [])}
+    failures = []
+    for name, path, x, y, kind in unsafe_moves(main_rows, branch_rows, names):
+        e = entries.get((name, path))
+        where = f"{name} {path}: origin/main {x} -> branch {y}"
+        if e is None:
+            failures.append(f"{where}: not in the allowlist")
+            continue
+        if not (_close(e.get("main"), x) and _close(e.get("branch"), y)):
+            failures.append(f"{where}: the allowlist says {e.get('main')} -> {e.get('branch')}")
+            continue
+        if kind == "memory":
+            truth = e.get("truth")
+            if not isinstance(truth, (int, float)):
+                failures.append(f"{where}: no ground truth")
+            elif y < truth * (1 - float(e.get("vectors", 0.0))):
+                failures.append(f"{where}: below its ground truth {truth}")
+        else:
+            held = e.get("held_by") or []
+            if not held:
+                failures.append(f"{where}: a capacity rise names no memory figure it follows")
+            for reader in held:
+                h = entries.get((name, reader))
+                if h is None or not isinstance(h.get("truth"), (int, float)):
+                    failures.append(f"{where}: follows {reader}, which has no ground truth")
+                elif not _close(h.get("branch"), _figure(branch_rows, name, reader)):
+                    failures.append(f"{where}: follows {reader}, whose figure moved")
+                elif h["branch"] < h["truth"] * (1 - float(h.get("vectors", 0.0))):
+                    failures.append(f"{where}: follows {reader}, below its ground truth "
+                                    f"{h['truth']}")
+    return failures
+
+
+def _figure(rows, name, path):
+    for r in rows:
+        if r["name"] == name:
+            for key in r:
+                for p, v in _leaves(key, r[key]):
+                    if p == path:
+                        return v
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out")
@@ -836,7 +1024,23 @@ def main():
     ap.add_argument("--diff", nargs=2)
     ap.add_argument("--report")
     ap.add_argument("--no-synthetic", action="store_true")
+    ap.add_argument("--gate", nargs=2, metavar=("MAIN", "BRANCH"))
+    ap.add_argument("--allowlist")
+    ap.add_argument("--unsafe", nargs=2, metavar=("MAIN", "BRANCH"),
+                    help="list every unsafe-direction move as JSON")
     args = ap.parse_args()
+    if args.unsafe:
+        moves = unsafe_moves(json.load(open(args.unsafe[0])), json.load(open(args.unsafe[1])))
+        print(json.dumps([dict(config=n, reader=p, main=x, branch=y, kind=k)
+                          for n, p, x, y, k in moves], indent=1))
+        return
+    if args.gate:
+        allow = json.load(open(args.allowlist)) if args.allowlist else {}
+        failures = gate(json.load(open(args.gate[0])), json.load(open(args.gate[1])), allow)
+        for f in failures:
+            print(f)
+        print(f"{len(failures)} gate failures")
+        sys.exit(1 if failures else 0)
     if args.diff:
         diff(args.diff[0], args.diff[1], args.report)
     else:

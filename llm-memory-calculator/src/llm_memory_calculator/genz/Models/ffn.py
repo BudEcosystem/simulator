@@ -46,6 +46,21 @@ def calculate_activated_experts(
     expected_distinct = num_experts * (1 - (1 - k / num_experts) ** (num_tokens * capacity_factor))
     return min(num_experts, ceil(expected_distinct))
 
+def shared_expert_ops(model_config: ModelConfig, tp: int, tokens: int, residency):
+    """The shared expert(s) an MoE layer runs beside its routed experts, on every token: one MLP
+    `n_shared_experts` x `shared_expert_intermediate_size` wide (the HF loader graphs the total as
+    one, ``layer_plan.shared_expert_width``). None on a model without one. Leaving it out sized
+    DeepSeek-V3's graph 2.55B parameters below the checkpoint."""
+    n = int(getattr(model_config, "n_shared_experts", 0) or 0)
+    width = getattr(model_config, "shared_expert_intermediate_size", None)
+    if n <= 0 or not width:
+        return []
+    fi = model_config.num_ffi
+    D = model_config.hidden_size
+    Df = max(ceil(width * n / tp), 1)
+    return [["shared up+gate", Df * fi, tokens, D, 1, 1, residency, OpType.GEMM],
+            ["shared down", D, tokens, Df, 1, 1, residency, OpType.GEMM]]
+
 def ffn_prefill(model_config:ModelConfig, parallelism_config:ParallelismConfig, input_sequence_length:int):
 
     tp = parallelism_config.tensor_parallel
@@ -91,6 +106,7 @@ def ffn_prefill(model_config:ModelConfig, parallelism_config:ParallelismConfig, 
         if ep > 1:
             collect_all2all = [["Collect A2A",input_sequence_length//sp, K*D, 1, 1, ep, CollectiveType.All2All, OpType.Sync]]
             layers += collect_all2all
+        layers += shared_expert_ops(model_config, tp, input_sequence_length//sp, ResidencyInfo.All_offchip)
     else:
         ffup =   [["up+gate",Df*fi, input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
         ffdown = [["down",D, input_sequence_length//sp, Df, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
@@ -176,6 +192,7 @@ def ffn_decode(model_config:ModelConfig, parallelism_config:ParallelismConfig, n
         if ep > 1:
             collect_all2all = [["Collect A2A",1, K*D, 1, 1, ep, CollectiveType.All2All, OpType.Sync]]
             layers += collect_all2all
+        layers += shared_expert_ops(model_config, tp, 1, ResidencyInfo.AC_onchip)
     else:
         ffup =           [["up+gate",Df*fi, 1, D, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]    ## Df is already divided
         ffdown =           [["down",D, 1, Df, 1, 1, ResidencyInfo.AC_onchip, OpType.GEMM]]
@@ -270,13 +287,7 @@ def deepseek_ffn_prefill(model_config:ModelConfig, parallelism_config:Parallelis
             collect_all2all = [["Collect A2A",input_sequence_length//sp, K*D, 1, 1, ep, CollectiveType.All2All, OpType.Sync]]
             layers += collect_all2all
 
-        if n_shared_experts > 0:
-            Df = model_config.shared_expert_intermediate_size
-            Df = max(ceil(Df/tp),1)
-
-            ffup =   [["shared up+gate",Df*fi*n_shared_experts, input_sequence_length//sp, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
-            ffdown = [["shared down",D, input_sequence_length//sp, Df*n_shared_experts, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
-            layers += ffup + ffdown
+        layers += shared_expert_ops(model_config, tp, input_sequence_length//sp, ResidencyInfo.All_offchip)
 
     else:
         Df = model_config.intermediate_size
