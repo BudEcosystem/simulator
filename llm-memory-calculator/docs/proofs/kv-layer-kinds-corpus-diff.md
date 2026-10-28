@@ -1,7 +1,7 @@
 # Proof: KV layer kinds -- before and after
 
 Branch `fix/hybrid-kv-layer-kinds`, measured against **origin/main `c17ef89`** (what this branch
-lands on). Generated on the shared GB10 box, 27-28 Oct 2026, with `scripts/kv_corpus.py`; no GPU
+lands on). Generated on the shared GB10 box, 27-29 Oct 2026, with `scripts/kv_corpus.py`; no GPU
 used. Six rounds: the fix itself; the corrections an independent review asked for (the
 chunked graph, the state's bytes, MoE placement, unplaced windows, depth from a layer list,
 SambaY, the GGUF reader's Mamba-1 / RoPE / gating / tying, and this proof's own coverage); and the
@@ -37,7 +37,11 @@ capacity above it -- that an allowlist does not name with both figures and a gro
 the readers it then found below their truth: GenZ's missing shared experts, MLA cache, V3.2
 indexer and attention output gate; the FRD-027 facts' encoder at the decoder's width, its missing
 Q-Former and its four-spelling expert count; a flat mT5's shape in the parameter counter; and the
-weights of towers, codebooks, learned positions, conformers and wrappers; section 5).
+weights of towers, codebooks, learned positions, conformers and wrappers; section 5); and the
+twelfth review's (the gate's own ground truths and reach: truths of 0 KV for ProphetNet and
+MusicGen, a gate that passed only with transformers 5.12 installed, model-card totals as truths,
+figures lost or new on the branch, the chunked graph's truth, and no GGUF in the committed
+corpus; section 6).
 
 ## 1. The measured case
 
@@ -271,10 +275,12 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
 
 | Suite | origin/main `c17ef89` | This branch |
 |---|---|---|
-| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,475 passed, 21 skipped, 0 failed |
+| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,503 passed, 21 skipped, 1 failed |
 | `BudSimulator/tests` (pytest) | 24 passed | 81 passed |
 
-(Round 12 adds the 66 cases of `tests/test_genz_weights_against_transformers.py`,
+(Round 13 adds the 28 cases of section 6 and the GGUF-fixture case; the one failure is the
+schema test below, which fails on origin/main too. Round 12 ended at 2,475 passed, 21 skipped / 81.
+Round 12 adds the 66 cases of `tests/test_genz_weights_against_transformers.py`,
 `tests/test_weights_around_the_decoder.py`, `tests/test_gate_found_readers.py` and the gate,
 `tests/test_kv_gate.py`; one existing assertion was tightened and widened by the Q-Former the
 counter now counts (`test_cross_attention_every_reader.py::test_a_nested_flan_t5_is_counted_with_its_own_heads_and_both_stacks`:
@@ -1004,7 +1010,95 @@ layer kinds and is now stated beside the weights that err low, each measured). W
 its truth without having moved below origin/main is listed in LAYER_KINDS.md, "What errs low,
 measured".
 
-The full per-config table (before = origin/main, after = this branch) follows.
+## 6. Round 13: the gate's own truths, and what it did not reach
+
+The twelfth review checked the gate itself. Each finding, and what was done (red first:
+`tests/test_kv_truth.py`, `tests/test_config_class_defaults.py`, the new cases of
+`tests/test_kv_gate.py` and `tests/test_gate_found_readers.py`: 28 cases, 23 of which fail on
+the round-12 head; the 5 that pass there pin what did not change -- the prefill graphs' truths, a
+recurrent mixer's 0, the hand truths' sources, a key no reader asks for. Beside them
+`test_the_gguf_fixtures_are_read_through_the_gguf_reader` runs on the committed corpus):
+
+* **Truths of 0 KV for two encoder-decoders that cache** (ProphetNet: its `key_proj` /
+  `value_proj` were not in the truth's projection names; MusicGen: the decoder's "layer list" was
+  its 4 `lm_heads`). Both read now: ProphetNet 12 x 2 x 1,024 = 24,576 elements a token, MusicGen
+  24 x 2 x 1,024 = 49,152 (`synth:prophetnet` facts 49,152 B a token = its truth;
+  MusicGen's 98,304 = its truth). For the whole category: a softmax attention whose projections
+  the truth does not name leaves the width undetermined (no truth, so the entry fails), never 0; a
+  layer list is a list of blocks; and a layer the class builds as a convolution where the cache
+  expects attention is undetermined too -- which found the same fault in two more configs,
+  LFM2.5-Audio's detokenizers (transformers' Lfm2 reads only `full_attention` and built their
+  `sliding_attention` layers as convolutions): their truth is now the checkpoint's own K / V
+  tensors (3 layers x 512, window 30). No truth of 0 is left but where the model holds nothing of
+  that kind (Mamba, RWKV, xLSTM and nomic-bert KV; GPT-Neo, Hunyuan and text encoders' fixed state;
+  the per-token rate of an all-windowed stack: Voxtral-Realtime, the detokenizers).
+* **The gate passed only with transformers 5.12 installed.** The readers took a config class's
+  defaults from the installed transformers only; without it, or with 4.50, Mllama's tower lost its
+  global layers and RWKV / Llama 4 their untied heads (weights below origin/main's), and GenZ's
+  graphs read other activations and position tables (the "allowlist says" mismatches). The
+  defaults now ship with the package (`config_class_defaults.json`: transformers 5.12's 642
+  config classes, every key `layer_plan.CLASS_DEFAULT_KEYS` names; `scripts/config_class_defaults.py`
+  rewrites it, and `test_the_snapshot_is_the_installed_transformers_5_12` checks it wherever 5.12
+  is installed). Not one figure moved with transformers 5.12 installed; without transformers the
+  Mllama synthetic's parameters are 1,370,625,536 (were 1,137,317,376), as with it. The gate now
+  passes in all three environments -- 5.12, 4.50 and none (a clean venv without transformers,
+  torch, gguf or lxml): **0 failures** each. A reader whose third-party dependency is not installed
+  is reported as not measured there, by module and figure count (no transformers: the GGUF
+  reader's `gguf` 248 figures, the converter's `requests` 376; 4.50: `gguf` 248, `lxml` 376); any
+  other error, or a missing module of this repository, fails.
+* **Model-card totals as truths.** Ling-flash-2.0, Kimi-Linear, Hymba and Phi-4-mini-flash were
+  held to their cards' 100B / 48B / 1.52B / 3.85B. Each is now its checkpoint's own tensors, read
+  from every safetensors shard's header on the hub (`kv_truth.py --checkpoint`, no weights
+  downloaded): 102,889,705,216 (equal to the config arithmetic), 49,122,681,728, 1,522,797,824
+  and 3,852,562,944; the same reader gave Llama-3.1-Nemotron-51B's 51,501,015,040.
+  `test_a_hand_written_parameter_count_is_arithmetic_or_tensors_not_a_model_card` rejects a card.
+  Every branch figure is at or above the new truths (Ling's GenZ decode graph: 195,018.0 MiB
+  against 195,017.97).
+* **Figures lost or new on the branch were never held.** The gate now also fails on a figure the
+  branch reports and origin/main did not (held to its ground truth like a drop: 357 figures, from
+  readers that raised on origin/main) and on a figure origin/main reported and the branch does not
+  (its entry names the error the branch records, and the gate checks it is that error: 6 figures,
+  Llama-4 Scout's runtime prefill and chunked graphs, whose weights -- 205,553.75 MiB, the
+  model's own 107.8B parameters at 2 B -- do not fit the 200 GB device, which origin/main's
+  152M-parameter reading did). The truths gained what those figures need: a sequence's recurrent
+  state from transformers' own mixer modules (the depthwise convolution's ring buffer and the
+  Gated DeltaNet / Mamba-2 / Mamba-1 matrix, at 2 B an element: a lower bound under the readers'
+  fp32 matrix) and the cross-attention K / V each encoder token adds, times a fixed-length
+  encoder's token count written with its arithmetic (`truths.json` `encoder_tokens`: Nougat's
+  588 and Donut's 4,800 Swin tokens, Pix2Struct's `seq_len`, Mllama's 4 x 1,025, a ViT's 577,
+  Whisper's 1,500; 0 where the encoder reads the request's own input). Every cross-attention
+  state figure the review checked by hand equals its truth exactly (Whisper-large-v3-turbo
+  30,720,000; Mllama 134,348,800; Donut 78,643,200; Nougat 9,633,792). What it found: the FRD-027
+  facts read a query / key norm only as `qk_norm`, so Hunyuan-A13B's (`use_qk_norm`) weights sat
+  12,288 B below transformers' count once its facts stopped raising -- now read under every
+  spelling (`layer_plan.QK_NORM_KEYS`), which moves Ling-flash-2.0's and MiniMax-M2's facts up by
+  their QK norms too; and Nougat's decode graph sits 7.0 MiB under "matrices less the token
+  embedding" because it also gathers its learned position table -- the decode truth now leaves
+  out every table a step gathers one row from (as the graph models it), and the graph is at it.
+* **The chunked graph's truth.** `runtime_chunked[1]` was held to the decode graph's truth (less
+  the input embedding) though the chunked graph holds that embedding; it is now held to the
+  prefill graph's (deepseek-moe-16b's database row: 31,234 MiB against a truth of 31,234, where it had been held
+  to 30,834; the 400 MiB is its 102,400 x 2,048 embedding).
+* **No GGUF in the committed corpus.** `tests/fixtures/gguf` holds metadata-only copies of the
+  four real GGUFs (`scripts/gguf_metadata_fixture.py`: every metadata key and tensor name
+  verbatim, one-element placeholder tensors, the tokenizer arrays replaced by their length as
+  `{arch}.vocab_size`; 11-42 KB each), which resolve to configs identical to the source files'.
+  The committed gate now runs the GGUF reader on Qwen3.5-2B's hybrid, gpt-oss-20b's window
+  pattern, SmolVLM's Llama and nomic-embed's encoder, against origin/main's reading of the same
+  files (`origin-main.json` gained their 4 rows, measured on `c17ef89` with the same harness).
+
+**The gate now.** The committed corpus is 220 rows (216 and the 4 GGUF fixtures); the whole
+corpus 266. Over the whole corpus: **992 unsafe moves, 357 new figures and 6 lost figures in 111
+configs, every one allowlisted and at or above its ground truth; 1,394 entries; 0 failures.**
+Against round 12's allowlist the new gate fails the committed corpus with 385 and the whole
+corpus with 402. Round 13 moves only the facts' weights of the three QK-norm models (up) and adds
+the four GGUF fixture rows: against the round-12 head's full run, 259 of 266 rows are unchanged.
+
+**The suites** (section 3): `llm-memory-calculator/tests` 2,503 passed, 21 skipped, 1 failed (the
+schema test that fails on origin/main too); `BudSimulator/tests` 81 passed. The suite rewrites
+`BudSimulator/data/prepopulated.db`; it is restored from git after every run.
+
+The full per-config table (before = origin/main, after = this branch) follows. 266 configs measured; 120 unchanged; 146 changed.
 
 ## config:chaos-pressure/gpt-oss-20b/config.json (decoder-only)
 
@@ -1865,6 +1959,12 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | serving_requests_8gib_1k | 136 | 503 |
 | serving_state_bytes | 0 | 270336 |
 
+## fixture:MiniMaxAI_MiniMax-M2.json (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| facts_weight_bytes | 230023192576 | 230023224320 |
+
 ## fixture:MiniMaxAI_MiniMax-Text-01.json (hybrid)
 
 | figure | before | after |
@@ -2680,6 +2780,7 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | eng_llamacpp_32768_total_mb | 207710.968218 | 208491.108762 |
 | eng_llamacpp_4096_params | 102499885056 | 102889955328 |
 | eng_llamacpp_4096_total_mb | 205550.062797 | 206330.203341 |
+| facts_weight_bytes | 205779394048 | 205779410432 |
 | genz_decode_weights_mb | 200204.0 | 195018.0 |
 | genz_ffn_kinds | {"MoE": 32} | {"Dense": 1, "MoE": 31} |
 | genz_prefill_weights_mb | 201432.0 | 196246.0 |
@@ -3597,7 +3698,7 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | facts_kv_bytes_per_token | null | 131072 |
 | facts_layers | null | [32, 0, 0, null] |
 | facts_state_bytes | null | 0 |
-| facts_weight_bytes | null | 160786354176 |
+| facts_weight_bytes | null | 160786370560 |
 | genz_chunked_error | "TypeError: unsupported operand type(s) for /: 'list' and 'int'" | null |
 | genz_chunked_kv_mb | null | 576.0 |
 | genz_decode_kv_mb | null | 512.0 |
@@ -3978,7 +4079,87 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | vllm_limits | [88602, 1417632, 88602, 1, 0, 0.0, true] | [10511, 5717984, 10511, 1, 0, 20054016.0, true] |
 | vllm_running_8192 | 167 | 553 |
 
+## gguf:Qwen3.5-2B-Q4_K_M.metadata.gguf (hybrid)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 24576 | 6144 |
+| conv_prefill_weights_mb | 4148.0 | 4559.164062 |
+| conv_state_bytes | 0 | 19537920 |
+| disagg_transfer_bytes_640 | 31457280 | 27402240 |
+| eng_None_32768_kv_mb | 1610.612736 | 402.653184 |
+| eng_None_32768_params | 1901268992 | 1881922368 |
+| eng_None_32768_state_mb | 0.0 | 19.53792 |
+| eng_None_32768_total_mb | 5775.538586 | 4548.423706 |
+| eng_None_4096_kv_mb | 201.326592 | 50.331648 |
+| eng_None_4096_params | 1901268992 | 1881922368 |
+| eng_None_4096_state_mb | 0.0 | 19.53792 |
+| eng_None_4096_total_mb | 4185.058509 | 4014.908237 |
+| eng_llamacpp_32768_kv_mb | 1610.612736 | 402.653184 |
+| eng_llamacpp_32768_params | 1901268992 | 1881922368 |
+| eng_llamacpp_32768_state_mb | 0.0 | 19.53792 |
+| eng_llamacpp_32768_total_mb | 5775.538586 | 4548.423706 |
+| eng_llamacpp_4096_kv_mb | 201.326592 | 50.331648 |
+| eng_llamacpp_4096_params | 1901268992 | 1881922368 |
+| eng_llamacpp_4096_state_mb | 0.0 | 19.53792 |
+| eng_llamacpp_4096_total_mb | 4185.058509 | 4014.908237 |
+| facts_full_attention | true | false |
+| facts_kv_bytes_4096 | 201326592 | 50331648 |
+| facts_kv_bytes_per_token | 49152 | 12288 |
+| facts_layers | [24, 0, 0, null] | [6, 0, 18, null] |
+| facts_state_bytes | 0 | 19537920 |
+| facts_weight_bytes | 4349718528 | 3763650176 |
+| genz_chunked_kv_mb | 216.0 | 91.265625 |
+| genz_decode_kv_mb | 192.0 | 66.632812 |
+| genz_decode_weights_mb | 2602.0 | 3589.164062 |
+| genz_kv_size | 24576 | 6144 |
+| genz_layer_kinds | {"MHA-global": 24} | {"MHA-global": 6, "Recurrent": 18} |
+| genz_prefill_kv_mb | 192.0 | 66.632812 |
+| genz_prefill_weights_mb | 3572.0 | 4559.164062 |
+| gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_act", "hidden_size", "intermediate_size", "layer_types", "linear_conv_kernel_dim", "linear_key_head_dim", "linear_num_key_heads", "linear_num_value_heads", "linear_value_head_dim", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "rope_theta", "ssm_conv_kernel", "ssm_inner_size", "ssm_n_groups", "ssm_state_size", "tie_word_embeddings", "time_step_rank", "vocab_size"] |
+| kv_free_layers | 0 | 18 |
+| kv_full_layers | 24 | 6 |
+| kv_gb@32768 | 1.610612736 | 0.402653184 |
+| kv_gb@4096 | 0.201326592 | 0.050331648 |
+| kv_source | "uniform" | "layer_plan:layer_types" |
+| kvgeo_32768 | [49152.0, 24, 0, 0.0, 16, 0.0] | [12288.0, 6, 18, 1085440.0, 544, 0.0] |
+| kvgeo_4096 | [49152.0, 24, 0, 0.0, 16, 0.0] | [12288.0, 6, 18, 1085440.0, 544, 0.0] |
+| model_type | "decoder-only" | "hybrid" |
+| prefix_kv_bytes_per_token | 49152 | 12288 |
+| report_kv_gb | 0.201326592 | 0.050331648 |
+| report_params | 1901268992 | 1881922368 |
+| report_state_gb | 0.0 | 0.01953792 |
+| report_total_gb | 4.261562614 | 4.065120937 |
+| report_weight_gb | 3.802537984 | 3.763844736 |
+| runtime_chunked | [3.259829, 3572.0, 36.0] | [4.239539, 4559.164, 46.266] |
+| runtime_decode | [2.991388, 2602.0, 24.188] | [3.51989, 3589.164, 80.578] |
+| runtime_prefill | [8.208606, 3572.0, 24.0] | [10.054049, 4559.164, 24.633] |
+| serving_bytes_per_token | 49152 | 12288 |
+| serving_requests_8gib_1k | 170 | 267 |
+| serving_state_bytes | 0 | 19537920 |
+| slice_mib_16x4352 | [14080, true] | [12032, true] |
+| state_gb | 0.0 | 0.01953792 |
+| vllm_limits | [88602, 1417632, 88602, 1, 0, 0.0, true] | [10511, 5717984, 10511, 1, 0, 20054016.0, true] |
+| vllm_running_8192 | 167 | 553 |
+
 ## gguf:SmolVLM-500M-Instruct-Q8_0.gguf (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| eng_None_32768_params | 369808320 | 409252800 |
+| eng_None_32768_total_mb | 2239.08032 | 2317.96928 |
+| eng_None_4096_params | 369808320 | 409252800 |
+| eng_None_4096_total_mb | 986.032 | 1064.92096 |
+| eng_llamacpp_32768_params | 369808320 | 409252800 |
+| eng_llamacpp_32768_total_mb | 2239.08032 | 2317.96928 |
+| eng_llamacpp_4096_params | 369808320 | 409252800 |
+| eng_llamacpp_4096_total_mb | 986.032 | 1064.92096 |
+| gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
+| report_params | 369808320 | 409252800 |
+| report_total_gb | 1.035315072 | 1.114204032 |
+| report_weight_gb | 0.73961664 | 0.8185056 |
+
+## gguf:SmolVLM-500M-Instruct-Q8_0.metadata.gguf (decoder-only)
 
 | figure | before | after |
 |---|---|---|
@@ -4024,7 +4205,60 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | vllm_running_1024 | 1024 | 511 |
 | vllm_running_8192 | 166 | 77 |
 
+## gguf:gpt-oss-20b-MXFP4.metadata.gguf (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| conv_prefill_weights_mb | 4563.28125 | 39878.4375 |
+| eng_None_32768_params | 1992044160 | 20908068480 |
+| eng_None_32768_total_mb | 5945.764301 | 44049.60384 |
+| eng_None_4096_params | 1992044160 | 20908068480 |
+| eng_None_4096_total_mb | 4360.946534 | 42328.890624 |
+| eng_llamacpp_32768_params | 1992044160 | 20908068480 |
+| eng_llamacpp_32768_total_mb | 5945.764301 | 44049.60384 |
+| eng_llamacpp_4096_params | 1992044160 | 20908068480 |
+| eng_llamacpp_4096_total_mb | 4360.946534 | 42328.890624 |
+| facts_weight_bytes | 4785229440 | 41815856256 |
+| genz_decode_weights_mb | 3078.984375 | 38773.828125 |
+| genz_ffn_kinds | {"Dense": 24} | {"MoE": 24} |
+| genz_prefill_weights_mb | 4183.59375 | 39878.4375 |
+| gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "moe_intermediate_size", "n_routed_experts", "num_attention_heads", "num_experts", "num_experts_per_tok", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
+| report_params | 1992044160 | 20908068480 |
+| report_total_gb | 4.436318177 | 42.431441357 |
+| report_weight_gb | 3.98408832 | 41.81613696 |
+| runtime_chunked | [3.861015, 4183.594, 36.0] | [25.702025, 39878.438, 36.0] |
+| runtime_decode | [3.282565, 3078.984, 24.188] | [12.70061, 38773.828, 24.188] |
+| runtime_prefill | [9.452835, 4183.594, 24.0] | [31.010111, 39878.438, 24.0] |
+| slice_mib_16x4352 | [14336, true] | [52736, true] |
+| vllm_limits | [88043, 1408688, 88043, 1, 0, 0.0, true] | [40956, 655296, 40956, 1, 0, 0.0, true] |
+| vllm_running_1024 | 1024 | 511 |
+| vllm_running_8192 | 166 | 77 |
+
 ## gguf:nomic-embed-text-v1.5.Q8_0.gguf (decoder-only)
+
+| figure | before | after |
+|---|---|---|
+| eng_None_32768_params | 109986816 | 136725504 |
+| eng_None_32768_total_mb | 1594.027622 | 1647.504998 |
+| eng_None_4096_params | 109986816 | 136725504 |
+| eng_None_4096_total_mb | 454.015795 | 507.493171 |
+| eng_llamacpp_32768_params | 109986816 | 136725504 |
+| eng_llamacpp_32768_total_mb | 1594.027622 | 1647.504998 |
+| eng_llamacpp_4096_params | 109986816 | 136725504 |
+| eng_llamacpp_4096_total_mb | 454.015795 | 507.493171 |
+| facts_weight_bytes | 320294400 | 273412608 |
+| genz_decode_weights_mb | 206.709961 | 260.709961 |
+| genz_prefill_weights_mb | 251.419922 | 305.419922 |
+| gguf_config_keys | ["hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
+| report_params | 109986816 | 136725504 |
+| report_total_gb | 0.500824228 | 0.554301604 |
+| report_weight_gb | 0.219973632 | 0.273451008 |
+| runtime_chunked | [0.250125, 251.42, 27.0] | [0.298632, 305.42, 27.0] |
+| runtime_decode | [1.332179, 206.71, 18.141] | [1.365157, 260.71, 18.141] |
+| runtime_prefill | [1.851672, 251.42, 18.0] | [1.948309, 305.42, 18.0] |
+| vllm_limits | [126489, 2023824, 126489, 1, 0, 0.0, true] | [126569, 2025104, 126569, 1, 0, 0.0, true] |
+
+## gguf:nomic-embed-text-v1.5.Q8_0.metadata.gguf (decoder-only)
 
 | figure | before | after |
 |---|---|---|

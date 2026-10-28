@@ -275,8 +275,12 @@ The calculator provides detailed breakdown:
   category, the config keys read, and what is charged conservatively. The weights beside them
   (shared experts, MLA's indexer, an attention output gate, an encoder at its own geometry, an
   adapter stack) come from the same readers, and `tests/test_kv_gate.py` holds every figure that
-  moves below origin/main's to its ground truth (`tests/fixtures/kv_gate/allowlist.json`; the
-  figures still below truth, and why: LAYER_KINDS.md, "What errs low, measured").
+  moves below origin/main's -- or that the branch alone reports, or that it no longer reports --
+  to its ground truth (`tests/fixtures/kv_gate/allowlist.json`; the figures still below truth,
+  and why: LAYER_KINDS.md, "What errs low, measured"). The config-class defaults the readers take
+  for a key a config leaves out ship with the package (`config_class_defaults.json`, from
+  transformers 5.12), so the figures, and the gate, do not depend on whether or which
+  transformers is installed.
 - **Activation Memory**: Intermediate activations during forward pass
 - **State Memory**: the fixed per-sequence state of recurrent layers (Gated DeltaNet, Mamba,
   KDA, linear attention, short conv, RWKV, xLSTM, RG-LRU) -- constant in sequence length, the

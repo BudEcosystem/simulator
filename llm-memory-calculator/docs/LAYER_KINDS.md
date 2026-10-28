@@ -303,7 +303,16 @@ class defaults stand in for the keys its config leaves out (Mllama's 8 global la
 7,680-wide output and its tiled position tables). The parameter counter counts a tower at its own
 geometry the same way, a wrapper around a language model alone from its `text_config`, and the
 activation and tied-embedding flags at the config class's defaults where a config states none
-(Llama 4's "silu" and untied head). Every reader takes an encoder-decoder's shape from the same
+(Llama 4's "silu" and untied head). Those defaults ship with the package
+(`src/llm_memory_calculator/config_class_defaults.json`, written from transformers 5.12's 642
+config classes by `scripts/config_class_defaults.py`; `layer_plan.CLASS_DEFAULT_KEYS` names every
+key a reader asks for), so every figure is the same whether transformers is installed, absent, or
+a release that predates the class (4.50 has no Llama 4 or Nemotron-H); the installed transformers
+is asked only about a model type the snapshot does not hold. Read from the installed release
+alone, a machine without transformers counted Mllama's tower without its global layers and a
+tied head on RWKV and Llama 4 -- weights below origin/main's and below the model's own count. A
+query / key norm is read under every spelling (`layer_plan.QK_NORM_KEYS`: `qk_norm`,
+Hunyuan's `use_qk_norm`, `qk_layernorm`). Every reader takes an encoder-decoder's shape from the same
 reader: a flat config that states two stacks under an encoder-decoder's spellings
 (`encoder_decoder_stacks`: mT5's `num_layers` and `num_decoder_layers`) is an encoder-decoder to
 `detect_model_type` and the parameter count as it is to the layer plan.
@@ -442,8 +451,10 @@ are these, stated rather than hidden:
 * **The GenZ graphs' weights hold matrices only.** No operator carries a norm or bias vector, nor a
   few small matrices (T5's relative-position bias, Mllama's 8 extra embedding rows): the graphs
   sit up to 5 parts in 100,000 below transformers' parameter count (DeepSeek-V3: 1.9 MiB of
-  1.28 TiB). The decode graph looks a token up in its input embedding (a gather) and graphs no
-  operator for it, on origin/main as here, so its weights are the prefill graph's less that table.
+  1.28 TiB). The decode graph looks a token up in its input embedding and its learned position
+  table, if any (gathers), and graphs no operator for either, on origin/main as here, so its
+  weights are the prefill graph's less those tables (Nougat: 7.0 MiB of positions). The chunked
+  graph holds them, and is held to the prefill graph's truth.
 * **The calculator's count for BLIP's BERT text decoder** leaves out its bias vectors, its learned
   positions and its LM head's transform: 223.21M of 223.97M (origin/main 223.11M).
 * **A conformer encoder in the calculator and the GenZ graph** (cohere-transcribe's Parakeet
@@ -465,16 +476,46 @@ are these, stated rather than hidden:
 ## The gate
 
 `tests/test_kv_gate.py` runs the corpus harness over every config the repository ships
-(prepopulated.db, every fixture, the synthetic shapes, GenZ's built-in models) through every
-reader, and compares each figure with origin/main's (`tests/fixtures/kv_gate/origin-main.json`,
-measured by the same harness on `c17ef89`). A memory figure below origin/main's or a capacity
-figure above it fails unless the allowlist names it: the config, the reader, both figures, its
-cause, and its ground truth -- transformers 5.12's own model for the config on the meta device
-(`scripts/kv_truth.py`: every parameter, the K / V projections each decoder layer caches, the
-cache kinds and windows `DynamicCache(config=...)` builds), the checkpoint's or GGUF's tensors, or
-the published arithmetic the entry cites (`tests/fixtures/kv_gate/truths.json`) -- and the
-branch's figure is not below that truth. A capacity rise names the memory figures it is sized from,
-each held to its own truth. `python scripts/kv_corpus.py --gate main.json branch.json --allowlist
+(prepopulated.db, every fixture, the synthetic shapes, GenZ's built-in models, and the GGUF
+reader -- `bud_component.gguf_to_hf_config` with `gguf_layers` -- on `tests/fixtures/gguf`'s
+metadata-only copies of four real GGUFs: Qwen3.5-2B's hybrid, gpt-oss-20b's window pattern,
+SmolVLM's Llama, nomic-embed's encoder; `scripts/gguf_metadata_fixture.py` copies every metadata
+key and tensor name verbatim, which is all the reader reads) through every reader, and compares
+each figure with origin/main's (`tests/fixtures/kv_gate/origin-main.json`, measured by the same
+harness on `c17ef89`). It fails on:
+
+* a memory figure below origin/main's, or a capacity figure above it,
+* a figure the branch reports and origin/main did not (main's reader raised, or had no such
+  reader) -- held to its ground truth like a drop, and
+* a figure origin/main reported and the branch does not (its reader now raises) -- its entry
+  names the error the branch records for that reader, and the gate checks it is that error,
+
+unless the allowlist names it: the config, the reader, both figures, its cause, and its ground
+truth -- transformers 5.12's own model for the config on the meta device (`scripts/kv_truth.py`:
+every parameter; the K / V projections each decoder layer's self-attention caches, and those of
+its cross-attention; the recurrent state transformers' mixer modules hold; the cache kinds and
+windows `DynamicCache(config=...)` builds), the checkpoint's or GGUF's tensors (`kv_truth.py
+--checkpoint REPO` reads every safetensors shard's header from the hub, no weights downloaded), or
+the config arithmetic the entry cites (`tests/fixtures/kv_gate/truths.json`, which also states a
+fixed-length encoder's token count: a tower's patches, Whisper's 1,500 frames) -- and the
+branch's figure is not below that truth. A capacity figure names the memory figures it is sized
+from, each held to its own truth. Never a model card's rounded total: a hub card's "100B" sat 2.8%
+below Ling-flash-2.0's 102,889,705,216 tensors (`tests/test_kv_truth.py` rejects one).
+
+The truth itself says when it cannot read a model: a softmax attention whose K / V projections
+its table does not name, or a layer the class builds as a convolution where the cache expects
+attention (LFM2 reads only `full_attention`), leaves the width undetermined -- no truth, so the
+entry fails -- never 0, which would accept any figure. The decoder's layer list is a list of
+blocks, never of output heads (MusicGen's `lm_heads`). Each GenZ graph is held to the weights it
+graphs: the prefill and chunked graphs to the language model's matrices (both hold the input
+embedding), the decode graph to them less every table a step gathers one row from (the token
+embedding, a learned position table, codebook embeddings).
+
+The gate needs no transformers, torch or gguf: the figures read the shipped class defaults
+(above), the allowlist's truths are committed, and where the `gguf` package is absent the GGUF
+rows -- whose reader cannot run there at all -- are left out and
+`test_the_gguf_fixtures_are_read_through_the_gguf_reader` skips. It passes with transformers 5.12,
+4.50 and none. `python scripts/kv_corpus.py --gate main.json branch.json --allowlist
 tests/fixtures/kv_gate/allowlist.json` runs the same check over the machine's HF cache, model
 folders and GGUFs too. A figure that moves again, or a new drop, fails until its entry is
 re-measured (`scripts/kv_truth.py --allowlist-from`).
