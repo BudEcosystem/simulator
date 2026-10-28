@@ -253,9 +253,11 @@ estimate and the parameter counter). Only attention layers keep a growing cache 
 every token, sliding / chunked layers their window, cross-attention the encoder's tokens, MLA one
 latent per layer. Gated DeltaNet (Qwen3-Next, Qwen3.5), Mamba, RWKV, xLSTM, short-convolution and
 FFN-only layers keep a fixed per-sequence state instead (fp32, as the engines hold it), reported
-as state memory and counted in the engine total. A layer kind the table does not know, and a
-window whose layers the config does not place, are charged full KV with a warning, never treated
-as free or clamped. Categories, the config and GGUF keys read, and the
+as state memory and counted in the engine total; the serving simulator charges each request its
+KV blocks plus that state (`MemoryModel.state_bytes_per_sequence`, also in the cluster and
+disaggregation concurrency, the prefill-to-decode transfer and `/api/v2/memory/tiers`). A layer
+kind the table does not know, a per-layer list shorter than the depth, and a window whose layers
+the config does not place, are charged full KV with a warning, never treated as free or clamped. Categories, the config and GGUF keys read, and the
 conservative rules: [llm-memory-calculator/docs/LAYER_KINDS.md](llm-memory-calculator/docs/LAYER_KINDS.md).
 
 ---

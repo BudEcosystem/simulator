@@ -258,7 +258,8 @@ The calculator provides detailed breakdown:
 - **Activation Memory**: Intermediate activations during forward pass
 - **State Memory**: the fixed per-sequence state of recurrent layers (Gated DeltaNet, Mamba,
   KDA, linear attention, short conv, RWKV, xLSTM, RG-LRU) -- constant in sequence length, the
-  recurrent matrix in fp32; the GenZ graphs price it the same way
+  recurrent matrix in fp32; the GenZ graphs and the serving memory model price it the same way
+  (`ModelConfig.get_state_bytes`: a serving request costs its KV blocks plus this state)
 - **Image Memory**: Vision transformer image embeddings
 - **Extra/Overhead**: Framework overhead and temporary buffers
 

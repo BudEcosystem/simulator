@@ -13,7 +13,7 @@ table, and every part of the simulator answers from it:
 | `ModelMemoryCalculator.calculate_kv_cache` / `kv_cache_breakdown` / `calculate_state_memory` | KV bytes per kind, fixed state |
 | `bud_component.py --gguf` (via `gguf_layers.hf_layer_keys_from_gguf`) | the same kinds from a GGUF's llama.cpp keys |
 | GenZ graph (`get_language_model.layer_configs_from_hf`, `ModelConfig.get_kv_size`) -- the prefill, decode **and chunked** builders (`create_full_chunked_model`: chunked serving, speculative decoding, the simulation engine's chunked feature) | per-layer operators; KV only on attention layers, the window on windowed ones; which FFNs are MoE (`layer_plan.moe_layers`) |
-| GenZ serving (`MemoryModel.bytes_per_token_kv`, disaggregation KV transfer) | per-token KV |
+| GenZ serving (`MemoryModel.bytes_per_token_kv` and `state_bytes_per_sequence`, `request_bytes`, the scheduler's admission check, cluster and disaggregation `B_eff`, the disaggregation transfer; BudSimulator `/api/v2/memory/tiers`) | per-token KV, and the per-request fixed state (`ModelConfig.get_state_bytes`) |
 | `UniversalParameterCounter`, `model.facts` (FRD-027), `model.recognise` | weights per mixer, KV per token, the known vocabulary. `model.facts` reads the layer kinds for every config: a `model_type` outside the recogniser is still flagged `architecture: unrecognised`, but which layers hold KV comes from the table, not from that allowlist |
 | BudSimulator `ModelConverter.hf_to_genz` | database models graphed like HF configs |
 
@@ -55,7 +55,7 @@ gguf-py's `Keys` (`gguf/constants.py`).
 | Category | KV per layer | Config keys read | Examples |
 |---|---|---|---|
 | Full / global attention | every token | `layer_types: full_attention / attention / global`, or a uniform stack | Llama, Qwen2, most dense |
-| Sliding-window attention | at most `sliding_window` tokens | `layer_types: sliding_attention`; `sliding_window_pattern: N` (one full layer in N, the last of each group); `sliding_window_layout` (0/1 mask); `global_attn_idx`; window spellings `sliding_window`, `sliding_window_size`, `attention_window_size`, `window_size`; `use_sliding_window: false` disables. A window with **no** layout key takes the layout the model type's own config class derives (transformers: `Gemma2Config` alternates sliding and full, `Qwen2Config` windows from `max_window_layers` on), or every layer when that class states no per-layer list (Mistral) | Gemma 2/3, gpt-oss, Mistral v0.1, SmallThinker, Hymba |
+| Sliding-window attention | at most `sliding_window` tokens | `layer_types: sliding_attention`; GPT-Neo's `attention_types` (`[[["global", "local"], 12]]`, which its config class expands into `attention_layers`; both read, names `global` / `local`); `sliding_window_pattern: N` (one full layer in N, the last of each group); `sliding_window_layout` (0/1 mask); `global_attn_idx`; window spellings `sliding_window`, `sliding_window_size`, `attention_window_size`, `window_size`; `use_sliding_window: false` disables. A window with **no** layout key takes the layout the model type's own config class derives (transformers: `Gemma2Config` alternates sliding and full, `Qwen2Config` windows from `max_window_layers` on), or every layer when that class states no per-layer list under any key the reader knows (Mistral) | Gemma 2/3, gpt-oss, GPT-Neo, Mistral v0.1, SmallThinker, Hymba |
 | Chunked local attention | at most `attention_chunk_size` | `layer_types: chunked_attention` | Llama 4 |
 | Sparse / compressed attention | every token (upper bound) | `deepseek_sparse_attention`, `compressed_sparse_attention`, `heavily_compressed_attention`, `minimax_m3_sparse`, `sparse` | DeepSeek-V3.2/V4, MiniMax-M3 |
 | MLA (latent KV) | `kv_lora_rank + qk_rope_head_dim`, no factor 2 | `kv_lora_rank` (non-null), `qk_rope_head_dim` | DeepSeek-V2/V3, Kimi |
@@ -63,7 +63,7 @@ gguf-py's `Keys` (`gguf/constants.py`).
 | KV-shared layers | none of their own | `num_kv_shared_layers` (the last N layers) | Gemma 3n |
 | Gated DeltaNet | fixed: `nv x dk x dv` fp32 + conv | `layer_types: linear_attention` with `linear_num_value_heads`, `linear_key_head_dim`, `linear_value_head_dim`, `linear_num_key_heads`, `linear_conv_kernel_dim`; `full_attention_interval` | Qwen3-Next, Qwen3.5/3.6 |
 | Plain linear attention | fixed: `heads x d x d` | `linear_attention` without GDN keys; `attn_type_list` (0 = linear) | MiniMax-Text-01 |
-| Kimi Delta Attention | fixed | `linear_attn_config.{full_attn_layers, kda_layers}` (one-indexed) | Kimi Linear |
+| Kimi Delta Attention | fixed | `linear_attn_config.{full_attn_layers, kda_layers}` (one-indexed, as Kimi's modelling code reads them, `layer_idx + 1`; only a list naming layer 0 is read 0-indexed) | Kimi Linear |
 | Mamba-1 / Mamba-2 | fixed: `heads x d_head x d_state` fp32 + conv | `layer_types: mamba`, `layers_block_type`, `hybrid_override_pattern` (`M`/`E`/`*`/`-`, as transformers' `NemotronHConfig` translates them), `attn_layer_indices`, `attn_layer_period`/`attn_layer_offset`, state keys `state_size`/`mamba_d_state`/`ssm_state_size`, heads `mamba_n_heads`/`mamba_num_heads`, `mamba_head_dim`, groups `n_groups`/`mamba_n_groups` | Mamba, Jamba, Nemotron-H, granite-4.0-h, Bamba, Zamba2, Falcon-H1 |
 | Short convolution | fixed conv buffer | `layer_types: conv`, `conv_L_cache` | LFM2 |
 | RWKV | fixed: token shift + WKV | no attention heads + `attention_hidden_size`; GGUF `wkv.head_size` | RWKV |
@@ -85,12 +85,22 @@ the graph streams them on every layer that invokes the block.
 A multimodal config nests the decoder under `text_config`; every reader looks there first, so a
 model that is both multimodal and hybrid (Qwen3.5) gets the hybrid layout.
 
+An attention head count spelled `num_heads` or `n_heads` (GPT-Neo, T5, MPT) is read as the
+attention heads (`ConfigNormalizer`) only when the table says the stack has attention layers:
+xLSTM's `num_heads` belong to its recurrent matrix memory. Unread, GPT-Neo was charged no KV at
+all. Nor is GPT-Neo's `attention_layers` list a hybrid marker any more (`detect_model_type`).
+
 ## What is conservative, and why
 
 Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says so:
 
 * **An unknown layer-kind name** is charged full-attention KV, the plan is marked `approximate`,
   its `notes` name the kind, and a `UserWarning` is raised. It is never silently treated as free.
+* **A per-layer list shorter than the depth** (`layer_types`, `layers_block_type`,
+  `hybrid_override_pattern`, `attn_type_list`, `sliding_window_layout`, GPT-Neo's lists): the
+  layers it names keep their kinds, the layers it does not reach are charged full-attention KV,
+  with the same note, warning and `approximate` flag. They used to be left with no kind at all,
+  so charged nothing.
 * **A hybrid whose layout no key states** (a hybrid `model_type` with no per-layer key) is charged
   KV on every layer and state on every layer, unless the config states `attention_ratio`.
 * **A recurrent mechanism with none of its sizing keys** is sized from fallback geometry and
@@ -113,9 +123,20 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
   window, and one layer the full context -- an upper bound on the published design (the
   self-decoder's windowed layers plus one growing cache), never below it. The Mamba state, with
   no SSM key in the config, is an `ESTIMATE`.
-* **Windowed layers inside a stack that also has full layers** keep the full sequence unless the
+* **Windowed layers inside a stack that also has full layers** keep the full sequence *in the
+  memory calculator* (`calculate_kv_cache`, `kv_cache_breakdown`, the engine estimate) unless the
   engine is declared able to hold a per-layer KV layout
-  (`engine_capabilities={"heterogeneous_kv_layout": True}`); see `EngineKVCapabilities`.
+  (`engine_capabilities={"heterogeneous_kv_layout": True}`; see `EngineKVCapabilities`): the
+  measured vLLM gpt-oss behaviour. That is a statement about the engine, not the model, and only
+  the calculator takes an engine. The two readers that describe the **model** apply the window
+  on every windowed layer, whatever its stack: the GenZ prefill, decode and chunked graphs (a
+  windowed layer reads and holds no more than its window, as an engine with per-layer KV -- vLLM's
+  hybrid allocator, llama.cpp's SWA cache -- holds it), and the FRD-027 facts (whose vLLM model
+  then lays out its own sliding groups, `engine/vllm.py`). So for an engine without per-layer KV,
+  the graph's `KV Cache (MB)` -- and `platform_size.get_minimum_system_size`, which adds it to the
+  weights -- is below the calculator's default: Gemma-3-27b-it at 4,096 tokens, decode graph
+  736 MiB against 1,984 MiB with the window withheld; a Llama 4 text stack at 32k, 2,688 MiB
+  against the calculator's 6.44 GB. Size a deployment on such an engine from the calculator.
 * **Sparse / compressed attention** is charged as full attention.
 * **A pure state-space stack whose config states no state key and no attention-head count** is
   recognised by its `model_type` (`mamba`, `mamba2`, `falcon_mamba`, ...): the one place a family
@@ -126,7 +147,8 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
 ## The recurrent state
 
 `calculate_state_memory` (and `EngineMemory.state_bytes`, which `bud_component` reports as
-`state_bytes` and counts in `total_runtime_bytes`) is the per-sequence state, constant in
+`state_bytes` and counts in `total_runtime_bytes`; and in the serving simulator
+`ModelConfig.get_state_bytes`, below) is the per-sequence state, constant in
 context length: the recurrent matrix in fp32 (unless `mamba_ssm_cache_dtype` / `mamba_ssm_dtype`
 / `inference_state_dtype` says otherwise) plus the convolution's `d_conv - 1` ring buffer at
 model precision. One function, `state_memory.recurrent_state_shape`, gives the shape for every
@@ -135,6 +157,18 @@ element (the state dtype travels in the operator's name: `Rec State` fp32, `Rec 
 for the recurrent matrix and for the small vectors some mechanisms keep beside it -- RWKV's token
 shifts, xLSTM's normaliser; `Rec Conv` at the activation precision), so the graph's state equals
 `calculate_state_memory` for every mechanism.
+
+The serving simulator prices the same shapes with the same bytes
+(`state_memory.shape_state_bytes`): `ModelConfig.get_state_bytes(precision_bytes)` sums the
+recurrent layers' state (each per-layer config's shape; a pure state-space stack's shape from the
+config's table entry, or for a built-in GenZ Mamba model from its `mamba_*` fields as Mamba-1).
+`MemoryModel` charges a request that state, split by tensor parallelism, once, with its first KV
+blocks and on the same tier, and frees it with the request (or when eviction takes the whole
+request); `request_bytes(tokens)` is what the scheduler's never-fits check compares with every
+tier. The cluster and disaggregation concurrency (`B_eff`) divide the free memory by KV x context
+**plus** the state, and the prefill-to-decode transfer moves the state with the KV. Without it, a
+hybrid's requests were admitted 2.5x (Qwen3.5-4B) to 10x (granite-4.0-h-small) too often and a
+pure SSM's cost nothing.
 
 ## GGUF
 
@@ -168,8 +202,10 @@ sequence in the chunk however much each has cached (`recurrent.recurrent_chunked
 of an MoE model (Jamba's even layers, DeepSeek's and Kimi's leading layers) is graphed as one FFN
 of `intermediate_size`, not as the experts.
 
-Known approximations: KV-shared layers are still graphed as attention (their KV read traffic is
-real, their memory is over-counted); a cross-attention layer is graphed as a full one; a
+Known approximations: the graph's KV memory is the model's (windowed layers bounded by their
+window in every stack), not that of an engine without per-layer KV, which would hold the full
+sequence on windowed layers of a mixed stack -- see *What is conservative*; KV-shared layers are
+still graphed as attention (their KV read traffic is real, their memory is over-counted); a cross-attention layer is graphed as a full one; a
 *uniformly* windowed stack (Mistral v0.1) keeps GenZ's uniform full-attention graph -- the memory
 calculator applies its window, the graph does not; a per-layer MoE list (Hunyuan's
 `num_experts` per layer) does not graph.
