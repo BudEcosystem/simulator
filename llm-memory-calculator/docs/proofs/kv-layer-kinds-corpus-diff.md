@@ -14,7 +14,10 @@ fourth review's (the attention head width read under its other spellings -- Zamb
 its size everywhere --, an SSM-state config with attention heads and no layout, a family name
 overriding stated attention heads, and `max_window_layers` where a config class states no layout);
 and the fifth review's (a dense layer of an MoE model graphed at the experts' width, sliding layers
-whose window the table does not read, and the prefix cache's price of a token).
+whose window the table does not read, and the prefix cache's price of a token); and the sixth
+review's (the vLLM planner's concurrency on a stack of full and sliding layers, GenZ's depth for a
+config that states it only as a per-layer list, a GGUF's 0-KV layers taken for FFN-only slots,
+the database converter's window, and the README's statement of the window).
 
 ## 1. The measured case
 
@@ -128,7 +131,24 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
   - test_the_prefix_cache_prices_a_token_like_the_serving_memory_model x 3 (Qwen3.5-4B 131,072
     against 32,768 B; Nemotron-H-8B 212,992 against 16,384; DeepSeek-V3.2 1,748,992 against
     MLA's 70,272)
-* This branch: 139 cases, 132 passed and 7 skipped (the two GGUF-file cases skip where `gguf` is absent; the cross-check
+* Round 7 (23 cases added for the sixth review) against the round-6 head `8d74c2b`: 22 failed,
+  one is a guard.
+  - test_the_vllm_planner_admits_no_more_sequences_than_every_kv_group_holds x 8 (Gemma-3-27b and
+    Gemma-2-9B's hub config, vllm-0.30-upstream and bud-vllm-0.10.0, 1,024 and 4,096 input tokens:
+    160 running against the allocator's 27, 246 against 123, ...)
+  - test_the_profile_scheduler_charges_every_sliding_group_too (the step scheduler ran more
+    sequences than the allocator holds at their prompt's length)
+  - test_a_shared_slice_holds_the_load_in_every_kv_group (a slice for 16 x 4,352 tokens held 8)
+  - test_genz_and_serving_take_the_depth_from_the_per_layer_list x 2 (Nemotron-H-8B saved by
+    transformers 5.12: GenZ 32 layers, serving 0 B a token; with a nested block, a ValueError)
+  - test_genz_never_graphs_attention_layers_as_mamba (no such function: the decision was inline)
+  - test_a_gguf_layer_without_kv_or_a_mixer_keeps_the_stack_s_ffns x 3 and
+    test_genz_graphs_every_ffn_of_a_deci_gguf (Deci: 2 of 8 FFNs graphed)
+  - guard: test_a_gguf_whose_kv_layers_run_no_ffn_still_reads_ffn_only_slots (Nemotron-H's GGUF)
+  - BudSimulator `tests/test_model_converter_layer_kinds.py` x 5 (SmallThinker's
+    `sliding_window_size`, Llama 4's `attention_chunk_size` flat and under `text_config`, Gemma 3
+    under `text_config`: window None; the saved Nemotron-H: a ValueError)
+* This branch: 157 cases, 150 passed and 7 skipped (the GGUF-file cases skip where `gguf` is absent; the cross-check
   skips the 7 fixtures transformers cannot build). The category file also runs in a venv with
   neither `transformers` nor `gguf` (149 passed, 33 skipped across it and
   `tests/test_hybrid_layer_plan.py`), with transformers 4.50.0 (159 passed, 23 skipped) and with
@@ -145,11 +165,13 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
 
 | Suite | origin/main `c17ef89` | This branch |
 |---|---|---|
-| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,223 passed, 21 skipped, 1 failed |
-| `BudSimulator/tests` (pytest) | 24 passed | 26 passed |
+| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,241 passed, 21 skipped, 1 failed |
+| `BudSimulator/tests` (pytest) | 24 passed | 31 passed |
 
 (Round 3 ended at 2,151 / 24; round 4 at 2,191 passed, 14 skipped / 26; round 5 adds the 32
-category cases above, 7 of which skip -- fixtures transformers cannot build. Round 6 adds the 7 category cases for the fifth review. Round 4 added the 40
+category cases above, 7 of which skip -- fixtures transformers cannot build. Round 6 adds the 7 category cases for the fifth review; round 7 the 18 category cases and the 5
+BudSimulator converter cases for the sixth (no existing test changed: the planner's gpt-oss
+calibrations hold with each sequence's sliding blocks counted). Round 4 added the 40
 category cases and the two memory-tier API cases. One existing assertion was widened: `tests/serving/test_memory_model.py::
 TestMemorySnapshot::test_snapshot_has_all_fields` pins the snapshot's keys, and the snapshot now
 reports `state_bytes` beside `kv_cache_bytes`.)
@@ -395,6 +417,53 @@ an over-count. The calculator's parameter counter handles a flat `llama4_text` c
 `text_config`) as every layer MoE (783.6B for the Maverick text config above). Left for a
 separate fix.
 
+Round 7 (the sixth review) moved exactly one config against the round-6 head (`--diff` of the
+round-6 head's corpus against this branch's: 193 unchanged, 1 changed); against origin/main the
+corpus is still 135 unchanged, 59 changed:
+
+* **GPT-Neo-1.3B reaches the GenZ serving path.** Its hub config states its depth as `num_layers`
+  and carries a nested block (`task_specific_params`), so the decoder-block detection, which
+  required `num_hidden_layers`, refused it (a ValueError, on origin/main too). It now reads the
+  table's depth: `genz_layer_kinds` {MHA-global 12, MHA-local 12}, `get_kv_size` 98,304, serving
+  196,608 B a token (24 x 2 x 2,048 x 2: the serving model charges the windowed layers in full, an
+  over-estimate) and 42 requests of 1,024 tokens in 8 GiB. Its decode and chunked graphs still
+  fail, later: the config states `intermediate_size: null` (GPT-Neo's MLP is 4 x hidden), which
+  GenZ's FFN does not read -- as on origin/main, left for a separate fix.
+* **The vLLM planner's concurrency counts every KV-cache group** (`Limits.blocks_per_sequence`, in
+  `predict`, the profile scheduler and `shared_slice_mib`). The corpus does not run the planner; by
+  hand (`vllm-0.30-upstream`, h100xm-80c-vgpu, concurrency 1,024), running sequences against
+  what vLLM's hybrid allocator holds (`num_blocks` / the sequence's blocks in every group):
+
+  | model, tokens | origin/main | round-6 head | this branch | allocator |
+  |---|---|---|---|---|
+  | Gemma-3-27b, 1,024 + 256 | 25 | 160 | **27** | 27 |
+  | Gemma-3-27b, 4,096 + 256 | 7 | 47 | **19** | 19 |
+  | Gemma-2-9B hub config, 1,024 + 256 | 123 | 246 | **123** | 123 |
+  | Gemma-2-9B hub config, 4,096 + 256 | 36 | 72 | **37** | 37 |
+  | gpt-oss-120b, 1,024 + 256 | 204 | 204 | **183** | 183 |
+  | gpt-oss-120b, 4,096 + 256 | 60 | 60 | **58** | 58 |
+
+  bud-vllm-0.10.0 agrees within 2 (Gemma-3-27b 28 / 20; gpt-oss-120b 182 / 57). gpt-oss reached
+  this path on origin/main already; each sequence's 9 blocks in its sliding group (a 128-token
+  window) were not counted there either. Origin/main read the Gemma stacks as all full, so its
+  figure is one group of all their layers; the round-6 head counted their 10- and 21-layer groups
+  as if a sequence held blocks in only one. A dense stack, and a hybrid's state blocks, are
+  counted as before.
+* **GenZ and BudSimulator's converter take the depth from the table** (`layer_plan.depth`) and the
+  converter its window and Mamba decision from the same function as the HF loader
+  (`get_language_model.graph_layer_kinds`), with the decoder read from under `text_config`. No
+  corpus config states its depth only as a list (the saved Nemotron-H shape is synthetic in the
+  tests: `get_kv_size` 0 -> 8,192 elements, serving 0 -> 16,384 B a token, 4 attention layers of
+  52), and the corpus does not run the converter. By hand: SmallThinker-21BA3B's 39 sliding
+  layers graphed with window None -> 4,096; a Llama-4 layout (9 chunked + 3 full,
+  `attention_chunk_size` 8,192) None -> 8,192.
+* **A GGUF's 0-KV layer with no recurrent mixer is a `no_op` layer**, not an FFN-only slot, unless
+  the stack's KV layers run no FFN (Nemotron-H). No GGUF in the corpus states per-layer KV heads
+  without a mixer; the reviewer's Deci file (`gguf.GGUFWriter`, 8 layers) went from 2 graphed FFNs
+  to 8, with 6 attention layers and 2 `no_op` ones. An FFN no-op on an attention layer
+  (`feed_forward_length` 0) is still graphed with an FFN: an over-count.
+* The README now states which readers apply the window: no figure moves.
+
 The full per-config table (before = origin/main, after = this branch) follows.
 
 ## config:chaos-pressure/gpt-oss-20b/config.json (decoder-only)
@@ -635,6 +704,7 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
+| disagg_transfer_bytes_640 | null | 125829120 |
 | eng_None_32768_kv_mb | 0.0 | 6442.450944 |
 | eng_None_32768_params | 706906112 | 1310885888 |
 | eng_None_32768_total_mb | 1695.669453 | 9346.079949 |
@@ -649,6 +719,11 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | eng_llamacpp_4096_total_mb | 1554.740838 | 3568.006758 |
 | facts_full_attention | true | false |
 | facts_layers | [24, 0, 0, null] | [12, 12, 0, 256] |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', 'attention_types', 'bos_token_id', 'embe" | "TypeError: unsupported operand type(s) for /: 'NoneType' and 'int'" |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', 'attention_types', 'bos_token_id', 'embe" | "TypeError: unsupported operand type(s) for /: 'NoneType' and 'int'" |
+| genz_ffn_kinds | null | {"Dense": 24} |
+| genz_kv_size | null | 98304 |
+| genz_layer_kinds | null | {"MHA-global": 12, "MHA-local": 12} |
 | kv_full_layers | 0 | 12 |
 | kv_gb@32768 | 0.0 | 6.442450944 |
 | kv_gb@4096 | 0.0 | 0.805306368 |
@@ -660,6 +735,10 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | report_state_gb | 0.00172032 | 0.0 |
 | report_total_gb | 1.584990945 | 3.757253755 |
 | report_weight_gb | 1.413812224 | 2.621771776 |
+| serving_bytes_per_token | null | 196608 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', 'attention_types', 'bos_token_id', 'embe" | null |
+| serving_requests_8gib_1k | null | 42 |
+| serving_state_bytes | null | 0 |
 | state_gb | 0.00172032 | 0.0 |
 
 ## fixture:LiquidAI_LFM2-2.6B.json (hybrid)

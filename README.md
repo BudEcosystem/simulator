@@ -250,8 +250,17 @@ print(f"Total: {memory.total_memory_gb:.2f} GB")
 part of the simulator uses (the memory calculator, the GGUF reader in `bud_component.py`, the
 GenZ performance graph -- prefill, decode and chunked -- the serving memory model, the prefix
 cache, the engine estimate and the parameter counter). Only attention layers keep a growing cache -- full attention
-every token, sliding / chunked layers their window, cross-attention the encoder's tokens, MLA one
-latent per layer. Gated DeltaNet (Qwen3-Next, Qwen3.5), Mamba, RWKV, xLSTM, short-convolution and
+every token, sliding / chunked layers at most their window, cross-attention the encoder's tokens,
+MLA one latent per layer. Whether a windowed layer's saving is taken depends on the reader: the
+**memory calculator** (`calculate_kv_cache`, `kv_cache_breakdown`, the engine estimate) charges
+the windowed layers of a stack that also has full layers (Gemma 2/3, gpt-oss, Cohere2) the full
+sequence unless the engine is declared able to hold a per-layer KV layout
+(`engine_capabilities={"heterogeneous_kv_layout": True}`) -- the measured vLLM gpt-oss behaviour,
+so by default it is an over-estimate for engines that do window them (Gemma-2-9B at 32k tokens:
+11.27 GB, against about 6.3 GB windowed); a stack whose every attention layer shares one window
+(Mistral v0.1) keeps the window everywhere. The GenZ graph and the FRD-027 facts describe the
+model and apply the window on every windowed layer; the vLLM planner lays them out as sliding
+KV-cache groups and charges every running sequence its blocks in every group, full and sliding. Gated DeltaNet (Qwen3-Next, Qwen3.5), Mamba, RWKV, xLSTM, short-convolution and
 FFN-only layers keep a fixed per-sequence state instead (fp32, as the engines hold it), reported
 as state memory and counted in the engine total; the serving simulator charges each request its
 KV blocks plus that state (`MemoryModel.state_bytes_per_sequence`, also in the cluster and

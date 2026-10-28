@@ -15,11 +15,17 @@ table, and every part of the simulator answers from it:
 | GenZ graph (`get_language_model.layer_configs_from_hf`, `ModelConfig.get_kv_size`) -- the prefill, decode **and chunked** builders (`create_full_chunked_model`: chunked serving, speculative decoding, the simulation engine's chunked feature) | per-layer operators; KV only on attention layers, the window on windowed ones; which FFNs are MoE (`layer_plan.moe_layers`) and how wide a dense one is (`layer_plan.dense_ffn_width`) |
 | GenZ serving (`MemoryModel.bytes_per_token_kv` and `state_bytes_per_sequence`, `request_bytes`, the scheduler's admission check, cluster and disaggregation `B_eff`, the disaggregation transfer; the prefix cache's price of a cached token (`PrefixCacheAnalyzer`, BudSimulator `/cache/analyze`); BudSimulator `/api/v2/memory/tiers`) | per-token KV, and the per-request fixed state (`ModelConfig.get_state_bytes`) |
 | `UniversalParameterCounter`, `model.facts` (FRD-027), `model.recognise` | weights per mixer, KV per token, the known vocabulary. `model.facts` reads the layer kinds for every config: a `model_type` outside the recogniser is still flagged `architecture: unrecognised`, but which layers hold KV comes from the table, not from that allowlist |
-| BudSimulator `ModelConverter.hf_to_genz` | database models graphed like HF configs |
+| BudSimulator `ModelConverter.hf_to_genz` | database models graphed like HF configs: the same depth, per-layer kinds, window and Mamba decision (`get_language_model.graph_layer_kinds`), the decoder read from under `text_config` |
+| The vLLM planner (`engine/vllm.py`: `limits`, `predict`; the profile scheduler `perf.sched`; the shared-slice sizing `runtime.modules.capacity`) | the facts' full and sliding layers as KV-cache groups; a running sequence's blocks in every group (`Limits.blocks_per_sequence`) |
 
 The table is `layer_plan.LAYER_KINDS`; the per-model answer is `layer_plan.layer_kinds(config)`
 (or `resolve_layer_plan(config)` for hybrids), whose depth is `num_hidden_layers` or, when a
-config states only a per-layer list (transformers 5.12's Nemotron-H), that list's length.
+config states only a per-layer list (transformers 5.12's Nemotron-H), that list's length
+(`layer_plan.depth`). The GenZ loader, its decoder-block detection and BudSimulator's converter
+read the same depth: they used to fall back to 32 layers, so the per-layer configs did not match
+and GenZ graphed the saved Nemotron-H-8B as 32 Mamba layers -- `get_kv_size` 0, the serving
+memory model, the prefix cache and the disaggregation transfer charging none of its 4 attention
+layers' KV (16,384 B a token).
 Which layers route to experts is `layer_plan.moe_layers(config)`. Nothing keys off a model name.
 
 ## The root cause this replaced
@@ -70,6 +76,7 @@ gguf-py's `Keys` (`gguf/constants.py`).
 | xLSTM (mLSTM) | fixed matrix memory | `qk_dim_factor`, `v_dim_factor`, `num_heads` | xLSTM |
 | RG-LRU | fixed vector + conv | `block_types` (repeating), `lru_width`, `conv1d_width`, `attention_window_size` | RecurrentGemma |
 | FFN-only slot | none | `moe`, `dense`, `mlp` in a layer list; `-` and `E` in `hybrid_override_pattern`. A stack that names such slots gives the FFN its own layer: only those carry one | Nemotron-H |
+| No mixer | none | `no_op`: a layer whose mixer holds no KV and no state, and that runs its FFN like every other layer of its stack (not an FFN-only slot). Named by the GGUF reader for a 0-KV-head layer with no recurrent mixer | Deci GGUFs (Llama-3.x-Nemotron Super / Ultra) |
 | MoE | does not change KV; decides which FFN a layer runs | `mlp_layer_types` (dense / sparse), `moe_layers`, a per-layer expert count, `expert_layer_period`/`expert_layer_offset`, `decoder_sparse_step` + `mlp_only_layers`, `interleave_moe_layer_step`, `moe_layer_start_index`/`moe_layer_end_index`/`moe_layer_interval`, `first_k_dense_replace`/`moe_layer_freq`; a `moe` FFN slot. A dense layer's width when the config names it apart from the experts': `intermediate_size_mlp` (Llama 4), `dense_intermediate_size` (MiniMax-M3), `prefix_dense_intermediate_size` (Cohere2-MoE); otherwise `intermediate_size` | Mixtral, DeepSeek, Kimi, Jamba, Qwen-MoE, Llama 4, ERNIE |
 
 Parallel hybrids (attention and a mixer in the same layer: Falcon-H1, Hymba, Zamba's `hybrid`
@@ -182,7 +189,13 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
   on every windowed layer, whatever its stack: the GenZ prefill, decode and chunked graphs (a
   windowed layer reads and holds no more than its window, as an engine with per-layer KV -- vLLM's
   hybrid allocator, llama.cpp's SWA cache -- holds it), and the FRD-027 facts (whose vLLM model
-  then lays out its own sliding groups, `engine/vllm.py`). So for an engine without per-layer KV,
+  then lays out its own sliding groups, `engine/vllm.py`). The vLLM planner charges a running
+  sequence its blocks in **every** group of that layout -- each full group the whole sequence,
+  each sliding group up to the window plus one block -- in its concurrency (`predict`), its profile
+  scheduler and its shared-slice sizing (`Limits.blocks_per_sequence`). Sizing concurrency as
+  `kv_tokens // tokens` counted one group: Gemma-3-27b (1 full and 6 sliding groups of 10 layers)
+  was given 160 running 1,280-token sequences where the allocator holds 27, Gemma-2-9B 246 where
+  it holds 123 -- more than main, which read those stacks as all full and gave 25 and 123. So for an engine without per-layer KV,
   the graph's `KV Cache (MB)` -- and `platform_size.get_minimum_system_size`, which adds it to the
   weights -- is below the calculator's default: Gemma-3-27b-it at 4,096 tokens, decode graph
   736 MiB against 1,984 MiB with the window withheld; a Llama 4 text stack at 32k, 2,688 MiB
@@ -229,7 +242,11 @@ pure SSM's cost nothing.
 llama.cpp's own rules, so a GGUF and its checkpoint resolve to the same plan
 (`tests/test_layer_kinds_by_category.py::test_a_gguf_and_its_checkpoint_resolve_to_the_same_kv_and_state`):
 `full_attention_interval`; per-layer `attention.head_count_kv` arrays (0 = no KV; with
-`feed_forward_length` telling FFN-only slots apart); `attention.sliding_window` with
+`feed_forward_length` telling FFN-only slots apart: a stack has them only when its KV layers run
+no FFN and some 0-KV layer runs one, as Nemotron-H's; any other 0-KV layer is the file's
+recurrent mixer, or `no_op` when it states none -- naming Deci's no-op and linear-replacement
+layers `mlp` slots had taken the FFN off every attention layer in the GenZ graph; an FFN no-op
+on a layer with KV heads, in a stack without FFN slots, is still given its FFN -- an over-count); `attention.sliding_window` with
 `attention.sliding_window_pattern`; `attention.shared_kv_layers`; `ssm.{conv_kernel, inner_size,
 state_size, group_count, time_step_rank}` (a file with no `ssm.group_count` is Mamba-1, as
 llama.cpp's Mamba-1 has no B/C groups); `wkv.head_size`; `shortconv.l_cache`. The reader also
@@ -246,8 +263,9 @@ mixer's own parameter count (`mixer_params`); `Rec State`, the fixed state read 
 `key_dim` rows; `Rec Conv`, the conv buffer. GenZ's "KV Cache" column has always carried Mamba's
 state; it now carries every mixer's state, and grows with the context only through the attention
 layers. A pure Mamba stack keeps GenZ's own Mamba operators. GenZ's own stack builder turns every
-layer into Mamba once it is given an SSM state, so it is given one only when the table names a
-recurrent layer: a stack the table reads as attention is graphed as attention, with its KV.
+layer into Mamba once it is given an SSM state, so it is given one only when the table names
+recurrent layers and no attention layer: a stack with attention layers is graphed as attention,
+with its KV (an upper bound, with a warning, should its per-layer configs ever not be built).
 
 All three graph builders read the same per-layer configs, and a windowed layer's window from the
 same table: any window spelling, and `attention_chunk_size` for Llama 4's chunked layers. In the
