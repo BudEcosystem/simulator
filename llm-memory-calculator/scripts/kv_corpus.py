@@ -25,7 +25,11 @@ parameters); the FRD-027 `ModelFacts` layer counts; GenZ's per-layer attention a
 its KV elements per token (`get_kv_size`, which the disaggregation KV transfer multiplies by
 2 bytes), its decode and chunked graphs' KV and weights; and the serving `MemoryModel`'s KV
 bytes per token, per-request state, the 1,024-token requests 8 GiB admits, and the
-disaggregation transfer for 640 tokens; with ``--repo-root``, BudSimulator's database
+disaggregation transfer for 512 + 128 tokens, read from `DisaggregationAnalyzer` itself; GenZ's
+runtime modelling (`prefill_moddeling`, `decode_moddeling` -- whose fit check adds the decode
+graph's weights to its KV -- and `chunked_moddeling`, which `estimate_*_performance` wrap), each
+run to completion on a fixed 200 GB device, its latency, weights and KV, or its error, and the
+decode fit check on a device the resident model's weights alone overflow; with ``--repo-root``, BudSimulator's database
 converter (`ModelConverter.hf_to_genz`): its encoder / decoder depths, KV elements per token and
 per-sequence fixed bytes; and every other reader of the layer kinds: GenZ's prefill graph
 (weights, KV), the prefix-cache analyser's bytes per token, the KV planner's `KVGeometry`, the
@@ -38,8 +42,11 @@ geometry; the planner's engine records beside them are not model configs. Built-
 shapes (``synthetic_configs``; ``--no-synthetic`` leaves them out) cover what no shipped or cached
 config does: depth stated only in a per-layer list, nested decoders (VisionEncoderDecoder,
 EncoderDecoderModel, MusicGen, BLIP-2 / InstructBLIP with a flan-T5 `text_config`, Florence-2),
-ProphetNet, RWKV, xLSTM, Llama 4's interleaved MoE, GGUF-derived short window patterns, and the
-encoder-decoder and dense spellings around them.
+ProphetNet, RWKV, xLSTM, Llama 4's interleaved MoE, GGUF-derived short window patterns, a
+decoder-only stack's own cross-attention layers (Mllama's `cross_attention_layers`, with and
+without the tower's geometry), an image encoder whose length is its `seq_len` (Pix2Struct), and
+the encoder-decoder and dense spellings around them; the fixture folder `cross_attention/` holds
+transformers 5.12's own Mllama, Pix2Struct and BLIP-2 (flan-T5) configs.
 """
 
 import argparse
@@ -495,6 +502,30 @@ def synthetic_configs(fixtures_root):
                                                  "attention.sliding_window_pattern":
                                                  ([True] * 5 + [False]) * 5 + [True] * 4}, g3)
     s["deepseek-v2-lite-mla"] = fx("deepseek_v2_lite_chat_config", sub=".")
+    # A decoder-only stack's own cross-attention layers (MllamaConfig's `cross_attention_layers`,
+    # reduced): the tower states its patches (448 / 14, one tile: 1,025 tokens), and a variant
+    # whose tower states no geometry (the cache then over the sequence)
+    mll = dict(model_type="mllama",
+               text_config=dict(model_type="mllama_text_model", hidden_size=2048,
+                                num_hidden_layers=10, num_attention_heads=16,
+                                num_key_value_heads=4, intermediate_size=8192, vocab_size=32000,
+                                cross_attention_layers=[3, 8]),
+               vision_config=dict(model_type="mllama_vision_model", hidden_size=1280,
+                                  num_hidden_layers=32, image_size=448, patch_size=14,
+                                  max_num_tiles=1))
+    s["mllama-own-cross-layers"] = mll
+    s["mllama-own-cross-layers-no-tower-geometry"] = dict(
+        copy.deepcopy(mll), vision_config=dict(model_type="mllama_vision_model", hidden_size=1280,
+                                               num_hidden_layers=32))
+    # Pix2Struct's shape: a decoder-only `text_config` (is_decoder) cross-attending to an image
+    # encoder whose output length is `seq_len`, not image_size / patch_size
+    s["pix2struct-seq-len"] = dict(
+        model_type="pix2struct", is_encoder_decoder=True,
+        text_config=dict(model_type="pix2struct_text_model", hidden_size=1024, d_kv=64, d_ff=2816,
+                         num_heads=16, num_layers=18, is_decoder=True, is_encoder_decoder=True,
+                         vocab_size=50244),
+        vision_config=dict(model_type="pix2struct_vision_model", hidden_size=1536, d_kv=64,
+                           d_ff=3968, num_attention_heads=24, num_hidden_layers=18, seq_len=2048))
     return s
 
 
@@ -604,9 +635,85 @@ def measure_genz(cfg_or_name, genz_data):
         out["serving_state_bytes"] = state
         per_request = -(-1024 // 16) * 16 * mm.bytes_per_token_kv + state
         out["serving_requests_8gib_1k"] = (8 * 1024**3 // per_request) if per_request else None
-        out["disagg_transfer_bytes_640"] = int(mc.get_kv_size() * 2 * 640 + _fixed_bytes(mc))
     except Exception as e:
         out["serving_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    try:
+        # The prefill-to-decode transfer, as DisaggregationAnalyzer computes it (512 + 128 tokens)
+        from llm_memory_calculator.genz.Models.get_language_model import get_configs
+        from llm_memory_calculator.genz.serving.disaggregation import DisaggregationAnalyzer
+
+        an = DisaggregationAnalyzer(get_configs(cfg_or_name), "H100_GPU")
+        out["disagg_transfer_bytes_640"] = int(an._estimate_kv_bytes(512, 128))
+    except Exception as e:
+        out["disagg_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    out.update(measure_runtime(cfg_or_name))
+    return out
+
+
+#: The device the runtime modelling runs on: big enough that every model in the corpus fits.
+RUNTIME_SYSTEM = {"Flops": 400, "Memory_size": 200, "Memory_BW": 2000, "ICN": 300,
+                  "real_values": True}
+
+
+def measure_runtime(cfg_or_name):
+    """GenZ's runtime modelling, the paths that hold `get_runtime_breakdown` and the decode
+    graph's memory-fit check: prefill (512 tokens), decode (512 + 64), chunked (a 256-token chunk
+    beside one 512-token decode), each run to completion -- latency (ms), weights and KV (MB) -- or
+    its error; and the decode fit check on a device of 0.6 x the prefill graph's weights (the
+    resident model: it must refuse, `decode_fit_refused`)."""
+    import contextlib
+    import io
+
+    out = {}
+    try:
+        from llm_memory_calculator.genz.LLM_inference import (
+            chunked_moddeling,
+            decode_moddeling,
+            prefill_moddeling,
+        )
+        from llm_memory_calculator.genz.Models.get_language_model import get_configs
+    except Exception as e:
+        return {"runtime_error": f"{type(e).__name__}: {str(e)[:200]}"}
+
+    def summary(res):
+        st = res.summary_table if hasattr(res, "summary_table") else None
+        row = [round(float(res.Latency), 6)]
+        if st is not None and "Total Weights (MB)" in st:
+            row += [round(float(st["Total Weights (MB)"].values[0]), 3),
+                    round(float(st["KV Cache (MB)"].values[0]), 3)]
+        return row
+
+    runs = {
+        "prefill": lambda mc: prefill_moddeling(model=mc, batch_size=1, input_tokens=512,
+                                                system_name=RUNTIME_SYSTEM, bits="bf16"),
+        "decode": lambda mc: decode_moddeling(model=mc, batch_size=1, input_tokens=512,
+                                              output_tokens=64, system_name=RUNTIME_SYSTEM,
+                                              bits="bf16"),
+        "chunked": lambda mc: chunked_moddeling(model=mc, prefill_kv_sizes=[(0, 256)],
+                                                decode_kv_sizes=[512], system_name=RUNTIME_SYSTEM,
+                                                bits="bf16"),
+    }
+    weights = None
+    for stage, run in runs.items():
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                res = run(get_configs(cfg_or_name))
+            out[f"runtime_{stage}"] = summary(res)
+            if stage == "prefill" and len(out[f"runtime_{stage}"]) > 1:
+                weights = out[f"runtime_{stage}"][1]
+        except Exception as e:
+            out[f"runtime_{stage}_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    if weights:
+        try:
+            small = dict(RUNTIME_SYSTEM, Memory_size=0.6 * weights / 1024)
+            with contextlib.redirect_stdout(io.StringIO()):
+                decode_moddeling(model=get_configs(cfg_or_name), batch_size=1, input_tokens=512,
+                                 output_tokens=64, system_name=small, bits="bf16")
+            out["decode_fit_refused"] = False
+        except ValueError as e:
+            out["decode_fit_refused"] = "would not fit" in str(e)
+        except Exception as e:
+            out["decode_fit_error"] = f"{type(e).__name__}: {str(e)[:160]}"
     return out
 
 

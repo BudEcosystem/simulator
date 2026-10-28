@@ -1,4 +1,6 @@
 from llm_memory_calculator.genz.Models.recurrent import RECURRENT_OPS, op_state_bytes
+from llm_memory_calculator.genz.Models.attention import (CROSS_COLLECTIVE_OPS, CROSS_PROJECTION_OPS,
+                                                         CROSS_SCORE_OPS)
 from llm_memory_calculator.genz.unit import Unit
 import llm_memory_calculator.genz.operators as operators
 from llm_memory_calculator.genz.operator_base import op_type_dicts
@@ -166,12 +168,13 @@ def get_runtime_breakdown(df:pd.DataFrame) -> RuntimeBreakdown:
         elif layer_name in ['QKV', 'Out Proj',
                             # MLA's projections (DeepSeek V2/V3, Kimi): the compressed Q pair or
                             # the full-rank Q Proj (q_lora_rank null), and the latent KV path.
-                            'Q Down', 'Q Up', 'Q Proj', 'KV Compress', 'KV Up']:
+                            'Q Down', 'Q Up', 'Q Proj', 'KV Compress', 'KV Up'] + list(CROSS_PROJECTION_OPS):
+            # ... and an encoder-decoder's cross-attention and encoder projections
             runtime_breakdown.MHA += layer_latency
             runtime_breakdown.QKVO_layers += layer_latency
         elif layer_name in ['Logit', 'Attend', 'Logit Pre', 'Logit Suf',
                             'Attend Pre', 'Attend Suf', 'Logit Dec', 'Attend Dec',
-                            'Attn Linear']:  # DeciLM's linear attention replacement
+                            'Attn Linear'] + list(CROSS_SCORE_OPS):  # DeciLM's linear attention; cross / encoder
             runtime_breakdown.MHA += layer_latency
             runtime_breakdown.LA_layers += layer_latency
         elif layer_name in ['Gate', 'up+gate', 'down', 'shared up+gate', 'shared down']:
@@ -180,7 +183,7 @@ def get_runtime_breakdown(df:pd.DataFrame) -> RuntimeBreakdown:
         elif layer_name in ['Message Pass']:
             runtime_breakdown.Collective += layer_latency
             runtime_breakdown.Send_Recv_time += layer_latency
-        elif layer_name in ['MHA AR', 'Mamba AR', 'MLA AR', 'Attn Linear AR']:
+        elif layer_name in ['MHA AR', 'Mamba AR', 'MLA AR', 'Attn Linear AR'] + list(CROSS_COLLECTIVE_OPS):
             runtime_breakdown.MHA += layer_latency
             runtime_breakdown.Collective += layer_latency
             runtime_breakdown.AR_time += layer_latency

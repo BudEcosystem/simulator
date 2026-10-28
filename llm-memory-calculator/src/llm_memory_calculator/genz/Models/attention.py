@@ -407,17 +407,31 @@ def mla_attention_decode(model_config:ModelConfig, parallelism_config:Parallelis
 
 
 
+#: The operators the cross-attention and encoder graphs emit, by what `get_runtime_breakdown`
+#: books them as: projections (MHA, QKVO), scores and values (MHA, the attention kernels), and
+#: the tensor-parallel all-reduce (MHA, collective).
+CROSS_PROJECTION_OPS = ("Cross KV", "Cross Q", "Cross Out", "Enc QKV", "Enc Out Proj")
+CROSS_SCORE_OPS = ("Cross Logit", "Cross Attend", "Enc Logit", "Enc Attend")
+CROSS_COLLECTIVE_OPS = ("Cross AR", "Enc MHA AR")
+
+
 def cross_attention(model_config: ModelConfig, parallelism_config: ParallelismConfig,
-                    query_tokens: int, reads, project_encoder: bool = False):
-    """An encoder-decoder decoder layer's cross-attention (``model_config.cross_attention``,
+                    query_tokens: int, reads, project_encoder: bool = False,
+                    own_layer: bool = False):
+    """A decoder layer's cross-attention (``model_config.cross_attention``,
     layer_plan.cross_attention_cache): its query and output projections over ``query_tokens``
     decoder tokens, and, for each sequence in ``reads`` -- ``(queries, encoder tokens if the
     config states none)`` --, its scores and values over that sequence's cached K / V of the
-    encoder's output (the cache the decode graph reads every step). ``project_encoder`` adds the
-    K / V projection of the encoder's output, which runs once a request, at prefill. Empty for
-    any other model."""
+    encoder's output (the cache the decode graph reads every step). ``project_encoder`` runs the
+    K / V projection of the encoder's output, once a request, at prefill; otherwise its weights
+    are held at no time (a GEMM over no tokens), so every graph weighs the resident layer.
+
+    An encoder-decoder's cross-attention sits in every decoder layer, beside its self-attention;
+    a decoder-only stack's own cross-attention layers (Mllama, ``own_layers``) are layers of their
+    own, graphed with ``own_layer``. Empty for a call that does not match the model's kind, and
+    for any model without cross-attention."""
     cross = getattr(model_config, "cross_attention", None)
-    if not cross:
+    if not cross or bool(cross.get("own_layers")) != bool(own_layer):
         return []
     H = model_config.num_attention_heads
     Hkv, Dq = cross["kv_heads"], cross["head_dim"]
@@ -428,9 +442,8 @@ def cross_attention(model_config: ModelConfig, parallelism_config: ParallelismCo
     per_node_H = max(ceil(H / tp), 1)
     per_node_Hkv = max(ceil(Hkv / tp), 1)
     layers = []
-    if project_encoder:
-        tokens = cross.get("tokens") or max((t for _, t in reads), default=0)
-        layers += [["Cross KV", 2 * per_node_Hkv * Dq, tokens, De, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
+    tokens = (cross.get("tokens") or max((t for _, t in reads), default=0)) if project_encoder else 0
+    layers += [["Cross KV", 2 * per_node_Hkv * Dq, tokens, De, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
     layers += [["Cross Q", per_node_H * Dq, query_tokens, D, 1, 1, ResidencyInfo.All_offchip, OpType.GEMM]]
     for queries, fallback in reads:
         kv = cross.get("tokens") or fallback

@@ -185,3 +185,29 @@ def test_a_database_encoder_decoder_holds_its_cross_attention_cache(case):
     assert converted.get_request_fixed_bytes(2) == loaded.get_request_fixed_bytes(2) == fixed
     assert converted.cross_attention == loaded.cross_attention
     assert converted.encoder == loaded.encoder
+
+
+CROSS_FIXTURES = FIXTURES.parent / "cross_attention"
+
+
+@pytest.mark.parametrize(
+    "name,truth",
+    [
+        # 32 self layers x 2 x 8 x 128 x 2 B x 1,024 + 8 cross layers x 2 x 8 x 128 x 2 B x 4,100
+        # vision tokens (MllamaConfig().to_dict(), transformers 5.12)
+        ("mllama_transformers-5.12-default", 32 * 2 * 8 * 128 * 2 * 1024 + 8 * 2 * 8 * 128 * 2 * 4100),
+        # 12 x 2 x 12 x 64 x 2 B x 1,024 self + the same over the image encoder's `seq_len` 4,096
+        # (Pix2StructConfig().to_dict())
+        ("pix2struct_transformers-5.12-default", 12 * 2 * 12 * 64 * 2 * 1024 + 12 * 2 * 12 * 64 * 2 * 4096),
+    ],
+)
+def test_a_database_model_holds_its_cross_attention_wherever_the_config_puts_it(name, truth):
+    """A decoder-only stack's own cross-attention layers (Mllama's `cross_attention_layers`) hold
+    K / V over the vision tokens and no self-attention cache; Pix2Struct's decoder cross-attends to
+    an image encoder whose length is its `seq_len`. The converter had graphed Mllama's cross layers
+    as self-attention (167,772,160 B at 1k) and charged Pix2Struct's cache over the sequence
+    (75,497,472 B) -- below origin/main and below the truth."""
+    cfg = json.loads((CROSS_FIXTURES / f"{name}.json").read_text())
+    conv, loader = _both(cfg)
+    for mc in (conv, loader):
+        assert mc.get_kv_size() * 2 * 1024 + mc.get_request_fixed_bytes(2) == truth

@@ -5,9 +5,16 @@ from typing import Dict, Any, Union
 from .config_normalizer import ConfigNormalizer
 from .layer_plan import (
     attention_head_dim,
+    attention_heads,
     attention_input_width,
+    cross_attention_cache,
+    decoder_only_block,
+    decoder_view,
+    encoder_decoder_stacks,
+    encoder_view,
     layer_kinds,
     resolve_layer_plan,
+    stated_gated_ffn,
 )
 from .mixer_params import recurrent_mixer_params
 
@@ -142,7 +149,8 @@ class UniversalParameterCounter:
     def _get_actual_tie_embeddings(self, config: Dict[str, Any]) -> bool:
         """Determine if embeddings are actually tied, not just what the flag says."""
         model_type = config.get('model_type', '').lower()
-        architectures = config.get('architectures', [])
+        # `or []`: a config written by transformers' to_dict() states `architectures: null`
+        architectures = config.get('architectures') or []
         
         # First, check explicit tie_word_embeddings flag
         tie_flag = config.get('tie_word_embeddings', True)
@@ -325,7 +333,9 @@ class UniversalParameterCounter:
         # Standard attention (MHA/MQA/GQA). Same null-vs-absent hazard as above:
         # `head_dim: null` is common in HF configs that derive it from
         # hidden_size // num_attention_heads.
-        num_attention_heads = config.get('num_attention_heads') or config.get('n_head') or 12
+        # The head count under any spelling (T5's `num_heads`), read with the head width below
+        # (T5's `d_kv`): one without the other sized a T5 block at 12 heads of 64.
+        num_attention_heads = attention_heads(config) or 12
         num_key_value_heads = (
             config.get('num_key_value_heads') or config.get('num_kv_heads') or num_attention_heads
         )
@@ -359,6 +369,10 @@ class UniversalParameterCounter:
         keys, including Gemma's `hidden_activation` (which neither `hidden_act` nor `activation_function`
         captured before — the root cause of the ~23% Gemma under-count).
         """
+        # The config's own statement first (T5's `feed_forward_proj: gated-gelu` / `is_gated_act`)
+        stated = stated_gated_ffn(config)
+        if stated is not None:
+            return stated
         model_type = str(config.get('model_type', '')).lower()
         if model_type in self.gated_ffn_model_types:
             return True
@@ -580,7 +594,7 @@ class UniversalParameterCounter:
                 text_config['moe_layer_freq'] = interleave_step
 
             # Calculate text model parameters
-            text_params = self._calculate_transformer_params(text_config, respect_weight_tying)
+            text_params = self._calculate_text_model_params(text_config, respect_weight_tying)
             total_params += text_params
         
         # Process vision config
@@ -628,6 +642,33 @@ class UniversalParameterCounter:
         
         return total_params
     
+    def _calculate_text_model_params(self, text_config: Dict[str, Any],
+                                     respect_weight_tying: bool = True) -> int:
+        """A multimodal model's language model. A decoder is counted as any decoder; an
+        encoder-decoder nested there (BLIP-2 / InstructBLIP with flan-T5, Florence-2's BART) is
+        counted as one: its decoder -- under the decoder-only names, `layer_plan.decoder_view` --
+        with its embeddings, its cross-attention (`cross_attention_cache`), and its encoder
+        (`encoder_view`: attention, FFN and norms; the embedding is shared). Read as a decoder-only
+        block it was one stack at a default depth of 12 (BLIP-2 flan-t5-xl: 1.60B of 3.88B). A
+        decoder whose encoder is the tower beside it (Pix2Struct's `text_config` says `is_decoder`
+        and states no encoder) has no encoder here: the tower is counted as the vision model."""
+        if not encoder_decoder_stacks(text_config):
+            return self._calculate_transformer_params(text_config, respect_weight_tying)
+        dec = decoder_view(text_config)
+        params = self._calculate_transformer_params(dec, respect_weight_tying)
+        hidden = dec.get('hidden_size') or dec.get('d_model') or 768
+        cross = cross_attention_cache(text_config)
+        if cross:
+            params += self._calculate_attention_params(dec, cross["layers"], hidden)
+        enc = None if decoder_only_block(text_config) else encoder_view(text_config)
+        if enc:
+            enc_hidden = enc.get('hidden_size') or hidden
+            enc_layers = int(enc.get('num_hidden_layers') or 0)
+            params += self._calculate_attention_params(enc, enc_layers, enc_hidden)
+            params += self._calculate_ffn_params(enc, enc_layers, enc_hidden)
+            params += self._calculate_norm_params(enc, enc_layers, enc_hidden)
+        return params
+
     def _calculate_diffusion_params(self, config: Dict[str, Any]) -> int:
         """Calculate parameters for diffusion models."""
         # This is a simplified estimation for UNet-based diffusion models

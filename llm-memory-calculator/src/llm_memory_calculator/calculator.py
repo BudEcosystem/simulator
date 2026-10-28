@@ -525,12 +525,10 @@ class ModelMemoryCalculator:
         notes: List[str] = []
 
         plan = resolve_layer_plan(config)
-        num_cross = 0
         if plan is not None:
             source = "layer_plan:" + plan["dialect"]
             num_full = plan["num_full_layers"]
             num_sliding = plan["num_sliding_layers"]
-            num_cross = plan.get("num_cross_layers", 0)
             depth = depth or len(plan["attn"])
             notes.extend(plan.get("notes") or [])
         else:
@@ -604,34 +602,31 @@ class ModelMemoryCalculator:
                     "effective_seq": sliding_seq,
                 }
             )
-        if num_cross > 0:
-            # A cross-attention layer caches the encoder's tokens, a fixed count
-            # per request; without one stated, the full sequence (over-estimate).
-            enc = plan.get("encoder_tokens") if plan else None
-            groups.append(
-                {"kind": ATTN_CROSS, "layers": num_cross, "effective_seq": enc or seq_length}
-            )
-        # An encoder-decoder's decoder layers each keep a cross-attention cache over the
-        # encoder's output beside their self-attention: the encoder's stated output length,
-        # fixed per request, at the cross-attention's own K / V width (layer_plan's one reader).
+        # Cross-attention -- each decoder layer of an encoder-decoder, or a decoder-only stack's
+        # own cross-attention layers (Mllama) -- keeps K / V over the encoder's output: its stated
+        # length, fixed per request, at the cross-attention's own K / V width. One reader for
+        # both (layer_plan.cross_attention_cache), so every reader of a request's KV agrees.
         cross = cross_attention_cache(raw_config)
+        num_cross = cross["layers"] if cross else 0
         if cross:
-            num_cross += cross["layers"]
             groups.append(
                 {
                     "kind": ATTN_CROSS,
                     "layers": cross["layers"],
                     "effective_seq": cross["tokens"] or seq_length,
                     "kv_width": cross_kv_width(cross),
+                    # A stated encoder length is a fixed cost a request: it never grows with
+                    # the text, however long the encoder's output is against the sequence.
+                    "fixed": bool(cross["tokens"]),
                 }
             )
-            if not cross["tokens"]:
+            if not cross["tokens"] and not cross.get("own_layers"):
                 notes.append(
                     f"{cross['layers']} decoder layers' cross-attention caches are charged the "
                     f"whole {seq_length}-token sequence: the config does not state the encoder's "
                     "output length (`max_source_positions`, an encoder block's "
-                    "`max_position_embeddings` or an image encoder's patches). An upper bound "
-                    "for a text encoder, whose input is the prompt."
+                    "`max_position_embeddings` / `seq_len` or an image encoder's patches). An "
+                    "upper bound only for an encoder whose input is the prompt alone."
                 )
 
         return {
@@ -644,7 +639,8 @@ class ModelMemoryCalculator:
             # than as an unexplained factor.
             "num_cross_layers": num_cross,
             "num_no_kv_layers": max(
-                depth - num_full - num_sliding - (num_cross - (cross["layers"] if cross else 0)), 0
+                depth - num_full - num_sliding
+                - (num_cross if cross and cross.get("own_layers") else 0), 0
             ),
             "cross_attention": cross,
             "sliding_window": window,
@@ -823,7 +819,7 @@ class ModelMemoryCalculator:
         growing = sum(
             g["layers"]
             for g in plan["groups"]
-            if g["effective_seq"] >= seq_length and "kv_width" not in g
+            if g["effective_seq"] >= seq_length and "kv_width" not in g and not g.get("fixed")
         )
         marginal = (
             self._calculate_kv_for_layers(
@@ -837,7 +833,7 @@ class ModelMemoryCalculator:
             marginal += sum(
                 self._group_kv(text_config, g, 1, 1, bytes_per_element, attention_type) * 1e9
                 for g in plan["groups"]
-                if g["effective_seq"] >= seq_length and "kv_width" in g
+                if g["effective_seq"] >= seq_length and "kv_width" in g and not g.get("fixed")
             )
         return dict(
             plan,

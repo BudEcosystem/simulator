@@ -20,7 +20,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, Mapping, Optional, Tuple
 
 from ..layer_plan import (
-    ATTN_CROSS,
     ATTN_FULL,
     ATTN_SLIDING,
     attention_head_dim,
@@ -535,14 +534,16 @@ def _layer_counts(config: Mapping[str, Any], text: Mapping[str, Any], n_layers: 
     mla = bool(_get(text, "kv_lora_rank", default=0))
     if kinds and (kinds["source"] != "uniform" or len(kinds["attn"]) == n_layers):
         # The one layer-kind table decides: a layer holds KV only if it has
-        # attention and does not reuse another layer's cache. Cross-attention
-        # layers are counted as full (their encoder cache, over-estimated). A
-        # uniform stack with a window slides every layer, as the table says (a
-        # depth the table cannot read -- `n_layer`, `decoder_layers` -- stays full).
+        # attention and does not reuse another layer's cache. A cross-attention
+        # layer of its own (Mllama) holds no self-attention cache: its K / V over
+        # the encoder's output is `cross_attention` (layer_plan.cross_attention_cache),
+        # fixed per sequence. A uniform stack with a window slides every layer, as
+        # the table says (a depth the table cannot read -- `n_layer`, `decoder_layers`
+        # -- stays full).
         owns = [
             a for a, shared in zip(kinds["attn"], kinds["kv_shared"]) if a is not None and not shared
         ]
-        full = sum(1 for a in owns if a in (ATTN_FULL, ATTN_CROSS))
+        full = sum(1 for a in owns if a == ATTN_FULL)
         sliding = sum(1 for a in owns if a == ATTN_SLIDING)
         recurrent = sum(1 for r in kinds["recurrent"] if r)
         mechs = tuple(kinds.get("mechanisms") or ())
@@ -738,7 +739,9 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     # An encoder-decoder's KV and decoder weights are its decoder's, under the decoder's own
     # spellings (Whisper's `decoder_layers`, T5's `num_heads`); its encoder is its own stack.
     stacks = encoder_decoder_stacks(config) if isinstance(config, dict) else None
-    cross = cross_attention_cache(config) if stacks is not None else None
+    # the cross-attention cache: an encoder-decoder's decoder layers, or a decoder-only stack's own
+    # cross-attention layers (Mllama), from the one reader
+    cross = cross_attention_cache(config)
     if stacks is not None:
         config = decoder_view(config)
     text = dict(_text(config))
@@ -783,8 +786,10 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     )
     roles["lm_head"] = 0 if tied else vocab * h
     n_attn_layers = layers.full + layers.sliding
-    roles["attention"] = n_attn_layers * attn_large
-    roles["mixer_small"] = n_attn_layers * attn_small
+    # a cross-attention layer of its own carries the attention's projections too (Q / K / V / O)
+    own_cross = int(cross["layers"]) if cross and cross.get("own_layers") else 0
+    roles["attention"] = (n_attn_layers + own_cross) * attn_large
+    roles["mixer_small"] = (n_attn_layers + own_cross) * attn_small
     gdn_dims = None
     if layers.recurrent:
         if "gdn" in layers.mechanisms or "linear_num_value_heads" in text:

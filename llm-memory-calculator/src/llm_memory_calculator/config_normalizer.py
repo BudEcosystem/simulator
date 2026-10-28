@@ -19,7 +19,7 @@ from .layer_plan import (
     MECH_MAMBA2,
     _classify_layer_type_string,
     depth as _depth,
-    layer_kinds as _layer_kinds,
+    attention_heads as _attention_heads,
     stated_layer_types,
 )
 
@@ -257,12 +257,9 @@ class ConfigNormalizer:
         # for a stack whose layers attend, by the layer table: xLSTM's `num_heads` are the
         # heads of its recurrent matrix memory, not attention.
         if not normalized.get('num_attention_heads') and not normalized.get('n_head'):
-            for key in ('num_heads', 'n_heads'):
-                heads = normalized.get(key)
-                if isinstance(heads, int) and not isinstance(heads, bool) and heads > 0:
-                    if any(a is not None for a in _layer_kinds(normalized)['attn']):
-                        normalized['num_attention_heads'] = heads
-                    break
+            heads = _attention_heads(normalized)
+            if heads:
+                normalized['num_attention_heads'] = heads
 
         # A config that states its depth only through a per-layer list (transformers
         # 5.12's Nemotron-H) still has a depth every counter below can read.

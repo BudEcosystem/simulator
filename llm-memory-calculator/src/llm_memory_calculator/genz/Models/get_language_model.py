@@ -149,11 +149,12 @@ def resolve_decoder_config(hf_config: dict) -> dict:
 
 
 def encoder_decoder_fields(hf_config: dict) -> dict:
-    """What a GenZ ``ModelConfig`` takes from an encoder-decoder config, read from the config as
-    stated (before the decoder is hoisted), for the HF loader and BudSimulator's converter alike:
-    the encoder's depth, the decoder's cross-attention cache (``layer_plan.cross_attention_cache``)
-    and the encoder stack the prefill graph runs (``layer_plan.encoder_view``). Empty for any
-    other config."""
+    """What a GenZ ``ModelConfig`` takes from a config with cross-attention, read from the config
+    as stated (before the decoder is hoisted), for the HF loader and BudSimulator's converter
+    alike: the encoder's depth, the cross-attention cache (``layer_plan.cross_attention_cache``:
+    an encoder-decoder's decoder layers, or a decoder-only stack's own cross-attention layers,
+    Mllama's) and the encoder stack the prefill graph runs (``layer_plan.encoder_view``). Empty
+    for any other config."""
     from llm_memory_calculator.layer_plan import (
         attention_head_dim,
         cross_attention_cache,
@@ -161,10 +162,14 @@ def encoder_decoder_fields(hf_config: dict) -> dict:
         encoder_view,
     )
 
-    stacks = encoder_decoder_stacks(hf_config) if isinstance(hf_config, dict) else None
-    if not stacks:
+    if not isinstance(hf_config, dict):
         return dict(num_encoder_layers=0, cross_attention=None, encoder=None)
+    stacks = encoder_decoder_stacks(hf_config)
     cross = cross_attention_cache(hf_config)
+    if not stacks:
+        # Interleaved cross-attention layers (Mllama) read another tower's output, which GenZ
+        # does not graph (as for every multimodal decoder): their cache, no encoder stack.
+        return dict(num_encoder_layers=0, cross_attention=cross, encoder=None)
     encoder = None
     # The encoder runs before the decoder only where the decoder attends to it (an audio codec's
     # two nested stacks never meet: its prefill graph stays the decoder's).
@@ -190,7 +195,9 @@ def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1
     converter calls it too. Kinds come from ``layer_plan.layer_kinds`` (the memory
     calculator's table):
 
-    * full / cross-attention -> ``MHA-global``; sliding / chunked -> ``MHA-local``
+    * full attention -> ``MHA-global``; sliding / chunked -> ``MHA-local``; a cross-attention
+      layer of its own (Mllama's ``cross_attention_layers``) -> ``Cross``: attention over the
+      encoder's output, no self-attention cache (``ModelConfig.cross_attention`` sizes it)
     * a recurrent mixer alone -> ``Recurrent`` (fixed state, no KV); beside attention in
       a parallel hybrid -> the attention kind with the mixer attached
     * an FFN-only slot -> attention ``no_op``; a layer the plan gives no FFN -> FFN ``no_op``
@@ -203,7 +210,8 @@ def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1
     A pure state-space stack keeps GenZ's own Mamba operators (returns None).
     """
     from llm_memory_calculator.genz.Models.default_models import LayerConfig
-    from llm_memory_calculator.layer_plan import ATTN_SLIDING, dense_ffn_width, layer_kinds
+    from llm_memory_calculator.layer_plan import (ATTN_CROSS, ATTN_SLIDING, dense_ffn_width,
+                                                  layer_kinds)
     from llm_memory_calculator.mixer_params import _DISPATCH as _MIXER_PARAMS
     from llm_memory_calculator.state_memory import _state_dtype_bytes, recurrent_state_shape
 
@@ -220,7 +228,7 @@ def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1
     if uniform and len(set(moe)) == 1:
         return None
     attn_kinds = [a for a in kinds["attn"] if a is not None]
-    if not kinds["mechanisms"] and not any(a == ATTN_SLIDING for a in attn_kinds) and all(
+    if not kinds["mechanisms"] and not any(a in (ATTN_SLIDING, ATTN_CROSS) for a in attn_kinds) and all(
         kinds["ffn"]
     ) and len(attn_kinds) == len(kinds["attn"]) and len(set(moe)) == 1:
         return None  # every layer full attention with the same FFN: uniform after all
@@ -238,6 +246,8 @@ def layer_configs_from_hf(hf_config: dict, num_layers: int, num_experts: int = 1
             params[mech] = int(_MIXER_PARAMS[mech](hf_config, hidden))
         if attn is None:
             attention_type = "Recurrent" if mech else "no_op"
+        elif attn == ATTN_CROSS:
+            attention_type = "Cross"
         elif uniform:
             attention_type = "MHA-global"
         else:
@@ -477,11 +487,18 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         'llama', 'mistral', 'mixtral', 'qwen2', 'qwen2_moe', 'qwen3', 'qwen3_moe',
         'gemma', 'gemma2', 'gemma3', 'gpt_oss', 'deepseek_v2', 'deepseek_v3', 'phi3',
     }
-    is_gated_mlp = (
-        hidden_act in ('silu', 'swiglu', 'geglu', 'gelu_glu', 'gated_gelu')
-        or 'glu' in hidden_act
-        or model_type in _GATED_MODEL_TYPES
-    )
+    # The config's own statement first (layer_plan.stated_gated_ffn: flan-T5's
+    # `feed_forward_proj: gated-gelu` names its activation `gelu_new`), then the activation and
+    # the model type.
+    from llm_memory_calculator.layer_plan import stated_gated_ffn
+
+    is_gated_mlp = stated_gated_ffn(hf_config)
+    if is_gated_mlp is None:
+        is_gated_mlp = (
+            hidden_act in ('silu', 'swiglu', 'geglu', 'gelu_glu', 'gated_gelu')
+            or 'glu' in hidden_act
+            or model_type in _GATED_MODEL_TYPES
+        )
     num_ffi = 2 if is_gated_mlp else 1
 
     # ============================================================
@@ -705,21 +722,24 @@ def create_inference_moe_decode_layer(input_sequence_length, name='GPT-2', data_
     return save_layers(layers=layers, data_path=data_path, name=name+"_decode_")
 
 def encoder_stack(model_config: ModelConfig, parallelism_config: ParallelismConfig,
-                  input_sequence_length: int) -> list:
+                  input_sequence_length: int, resident: bool = False) -> list:
     """An encoder-decoder's encoder (``model_config.encoder``, layer_plan.encoder_view): its
     layers once over the encoder's tokens -- the stated output length
     (``cross_attention["tokens"]``), else the prompt, which a text encoder reads. Bidirectional
     self-attention and a dense FFN at the encoder's own width. Empty for any other model.
 
     The prefill graph is where a request runs its encoder, so it carries the encoder's weights
-    and compute; the decode graph streams the decoder's weights only (a decode step runs no
-    encoder layer, as it reads no input-embedding table -- its weights figure is a step's, not
-    the resident model's)."""
+    and compute. A decode step runs no encoder layer, but the device holds the encoder.
+
+    ``resident`` gives the stack as the decode and chunked graphs hold it: its weight-bearing
+    operators over no tokens -- weights the device holds, no time (an operator with no compute
+    takes none) -- so their `Total Weights`, which the fit checks add to the KV, is the resident
+    model's, as an MoE's unrouted experts are held."""
     enc = getattr(model_config, "encoder", None)
     if not enc or not enc.get("layers"):
         return []
     cross = getattr(model_config, "cross_attention", None) or {}
-    tokens = int(cross.get("tokens") or input_sequence_length)
+    tokens = 0 if resident else int(cross.get("tokens") or input_sequence_length)
     view = copy(model_config)
     view.hidden_size = enc["hidden_size"]
     view.num_attention_heads = enc["num_attention_heads"]
@@ -729,11 +749,10 @@ def encoder_stack(model_config: ModelConfig, parallelism_config: ParallelismConf
     view.num_experts = 1
     view.is_moe = False
     view.layer_configs = None
-    layers = repeat_layers(enc["layers"])
-    layers += encoder_attention(view, parallelism_config, tokens)
-    layers += ffn_prefill(view, parallelism_config, tokens)
-    layers += end_repeat_layers(enc["layers"])
-    return layers
+    body = encoder_attention(view, parallelism_config, tokens) + ffn_prefill(view, parallelism_config, tokens)
+    if resident:
+        body = [op for op in body if op[-1] == OpType.GEMM]
+    return repeat_layers(enc["layers"]) + body + end_repeat_layers(enc["layers"])
 
 
 def create_full_prefill_model(
@@ -788,6 +807,11 @@ def create_full_prefill_model(
         # projects once, here (empty for any other model)
         cross = cross_attention(cfg, parallelism_config, input_sequence_length,
                                 [(input_sequence_length, input_sequence_length)], project_encoder=True)
+        if attn_type == "Cross":
+            # a cross-attention layer of its own: no self-attention
+            return cross_attention(cfg, parallelism_config, input_sequence_length,
+                                   [(input_sequence_length, input_sequence_length)],
+                                   project_encoder=True, own_layer=True)
         if cfg.is_mla and attn_type in ("MHA-global", "MHA-local"):
             return mla_attention_prefill(cfg, parallelism_config, input_sequence_length) + cross + mixer
         if attn_type == "MHA-global":
@@ -955,6 +979,9 @@ def create_full_decode_model(
                  if lc is not None and lc.recurrent else [])
         # An encoder-decoder's decoder layer reads its cross-attention cache every step
         cross = cross_attention(cfg, parallelism_config, 1, [(1, input_sequence_length)])
+        if attn_type == "Cross":
+            return cross_attention(cfg, parallelism_config, 1, [(1, input_sequence_length)],
+                                   own_layer=True)
         if cfg.is_mla and attn_type in ("MHA-global", "MHA-local"):
             return mla_attention_decode(cfg, parallelism_config, input_sequence_length, output_gen_tokens) + cross + mixer
         if attn_type == "MHA-global":
@@ -1035,6 +1062,9 @@ def create_full_decode_model(
         return layers
 
     full_model = []
+    # A decode step runs no encoder layer, but the device holds the encoder: its weights, at no
+    # step time (an encoder-decoder; empty for any other model)
+    full_model += encoder_stack(model_config, parallelism_config, 0, resident=True)
 
     if pipeline_stages > 1:
         layers_per_stage = ceil(model_config.num_decoder_layers / pipeline_stages)
@@ -1097,6 +1127,8 @@ def create_full_chunked_model(name:str ='GPT-2',
         the prefill and decode graphs read (`layer_configs_from_hf`)."""
         cfg = cfg or model_config
         cross = cross_attention(cfg, parallelism_config, chunk_size, cross_reads)
+        if attn_type == "Cross":
+            return cross_attention(cfg, parallelism_config, chunk_size, cross_reads, own_layer=True)
         if attn_type == "Recurrent":
             return recurrent_chunked(lc, cfg, parallelism_config, chunk_size,
                                      prefill_kv_sizes, decode_kv_sizes)
@@ -1163,6 +1195,8 @@ def create_full_chunked_model(name:str ='GPT-2',
 
     # assert prefill_length > 0, "Chunk size should be greater than the decode batches"
     full_model = []
+    # The encoder the device holds (an encoder-decoder): its weights, at no step time
+    full_model += encoder_stack(model_config, parallelism_config, 0, resident=True)
     full_model += input_embedding(model_config, parallelism_config, prefill_length)
     if pipeline_stages > 1:
         layers_per_stage = ceil(model_config.num_decoder_layers / pipeline_stages)
