@@ -273,11 +273,16 @@ decoder's own depth, heads and width under each family's spellings (`decoder_lay
 `num_decoder_layers` and `num_heads`, ProphetNet's `num_decoder_attention_heads`, a nested
 `decoder_config`, ...), **and** each decoder layer's cross-attention cache over the encoder's
 output, at the cross-attention's own width: a fixed cost a request where the config states the
-encoder's length (Whisper's 1,500 frames), else charged over the sequence. Every reader charges
-both -- the calculator, the engine estimate, the FRD-027 facts and the vLLM planner (its
-concurrency, profile scheduler and slice sizing), the KV planner's geometry, GenZ's graphs (the
-prefill graph also runs the encoder), the serving model's admission and transfer, and
-BudSimulator's database converter. A layer kind the table does not
+encoder's length (Whisper's 1,500 frames, an encoder block's `max_position_embeddings`, an image
+encoder's patches or Pix2Struct's `seq_len`), else charged over the sequence. A decoder-only
+stack's own cross-attention layers (Mllama's `cross_attention_layers`) are read by the same
+function: those layers hold K / V over the vision tower's tokens and no self-attention cache.
+Every reader charges both -- the calculator, the engine estimate, the FRD-027 facts and the vLLM
+planner (its concurrency, profile scheduler and slice sizing), the KV planner's geometry, GenZ's
+graphs and runtime modelling (`prefill_moddeling` / `decode_moddeling` / `chunked_moddeling` and
+the `estimate_*_performance` above them; the prefill graph also runs the encoder, and the decode
+and chunked graphs hold its weights, so their fit checks weigh the resident model), the serving
+model's admission and transfer, and BudSimulator's database converter. A layer kind the table does not
 know, a per-layer list shorter than the depth, a window whose layers the config does not place,
 layers named sliding whose window the config states under no key the table reads, and a config with an SSM state and attention heads but no layout key (charged KV and state on
 every layer) are over-estimated with a warning, never treated as free or clamped. Categories, the config and GGUF keys read, and the

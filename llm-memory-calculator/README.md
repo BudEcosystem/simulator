@@ -260,9 +260,13 @@ The calculator provides detailed breakdown:
   T5's `num_heads` / `d_model`, a nested `decoder_config`, or a whole encoder-decoder under a
   multimodal `text_config` such as BLIP-2's flan-T5; `layer_plan.decoder_view`) and each decoder
   layer's cross-attention cache over the encoder's output (`layer_plan.cross_attention_cache`:
-  its own K / V width, over the encoder's stated length -- Whisper's `max_source_positions` --
-  else over the sequence), by `calculate_kv_cache`, `calculate_memory`, the facts and planners,
-  GenZ and the serving model alike. See [docs/LAYER_KINDS.md](docs/LAYER_KINDS.md) for every
+  its own K / V width, over the encoder's stated length -- Whisper's `max_source_positions`, an
+  encoder block's `max_position_embeddings` or `seq_len` (Pix2Struct), an image encoder's
+  patches -- else over the sequence); a decoder-only stack's own cross-attention layers
+  (Mllama's `cross_attention_layers`) hold that cache over the vision tokens and no
+  self-attention cache. Charged by `calculate_kv_cache`, `calculate_memory`, the facts and
+  planners, GenZ's graphs and runtime modelling, the serving model and BudSimulator's converter
+  alike. See [docs/LAYER_KINDS.md](docs/LAYER_KINDS.md) for every
   category, the config keys read, and what is charged conservatively.
 - **Activation Memory**: Intermediate activations during forward pass
 - **State Memory**: the fixed per-sequence state of recurrent layers (Gated DeltaNet, Mamba,

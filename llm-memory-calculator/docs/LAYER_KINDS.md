@@ -65,9 +65,9 @@ gguf-py's `Keys` (`gguf/constants.py`).
 | Chunked local attention | at most `attention_chunk_size` | `layer_types: chunked_attention` | Llama 4 |
 | Sparse / compressed attention | every token (upper bound) | `deepseek_sparse_attention`, `compressed_sparse_attention`, `heavily_compressed_attention`, `minimax_m3_sparse`, `sparse` | DeepSeek-V3.2/V4, MiniMax-M3 |
 | MLA (latent KV) | `kv_lora_rank + qk_rope_head_dim`, no factor 2 | `kv_lora_rank` (non-null), `qk_rope_head_dim` | DeepSeek-V2/V3, Kimi |
-| Cross-attention | the encoder's tokens, fixed per request | `cross_attention_layers`; encoder tokens = `max_num_tiles x ((image_size / patch_size)^2 + 1)` from `vision_config` | Mllama |
+| Cross-attention layers of their own | the tower's tokens, fixed per request; **no** self-attention cache on those layers | `cross_attention_layers` (in `text_config`); K / V at the stack's own heads and width (`cross_num_key_value_heads` / `cross_head_dim` where stated); the tower's output read as an encoder's is (below): a stated length, else `max_num_tiles x ((image_size / patch_size)^2 + 1)` from `vision_config` | Mllama |
 | Encoder-decoder (the decoder's self-attention) | every token, on the **decoder's** layers | the decoder's depth: `decoder_layers` (BART, Whisper, Marian, M2M-100, Pegasus), `num_decoder_layers` (T5, mT5, UMT5, LongT5, Switch, ProphetNet; T5's `num_layers` is the encoder's), `decoder_num_hidden_layers` (Moonshine), a nested `decoder_config` / `decoder` block (Dia, EncoderDecoderModel, VisionEncoderDecoder, MusicGen; a block spelling its depth `decoder_layers`, as TrOCR's, included), else the stated depth; heads `decoder_attention_heads`, `decoder_num_attention_heads`, `num_decoder_attention_heads` (ProphetNet), `decoder_num_key_value_heads`, T5's `num_heads`; width `d_model`; FFN `decoder_ffn_dim`, `d_ff`; head width `d_kv`. The encoder's depth: `encoder_layers`, `num_encoder_layers`, `encoder_num_hidden_layers`, a nested `encoder_config` / `encoder` / `text_encoder` (MusicGen) block, else the stated depth; its heads `encoder_attention_heads`, `encoder_num_attention_heads`, `num_encoder_attention_heads`. A whole encoder-decoder nested under `text_config` (BLIP-2 / InstructBLIP with flan-T5, Florence-2) is read there | T5, BART, Whisper, Moonshine, Dia, cohere_asr, ProphetNet, BLIP-2 (flan-T5), Florence-2 |
-| Encoder-decoder (the decoder's cross-attention) | the encoder's output tokens, fixed per request, on every decoder layer | the cross-attention's K / V heads `cross_num_key_value_heads` (else `cross_num_attention_heads`, else the decoder's self-attention heads) and width `cross_head_dim` (else the decoder's head width): Dia's are 16 KV heads of 128 against 4 for self-attention. The encoder's output length: `max_source_positions` (Whisper, Speech2Text; the config, its encoder block or `audio_config`), the nested encoder block's `max_position_embeddings` (Dia's 1,024-token text encoder, cohere_asr's 5,000-position audio encoder), an image encoder's patches (`image_size` / `patch_size` of a VisionEncoderDecoder's ViT); else unstated (T5, BART, Moonshine, BLIP-2's flan-T5): charged over the sequence, see *What is conservative* | Whisper, Dia, cohere_asr, TrOCR, T5, BART |
+| Encoder-decoder (the decoder's cross-attention) | the encoder's output tokens, fixed per request, on every decoder layer | the cross-attention's K / V heads `cross_num_key_value_heads` (else `cross_num_attention_heads`, else the decoder's self-attention heads) and width `cross_head_dim` (else the decoder's head width): Dia's are 16 KV heads of 128 against 4 for self-attention. The encoder's output length: `max_source_positions` (Whisper, Speech2Text; the config, its encoder block or `audio_config`), the nested encoder block's `max_position_embeddings` (Dia's 1,024-token text encoder, cohere_asr's 5,000-position audio encoder), an image encoder's patches (`image_size` / `patch_size` of a VisionEncoderDecoder's ViT), an image encoder's `seq_len` (Pix2Struct: its encoder is the `vision_config` beside a `text_config` that says `is_decoder` and states no encoder of its own); else unstated (T5, BART, Moonshine, BLIP-2's flan-T5, Florence-2): charged over the sequence, see *What is conservative* | Whisper, Dia, cohere_asr, TrOCR, Pix2Struct, T5, BART |
 | KV-shared layers | none of their own | `num_kv_shared_layers` (the last N layers) | Gemma 3n |
 | Gated DeltaNet | fixed: `nv x dk x dv` fp32 + conv | `layer_types: linear_attention` with `linear_num_value_heads`, `linear_key_head_dim`, `linear_value_head_dim`, `linear_num_key_heads`, `linear_conv_kernel_dim`; `full_attention_interval` | Qwen3-Next, Qwen3.5/3.6 |
 | Plain linear attention | fixed: `heads x d x d` | `linear_attention` without GDN keys; `attn_type_list` (0 = linear) | MiniMax-Text-01 |
@@ -199,11 +199,58 @@ reader of a request's KV:
   at the encoder's own width, `layer_plan.encoder_view`) and each decoder layer's K / V projection
   of the encoder's output, so its weights are the whole model's (whisper-large-v3-turbo 1,653 MiB
   against 809M parameters = 1,542 MiB, the difference GenZ's separately graphed tied classifier).
-  The decode graph's `Total Weights` is a step's streamed weights -- the decoder's, without the
-  input-embedding table, as for every model -- not the resident model: whisper-base 92.6 MiB
-  against 139 MiB resident. Size resident weights from `calculate_memory` or the prefill graph.
   The prefill graph's `KV Cache` includes the encoder's self-attention K / V over its tokens, as
   `calculate_memory`'s encoder term does.
+* The device holds the whole model while it decodes, so the decode and chunked graphs carry the
+  encoder (`encoder_stack(..., resident=True)`) and the decoder's cross K / V projections as GEMMs
+  over no tokens: their weights count in `Total Weights`, which `decode_moddeling`'s and
+  `chunked_moddeling`'s fit checks and `platform_size.get_minimum_system_size` add to the KV, and
+  they take no step time (an operator with no compute takes none -- the mechanism already holding
+  an MoE's unrouted experts). Round 8 left them out: Whisper large-v3's decode graph weighed
+  1,526.6 MiB of its ~2,942 MiB, so a 3 GB device passed the decode fit check that the prefill
+  check refuses; it now weighs 2,926.6 MiB and is refused. The one table no GenZ decode graph
+  carries, for any model, is the input embedding (the prefill graph's `embeddings` GEMM): a
+  pre-existing gap of `vocab x hidden` in every decode fit check (Llama-3-8B: 1,002 MiB), left as
+  origin/main has it.
+* GenZ's runtime modelling (`prefill_moddeling`, `decode_moddeling`, `chunked_moddeling`, and the
+  `estimate_*_performance` built on them) books every operator these graphs emit in
+  `get_runtime_breakdown` (`attention.CROSS_PROJECTION_OPS`, `CROSS_SCORE_OPS`,
+  `CROSS_COLLECTIVE_OPS`: MHA, its QKVO / attention-kernel / all-reduce buckets). Round 8 added
+  the operators without booking them, and every encoder-decoder raised `Layer Name:Enc QKV not
+  found in the breakdown function` (prefill) or `Cross Q` (decode, chunked), where origin/main
+  answered.
+
+A decoder-only stack's **own cross-attention layers** (Mllama's `cross_attention_layers`: 8 of its
+40 layers attend to the vision tower's output and to no text) are read by the same function:
+`cross_attention_cache` returns them with `own_layers` -- the layers the table marks
+`ATTN_CROSS`, at the stack's K / V width, over the tower's tokens (the tower is read as an
+encoder block is: a stated length, else its patches and tiles; MllamaConfig's 4 tiles of
+448 / 14 patches + 1 = 4,100). Those layers hold no self-attention cache, and every reader
+charges them the cross cache only: the calculator (one cross group, as for an encoder-decoder),
+the FRD-027 facts (they are not counted as full layers; their projections still count in the
+weights), GenZ (layer kind `Cross`: `attention.cross_attention(..., own_layer=True)`, the query /
+output projections and the reads over the encoder's K / V, the K / V projection at prefill and
+held at no time elsewhere) and so the serving model, the disaggregation transfer and
+BudSimulator's converter. MllamaConfig at 1,024 tokens, bf16: 32 x 131,072 B a token x 1,024 +
+8 x 2 x 1,024 x 4,100 x 2 B = 268,566,528 B in every reader; round 8's GenZ, converter and facts
+graphed the cross layers as self-attention, 167,772,160 B (origin/main's converter: 536,870,912 B,
+every layer full).
+
+A **parameter count** of a multimodal model whose `text_config` is an encoder-decoder (BLIP-2 /
+InstructBLIP with flan-T5, Florence-2) counts that language model as one
+(`UniversalParameterCounter._calculate_text_model_params`): the decoder under `decoder_view`, its
+cross-attention, and the encoder under `encoder_view` (the embedding shared). The attention's head
+count is read by the function that goes with its head width (`layer_plan.attention_heads`, T5's
+`num_heads` beside `d_kv`), and a config that states its FFN gated is three matrices in the
+counter and in GenZ alike (`layer_plan.stated_gated_ffn`: the T5 family's `feed_forward_proj:
+gated-<act>` / `is_gated_act`, DINOv3's `use_gated_mlp`; flan-T5 names its activation
+`gelu_new`, which neither the counter's model-type list nor GenZ's activation test reads as gated).
+BLIP-2 with flan-t5-xl (`Blip2Config(text_config=T5Config(...)).to_dict()`): 3,835,230,720
+counted, against transformers' meta count of 3,876,648,448 (98.9 %; the counter has no Q-Former
+term, and its vision-tower term is its own approximation);
+origin/main 1,720,216,064, round 8 1,595,173,376 (12 heads of 64 over a default 12 layers). The
+flan-t5-xl fixture's GenZ prefill graph: 5,435 MiB, transformers' 2,783,959,040 parameters plus
+GenZ's separately graphed tied classifier (round 8: 4,475 MiB, a 2-matrix FFN).
 
 An attention head count spelled `num_heads` or `n_heads` (GPT-Neo, T5, MPT) is read as the
 attention heads (`ConfigNormalizer`) only when the table says the stack has attention layers:
@@ -290,20 +337,29 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
   geometry and marked as an `ESTIMATE`. A config that states attention heads is never made
   attention-free by its name (a `mamba`-named config with heads and a state key is the parallel
   hybrid above).
-* **Cross-attention** without a vision geometry in the config is charged the full sequence.
+* **Cross-attention layers of their own** (Mllama) whose tower states no length or geometry are
+  charged the full sequence, with a note in the plan -- **not** a bound when the tower outputs more
+  tokens than the sequence holds.
 * **An encoder-decoder whose encoder's output length the config does not state** (T5, BART,
   Marian, ProphetNet, BLIP-2's flan-T5, Florence-2, Moonshine, MusicGen) has its cross-attention
   cache charged over the whole sequence (the calculator, GenZ, the serving model, the converter)
   or over the request's `context.max_tokens` (the facts and the vLLM planner), with a note in the
-  plan. For a text encoder that is an upper bound: its input is the prompt, never longer than the
-  sequence. For an audio encoder that states no length (Moonshine's frames follow the audio's
-  duration, not the text) it is **not** a bound -- a long recording over a short transcript is
-  charged less than it holds; state `encoder_seq_length` to `calculate_memory` for those.
-  Stated lengths are each the encoder's maximum (`max_source_positions`, an encoder block's
-  `max_position_embeddings`): cohere_asr's 5,000 positions over-count a 30-second clip's 375
-  frames 13x.
-* **An encoder-decoder's weights in the GenZ decode graph** are the decoder's: a decode step runs
-  no encoder layer (see "Encoder-decoder models"). The prefill graph carries the encoder.
+  plan. It is an upper bound only for a text encoder whose input is the request's prompt alone
+  (T5, BART, Marian, ProphetNet, MusicGen's T5): that input is never longer than the sequence. It
+  is **not** a bound where the encoder's input is longer than the prompt or is not the prompt:
+  Florence-2's BART encoder reads the image's tokens (577 at 768 px, a processor setting no model
+  config states) before the prompt; BLIP-2's and InstructBLIP's flan-T5 encoder reads the
+  Q-Former's `num_query_tokens` (32) before it; and an audio encoder that states no length
+  (Moonshine's frames follow the audio's duration, not the text) holds as many frames as the
+  recording has -- a long recording over a short transcript is charged less than it holds. State
+  `encoder_seq_length` to `calculate_memory` for those. Stated lengths are each the encoder's
+  maximum (`max_source_positions`, an encoder block's `max_position_embeddings` or `seq_len`):
+  cohere_asr's 5,000 positions over-count a 30-second clip's 375 frames 13x, and Pix2Struct's
+  4,096 patches a request processed at `max_patches` 2,048 (its processor's default) 2x.
+* **An encoder-decoder's weights in the GenZ decode graph** are the resident model's (the encoder
+  and the cross K / V projections held at no step time; see "Encoder-decoder models"), so its fit
+  check is not below the prefill check's. The input embedding table is the exception for every
+  model, as on origin/main.
 
 ## The recurrent state
 
@@ -379,7 +435,10 @@ instead of 16,384: 3.02B parameters short.
 Known approximations: the graph's KV memory is the model's (windowed layers bounded by their
 window in every stack), not that of an engine without per-layer KV, which would hold the full
 sequence on windowed layers of a mixed stack -- see *What is conservative*; KV-shared layers are
-still graphed as attention (their KV read traffic is real, their memory is over-counted); an Mllama-style cross-attention layer (`cross_attention_layers`, a layer of its own) is graphed as a full one (an encoder-decoder's cross-attention inside each decoder layer is graphed over the encoder's tokens, above); a
+still graphed as attention (their KV read traffic is real, their memory is over-counted); a
+cross-attention layer of its own (Mllama) is graphed as cross-attention over the tower's tokens,
+but the vision tower that produces them is not graphed (as for every multimodal decoder: GenZ
+graphs the language model); a
 *uniformly* windowed stack (Mistral v0.1) keeps GenZ's uniform full-attention graph -- the memory
 calculator applies its window, the graph does not; a per-layer MoE list (Hunyuan's
 `num_experts` per layer) does not graph.
