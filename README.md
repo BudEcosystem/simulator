@@ -274,9 +274,18 @@ decoder's own depth, heads and width under each family's spellings (`decoder_lay
 `decoder_config`, ...), **and** each decoder layer's cross-attention cache over the encoder's
 output, at the cross-attention's own width: a fixed cost a request where the config states the
 encoder's length (Whisper's 1,500 frames, an encoder block's `max_position_embeddings`, an image
-encoder's patches or Pix2Struct's `seq_len`), else charged over the sequence. A decoder-only
-stack's own cross-attention layers (Mllama's `cross_attention_layers`) are read by the same
-function: those layers hold K / V over the vision tower's tokens and no self-attention cache.
+encoder's patches -- a square or [height, width] `image_size`, and a staged tower's (`depths`:
+Swin, Donut, Nougat) grid halved per side between stages -- or Pix2Struct's `seq_len`), else
+charged over the sequence. The composition is read as the model builds it, from the configs as
+the hub ships them: a `text_config` that says `is_decoder` beside a vision or audio tower is the
+decoder of that tower (Pix2Struct, BLIP) even where an older file keeps a stale
+`is_encoder_decoder: false` in it; a nested decoder block's own `is_encoder_decoder: false` never
+hides the outer config's `true` (MusicGen); and a BART-family decoder block's depth is its
+`decoder_layers`, not the `num_hidden_layers` its class aliases to the encoder's (Donut, Nougat).
+A decoder-only stack's own cross-attention layers (Mllama's `cross_attention_layers`) are read by
+the same function: those layers hold K / V over the vision tower's tokens and no self-attention
+cache. The tower's tokens are one image's: no config states how many images a request carries,
+so a request with several holds that cache once per image (the plan says so in a note).
 Every reader charges both -- the calculator, the engine estimate, the FRD-027 facts and the vLLM
 planner (its concurrency, profile scheduler and slice sizing), the KV planner's geometry, GenZ's
 graphs and runtime modelling (`prefill_moddeling` / `decode_moddeling` / `chunked_moddeling` and

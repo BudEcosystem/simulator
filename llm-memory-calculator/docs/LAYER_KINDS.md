@@ -65,9 +65,9 @@ gguf-py's `Keys` (`gguf/constants.py`).
 | Chunked local attention | at most `attention_chunk_size` | `layer_types: chunked_attention` | Llama 4 |
 | Sparse / compressed attention | every token (upper bound) | `deepseek_sparse_attention`, `compressed_sparse_attention`, `heavily_compressed_attention`, `minimax_m3_sparse`, `sparse` | DeepSeek-V3.2/V4, MiniMax-M3 |
 | MLA (latent KV) | `kv_lora_rank + qk_rope_head_dim`, no factor 2 | `kv_lora_rank` (non-null), `qk_rope_head_dim` | DeepSeek-V2/V3, Kimi |
-| Cross-attention layers of their own | the tower's tokens, fixed per request; **no** self-attention cache on those layers | `cross_attention_layers` (in `text_config`); K / V at the stack's own heads and width (`cross_num_key_value_heads` / `cross_head_dim` where stated); the tower's output read as an encoder's is (below): a stated length, else `max_num_tiles x ((image_size / patch_size)^2 + 1)` from `vision_config` | Mllama |
-| Encoder-decoder (the decoder's self-attention) | every token, on the **decoder's** layers | the decoder's depth: `decoder_layers` (BART, Whisper, Marian, M2M-100, Pegasus), `num_decoder_layers` (T5, mT5, UMT5, LongT5, Switch, ProphetNet; T5's `num_layers` is the encoder's), `decoder_num_hidden_layers` (Moonshine), a nested `decoder_config` / `decoder` block (Dia, EncoderDecoderModel, VisionEncoderDecoder, MusicGen; a block spelling its depth `decoder_layers`, as TrOCR's, included), else the stated depth; heads `decoder_attention_heads`, `decoder_num_attention_heads`, `num_decoder_attention_heads` (ProphetNet), `decoder_num_key_value_heads`, T5's `num_heads`; width `d_model`; FFN `decoder_ffn_dim`, `d_ff`; head width `d_kv`. The encoder's depth: `encoder_layers`, `num_encoder_layers`, `encoder_num_hidden_layers`, a nested `encoder_config` / `encoder` / `text_encoder` (MusicGen) block, else the stated depth; its heads `encoder_attention_heads`, `encoder_num_attention_heads`, `num_encoder_attention_heads`. A whole encoder-decoder nested under `text_config` (BLIP-2 / InstructBLIP with flan-T5, Florence-2) is read there | T5, BART, Whisper, Moonshine, Dia, cohere_asr, ProphetNet, BLIP-2 (flan-T5), Florence-2 |
-| Encoder-decoder (the decoder's cross-attention) | the encoder's output tokens, fixed per request, on every decoder layer | the cross-attention's K / V heads `cross_num_key_value_heads` (else `cross_num_attention_heads`, else the decoder's self-attention heads) and width `cross_head_dim` (else the decoder's head width): Dia's are 16 KV heads of 128 against 4 for self-attention. The encoder's output length: `max_source_positions` (Whisper, Speech2Text; the config, its encoder block or `audio_config`), the nested encoder block's `max_position_embeddings` (Dia's 1,024-token text encoder, cohere_asr's 5,000-position audio encoder), an image encoder's patches (`image_size` / `patch_size` of a VisionEncoderDecoder's ViT), an image encoder's `seq_len` (Pix2Struct: its encoder is the `vision_config` beside a `text_config` that says `is_decoder` and states no encoder of its own); else unstated (T5, BART, Moonshine, BLIP-2's flan-T5, Florence-2): charged over the sequence, see *What is conservative* | Whisper, Dia, cohere_asr, TrOCR, Pix2Struct, T5, BART |
+| Cross-attention layers of their own | the tower's tokens, fixed per request; **no** self-attention cache on those layers | `cross_attention_layers` (in `text_config`); K / V at the stack's own heads and width (`cross_num_key_value_heads` / `cross_head_dim` where stated); the tower's output read as an encoder's is (below): a stated length, else `max_num_tiles x ((image_size / patch_size)^2 + 1)` from `vision_config` -- **one image's**: no config states how many images a request carries, and the plan says so in a note (see *What is conservative*) | Mllama |
+| Encoder-decoder (the decoder's self-attention) | every token, on the **decoder's** layers | the decoder's depth: `decoder_layers` (BART, Whisper, Marian, M2M-100, Pegasus), `num_decoder_layers` (T5, mT5, UMT5, LongT5, Switch, ProphetNet; T5's `num_layers` is the encoder's), `decoder_num_hidden_layers` (Moonshine), a nested `decoder_config` / `decoder` block (Dia, EncoderDecoderModel, VisionEncoderDecoder, MusicGen; a block spelling its depth `decoder_layers`, as TrOCR's, included; a block that is itself a whole encoder-decoder config -- Donut's and Nougat's `mbart` -- is read by its `decoder_layers` before its `num_hidden_layers`, which MBartConfig aliases to `encoder_layers`, and its own `encoder_*` keys and `is_encoder_decoder` / `add_cross_attention` flags describe the block, so they are not lifted over the model's), else the stated depth; heads `decoder_attention_heads`, `decoder_num_attention_heads`, `num_decoder_attention_heads` (ProphetNet), `decoder_num_key_value_heads`, T5's `num_heads`; width `d_model`; FFN `decoder_ffn_dim`, `d_ff`; head width `d_kv`. The encoder's depth: `encoder_layers`, `num_encoder_layers`, `encoder_num_hidden_layers`, a nested `encoder_config` / `encoder` / `text_encoder` (MusicGen) block, else the stated depth; its heads `encoder_attention_heads`, `encoder_num_attention_heads`, `num_encoder_attention_heads`. A whole encoder-decoder nested under `text_config` (BLIP-2 / InstructBLIP with flan-T5, Florence-2) is read there | T5, BART, Whisper, Moonshine, Dia, cohere_asr, ProphetNet, BLIP-2 (flan-T5), Florence-2 |
+| Encoder-decoder (the decoder's cross-attention) | the encoder's output tokens, fixed per request, on every decoder layer | the cross-attention's K / V heads `cross_num_key_value_heads` (else `cross_num_attention_heads`, else the decoder's self-attention heads) and width `cross_head_dim` (else the decoder's head width): Dia's are 16 KV heads of 128 against 4 for self-attention. The encoder's output length: `max_source_positions` (Whisper, Speech2Text; the config, its encoder block or `audio_config`), the nested encoder block's `max_position_embeddings` (Dia's 1,024-token text encoder, cohere_asr's 5,000-position audio encoder), an image encoder's patches (`image_size` / `patch_size` of a VisionEncoderDecoder's ViT, each a square int or a [height, width] pair, plus the class token; a staged tower that states `depths` -- Swin, Donut-Swin, FocalNet, NAT, ConvNeXt -- merges 2 x 2 between stages and has no class token: Donut's 2,560 x 1,920 at patch 4 over 4 stages is 80 x 60 = 4,800 tokens, Nougat's 896 x 672 is 28 x 21 = 588), an image encoder's `seq_len` (Pix2Struct: its encoder is the `vision_config` beside a `text_config` that says `is_decoder` and states no encoder of its own -- read as the decoder of that tower whatever the block's own `is_encoder_decoder` says, as transformers' composite config overwrites it: the hub files of google/deplot and pix2struct-* omit the outer flag, the class default `true`, and keep a stale `false` in `text_config`; BLIP's `text_config` is the same shape, and BlipTextLayer builds its cross-attention exactly when `is_decoder`); else unstated (T5, BART, Moonshine, BLIP-2's flan-T5, Florence-2): charged over the sequence, see *What is conservative* | Whisper, Dia, cohere_asr, TrOCR, Donut, Nougat, Pix2Struct, BLIP, MusicGen, T5, BART |
 | KV-shared layers | none of their own | `num_kv_shared_layers` (the last N layers) | Gemma 3n |
 | Gated DeltaNet | fixed: `nv x dk x dv` fp32 + conv | `layer_types: linear_attention` with `linear_num_value_heads`, `linear_key_head_dim`, `linear_value_head_dim`, `linear_num_key_heads`, `linear_conv_kernel_dim`; `full_attention_interval` | Qwen3-Next, Qwen3.5/3.6 |
 | Plain linear attention | fixed: `heads x d x d` | `linear_attention` without GDN keys; `attn_type_list` (0 = linear) | MiniMax-Text-01 |
@@ -236,6 +236,40 @@ BudSimulator's converter. MllamaConfig at 1,024 tokens, bf16: 32 x 131,072 B a t
 graphed the cross layers as self-attention, 167,772,160 B (origin/main's converter: 536,870,912 B,
 every layer full).
 
+The composition is read from the configs **as the hub ships them**, which older transformers
+releases saved with flags the composite class overwrites on load. Three shapes, each in
+`tests/fixtures/cross_attention/*_hub.json` and `tests/test_cross_attention_hub_shapes.py`:
+
+* google/deplot (and pix2struct-docvqa-base / -textcaps-base) omit the outer
+  `is_encoder_decoder` (Pix2StructConfig's class default, `true`) and keep `is_encoder_decoder:
+  false`, `is_decoder: true`, `num_heads: 12`, `d_kv: 64` in `text_config`.
+  `layer_plan.composed_text_config` reads a `text_config` that says `is_decoder`, holds no
+  encoder of its own and sits beside a tower as that tower's decoder, flagged as transformers
+  flags it; the parameter counter reads the same block. BLIP's hub config is the same shape.
+  The FRD-027 facts read the head count by `layer_plan.attention_heads`, the reader that goes
+  with the head width (`num_heads` beside `d_kv`): they had read 6 default heads of 64. deplot at
+  1,024 tokens: 36,864 B a token + 150,994,944 B of cross-attention, 45 requests in 8 GiB (round
+  10: 18,432 B a token in the facts, 98,304 in GenZ and the serving model, no cross anywhere,
+  85 requests).
+* facebook/musicgen-small's nested `decoder` carries the `to_dict` defaults
+  `is_encoder_decoder: false`, `add_cross_attention: false` under the outer `true`. Lifting them
+  over the model made `decoder_view` deny its own cross-attention, and the calculator -- which
+  viewed the decoder before asking for the cross cache -- charged none while every other reader
+  charged 24 layers. A nested block's composition flags and its own `encoder_*` keys are no
+  longer lifted (`layer_plan._BLOCK_OWN_KEYS`), so `cross_attention_cache(decoder_view(c))` is
+  `cross_attention_cache(c)` for every config fixture (a test walks them all), and the
+  calculator's plan reads the config as stated. musicgen-small at 4,096 tokens: 0.805 GB
+  (round 10: 0.403). The facts now also count its text encoder and cross-attention weights, as
+  for every encoder-decoder (the planner's slice grows 512 MiB).
+* naver-clova-ix/donut-base and facebook/nougat-small nest an `mbart` decoder block whose
+  `num_hidden_layers` (12) is MBartConfig's alias of `encoder_layers`; its decoder is
+  `decoder_layers` (4). A nested block's depth is read for its role (`_block_depth(block,
+  "decoder")`: the role's own spelling first). Their Swin encoders state `image_size` as
+  [height, width]; read with their stages, Donut hands the decoder 4,800 tokens and Nougat 588.
+  donut-base at 1,024 tokens: 4 x 2,048 x 2 B x (1,024 + 4,800) = 95,420,416 B in every reader
+  (round 10: 12 layers in the facts, KV geometry, GenZ and converter, 4 over the sequence in the
+  calculator).
+
 A **parameter count** of a multimodal model whose `text_config` is an encoder-decoder (BLIP-2 /
 InstructBLIP with flan-T5, Florence-2) counts that language model as one
 (`UniversalParameterCounter._calculate_text_model_params`): the decoder under `decoder_view`, its
@@ -340,6 +374,23 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
 * **Cross-attention layers of their own** (Mllama) whose tower states no length or geometry are
   charged the full sequence, with a note in the plan -- **not** a bound when the tower outputs more
   tokens than the sequence holds.
+* **Cross-attention layers of their own are charged one image** (Mllama: 8 layers x 2 x 1,024 x
+  6,404 tokens x 2 B = 209,846,272 B for the 11B-Vision config's 4 tiles of (560 / 14)^2 + 1).
+  transformers reshapes the cross-attention states to `num_concurrent_media` x tiles x patches,
+  so a request carrying N images holds N times that; the image count is the request's, as its
+  length is, and no config states it. The plan says so in a note (`one image's 6404 tower
+  tokens`). This is **not** a bound for a multi-image request: such a request is under-counted
+  by (N - 1) x that figure, and at long context the per-request total can fall below
+  origin/main's, which charged the 8 layers as self-attention over the sequence (11B-Vision at
+  32k: 4.505 GB against origin/main's 5.369; the vLLM planner admits 41 sequences at 8k against
+  39). An encoder-decoder's image encoder (Donut, Nougat, Pix2Struct, BLIP, TrOCR) reads one
+  image a request by construction.
+* **A staged image tower's tokens** (`depths`) assume the 2 x 2 patch merging between stages that
+  Swin, Donut-Swin, FocalNet, NAT and ConvNeXt perform. A staged tower that kept its full grid
+  would hold 4^(stages - 1) times more; none is known among the configs read.
+* **A `text_config` that says `is_decoder` beside a tower** is charged the cross-attention cache
+  over the tower's output on every layer (Pix2Struct, BLIP build exactly that). A decoder that
+  states `is_decoder` and does not attend to the tower would be over-counted, never under.
 * **An encoder-decoder whose encoder's output length the config does not state** (T5, BART,
   Marian, ProphetNet, BLIP-2's flan-T5, Florence-2, Moonshine, MusicGen) has its cross-attention
   cache charged over the whole sequence (the calculator, GenZ, the serving model, the converter)

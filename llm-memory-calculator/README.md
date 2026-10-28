@@ -262,9 +262,14 @@ The calculator provides detailed breakdown:
   layer's cross-attention cache over the encoder's output (`layer_plan.cross_attention_cache`:
   its own K / V width, over the encoder's stated length -- Whisper's `max_source_positions`, an
   encoder block's `max_position_embeddings` or `seq_len` (Pix2Struct), an image encoder's
-  patches -- else over the sequence); a decoder-only stack's own cross-attention layers
-  (Mllama's `cross_attention_layers`) hold that cache over the vision tokens and no
-  self-attention cache. Charged by `calculate_kv_cache`, `calculate_memory`, the facts and
+  patches, square or [height, width], a staged tower's (`depths`: Swin) halved per side between
+  stages -- else over the sequence). A `text_config` that says `is_decoder` beside a tower is
+  that tower's decoder (Pix2Struct and BLIP as the hub ships them), a nested decoder block's
+  own `is_encoder_decoder: false` never hides the outer `true` (MusicGen), and a BART-family
+  decoder block is as deep as its `decoder_layers` (Donut, Nougat). A decoder-only stack's own
+  cross-attention layers (Mllama's `cross_attention_layers`) hold that cache over one image's
+  vision tokens (no config states an image count; the plan notes it) and no self-attention
+  cache. Charged by `calculate_kv_cache`, `calculate_memory`, the facts and
   planners, GenZ's graphs and runtime modelling, the serving model and BudSimulator's converter
   alike. See [docs/LAYER_KINDS.md](docs/LAYER_KINDS.md) for every
   category, the config keys read, and what is charged conservatively.

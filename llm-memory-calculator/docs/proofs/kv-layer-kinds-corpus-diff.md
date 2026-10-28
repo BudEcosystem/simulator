@@ -27,7 +27,11 @@ every reader of the layer kinds, every fixture folder, synthetic edge shapes); a
 review's (GenZ's runtime modelling, which raised on every encoder-decoder; the decode fit check's
 resident weights; a decoder-only stack's own cross-attention layers and Pix2Struct's image
 encoder in every reader; a nested flan-T5's parameter count and gated FFN; and this proof's
-coverage of the runtime modelling).
+coverage of the runtime modelling); and the tenth review's (the configs as the hub ships them:
+Pix2Struct's and BLIP's decoder beside its image tower under a stale `is_encoder_decoder: false`,
+the facts' head count under `num_heads`, MusicGen's cross-attention hidden by its decoder block's
+own flags in the calculator, a BART-family decoder block's depth and a [height, width] staged
+image tower in Donut and Nougat, and Mllama's one-image assumption stated).
 
 ## 1. The measured case
 
@@ -224,6 +228,26 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
     fell back to a default -- on origin/main too; added after the first corpus pass showed it).
   - BudSimulator `test_a_database_model_holds_its_cross_attention_wherever_the_config_puts_it` x 2
     (Mllama 167,772,160 B, Pix2Struct 75,497,472 B).
+* Round 11 (the tenth review, of `a4615e0`): `tests/test_cross_attention_hub_shapes.py`, 32 cases
+  over five hub configs saved as `tests/fixtures/cross_attention/*_hub.json` (google/deplot,
+  Salesforce/blip-image-captioning-base, facebook/musicgen-small, naver-clova-ix/donut-base,
+  facebook/nougat-small) plus a walk over every config fixture and Mllama's one-image note.
+  Against the round-10 head (its `src`, these tests, `-o pythonpath=`): 27 failed, 5 passed. The
+  5 are guards: MusicGen's table reading (raw config), its facts and its GenZ figure (the readers
+  that already read the raw config), and the decoder view of BLIP and deplot (no cross cache on
+  either side). The 27:
+  - `test_the_table_reads_the_hub_shape` x 4: deplot and BLIP none (a `text_config` with a stale
+    `is_encoder_decoder: false`); Donut and Nougat 12 decoder layers (the `mbart` block's
+    `num_hidden_layers`) and `tokens` None ([height, width] `image_size`).
+  - `test_the_decoder_view_keeps_the_cross_cache` x 3 (MusicGen: None after the view; Donut,
+    Nougat: 12 encoder layers lifted from the `mbart` block) and
+    `test_every_fixture_keeps_its_cross_cache_through_the_decoder_view` (MusicGen's fixture).
+  - `test_the_calculator_charges_self_and_cross` x 5 and `..._breakdown_shows_the_cross_layers`
+    x 5 (deplot 0 B, truth 188,743,680 at 1k; MusicGen 100,663,296, truth 201,326,592; Donut
+    33,554,432, truth 95,420,416).
+  - `test_model_facts_charge_self_and_cross` x 4 (deplot 18,432 B a token, truth 36,864: 6
+    default heads; Donut and Nougat 49,152 B, 12 layers), `test_genz_charges_self_and_cross` x 4.
+  - `test_interleaved_cross_layers_say_they_hold_one_image` (no note).
 * This branch: 157 cases, 150 passed and 7 skipped (the GGUF-file cases skip where `gguf` is absent; the cross-check
   skips the 7 fixtures transformers cannot build). The category file also runs in a venv with
   neither `transformers` nor `gguf` (149 passed, 33 skipped across it and
@@ -241,10 +265,12 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
 
 | Suite | origin/main `c17ef89` | This branch |
 |---|---|---|
-| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,376 passed, 21 skipped, 1 failed |
+| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,408 passed, 21 skipped, 1 failed |
 | `BudSimulator/tests` (pytest) | 24 passed | 81 passed |
 
-(Round 10 adds the 37 cases of `tests/test_cross_attention_every_reader.py` and the 2 BudSimulator
+(Round 11 adds the 32 cases of `tests/test_cross_attention_hub_shapes.py`; no existing test changed;
+its run took 30 min. Round 10 ended at 2,376 passed, 21 skipped / 81. Round 10 adds the 37 cases of
+`tests/test_cross_attention_every_reader.py` and the 2 BudSimulator
 converter cases above; no existing test changed. Its run took 53 min on the shared box, 27 of them
 in `tests/planner/test_grounding.py`'s `test_family_hold_out` and `test_fit_is_deterministic`, whose
 profile -- the grounding store's lookups -- is the same on the round-9 head. Round 9 ended at
@@ -314,8 +340,10 @@ Reproduce (the first `PYTHONPATH` entry is the tree measured):
         --hf-cache ~/.cache/huggingface/hub --models /home/bud/models --repo-root <tree> --genz-data <scratch>
     python llm-memory-calculator/scripts/kv_corpus.py --diff before.json after.json --report diff.md
 
-**Result (round 10): 264 rows -- 263 configs and the empty-row marker -- 144 unchanged, 120
-changed** against origin/main, over every figure (round 10 adds the runtime modelling to every
+**Result (round 11): 269 rows -- 268 configs and the empty-row marker -- 144 unchanged, 125
+changed** against origin/main, over every figure (round 11 adds the five `cross_attention/*_hub.json`
+fixtures, all of which move; against the round-10 head those five changed and the other 264 rows
+did not, below. Round 10 ended at 264 rows, 144 / 120; round 10 adds the runtime modelling to every
 row, the three `cross_attention/` fixtures and three synthetic shapes; round 9 ended at 258 rows,
 144 / 114). Of the 226 shipped, cached and built-in configs, 89 changed and 137 did not; of the 37
 synthetic shapes, 31 changed and 6 did not (a dense Llama with and without
@@ -796,6 +824,40 @@ MllamaConfig, Pix2StructConfig and Blip2Config with flan-T5); 264 rows in all.
   `KVGeometry` then charged it twice -- per token and per sequence): cohere-transcribe's 5,000
   positions at 4k, `KVGeometry` 65,536 -> 32,768 B a token (the self-attention), and Mllama's
   vision tokens likewise.
+
+Round 11 (the tenth review, of `a4615e0`) moved 5 configs against the round-10 head (`--diff` of
+the round-10 head's corpus against this branch's, both measured with the same script, database and
+fixtures) -- exactly the five hub fixtures it adds -- and nothing else: no fixture, cached, shipped,
+GGUF, built-in or synthetic config moved in any figure. Against origin/main, round 10 -> round 11:
+
+* **Pix2Struct and BLIP as the hub ships them.** google/deplot: calculator 0 -> 0.302 GB at 4k
+  (origin/main 0); the facts 18,432 B a token (6 default heads), the converter and GenZ 49,152 elements (12 self + 12 cross over the sequence) -> 18,432 elements (36,864 B)
+  a token + 150,994,944 B a request; serving requests of 1k in 8 GiB 85 -> **45** (truth 45);
+  vLLM running at 8k 477 -> 160 (origin/main 238, which charged 6 heads of 128 per token and no
+  cross); `KVGeometry` 0 -> 36,864 B a token; parameters 247,842,816 -> 257,280,000 (the
+  cross-attention). BLIP (blip-image-captioning-base): the cross cache over 577 image tokens is
+  now charged, 21,270,528 B a request (calculator 0.151 -> 0.172 GB at 4k; serving 227 -> 145;
+  vLLM at 8k 239 -> 223); its parameters 194,795,520 -> 223,107,072 (the 12 cross-attention
+  blocks; origin/main 123,532,032, a fallback).
+* **MusicGen's cross-attention in the calculator.** musicgen-small: `kv_cross_layers` 0 -> 24,
+  `calculate_kv_cache` 0.403 -> **0.805 GB** at 4k (origin/main 0.0), `KVGeometry` 98,304 ->
+  196,608 B a token -- now the figure the facts, the vLLM planner, GenZ and the serving model
+  already charged. The facts count its text encoder and cross-attention weights (the decoder view
+  no longer says `is_encoder_decoder: false`): vLLM blocks 47,146 -> 46,826, running at 1k 226 ->
+  225.
+* **Donut and Nougat.** The decoder is 4 layers (`decoder_layers`), not 12, in the facts,
+  `KVGeometry`, GenZ and the converter (GenZ `get_kv_size` 49,152 -> 8,192 elements), and its
+  cross cache is over the Swin's 4,800 / 588 tokens, not the sequence: donut-base at 4k 0.268 ->
+  **0.146 GB**, serving 85 -> 90, vLLM at 8k 151 -> 342; nougat-small 0.268 -> 0.077 GB, 85 ->
+  325. origin/main charged both the 32-layer defaults (0 GB in the calculator). Parameters
+  944,602,880 -> 810,360,576 (origin/main 874,782,720).
+* **Mllama** does not move: the readers already charged one image's 6,404 tower tokens; the plan
+  now says so in a note, and LAYER_KINDS.md lists it as not a bound for multi-image requests.
+
+Found while checking round 11, not changed by it: a staged image tower's encoder depth is its stage
+count (Swin's `num_layers`, 4, not `sum(depths)`, 20) in the GenZ prefill graph, at the last
+stage's width -- encoder compute only, no KV; and the facts size an encoder-decoder's encoder at
+the decoder's width (TrOCR's 768-wide ViT at 1,024), an over-count of its weights.
 
 Found while checking round 10, not changed by it (present on origin/main): the decode graph has no
 input embedding table for any model (its fit check is short by `vocab x hidden`, 1,002 MiB on
@@ -1700,6 +1762,49 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | serving_requests_8gib_1k | 32 | 38 |
 | serving_state_bytes | 0 | 153944064 |
 
+## fixture:Salesforce_blip-image-captioning-base_hub.json (multimodal)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 18432 |
+| conv_layers | [0, 32] | [12, 12] |
+| conv_state_bytes | 0 | 21270528 |
+| disagg_transfer_bytes_640 | 23592960 | 44863488 |
+| eng_None_32768_kv_mb | 1207.959552 | 1229.23008 |
+| eng_None_32768_params | 123532032 | 223107072 |
+| eng_None_32768_total_mb | 1568.151859 | 1788.572467 |
+| eng_None_4096_kv_mb | 150.994944 | 172.265472 |
+| eng_None_4096_params | 123532032 | 223107072 |
+| eng_None_4096_total_mb | 458.339021 | 678.759629 |
+| eng_llamacpp_32768_kv_mb | 1207.959552 | 1229.23008 |
+| eng_llamacpp_32768_params | 123532032 | 223107072 |
+| eng_llamacpp_32768_total_mb | 1568.151859 | 1788.572467 |
+| eng_llamacpp_4096_kv_mb | 150.994944 | 172.265472 |
+| eng_llamacpp_4096_params | 123532032 | 223107072 |
+| eng_llamacpp_4096_total_mb | 458.339021 | 678.759629 |
+| genz_chunked_kv_mb | 162.0 | 202.570312 |
+| genz_decode_kv_mb | 144.0 | 164.285156 |
+| genz_decode_weights_mb | 206.712891 | 422.712891 |
+| genz_prefill_kv_mb | 144.0 | 184.570312 |
+| genz_prefill_weights_mb | 251.425781 | 467.425781 |
+| kv_cross_layers | 0 | 12 |
+| kv_gb@32768 | 1.207959552 | 1.22923008 |
+| kv_gb@4096 | 0.150994944 | 0.172265472 |
+| kvgeo_32768 | [36864.0, 12, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 21270528.0] |
+| kvgeo_4096 | [36864.0, 12, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 21270528.0] |
+| report_kv_gb | 0.150994944 | 0.172265472 |
+| report_params | 123532032 | 223107072 |
+| report_total_gb | 0.500594012 | 0.725268726 |
+| report_weight_gb | 0.247064064 | 0.446214144 |
+| runtime_chunked | [0.25013, 251.426, 27.0] | [0.308538, 467.426, 67.57] |
+| runtime_decode | [1.332181, 206.713, 18.141] | [1.614452, 422.713, 99.281] |
+| runtime_prefill | [1.851682, 251.426, 18.0] | [3.018381, 467.426, 58.57] |
+| serving_requests_8gib_1k | 227 | 145 |
+| serving_state_bytes | 0 | 21270528 |
+| slice_mib_16x4352 | [8960, true] | [9472, true] |
+| vllm_limits | [126274, 2020384, 126274, 1, 0, 0.0, true] | [125890, 2014240, 125890, 1, 0, 21270528.0, true] |
+| vllm_running_8192 | 239 | 223 |
+
 ## fixture:Zyphra_Zamba2-2.7B.json (hybrid)
 
 | figure | before | after |
@@ -1955,6 +2060,176 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | runtime_prefill_error | "ValueError: cannot convert float NaN to integer" | null |
 | serving_bytes_per_token | 221184 | 31104 |
 | serving_requests_8gib_1k | 37 | 269 |
+
+## fixture:facebook_musicgen-small_hub.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 98304 |
+| conv_layers | [16, 16] | [12, 24] |
+| disagg_transfer_bytes_640 | 62914560 | 125829120 |
+| eng_None_32768_kv_mb | 701.80864 | 6497.746944 |
+| eng_None_32768_params | 808394240 | 1080272640 |
+| eng_None_32768_total_mb | 2484.691558 | 8824.386662 |
+| eng_None_4096_kv_mb | 114.60608 | 860.602368 |
+| eng_None_4096_params | 808394240 | 1080272640 |
+| eng_None_4096_total_mb | 1814.441779 | 3104.194867 |
+| eng_llamacpp_32768_kv_mb | 701.80864 | 6497.746944 |
+| eng_llamacpp_32768_params | 808394240 | 1080272640 |
+| eng_llamacpp_32768_total_mb | 2484.691558 | 8824.386662 |
+| eng_llamacpp_4096_kv_mb | 114.60608 | 860.602368 |
+| eng_llamacpp_4096_params | 808394240 | 1080272640 |
+| eng_llamacpp_4096_total_mb | 1814.441779 | 3104.194867 |
+| facts_layers | [32, 0, 0, null] | [24, 0, 0, null] |
+| genz_chunked_kv_mb | 432.0 | 864.0 |
+| genz_decode_kv_mb | 384.0 | 768.0 |
+| genz_decode_weights_mb | 580.0 | 910.0 |
+| genz_kv_size | 49152 | 98304 |
+| genz_prefill_kv_mb | 384.0 | 912.0 |
+| genz_prefill_weights_mb | 584.0 | 914.0 |
+| kv_cross_layers | 0 | 24 |
+| kv_full_layers | 0 | 24 |
+| kv_gb@32768 | 0.0 | 6.442450944 |
+| kv_gb@4096 | 0.0 | 0.805306368 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [196608.0, 24, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [196608.0, 24, 0, 0.0, 16, 0.0] |
+| prefix_kv_bytes_per_token | 98304 | 196608 |
+| report_kv_gb | 0.11460608 | 0.860602368 |
+| report_params | 808394240 | 1080272640 |
+| report_total_gb | 1.856430039 | 3.294460785 |
+| report_weight_gb | 1.61678848 | 2.16054528 |
+| runtime_chunked | [0.589743, 584.0, 72.0] | [0.729889, 914.0, 144.0] |
+| runtime_decode | [1.771665, 580.0, 48.375] | [2.29147, 910.0, 240.375] |
+| runtime_prefill | [2.859744, 584.0, 48.0] | [4.528414, 914.0, 114.0] |
+| serving_bytes_per_token | 98304 | 196608 |
+| serving_requests_8gib_1k | 85 | 42 |
+| sim_max_running | 72 | 242 |
+| slice_mib_16x4352 | [81582, false] | [22528, true] |
+| vllm_limits | [4702, 75232, 4702, 1, 0, 0.0, true] | [46826, 749216, 46826, 1, 0, 201326592.0, true] |
+| vllm_running_1024 | 58 | 225 |
+| vllm_running_8192 | 8 | 71 |
+
+## fixture:facebook_nougat-small_hub.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 8192 |
+| conv_layers | [16, 16] | [4, 4] |
+| conv_state_bytes | 0 | 9633792 |
+| decode_fit_refused | null | true |
+| disagg_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo" | null |
+| disagg_transfer_bytes_640 | null | 20119552 |
+| eng_None_32768_kv_mb | 701.80864 | 571.080704 |
+| eng_None_32768_params | 874782720 | 810360576 |
+| eng_None_32768_total_mb | 2617.468518 | 2357.896294 |
+| eng_None_4096_kv_mb | 114.60608 | 101.318656 |
+| eng_None_4096_params | 874782720 | 810360576 |
+| eng_None_4096_total_mb | 1947.218739 | 1805.087027 |
+| eng_llamacpp_32768_kv_mb | 701.80864 | 571.080704 |
+| eng_llamacpp_32768_params | 874782720 | 810360576 |
+| eng_llamacpp_32768_total_mb | 2617.468518 | 2357.896294 |
+| eng_llamacpp_4096_kv_mb | 114.60608 | 101.318656 |
+| eng_llamacpp_4096_params | 874782720 | 810360576 |
+| eng_llamacpp_4096_total_mb | 1947.218739 | 1805.087027 |
+| facts_layers | [32, 0, 0, null] | [4, 0, 0, null] |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo" | null |
+| genz_chunked_kv_mb | null | 90.375 |
+| genz_decode_kv_mb | null | 73.1875 |
+| genz_decode_weights_mb | null | 225.65625 |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo" | null |
+| genz_ffn_kinds | null | {"Dense": 4} |
+| genz_kv_size | null | 8192 |
+| genz_layer_kinds | null | {"MHA-global": 4} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo" | null |
+| genz_prefill_kv_mb | null | 73.1875 |
+| genz_prefill_weights_mb | null | 323.3125 |
+| kv_cross_layers | 0 | 4 |
+| kv_full_layers | 0 | 4 |
+| kv_gb@32768 | 0.0 | 0.546504704 |
+| kv_gb@4096 | 0.0 | 0.076742656 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 0, 0.0, 16, 9633792.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 0, 0.0, 16, 9633792.0] |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
+| prefix_kv_bytes_per_token | null | 16384 |
+| report_kv_gb | 0.11460608 | 0.101318656 |
+| report_params | 874782720 | 810360576 |
+| report_total_gb | 1.989206999 | 1.843957002 |
+| report_weight_gb | 1.74956544 | 1.620721152 |
+| runtime_chunked | null | [0.300856, 323.312, 30.375] |
+| runtime_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
+| runtime_decode | null | [1.262026, 225.656, 44.812] |
+| runtime_decode_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
+| runtime_prefill | null | [1.843388, 323.312, 17.188] |
+| runtime_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
+| serving_bytes_per_token | null | 16384 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo" | null |
+| serving_requests_8gib_1k | null | 325 |
+| serving_state_bytes | null | 9633792 |
+| sim_max_running | 72 | 400 |
+| slice_mib_16x4352 | [81582, false] | [7424, true] |
+| vllm_limits | [4702, 75232, 4702, 1, 0, 0.0, true] | [283615, 4537840, 283615, 1, 0, 9633792.0, true] |
+| vllm_running_1024 | 58 | 1024 |
+| vllm_running_8192 | 8 | 502 |
+
+## fixture:google_deplot_hub.json (multimodal)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 262144 | 18432 |
+| conv_layers | [0, 32] | [12, 12] |
+| conv_state_bytes | 0 | 150994944 |
+| decode_fit_refused | null | true |
+| disagg_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'initializer_factor', 'initializer_range', 'i" | null |
+| disagg_transfer_bytes_640 | null | 174587904 |
+| eng_None_32768_kv_mb | 0.0 | 1358.954496 |
+| eng_None_32768_params | 123532032 | 257280000 |
+| eng_None_32768_total_mb | 375.422054 | 2001.872486 |
+| eng_None_4096_kv_mb | 0.0 | 301.989888 |
+| eng_None_4096_params | 123532032 | 257280000 |
+| eng_None_4096_total_mb | 312.507494 | 881.993318 |
+| eng_llamacpp_32768_kv_mb | 0.0 | 1358.954496 |
+| eng_llamacpp_32768_params | 123532032 | 257280000 |
+| eng_llamacpp_32768_total_mb | 375.422054 | 2001.872486 |
+| eng_llamacpp_4096_kv_mb | 0.0 | 301.989888 |
+| eng_llamacpp_4096_params | 123532032 | 257280000 |
+| eng_llamacpp_4096_total_mb | 312.507494 | 881.993318 |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'initializer_factor', 'initializer_range', 'i" | null |
+| genz_chunked_kv_mb | null | 450.0 |
+| genz_decode_kv_mb | null | 288.0 |
+| genz_decode_weights_mb | null | 379.599609 |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'initializer_factor', 'initializer_range', 'i" | null |
+| genz_ffn_kinds | null | {"Dense": 12} |
+| genz_kv_size | null | 18432 |
+| genz_layer_kinds | null | {"MHA-global": 12} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'initializer_factor', 'initializer_range', 'i" | null |
+| genz_prefill_kv_mb | null | 432.0 |
+| genz_prefill_weights_mb | null | 453.199219 |
+| kv_cross_layers | 0 | 12 |
+| kv_gb@32768 | 0.0 | 1.358954496 |
+| kv_gb@4096 | 0.0 | 0.301989888 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 150994944.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 150994944.0] |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init" | null |
+| prefix_kv_bytes_per_token | null | 36864 |
+| report_kv_gb | 0.0 | 0.301989888 |
+| report_params | 123532032 | 257280000 |
+| report_total_gb | 0.32559618 | 0.955479982 |
+| report_weight_gb | 0.247064064 | 0.51456 |
+| runtime_chunked | null | [0.513991, 453.199, 315.0] |
+| runtime_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init" | null |
+| runtime_decode | null | [1.912752, 379.6, 594.141] |
+| runtime_decode_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init" | null |
+| runtime_prefill | null | [7.108681, 453.199, 306.0] |
+| runtime_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init" | null |
+| serving_bytes_per_token | null | 36864 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'initializer_factor', 'initializer_range', 'i" | null |
+| serving_requests_8gib_1k | null | 45 |
+| serving_state_bytes | null | 150994944 |
+| sim_max_running | 400 | 390 |
+| slice_mib_16x4352 | [8960, true] | [12032, true] |
+| vllm_limits | [125989, 2015824, 125989, 1, 0, 0.0, true] | [125701, 2011216, 125701, 1, 0, 150994944.0, true] |
+| vllm_running_1024 | 1024 | 374 |
+| vllm_running_8192 | 238 | 160 |
 
 ## fixture:gpt-oss-20b-bf16.json (decoder-only)
 
@@ -2281,6 +2556,68 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | vllm_limits | [4702, 75232, 4702, 1, 0, 0.0, true] | [120000, 1920000, 120000, 1, 0, 150994944.0, true] |
 | vllm_running_1024 | 58 | 357 |
 | vllm_running_8192 | 8 | 153 |
+
+## fixture:naver-clova-ix_donut-base_hub.json (encoder-decoder)
+
+| figure | before | after |
+|---|---|---|
+| conv_kv_size | 131072 | 8192 |
+| conv_layers | [16, 16] | [4, 4] |
+| conv_state_bytes | 0 | 78643200 |
+| decode_fit_refused | null | true |
+| disagg_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo" | null |
+| disagg_transfer_bytes_640 | null | 89128960 |
+| eng_None_32768_kv_mb | 701.80864 | 640.090112 |
+| eng_None_32768_params | 874782720 | 810360576 |
+| eng_None_32768_total_mb | 2617.468518 | 2426.905702 |
+| eng_None_4096_kv_mb | 114.60608 | 170.328064 |
+| eng_None_4096_params | 874782720 | 810360576 |
+| eng_None_4096_total_mb | 1947.218739 | 1874.096435 |
+| eng_llamacpp_32768_kv_mb | 701.80864 | 640.090112 |
+| eng_llamacpp_32768_params | 874782720 | 810360576 |
+| eng_llamacpp_32768_total_mb | 2617.468518 | 2426.905702 |
+| eng_llamacpp_4096_kv_mb | 114.60608 | 170.328064 |
+| eng_llamacpp_4096_params | 874782720 | 810360576 |
+| eng_llamacpp_4096_total_mb | 1947.218739 | 1874.096435 |
+| facts_layers | [32, 0, 0, null] | [4, 0, 0, null] |
+| genz_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo" | null |
+| genz_chunked_kv_mb | null | 222.0 |
+| genz_decode_kv_mb | null | 139.0 |
+| genz_decode_weights_mb | null | 240.353516 |
+| genz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo" | null |
+| genz_ffn_kinds | null | {"Dense": 4} |
+| genz_kv_size | null | 8192 |
+| genz_layer_kinds | null | {"MHA-global": 4} |
+| genz_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo" | null |
+| genz_prefill_kv_mb | null | 139.0 |
+| genz_prefill_weights_mb | null | 352.707031 |
+| kv_cross_layers | 0 | 4 |
+| kv_full_layers | 0 | 4 |
+| kv_gb@32768 | 0.0 | 0.615514112 |
+| kv_gb@4096 | 0.0 | 0.145752064 |
+| kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 0, 0.0, 16, 78643200.0] |
+| kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 0, 0.0, 16, 78643200.0] |
+| prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
+| prefix_kv_bytes_per_token | null | 16384 |
+| report_kv_gb | 0.11460608 | 0.170328064 |
+| report_params | 874782720 | 810360576 |
+| report_total_gb | 1.989206999 | 1.926768292 |
+| report_weight_gb | 1.74956544 | 1.620721152 |
+| runtime_chunked | null | [0.426186, 352.707, 162.0] |
+| runtime_chunked_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
+| runtime_decode | null | [1.431985, 240.354, 308.062] |
+| runtime_decode_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
+| runtime_prefill | null | [2.24932, 352.707, 83.0] |
+| runtime_prefill_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
+| serving_bytes_per_token | null | 16384 |
+| serving_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo" | null |
+| serving_requests_8gib_1k | null | 90 |
+| serving_state_bytes | null | 78643200 |
+| sim_max_running | 72 | 400 |
+| slice_mib_16x4352 | [81582, false] | [8704, true] |
+| vllm_limits | [4702, 75232, 4702, 1, 0, 0.0, true] | [283859, 4541744, 283859, 1, 0, 78643200.0, true] |
+| vllm_running_1024 | 58 | 746 |
+| vllm_running_8192 | 8 | 342 |
 
 ## fixture:nvidia_Hymba-1.5B-Base.json (hybrid)
 
