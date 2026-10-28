@@ -248,8 +248,8 @@ print(f"Total: {memory.total_memory_gb:.2f} GB")
 
 **Which layers hold a KV cache** is read from the model's own config, through one table every
 part of the simulator uses (the memory calculator, the GGUF reader in `bud_component.py`, the
-GenZ performance graph -- prefill, decode and chunked -- the serving memory model, the engine
-estimate and the parameter counter). Only attention layers keep a growing cache -- full attention
+GenZ performance graph -- prefill, decode and chunked -- the serving memory model, the prefix
+cache, the engine estimate and the parameter counter). Only attention layers keep a growing cache -- full attention
 every token, sliding / chunked layers their window, cross-attention the encoder's tokens, MLA one
 latent per layer. Gated DeltaNet (Qwen3-Next, Qwen3.5), Mamba, RWKV, xLSTM, short-convolution and
 FFN-only layers keep a fixed per-sequence state instead (fp32, as the engines hold it), reported
@@ -259,7 +259,7 @@ disaggregation concurrency, the prefill-to-decode transfer and `/api/v2/memory/t
 layer is as wide as the model's own attention head (`head_dim` or its aliases, e.g. Zamba2's
 `attention_head_dim`), read by one function for every reader. A layer kind the table does not
 know, a per-layer list shorter than the depth, a window whose layers the config does not place,
-and a config with an SSM state and attention heads but no layout key (charged KV and state on
+layers named sliding whose window the config states under no key the table reads, and a config with an SSM state and attention heads but no layout key (charged KV and state on
 every layer) are over-estimated with a warning, never treated as free or clamped. Categories, the config and GGUF keys read, and the
 conservative rules: [llm-memory-calculator/docs/LAYER_KINDS.md](llm-memory-calculator/docs/LAYER_KINDS.md).
 

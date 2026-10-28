@@ -2,7 +2,7 @@
 
 Branch `fix/hybrid-kv-layer-kinds`, measured against **origin/main `c17ef89`** (what this branch
 lands on). Generated on the shared GB10 box, 27-28 Oct 2026, with `scripts/kv_corpus.py`; no GPU
-used. Five rounds: the fix itself; the corrections an independent review asked for (the
+used. Six rounds: the fix itself; the corrections an independent review asked for (the
 chunked graph, the state's bytes, MoE placement, unplaced windows, depth from a layer list,
 SambaY, the GGUF reader's Mamba-1 / RoPE / gating / tying, and this proof's own coverage); and the
 second review's (Zamba's shared MLP and its unknown names, transformers before 4.53, the FRD-027
@@ -12,7 +12,9 @@ recurrent state, GPT-Neo's layout under `attention_types`, per-layer lists short
 depth, Kimi's one-indexing without `kda_layers`, and the two window policies stated); and the
 fourth review's (the attention head width read under its other spellings -- Zamba2's KV was half
 its size everywhere --, an SSM-state config with attention heads and no layout, a family name
-overriding stated attention heads, and `max_window_layers` where a config class states no layout).
+overriding stated attention heads, and `max_window_layers` where a config class states no layout);
+and the fifth review's (a dense layer of an MoE model graphed at the experts' width, sliding layers
+whose window the table does not read, and the prefix cache's price of a token).
 
 ## 1. The measured case
 
@@ -115,11 +117,22 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
   - test_max_window_layers_places_the_window_when_the_class_states_no_layout (4.53's
     Qwen2MoeConfig, simulated: 24 sliding layers, not 21 full + 3 sliding)
   - guard: test_a_uniform_window_without_max_window_layers_still_slides_every_layer (Mistral)
-* This branch: 132 passed (the two GGUF-file cases skip where `gguf` is absent; the cross-check
+* Round 6 (7 cases added for the fifth review) against the round-5 head `18d38ae`: all 7 failed.
+  - test_a_dense_layer_of_an_moe_model_is_graphed_at_the_width_its_config_names x 3
+    (Llama 4 `intermediate_size_mlp` with `interleave_moe_layer_step` 2, MiniMax-M3
+    `dense_intermediate_size`, Cohere2-MoE `prefix_dense_intermediate_size`: every dense layer
+    graphed 256 wide, not 1,024)
+  - test_sliding_layers_whose_window_is_not_read_are_charged_in_full_everywhere (no warning; the
+    table kept 16 sliding layers with no window, which the facts reported and the vLLM planner
+    charged nothing)
+  - test_the_prefix_cache_prices_a_token_like_the_serving_memory_model x 3 (Qwen3.5-4B 131,072
+    against 32,768 B; Nemotron-H-8B 212,992 against 16,384; DeepSeek-V3.2 1,748,992 against
+    MLA's 70,272)
+* This branch: 139 cases, 132 passed and 7 skipped (the two GGUF-file cases skip where `gguf` is absent; the cross-check
   skips the 7 fixtures transformers cannot build). The category file also runs in a venv with
-  neither `transformers` nor `gguf` (142 passed, 33 skipped across it and
-  `tests/test_hybrid_layer_plan.py`), with transformers 4.50.0 (152 passed, 23 skipped) and with
-  4.53.0 (115 passed, 17 skipped; that venv lacks GenZ's `seaborn`, and its 43 failures are all
+  neither `transformers` nor `gguf` (149 passed, 33 skipped across it and
+  `tests/test_hybrid_layer_plan.py`), with transformers 4.50.0 (159 passed, 23 skipped) and with
+  4.53.0 (119 passed, 17 skipped; that venv lacks GenZ's `seaborn`, and its 46 failures are all
   that import). By hand under 4.53.0: the reviewer's `qwen2moe_swa_on` config (24 layers,
   `max_window_layers` 21) now reads 21 full + 3 sliding, `src = max_window_layers`, matching
   4.53's `modeling_qwen2_moe.py`.
@@ -132,11 +145,11 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
 
 | Suite | origin/main `c17ef89` | This branch |
 |---|---|---|
-| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,216 passed, 21 skipped, 1 failed |
+| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,223 passed, 21 skipped, 1 failed |
 | `BudSimulator/tests` (pytest) | 24 passed | 26 passed |
 
 (Round 3 ended at 2,151 / 24; round 4 at 2,191 passed, 14 skipped / 26; round 5 adds the 32
-category cases above, 7 of which skip -- fixtures transformers cannot build. Round 4 added the 40
+category cases above, 7 of which skip -- fixtures transformers cannot build. Round 6 adds the 7 category cases for the fifth review. Round 4 added the 40
 category cases and the two memory-tier API cases. One existing assertion was widened: `tests/serving/test_memory_model.py::
 TestMemorySnapshot::test_snapshot_has_all_fields` pins the snapshot's keys, and the snapshot now
 reports `state_bytes` beside `kv_cache_bytes`.)
@@ -241,7 +254,9 @@ Round 3 (the second review) moved 11 configs against the round-2 head, each by o
   MiniMax-Text-01 [80 full] -> [10 full, 70 recurrent]; SmallThinker [52 full] -> [13 full, 39
   sliding, window 4,096]; five ModernBERT encoder configs (Julia-1, Laya) take their `layer_types`
   (e.g. [28 full] -> [10 full, 18 sliding]; their `local_attention` window is not a window key the
-  table reads, so the sliding layers keep the full context -- an over-estimate).
+  table reads, so the sliding layers keep the full context -- an over-estimate). Round 6 puts them
+  back to [28 full]: sliding layers with no window the table reads are full layers in the table
+  itself, because the vLLM planner charged a sliding group with no window nothing.
 * **The facts slide a uniform window by the table, not by `model_type == "mistral"`**: Mimi
   [8 full] -> [8 sliding, window 250] and Voxtral-Mini-4B-Realtime [26 full] -> [26 sliding,
   window 8,192] -- what the calculator already charged for both.
@@ -339,6 +354,46 @@ round-4 head's corpus against this branch's: 193 unchanged, 1 changed):
   from default geometry) and a composite Higgs-Audio config. The reader now reads only the config
   the caller passes, with the caller's own head count and hidden size as the last resort, so no
   config without a stated width moves.
+
+Round 6 (the fifth review) moved exactly five configs against the round-5 head (`--diff` of the
+reviewer's corpus of `18d38ae` against this branch's: 189 unchanged, 5 changed):
+
+* **Sliding layers whose window the table cannot read are full layers** (`layer_plan._sliding_bound`,
+  in the table, so every reader agrees). The five ModernBERT-family encoder configs (Julia-1, the
+  four Laya configs) state `layer_types` with `sliding_attention` and their window as
+  `local_attention`, which is not a window key. The facts go back to origin/main's
+  [22 / 28 full, 0 sliding, no window] (from [8, 14, 0, None] / [10, 18, 0, None]); the
+  calculator's breakdown, which on origin/main reported those layers as sliding while charging
+  them in full, now reports them full (`kv_full_layers` 8 -> 22, `kv_sliding_layers` 14 -> 0). No
+  KV byte figure moves except the vLLM planner's, which charged the sliding groups zero blocks: on
+  Julia-1's encoder (vllm-0.30-upstream, h100xm-80c-vgpu) the round-5 head admitted 6,023,920 KV
+  tokens against origin/main's 2,190,512; it now admits origin/main's figure again (the
+  reviewer's `vllm_probe.py`). transformers 5.12's only `local_attention` families (modernbert,
+  modernvbert, pe_audio) are encoders, so no decoder in the corpus moves.
+* **A dense layer of an MoE model is graphed at the width the config names for it**
+  (`layer_plan.dense_ffn_width`: Llama 4's `intermediate_size_mlp`, MiniMax-M3's
+  `dense_intermediate_size`, Cohere2-MoE's `prefix_dense_intermediate_size`). No corpus config
+  states one of these keys with dense layers (the built-in `genz:meta-llama/Llama-4-*` models do
+  not go through this reader), so it moves no corpus figure. The reviewer's Llama-4-Maverick text
+  config (48 layers, `interleave_moe_layer_step` 2): GenZ decode weights origin/main 1,482,353 MiB
+  (every layer MoE, ~2x high) -> round-5 head 750,803 MiB (393.6B, the 24 dense layers at 8,192)
+  -> **756,563 MiB = 396.7B** (at 16,384: +3.02B). The remaining ~3B against Maverick's ~400B is
+  Llama 4's always-on shared expert, which GenZ graphs for no family without a shared-expert count
+  key; it is equally missing on origin/main and is left for a separate fix (see below).
+* **The prefix cache prices a cached token by `ModelConfig.get_kv_size`**, as the serving memory
+  model does (`PrefixCacheAnalyzer`, BudSimulator `/cache/analyze`): Qwen3.5-4B 131,072 -> 32,768
+  B, Nemotron-H-8B 212,992 -> 16,384, DeepSeek-V3.2 (MLA) 1,748,992 -> 70,272. The corpus script
+  does not measure the prefix cache; the serving bytes-per-token figure it does measure is the same
+  number.
+
+Found while checking round 6, not changed by it (present on origin/main): GenZ graphs a shared
+expert only when the config states `n_shared_experts` / `num_shared_experts`, so Llama 4's
+always-on shared expert and Qwen2-MoE's `shared_expert_intermediate_size` (no count key) are not
+graphed -- an under-count of weights, not KV; and with a count but no width key (DeepSeek), the
+shared expert defaults to `intermediate_size` rather than `moe_intermediate_size` x the count --
+an over-count. The calculator's parameter counter handles a flat `llama4_text` config (no
+`text_config`) as every layer MoE (783.6B for the Maverick text config above). Left for a
+separate fix.
 
 The full per-config table (before = origin/main, after = this branch) follows.
 
@@ -462,36 +517,36 @@ The full per-config table (before = origin/main, after = this branch) follows.
 
 | figure | before | after |
 |---|---|---|
-| facts_full_attention | true | false |
-| facts_layers | [22, 0, 0, null] | [8, 14, 0, null] |
+| kv_full_layers | 8 | 22 |
+| kv_sliding_layers | 14 | 0 |
 
 ## config:models--convaiinnovations--laya-multilingual/snapshots/e4e9ddf21a7b1903b7acffd8814ad4307bf63a67/encoder/config.json (decoder-only)
 
 | figure | before | after |
 |---|---|---|
-| facts_full_attention | true | false |
-| facts_layers | [22, 0, 0, null] | [8, 14, 0, null] |
+| kv_full_layers | 8 | 22 |
+| kv_sliding_layers | 14 | 0 |
 
 ## config:models--convaiinnovations--laya-typed-decisions/snapshots/1a793eb568e6718f15941d08f85432581df534e3/encoder/config.json (decoder-only)
 
 | figure | before | after |
 |---|---|---|
-| facts_full_attention | true | false |
-| facts_layers | [28, 0, 0, null] | [10, 18, 0, null] |
+| kv_full_layers | 10 | 28 |
+| kv_sliding_layers | 18 | 0 |
 
 ## config:models--convaiinnovations--laya/snapshots/55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851/encoder/config.json (decoder-only)
 
 | figure | before | after |
 |---|---|---|
-| facts_full_attention | true | false |
-| facts_layers | [28, 0, 0, null] | [10, 18, 0, null] |
+| kv_full_layers | 10 | 28 |
+| kv_sliding_layers | 18 | 0 |
 
 ## config:models--convaiinnovations--laya/snapshots/55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851/typed-decisions/encoder/config.json (decoder-only)
 
 | figure | before | after |
 |---|---|---|
-| facts_full_attention | true | false |
-| facts_layers | [28, 0, 0, null] | [10, 18, 0, null] |
+| kv_full_layers | 10 | 28 |
+| kv_sliding_layers | 18 | 0 |
 
 ## config:models--internlm--Intern-Decision-4B/snapshots/0e5e6aa7d6d750e2b1504ba11a8136cb58aeb3cd/config.json (multimodal)
 
@@ -1284,3 +1339,4 @@ The full per-config table (before = origin/main, after = this branch) follows.
 | report_params | 109986816 | 136725504 |
 | report_total_gb | 0.500824228 | 0.554301604 |
 | report_weight_gb | 0.219973632 | 0.273451008 |
+

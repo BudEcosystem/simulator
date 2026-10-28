@@ -12,8 +12,8 @@ table, and every part of the simulator answers from it:
 |---|---|
 | `ModelMemoryCalculator.calculate_kv_cache` / `kv_cache_breakdown` / `calculate_state_memory` | KV bytes per kind, fixed state |
 | `bud_component.py --gguf` (via `gguf_layers.hf_layer_keys_from_gguf`) | the same kinds from a GGUF's llama.cpp keys |
-| GenZ graph (`get_language_model.layer_configs_from_hf`, `ModelConfig.get_kv_size`) -- the prefill, decode **and chunked** builders (`create_full_chunked_model`: chunked serving, speculative decoding, the simulation engine's chunked feature) | per-layer operators; KV only on attention layers, the window on windowed ones; which FFNs are MoE (`layer_plan.moe_layers`) |
-| GenZ serving (`MemoryModel.bytes_per_token_kv` and `state_bytes_per_sequence`, `request_bytes`, the scheduler's admission check, cluster and disaggregation `B_eff`, the disaggregation transfer; BudSimulator `/api/v2/memory/tiers`) | per-token KV, and the per-request fixed state (`ModelConfig.get_state_bytes`) |
+| GenZ graph (`get_language_model.layer_configs_from_hf`, `ModelConfig.get_kv_size`) -- the prefill, decode **and chunked** builders (`create_full_chunked_model`: chunked serving, speculative decoding, the simulation engine's chunked feature) | per-layer operators; KV only on attention layers, the window on windowed ones; which FFNs are MoE (`layer_plan.moe_layers`) and how wide a dense one is (`layer_plan.dense_ffn_width`) |
+| GenZ serving (`MemoryModel.bytes_per_token_kv` and `state_bytes_per_sequence`, `request_bytes`, the scheduler's admission check, cluster and disaggregation `B_eff`, the disaggregation transfer; the prefix cache's price of a cached token (`PrefixCacheAnalyzer`, BudSimulator `/cache/analyze`); BudSimulator `/api/v2/memory/tiers`) | per-token KV, and the per-request fixed state (`ModelConfig.get_state_bytes`) |
 | `UniversalParameterCounter`, `model.facts` (FRD-027), `model.recognise` | weights per mixer, KV per token, the known vocabulary. `model.facts` reads the layer kinds for every config: a `model_type` outside the recogniser is still flagged `architecture: unrecognised`, but which layers hold KV comes from the table, not from that allowlist |
 | BudSimulator `ModelConverter.hf_to_genz` | database models graphed like HF configs |
 
@@ -70,7 +70,7 @@ gguf-py's `Keys` (`gguf/constants.py`).
 | xLSTM (mLSTM) | fixed matrix memory | `qk_dim_factor`, `v_dim_factor`, `num_heads` | xLSTM |
 | RG-LRU | fixed vector + conv | `block_types` (repeating), `lru_width`, `conv1d_width`, `attention_window_size` | RecurrentGemma |
 | FFN-only slot | none | `moe`, `dense`, `mlp` in a layer list; `-` and `E` in `hybrid_override_pattern`. A stack that names such slots gives the FFN its own layer: only those carry one | Nemotron-H |
-| MoE | does not change KV; decides which FFN a layer runs | `mlp_layer_types` (dense / sparse), `moe_layers`, a per-layer expert count, `expert_layer_period`/`expert_layer_offset`, `decoder_sparse_step` + `mlp_only_layers`, `interleave_moe_layer_step`, `moe_layer_start_index`/`moe_layer_end_index`/`moe_layer_interval`, `first_k_dense_replace`/`moe_layer_freq`; a `moe` FFN slot | Mixtral, DeepSeek, Kimi, Jamba, Qwen-MoE, Llama 4, ERNIE |
+| MoE | does not change KV; decides which FFN a layer runs | `mlp_layer_types` (dense / sparse), `moe_layers`, a per-layer expert count, `expert_layer_period`/`expert_layer_offset`, `decoder_sparse_step` + `mlp_only_layers`, `interleave_moe_layer_step`, `moe_layer_start_index`/`moe_layer_end_index`/`moe_layer_interval`, `first_k_dense_replace`/`moe_layer_freq`; a `moe` FFN slot. A dense layer's width when the config names it apart from the experts': `intermediate_size_mlp` (Llama 4), `dense_intermediate_size` (MiniMax-M3), `prefix_dense_intermediate_size` (Cohere2-MoE); otherwise `intermediate_size` | Mixtral, DeepSeek, Kimi, Jamba, Qwen-MoE, Llama 4, ERNIE |
 
 Parallel hybrids (attention and a mixer in the same layer: Falcon-H1, Hymba, Zamba's `hybrid`
 layers) set both axes on that layer: it holds KV *and* a state.
@@ -127,6 +127,14 @@ Under-sizing KV is what OOMs a deployment, so every unknown errs high, and says 
 
 * **An unknown layer-kind name** is charged full-attention KV, the plan is marked `approximate`,
   its `notes` name the kind, and a `UserWarning` is raised. It is never silently treated as free.
+* **Layers named sliding / local whose window the config states under no key the table reads**
+  (`sliding_window`, `sliding_window_size`, `attention_window_size`, `window_size`, or
+  `attention_chunk_size` for chunked layers -- ModernBERT's `local_attention` is not one) are
+  charged full-attention KV, in the table itself (`layer_plan._sliding_bound`), with a note, a
+  warning and the `approximate` flag. They used to stay sliding with no window: the calculator,
+  GenZ and the facts' own KV treated them as full, but the vLLM planner charged a sliding group
+  with no window zero blocks a request. Every such config in the corpus is a ModernBERT-family
+  encoder (back to all-full, as on main).
 * **A per-layer list shorter than the depth** (`layer_types`, `layers_block_type`,
   `hybrid_override_pattern`, `attn_type_list`, `sliding_window_layout`, GPT-Neo's lists): the
   layers it names keep their kinds, the layers it does not reach are charged full-attention KV,
@@ -246,8 +254,12 @@ same table: any window spelling, and `attention_chunk_size` for Llama 4's chunke
 chunked graph a windowed layer reads no context beyond its window (`attention.window_kv_sizes`), an MLA layer reads its one
 latent head (`attention.mla_attention_chunked`), and a recurrent layer holds one state per
 sequence in the chunk however much each has cached (`recurrent.recurrent_chunked`). A dense layer
-of an MoE model (Jamba's even layers, DeepSeek's and Kimi's leading layers) is graphed as one FFN
-of `intermediate_size`, not as the experts.
+of an MoE model (Jamba's even layers, DeepSeek's and Kimi's leading layers, Llama 4's interleaved
+ones) is graphed as one FFN, not as the experts, at the dense width the config names apart from
+the experts' (`layer_plan.dense_ffn_width`: Llama 4's `intermediate_size_mlp`, MiniMax-M3's
+`dense_intermediate_size`, Cohere2-MoE's `prefix_dense_intermediate_size`), else at
+`intermediate_size`. Llama-4-Maverick's 24 dense layers had been graphed at the experts' 8,192
+instead of 16,384: 3.02B parameters short.
 
 Known approximations: the graph's KV memory is the model's (windowed layers bounded by their
 window in every stack), not that of an engine without per-layer KV, which would hold the full
