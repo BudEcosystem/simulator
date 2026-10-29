@@ -279,8 +279,12 @@ The calculator provides detailed breakdown:
   to its ground truth (`tests/fixtures/kv_gate/allowlist.json`; the figures still below truth,
   and why: LAYER_KINDS.md, "What errs low, measured"). The config-class defaults the readers take
   for a key a config leaves out ship with the package (`config_class_defaults.json`, from
-  transformers 5.12), so the figures, and the gate, do not depend on whether or which
-  transformers is installed: a reader that cannot import transformers or torch fails the gate,
+  transformers 5.12), with the layout a class gives a windowed config that states none (Gemma 2's
+  hub config: sliding and full alternating) and a head width a class derives (Zamba's), so the
+  figures, and the gate, do not depend on whether or which transformers is installed; only a
+  model type newer than 5.12, or a class layout no shipped rule reproduces (Qwen2-MoE, Gemma 4),
+  asks the installed transformers, and without it is charged full KV on every layer, an
+  over-estimate. A reader that cannot import transformers or torch fails the gate,
   and only the GGUF reader (`gguf`) and BudSimulator's converter (`requests`, `lxml`,
   `json_repair`) may be reported as not measured where their own dependencies are absent. The
   serving simulator's weights (a `ServingSimulator` run's weight load, the cluster's and
@@ -298,10 +302,16 @@ The calculator provides detailed breakdown:
   the cluster optimizer's quick checks, each holding its decoder-field count to the model's own
   (`genz.serving.memory_model.held_to_the_model`). The harness measures them (`counter_params`,
   `trainmem_*`, `traingenz_params`, `tpar_*`, `creq_*`, `ccb_*`, `copt_quick`, `advtrain_*`,
-  `time_params`), the LoRA buffers and scratch, the max batch and the KV tier planner, and the
-  gate holds them. LoRA adapter buffers (`max_loras`) cover every layer's linear maps, a hybrid's
-  recurrent and linear-attention layers among them (`mixer_params.recurrent_mixer_linears`), as
-  vLLM wraps every linear layer. A class that ties its head whatever the config says (transformers 5.12's T5 family) is
+  `time_params`, and `tmodel_*`: training_modeling's per-GPU total, weights and activations, which
+  count an encoder-decoder's encoder layers in their LoRA adapters and activations,
+  `memory_model.trained_layers`), the LoRA buffers and scratch, the max batch and the KV tier
+  planner, and the gate holds them. LoRA adapter buffers (`max_loras`) cover every layer's linear
+  maps, a hybrid's recurrent and linear-attention layers among them
+  (`mixer_params.recurrent_mixer_linears`), as vLLM wraps every linear layer; the FRD-027 vLLM
+  planner's reservation (`lora.max_adapters`) is A and B over the (in + out) of every linear map
+  the model's layers hold (`ModelFacts.lora_linear_features`: attention, cross-attention and mixer
+  maps, the FFN's, every expert's and router's, an encoder-decoder's encoder), measured as
+  `vllm_lora_gb` and `vllm_limits_lora` and held to vLLM's floor. A class that ties its head whatever the config says (transformers 5.12's T5 family) is
   read untied where the config leaves the flag out, as its checkpoints hold it.
 - **Activation Memory**: Intermediate activations during forward pass
 - **State Memory**: the fixed per-sequence state of recurrent layers (Gated DeltaNet, Mamba,

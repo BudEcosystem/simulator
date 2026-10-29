@@ -314,9 +314,13 @@ activation and tied-embedding flags at the config class's defaults where a confi
 (Llama 4's "silu" and untied head). Those defaults ship with the package
 (`src/llm_memory_calculator/config_class_defaults.json`, written from transformers 5.12's 642
 config classes by `scripts/config_class_defaults.py`; `layer_plan.CLASS_DEFAULT_KEYS` names every
-key a reader asks for), so every figure is the same whether transformers is installed, absent, or
-a release that predates the class (4.50 has no Llama 4 or Nemotron-H); the installed transformers
-is asked only about a model type the snapshot does not hold. Read from the installed release
+key a reader asks for), and so do the layout a class gives a windowed config that states none
+(`layouts`) and a head width a class derives under another name (`head_dims`; "Geometry a config
+leaves to its config class", below), so every figure is the same whether transformers is
+installed, absent, or a release that predates the class (4.50 has no Llama 4 or Nemotron-H). The
+installed transformers is asked only about a model type the snapshot does not hold, or a layout
+no shipped rule reproduces; without it such a config is charged full KV on every layer, an
+over-estimate ("What is conservative"). Read from the installed release
 alone, a machine without transformers counted Mllama's tower without its global layers and a
 tied head on RWKV and Llama 4 -- weights below origin/main's and below the model's own count. A
 query / key norm is read under every spelling (`layer_plan.QK_NORM_KEYS`: `qk_norm`,
@@ -420,6 +424,36 @@ FRD-027 facts, the parameter counter, the tower and adapter readers (`stack_para
 them the calculator, GenZ's loader, BudSimulator's converter and every planner. The figures are
 the same with transformers 5.12, an older release or none installed.
 
+Two things a class derives rather than states ship as rules, each checked by
+`scripts/config_class_defaults.py` against the class at several depths, windows, widths and
+switches before it is written:
+
+* **The layout of a windowed config that states none** (`layouts`, read by
+  `layer_plan.class_layout_names` for `stated_layer_types`): `none` -- the class derives no
+  per-layer list, so the window is on every layer unless the config's `max_window_layers` says
+  otherwise (Mistral; 576 classes) --, `period` -- layer i is `names[i % len(names)]` (Gemma 2's
+  sliding, full; Gemma 3's five sliding and a full; Cohere 2's, OLMo 3's; 41 classes) --, or
+  `max_window_layers` -- the window from that layer on, the class's own default where the config
+  states none (Qwen2 and Qwen3: 28; 6 classes). A class with a `use_sliding_window` switch records
+  its default (`switch`): a config that leaves the switch to a class whose default is off builds
+  every layer full, whatever window it states (the synthetic Qwen2 that leaves its depth to the
+  class, Qwen2-Audio's `text_config`). Read from the installed class alone, the Gemma 2 hub config
+  (a 4,096 window, no layout) had all 42 layers full without transformers or with 4.50, and the
+  branch's own planner test failed outside a 5.12 environment. A class whose layout no rule
+  reproduces is left to the installed transformers: Qwen2-MoE (a period and `max_window_layers`
+  together), Gemma 4 and DiffusionGemma (whose last layer follows a key the rule does not read),
+  DeepSeek-V4, Zamba, Nemotron-H; with none installed such a config is charged full KV on every
+  layer.
+* **A head width the class derives from its width under another name** (`head_dims`: ZambaConfig
+  and Zamba2Config's `attention_head_dim = 2 x hidden_size / heads`, their attention reading the
+  hidden state concatenated with the embeddings), read by `layer_plan.attention_head_dim` for a
+  config that states neither the width nor its name: without transformers such a Zamba config had
+  been sized at hidden / heads, half its KV.
+
+Over every corpus config that reaches the layout lookup (a window and no layout), the shipped rule
+gives transformers 5.12's own list (`tests/test_lora_reservation_training_memory_and_class_layouts.py`
+checks every rule against the 5.12 classes at depths and windows the writer did not use).
+
 The towers and adapters this reaches are read at their own geometry, by the config's keys:
 
 * **A hierarchical tower that states its stages** under `embed_dim` as a list (transformers 5.12's
@@ -501,6 +535,25 @@ counted an encoder-decoder as its decoder alone:
   larger; never lowered): whisper-large-v3 30.03 GB (floor 23.77 with the estimator's 10 %
   overhead), and no single 20 GB option. The parallelization estimate also counts an
   encoder-decoder's encoder layers in its LoRA adapters and its activations.
+* GenZ's `training_modeling` memory (`memory_per_gpu_gb`, `weight_memory_gb`,
+  `activation_memory_gb`: what `get_best_training_parallelization`, the cluster ranker, the
+  cluster optimizer, the scale optimizer, the cluster requirements, the node selector and the
+  comprehensive config builder decide fit by) charged LoRA adapters (`_calculate_trainable_params`)
+  and activations (`_calculate_activation_memory`) to the decoder layers alone (round 17):
+  whisper-large-v3's 32 encoder layers had neither. Both training paths now count the layers a step
+  runs through with one helper, `memory_model.trained_layers` (the decoder's and an
+  encoder-decoder's encoder's): whisper-large-v3's activations 0.231 -> 0.399 GB (at least one
+  2,048 x 1,280 x 2 B checkpoint a layer, 64 layers: 0.336), its LoRA gradients for 64 layers'
+  adapters. Its parameter count (`training_parameter_counts`) sized every routed expert at the
+  dense `intermediate_size`; the experts are now counted at their own width
+  (`moe_intermediate_size`): SmallThinker-21BA3B's 64 experts of 768 had counted 283.5B of its
+  21.5B, and training_modeling put 4.7 TB on one GPU (still held to the model's own count).
+  Brought down to the model's own count, the count showed what the facts' count left out: the gate
+  that scales a shared expert's output (Linear(h, 1) a MoE layer, which Qwen2-MoE, Qwen3-Next and
+  Qwen3.5-MoE build and no key states; counted for every shared expert, a family that builds none
+  over-counted by h a layer) and Q / K / V biases a class builds by default (Qwen2MoeConfig's
+  `qkv_bias`): Qwen1.5-MoE-A2.7B's facts 14,315,589,024 -> 14,315,834,784 against transformers'
+  14,315,784,192, Qwen3-Next-80B 79,674,317,568 -> 79,674,415,872 (79,674,391,296).
 
 `scripts/kv_corpus.py` measures them for every row (`counter_params`, `trainmem_weight_gb`,
 `trainmem_total_gb` -- full fine-tuning, AdamW, bf16, one 2,048-token sequence -- and
@@ -508,12 +561,15 @@ counted an encoder-decoder as its decoder alone:
 `creq_gb` -- the per-GPU breakdown and the minimum cluster memory --, `ccb_params_b`,
 `copt_quick` -- parameters, the quick check's GB a GPU, the filter's weights a GPU on eight --,
 `advtrain_full` / `advtrain_lora` -- weights and total --, `time_params` and the KV planner's
-`kvcost_active_params`), and the gate holds them: the counts to every parameter, the trainer's
+`kvcost_active_params`; and since round 17 `tmodel_full` / `tmodel_lora` -- training_modeling's
+per-GPU total, weights and activations, one A100-80GB --), and the gate holds them: the counts to every parameter, the trainer's
 weights to 6 B a parameter (bf16 and its fp32 master copy) and its total to 18 B (with fp32
 gradients and AdamW's two moments; activations on top), the estimators' per-GPU and cluster
 memory to 14 B a parameter (bf16 weights, fp32 gradients, AdamW's moments; the parallelization
-estimate with its own 10 % overhead), LoRA training's frozen weights to 2 B, and the options a
-cluster admits by the estimate they are sized from.
+estimate with its own 10 % overhead; training_modeling's total under full fine-tuning), LoRA
+training's frozen weights to 2 B (training_modeling's weights to 2 B under both methods), the
+activations to one layer-boundary checkpoint a decoder layer (2,048 tokens x its width x 2 B), and
+the options a cluster admits by the estimate they are sized from.
 
 ## LoRA buffers
 
@@ -536,6 +592,31 @@ in_proj, 16,384 wide, over its 14,336-wide FFN). A stated null FFN width (GPT-Ne
 raised. The harness measures the adapters and the scratch (`lora_adapter_gb`, `lora_scratch_gb`)
 and the gate holds the adapters to the floor `kv_truth` reads off transformers' modules: rank x
 adapters x 2 B over (in + out) of every `nn.Linear` of the decoder layers, routed experts left out.
+
+The FRD-027 vLLM planner reserves the same slots in the weights whenever `lora.max_adapters` is
+set (`engine.vllm._lora_bytes`; the legacy `Lora` runtime module sets it for every record that
+supports LoRA). It had summed the out-dims of three weight roles (`attention`, `dense_ffn`,
+`shared_expert`) and 4 x hidden a layer for the in-dims; once the facts' roles were read right --
+an encoder-decoder's encoder under `encoder`, a MoE FFN under `expert`, the real FFN widths, the
+decoder layers alone in `layers.total` -- that left out the FFN in-dims, the encoder, the experts
+and every mixer map, and 52 corpus configs fell below origin/main's reservation, about 45 below
+vLLM's floor (whisper-large-v3 0.126 GB against 0.136, flan-T5-xl 0.123 against 0.167, LFM2-2.6B
+0.184 against 0.196; the KV it cost whisper-large-v3 48 blocks where origin/main charged 72, now
+98). The
+facts now state the (in + out) features of every linear map the model's layers hold
+(`ModelFacts.lora_linear_features`, from the same shapes the weights are counted from: each
+attention layer's maps -- MLA's down- and up-projections, a query-width output gate --, each
+recurrent layer's mixer maps by the same dispatch as its weights (`mixer_params.*_linears`), the
+dense FFN's, every routed and shared expert's and the router's, an encoder-decoder's
+cross-attention and its encoder at its own geometry (`stack_params.encoder_linear_features`)),
+and the reservation is A and B over them: a dense decoder's figure is vLLM's floor exactly
+(LLaVA-1.5 0.320 GB, Idefics2 0.336, Mllama 0.419), a hybrid's above it (Falcon-H1-34B 1.246
+against 1.199, LFM2-2.6B 0.202 against 0.196). Two parts are charged that the floor leaves out,
+the safe way: the encoder (whisper-large-v3 0.257 GB) and the routed experts, which vLLM's
+fused-MoE LoRA wraps one by one (an engine that does not wrap them is over-counted). The harness
+measures the reservation and the limits it leaves (`vllm_lora_gb`, `vllm_limits_lora`: blocks,
+tokens, sequences at 4 adapters of rank 16); the gate holds the reservation to the same floor and
+the limits by the figures they are sized from.
 
 ## The KV tier planner and the max batch
 
@@ -587,12 +668,15 @@ the gate holds below its ground truth and why):
   not know** is likewise charged full KV on every layer, with a note and a warning. Clamping every
   layer to the window -- what the uniform path used to do for every such config -- under-counts
   any model that alternates (the original Gemma 2 hub config is exactly that shape: 8x low at
-  32k tokens). A known type takes its config class's layout, as above. That lookup reads the
-  installed `transformers` (BudSimulator requires it; the calculator package alone does not):
-  without it, with a release that predates the model type, or with a release before 4.53 (the
-  first whose config classes derive `layer_types`: 4.50's `Gemma2Config` states none though
-  Gemma 2 alternates), such a config -- Mistral v0.1's included -- is charged full KV on every
-  layer with the same warning, an over-estimate. Config classes gained `layer_types` in different
+  32k tokens). A known type takes its config class's layout, as above, from the rule the package
+  ships for it (`config_class_defaults.json`'s `layouts`: transformers 5.12's classes), whatever
+  transformers is installed. Only a type the snapshot holds no rule for (a type newer than 5.12,
+  or a class whose layout no rule reproduces: Qwen2-MoE, Gemma 4, DeepSeek-V4, Zamba, Nemotron-H)
+  reads the installed `transformers` (BudSimulator requires it; the calculator package alone does
+  not): without it, with a release that predates the model type, or with a release before 4.53
+  (the first whose config classes derive `layer_types`: 4.50's `Gemma2Config` states none though
+  Gemma 2 alternates), such a config is charged full KV on every layer with the same warning, an
+  over-estimate. Config classes gained `layer_types` in different
   releases after 4.53 (4.53's `Qwen2MoeConfig` has none, while its modelling windows only layers
   >= `max_window_layers`), so a class that states none makes the window uniform only when the
   config states no `max_window_layers`. That key only ever takes the window off layers, so a
@@ -739,7 +823,9 @@ these, stated rather than hidden:
   experts (3,360.9M of 54,500.6M), the hub mT5 that leaves its flags to the class (247.5M of
   300.2M; origin/main 153.1M). The training and serving readers count these models whole.
 * **Attention biases a class builds and no config key states** (Qwen1.5 / 2 / 2.5's Q / K / V
-  biases) are in neither the facts' nor the counter's count, on origin/main as here: Qwen2.5-7B
+  biases, which Qwen2Config states no flag for) are in neither the facts' nor the counter's count,
+  on origin/main as here (a class that states its default -- Qwen2MoeConfig's `qkv_bias`, GLM-4's,
+  GPT-NeoX's `attention_bias` -- is read since round 17, `layer_plan.attention_bias`): Qwen2.5-7B
   15,230,974,976 B of 15,231,233,024 (2 parts in 100,000), and the synthetic Qwen2 that leaves its
   depth to the class 11,066.9M of 11,067.3M.
 * **The calculator's LoRA buffers** (`lora_adapter_gb`, round 16), on origin/main as here: a MoE
@@ -805,8 +891,8 @@ layers of 2,048, the LFM2.5-Audio detokenizers' 3 of 512). The serving path's we
 2 B, and its concurrency (`cluster_b_eff_4096`, `disagg_b_eff_4096`) by the weights, the KV a token
 and the fixed bytes a request it is sized from.
 
-The gate needs no transformers or torch: the figures read the shipped class defaults (above) and
-the allowlist's truths are committed. Two readers have third-party dependencies of their own
+The gate needs no transformers or torch: the figures read the shipped class defaults, layouts
+and head widths (above) and the allowlist's truths are committed. Two readers have third-party dependencies of their own
 (`kv_corpus.READER_DEPENDENCIES`): the GGUF reader needs `gguf`, and BudSimulator's converter
 imports BudSimulator's database package, which needs `requests`, `lxml` and `json_repair`. Where
 one of those is not installed, that reader cannot run at all: its figures are reported as not
