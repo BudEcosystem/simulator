@@ -37,6 +37,9 @@ import warnings
 #: `key_proj` / `value_proj`).
 _K_NAMES = ("k_proj", "key", "k", "wk", "k_lin", "key_proj")
 _V_NAMES = ("v_proj", "value", "v", "wv", "v_lin", "value_proj")
+#: Query projection names: beside a fused projection, they make it K and V alone (GPT-2's
+#: cross-attention `q_attn` beside `c_attn`).
+_Q_NAMES = ("q_proj", "query", "q", "wq", "q_lin", "query_proj", "q_attn")
 #: Fused projections: (name, which parts it holds).
 _FUSED = {"qkv_proj": "qkv", "c_attn": "qkv", "query_key_value": "qkv", "Wqkv": "qkv",
           "qkv": "qkv", "in_proj": None, "kv_proj": "kv", "wkv": "kv"}
@@ -78,6 +81,49 @@ def _linear_out(mod):
     if type(mod).__name__ == "Conv1D":  # GPT-2: weight is (in, out)
         return int(w.shape[1])
     return int(w.shape[0])
+
+
+def _linear_dims(mod):
+    """``(in, out)`` of a linear map -- `nn.Linear`, or transformers' GPT-2 `Conv1D`, whose weight
+    is stored (in, out) -- or None for any other module. vLLM wraps both with LoRA."""
+    import torch
+
+    w = getattr(mod, "weight", None)
+    if w is None or w.dim() != 2:
+        return None
+    if isinstance(mod, torch.nn.Linear):
+        return int(mod.in_features), int(mod.out_features)
+    if type(mod).__name__ == "Conv1D":
+        return int(w.shape[0]), int(w.shape[1])
+    return None
+
+
+def _linear_maps(layer, cross=True):
+    """``(path, in, out)`` for every linear map of a layer, routed experts left out (and, with
+    ``cross`` False, a cross-attention's)."""
+    out = []
+    parents = {path: type(mod).__name__.lower() for path, mod in layer.named_modules()}
+    for path, mod in layer.named_modules():
+        if "experts" in path.split("."):
+            continue
+        if not cross and _is_cross(path, parents.get(path.rsplit(".", 1)[0] if "." in path
+                                                     else "", "")):
+            continue
+        dims = _linear_dims(mod)
+        if dims is not None:
+            out.append((path,) + dims)
+    return out
+
+
+def _layer_live_elements(layer, width):
+    """Elements a token holds live while one layer's backward runs (layer-checkpointed training,
+    FlashAttention: no score matrix), read off the layer's own maps: the output of every linear
+    map of its self-attention and FFN except those that return a wider input to the residual
+    stream (a down / output projection: its input is another map's output, already counted) --
+    Q, K, V and O, a gated FFN's gate and up. Routed experts and cross-attention are left out:
+    a floor."""
+    return sum(o for path, i, o in _linear_maps(layer, cross=False)
+               if not (o == width and i != width))
 
 
 def _layer_kv_width(layer, heads_width):
@@ -124,19 +170,30 @@ def _is_cross(path, parent):
 
 def _layer_cross_kv_width(layer):
     """K + V elements one encoder token adds to this layer's cross-attention cache (its K / V
-    projections of the encoder's output), 0 for a layer without one."""
+    projections of the encoder's output), 0 for a layer without one. A fused projection beside a
+    query projection of its own holds K and V alone (GPT-2's cross-attention: `c_attn` is
+    Conv1D(h, 2h), the queries `q_attn`); a fused Q / K / V without one holds a third queries."""
     width = 0
     parents = {path: type(mod).__name__.lower() for path, mod in layer.named_modules()}
+    leaves = {}
+    for path, mod in layer.named_modules():
+        parent = parents.get(path.rsplit(".", 1)[0] if "." in path else "", "")
+        if _is_cross(path, parent):
+            leaves.setdefault(path.rsplit(".", 1)[0] if "." in path else "", set()).add(
+                path.split(".")[-1])
     for path, mod in layer.named_modules():
         parent = parents.get(path.rsplit(".", 1)[0] if "." in path else "", "")
         if not _is_cross(path, parent):
             continue
         leaf = path.split(".")[-1]
         out = _linear_out(mod)
-        if out is not None and (leaf in _K_NAMES or leaf in _V_NAMES):
+        if out is None:
+            continue
+        if leaf in _K_NAMES or leaf in _V_NAMES or _FUSED.get(leaf) == "kv":
             width += out
-        elif out is not None and _FUSED.get(leaf) == "kv":
-            width += out
+        elif _FUSED.get(leaf) == "qkv":
+            siblings = leaves.get(path.rsplit(".", 1)[0] if "." in path else "", set())
+            width += out if siblings & set(_Q_NAMES) else out * 2 // 3
     return width
 
 
@@ -197,6 +254,45 @@ def _decoder_layers(model, n, decoder_only=False):
     plain = [p for p in found if "encoder" not in p.lower()]
     path = min(dec or plain or found, key=len)
     return dict(model.named_modules())[path]
+
+
+def _encoder_stack(model, cfg):
+    """``(layers, width, tokens)`` of an encoder-decoder's encoder: its layer list, its width, and
+    -- for an encoder that reads a fixed-size input (an image, audio features: its
+    `main_input_name` is not token ids) -- the tokens it emits, from its own position table (ViT's
+    197 patches and class token, Whisper's 1,500 frames). ``(None, 0, None)`` for a decoder-only
+    model; tokens None for a text encoder (its length is the input's)."""
+    import torch
+
+    if not getattr(cfg, "is_encoder_decoder", False):
+        return None, 0, None
+    try:
+        enc = model.get_encoder()
+    except Exception:  # noqa: BLE001
+        return None, 0, None
+    if enc is None or enc is model:
+        return None, 0, None
+    layers = None
+    for path, mod in enc.named_modules():
+        if isinstance(mod, torch.nn.ModuleList) and len(mod) and len(list(mod[0].children())):
+            if layers is None or len(mod) > len(layers):
+                layers = mod
+    if layers is None:
+        return None, 0, None
+    ecfg = getattr(enc, "config", None)
+    width = int(getattr(ecfg, "hidden_size", 0) or getattr(ecfg, "d_model", 0) or 0)
+    if not width:
+        dims = [i for layer in layers for _, i, _ in _linear_maps(layer)]
+        width = max(set(dims), key=dims.count) if dims else 0
+    tokens = None
+    if getattr(enc, "main_input_name", "input_ids") != "input_ids":
+        for path, p in enc.named_parameters():
+            low = path.lower()
+            if "position" in low and "relative" not in low and "bias" not in low \
+                    and p.dim() in (2, 3):
+                tokens = int(p.shape[-2])
+                break
+    return layers, width, tokens
 
 
 def _untied_head(cfg_dict, cfg, model):
@@ -327,17 +423,28 @@ def truth_profile(cfg_dict):
             # a floor, since vLLM also wraps the experts and a merged module's every slice
             out["routed_experts"] = any("experts" in path.split(".") for layer in layers
                                         for path, _ in layer.named_modules())
-            out["lora_widest_out"] = int(max((
-                int(m.out_features) for layer in layers for path, m in layer.named_modules()
-                if isinstance(m, torch.nn.Linear) and "experts" not in path.split(".")),
-                default=0))
-            # the activations a layer-checkpointed step keeps at least: one input a decoder layer
-            out["activation_floor_elements"] = int(len(layers) * int(
-                getattr(tc, "hidden_size", 0) or getattr(tc, "d_model", 0) or 0)) or None
-            out["lora_linear_features"] = int(sum(
-                int(m.in_features) + int(m.out_features)
-                for layer in layers for path, m in layer.named_modules()
-                if isinstance(m, torch.nn.Linear) and "experts" not in path.split(".")))
+            # every linear map: `nn.Linear` and GPT-2's `Conv1D` alike
+            maps = [m for layer in layers for m in _linear_maps(layer)]
+            out["lora_widest_out"] = int(max((o for _, _, o in maps), default=0))
+            out["lora_linear_features"] = int(sum(i + o for _, i, o in maps))
+            # the activations a layer-checkpointed step of 2,048 tokens keeps at least: one input
+            # a layer of every stack the step runs through (an encoder-decoder's encoder too, at
+            # its own length), and one layer's live tensors during its recompute
+            width = int(getattr(tc, "hidden_size", 0) or getattr(tc, "d_model", 0) or 0)
+            enc_layers, enc_width, enc_tokens = _encoder_stack(model, cfg)
+            if width:
+                live = max((_layer_live_elements(layer, width) for layer in layers), default=0)
+                elements = 2048 * (len(layers) * width + live)
+                if enc_layers is not None:
+                    toks = enc_tokens or 2048
+                    live_enc = max((_layer_live_elements(layer, enc_width) for layer in enc_layers),
+                                   default=0)
+                    elements += toks * len(enc_layers) * enc_width
+                    elements = max(elements, elements - 2048 * live + toks * live_enc)
+                out["activation_floor_elements_2048"] = int(elements)
+            if enc_tokens and "encoder_tokens" not in out:
+                out["encoder_tokens"] = int(enc_tokens)
+                out["encoder_tokens_source"] = "the encoder's own position table (transformers 5.12)"
         if layers is not None:
             # what a sequence holds whatever its length: each layer's recurrent state, and the
             # K / V each encoder token adds to the decoder's cross-attention caches
@@ -493,6 +600,17 @@ def _fixed_bytes(profile, cross):
     return state + 2 * cross_kv * int(profile["encoder_tokens"])
 
 
+def _activation_floor_gb(p):
+    """The activation truth of a 2,048-token layer-checkpointed step (``truth_profile``'s
+    ``activation_floor_elements_2048``; a hand profile's ``activation_floor_elements``, one input
+    a decoder layer, as written), 2 B an element, GB."""
+    if p.get("activation_floor_elements_2048"):
+        return 2 * p["activation_floor_elements_2048"] / 1e9
+    if p.get("activation_floor_elements"):
+        return 2 * 2048 * p["activation_floor_elements"] / 1e9
+    return None
+
+
 #: The fixed per-sequence figures that carry a fixed-length encoder's cross-attention cache.
 STATE_WITH_CROSS = r"^(serving_state_bytes|conv_state_bytes|vllm_limits\[5\])$"
 
@@ -583,8 +701,14 @@ def figure_truth(profile, reader, row=None):
          "the model's weights (GB)"),
         # the training estimators that size a model before any simulation (full fine-tuning,
         # bf16, AdamW): weights 2 B, fp32 gradients 4 B, AdamW's two fp32 moments 8 B a parameter
-        (r"^(creq_params|copt_quick\[0\]|time_params)$", lambda: params,
+        (r"^(creq_params|copt_quick\[0\]|time_params|amc_params|topt_params)$", lambda: params,
          "the model's parameters"),
+        # get_minimum_hardware_for_model: LoRA holds the frozen bf16 weights (2 B a parameter),
+        # full fine-tuning the weights, fp32 gradients and AdamW's two fp32 moments (14 B)
+        (r"^minhw_lora_gb$", lambda: None if params is None else 2 * params / 1e9,
+         "the frozen bf16 weights (2 B a parameter, GB)"),
+        (r"^minhw_full_gb$", lambda: None if params is None else 14 * params / 1e9,
+         "bf16 weights, fp32 gradients and AdamW's two fp32 moments (14 B a parameter, GB)"),
         (r"^ccb_params_b$", lambda: _scaled(params, 1e9), "the model's parameters (billions)"),
         # the KV planner's recompute cost: every parameter runs for a token of a model without
         # routed experts (an MoE model's active share is not read off the module tree)
@@ -600,9 +724,10 @@ def figure_truth(profile, reader, row=None):
         (r"^(tmodel_full\[1\]|tmodel_lora\[[01]\])$",
          lambda: None if params is None else 2 * params / 1e9,
          "the bf16 weights (2 B a parameter, GB)"),
-        (r"^tmodel_(full|lora)\[2\]$", lambda: None if not p.get("activation_floor_elements")
-         else 2 * 2048 * p["activation_floor_elements"] / 1e9,
-         "one layer-boundary checkpoint a decoder layer: 2,048 tokens x its width x 2 B (GB)"),
+        (r"^tmodel_(full|lora)\[2\]$", lambda: _activation_floor_gb(p),
+         "a layer-checkpointed step of 2,048 tokens: one input a layer of every stack it runs"
+         " through (an encoder-decoder's encoder at its own length) and one layer's live tensors"
+         " -- its self-attention and FFN maps' outputs -- during the recompute, 2 B (GB)"),
         (r"^tpar_mem_gb$", lambda: None if params is None else 14 * 1.1 * params / 1e9,
          "bf16 weights, fp32 gradients and AdamW's two fp32 moments (14 B a parameter), with the"
          " estimator's own 10% overhead, before activations (GB)"),
@@ -762,8 +887,9 @@ def allowlist_from(main_rows, branch_rows, configs, manual, causes):
             unstated = profile(name).get("unstated") or {}
             if unstated and re.match(unstated.get("readers", "$^"), reader):
                 # modules the checkpoint holds that no config key describes: the figure may sit
-                # that many parameters (at 2 B) below the truth, named in the entry
-                e["unstated"] = 2 * int(unstated["params"])
+                # that many parameters (at 2 B, for a figure in bytes) below the truth, named in
+                # the entry
+                e["unstated"] = (1 if reader.endswith("params") else 2) * int(unstated["params"])
                 e["unstated_source"] = unstated["source"]
             if re.match(GRAPH_WEIGHTS, reader):
                 # the truth is the matrices; a few small ones have no GenZ operator (T5's

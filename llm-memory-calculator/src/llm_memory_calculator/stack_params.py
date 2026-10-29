@@ -41,6 +41,12 @@ def _gated(view: Dict[str, Any]) -> bool:
     return any(a in act for a in _GATED_ACTIVATIONS)
 
 
+def ffn_is_gated(view: Dict[str, Any]) -> bool:
+    """Whether a stack's FFN is gated (gate, up and down): the config's own statement, else its
+    family's modelling, else its activation's name -- the reading every weight counter uses."""
+    return _gated(view)
+
+
 #: Spellings a tower or stack states its FFN width under.
 _FFN_WIDTH_KEYS = ("intermediate_size", "d_ff", "ffn_dim", "encoder_ffn_dim", "mlp_dim")
 

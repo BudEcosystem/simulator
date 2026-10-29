@@ -1480,14 +1480,49 @@ def class_layout_names(rule: Dict[str, Any], tc: Dict[str, Any]) -> Optional[Lis
     return None
 
 
+def _json_same(a: Any, b: Any) -> bool:
+    """Equal as JSON values (``True`` is not ``1``, ``4.0`` is not ``4``)."""
+    import json
+
+    try:
+        return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+    except Exception:
+        return False
+
+
+def layout_rule_applies(rule: Dict[str, Any], tc: Dict[str, Any]) -> bool:
+    """Whether a shipped layout rule holds for this config: every key the class builds its layout
+    from besides the depth, the window and its switch (the rule's ``depends``, found by
+    ``scripts/config_class_defaults.py`` by building the class at other values) is left out or
+    stated at a value the rule was checked at -- the class's default, the value it stores, or a
+    per-layer list repeating the ``period`` the class derives. A config that states another value
+    (AfmoeConfig's `global_attn_every_n_layers: 2`, a Llama 4 `no_rope_layer_interval`, a Qwen2-VL
+    `max_window_layers` under the window, LFM2's `full_attn_idxs`) gets a layout the rule does not
+    describe: the class is asked, and without it every windowed layer is charged full."""
+    n = depth(tc)
+    for key, entry in (rule.get("depends") or {}).items():
+        if key not in tc:
+            continue
+        value = tc[key]
+        if any(_json_same(value, v) for v in entry.get("values") or ()):
+            continue
+        unit = entry.get("period")
+        if unit and isinstance(value, (list, tuple)) and n and len(value) == n and \
+                _json_same(list(value), [unit[i % len(unit)] for i in range(n)]):
+            continue
+        return False
+    return True
+
+
 def _snapshot_layer_types(tc: Dict[str, Any]):
     """``(True, names)`` from the shipped snapshot's layout rule for the config's model type
     (``class_layout_names``), or None when the snapshot holds no rule for it -- a model type
     transformers 5.12 does not know, or a class whose layout no rule reproduces (Qwen2-MoE's,
-    which mixes a period with `max_window_layers`; Zamba's): the installed transformers is
-    asked then."""
+    which mixes a period with `max_window_layers`; Zamba's) -- or the config states a key the
+    class builds its layout from at a value the rule was not checked at
+    (``layout_rule_applies``): the installed transformers is asked then."""
     rule = (_class_default_snapshot().get("layouts") or {}).get(str(tc.get("model_type") or ""))
-    if not isinstance(rule, dict):
+    if not isinstance(rule, dict) or not layout_rule_applies(rule, tc):
         return None
     return True, class_layout_names(rule, tc)
 
@@ -1536,7 +1571,11 @@ def _config_class_layer_types(tc: Dict[str, Any]):
         drop = {"model_type", "transformers_version", "architectures", "auto_map", "text_config",
                 "vision_config", "audio_config"}
         whole = {k: v for k, v in tc.items() if k not in drop and not k.startswith("_")}
-        reduced = {k: whole[k] for k in _LAYOUT_KEYS if k in whole}
+        # the reduced retry keeps every key the class builds its layout from (the shipped rule's
+        # ``depends``): without them it would answer for the class's defaults
+        rule = (_class_default_snapshot().get("layouts") or {}).get(mt)
+        keys = set(_LAYOUT_KEYS) | set((rule or {}).get("depends") or ())
+        reduced = {k: whole[k] for k in keys if k in whole}
         tf_log = logging.getLogger("transformers")
         level = tf_log.level
         tf_log.setLevel(logging.ERROR)
@@ -2313,6 +2352,26 @@ def layer_kinds(config: Dict[str, Any]) -> Dict[str, Any]:
         "notes": notes,
         "mechanisms": [],
     }
+
+
+def placed_mixers(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The hybrid plan (``resolve_layer_plan``), else -- for a stack whose layer kinds come from
+    its stated names or its config class (``layer_kinds``: LFM2 with a window and
+    `full_attn_idxs`, whose class builds the other layers as short convolutions) -- the same
+    axes as a plan: ``attn``, ``recurrent``, ``num_attention_param_layers`` and
+    ``num_recurrent_layers``. None for a stack with no recurrent layer the kinds place. A
+    reader that sizes each layer's mixer (the LoRA buffers) reads the layers here, so a layout the
+    plan does not read is not taken for attention on some layers and nothing on the rest."""
+    plan = resolve_layer_plan(config)
+    if plan is not None:
+        return plan
+    kinds = layer_kinds(config)
+    recurrent = kinds.get("recurrent") or []
+    if not any(recurrent):
+        return None
+    return {"attn": kinds["attn"], "recurrent": recurrent,
+            "num_attention_param_layers": sum(1 for a in kinds["attn"] if a is not None),
+            "num_recurrent_layers": sum(1 for r in recurrent if r)}
 
 
 def _sliding_bound(attn: List[Optional[str]], tc: Dict[str, Any], chunked: bool,

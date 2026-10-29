@@ -97,6 +97,40 @@ def trained_layers(model_config) -> int:
     return decoder + int(getattr(model_config, "num_encoder_layers", 0) or 0)
 
 
+def activation_shape(model_config) -> Dict[str, int]:
+    """What the activations of a training step are sized from beyond a ModelConfig's decoder
+    fields, read from the config it was built from: ``mixer_live`` -- the widest decoder layer's
+    attention or mixer outputs a token (``ModelFacts.mixer_live_width``: a query-width output gate,
+    Gated DeltaNet's projections, MLA's up-projections) -- and an encoder-decoder's encoder at its
+    own geometry (``encoder_width``, ``encoder_ffn``: layer_plan.encoder_view), whose layers the
+    decoder's width under-sized (Pix2Struct's 1,536-wide image encoder beside its 1,024-wide
+    decoder). Empty for a ModelConfig with no config to read."""
+    cfg = getattr(model_config, "source_config", None)
+    if not isinstance(cfg, dict):
+        return {}
+    out: Dict[str, int] = {}
+    try:
+        from ...model.facts import ModelFacts
+
+        out["mixer_live"] = int(ModelFacts.from_config(dict(cfg)).mixer_live_width or 0)
+    except Exception:  # noqa: BLE001 - a config the facts cannot read keeps the fields' shape
+        pass
+    try:
+        from ...layer_plan import encoder_view, ffn_width
+
+        enc = encoder_view(dict(cfg))
+        if isinstance(enc, dict):
+            width = enc.get("hidden_size")
+            if isinstance(width, int) and not isinstance(width, bool) and width > 0:
+                out["encoder_width"] = int(width)
+                ffn = ffn_width(enc)
+                if isinstance(ffn, int) and ffn > 0:
+                    out["encoder_ffn"] = int(ffn)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 def config_parameters_held_to_the_model(model, fields_total: int) -> int:
     """``held_to_the_model`` for a caller holding a model id, a HuggingFace config dict or a
     ModelConfig: read through ``get_configs`` (a dict that is no model config it can read keeps

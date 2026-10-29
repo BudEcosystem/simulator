@@ -147,7 +147,10 @@ def test_scratch_dwarfs_adapter_storage():
     )
     storage = report.lora_adapter_memory_bytes / GIB
     scratch = report.lora_prefill_scratch_bytes / GIB
-    assert storage == pytest.approx(0.22, abs=0.05)
+    # 0.22 until round 18 read Qwen3's FFN as gated by its family (the config states no
+    # activation; Qwen3 builds gate, up and down, and vLLM wraps all three): 0.27 GiB, under the
+    # 0.30 GiB floor of every map's (in + out) at the hidden width the calculator charges Q / O at
+    assert storage == pytest.approx(0.27, abs=0.05)
     # 16.77 was the original anon-based figure; the architecture-aware term scales the
     # 0.6B by its measured multiplier (1.136), giving 19.05. The point of this test is
     # the ratio, not the absolute -- storage is ~1% of scratch either way.

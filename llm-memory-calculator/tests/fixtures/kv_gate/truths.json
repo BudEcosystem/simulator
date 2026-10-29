@@ -816,7 +816,7 @@
    "source": "transformers 5.12 VoxtralRealtimeForConditionalGeneration",
    "unstated": {
     "params": 5111808,
-    "readers": "^(serving_weight_bytes|conv_serving_weight_bytes)$",
+    "readers": "^(serving_weight_bytes|conv_serving_weight_bytes|amc_params|topt_params)$",
     "source": "transformers 5.12 builds 26 x VoxtralRealtimeTextAdaRmsNorm (Linear(3,072, 32) and Linear(32, 3,072): 196,608 each, 5,111,808) at a width of 32 written in modeling_voxtral_realtime.py, in no config key (the checkpoint's `layers.#.ada_rms_norm_t_cond`); every other module is counted, its audio tower, convolutional front end and two-matrix projector among them (4,424,886,272 of 4,429,679,360)"
    }
   },

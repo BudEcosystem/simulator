@@ -3583,6 +3583,8 @@ def training_modeling(
         expert_parallel=expert_parallel,
         expert_top_k=expert_top_k if num_experts > 1 else 1,
         context_parallel=context_parallel,
+        activation_shape=_activation_shape(model_config),
+        encoder_layers=int(getattr(model_config, 'num_encoder_layers', 0) or 0),
     )
 
     # ========================================
@@ -3764,6 +3766,16 @@ def training_modeling(
         model_df=forward_model_df,
         summary_table=forward_summary,
     )
+
+
+def _activation_shape(model_config) -> Dict[str, int]:
+    """``memory_model.activation_shape`` (empty where it cannot be read)."""
+    try:
+        from ..serving.memory_model import activation_shape
+
+        return activation_shape(model_config)
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def training_parameter_counts(model_config) -> Tuple[int, int]:
@@ -4112,8 +4124,11 @@ def _calculate_training_memory(
     expert_parallel: int = 1,
     expert_top_k: int = 1,
     context_parallel: int = 1,
+    activation_shape: Optional[Dict[str, int]] = None,
+    encoder_layers: int = 0,
 ) -> Dict[str, float]:
-    """Calculate per-GPU memory requirements."""
+    """Calculate per-GPU memory requirements. ``activation_shape`` and ``encoder_layers``
+    (``memory_model.activation_shape``) size the activations from the model's own layers."""
     # Comprehensive precision byte mappings for all supported types
     precision_bytes_map = {
         # Standard precisions
@@ -4209,6 +4224,8 @@ def _calculate_training_memory(
         expert_top_k=expert_top_k,
         context_parallel=context_parallel,
         expert_parallel=expert_parallel,
+        activation_shape=activation_shape,
+        encoder_layers=encoder_layers,
     )
 
     reference_memory_gb = 0.0
@@ -4315,9 +4332,18 @@ def _calculate_activation_memory(
     expert_top_k: int = 1,
     context_parallel: int = 1,
     expert_parallel: int = 1,
+    activation_shape: Optional[Dict[str, int]] = None,
+    encoder_layers: int = 0,
 ) -> float:
     """
     Calculate activation memory in GB (FlashAttention + layer checkpointing model).
+
+    With ``activation_shape`` (``memory_model.activation_shape``: what the model's own config
+    says beyond the decoder fields) the layers are sized as the model builds them: the last
+    ``encoder_layers`` of ``num_layers`` -- an encoder-decoder's encoder -- at the encoder's own
+    width and FFN, and a decoder layer's attention / mixer outputs at least its widest layer's
+    (``mixer_live``: a query-width output gate, Gated DeltaNet's projections). Read at the
+    decoder's width, Pix2Struct's 1,536-wide image encoder held 2/3 of its checkpoints.
 
     The timing path assumes FlashAttention-2, which never materializes the
     B*heads*S^2 attention-score matrix (it only keeps O(B*heads*S) fp32 softmax
@@ -4368,7 +4394,10 @@ def _calculate_activation_memory(
     # Live activations of a single layer (FlashAttention: no S^2 score matrix).
     # Attention/output projections shard with TP; the gated-FFN intermediates
     # additionally shard across the EP group (TP*EP total) for MoE models.
-    attn_live_bytes = 4 * effective_batch_size * seq_length * hidden_size * precision_bytes
+    shape = activation_shape or {}
+    tokens = effective_batch_size * seq_length * precision_bytes
+    attn_width = max(4 * hidden_size, int(shape.get("mixer_live", 0) or 0))
+    attn_live_bytes = attn_width * tokens
     ffn_live_bytes = (
         2 * effective_batch_size * seq_length * intermediate_size * max(1, expert_top_k)
         * precision_bytes
@@ -4376,8 +4405,14 @@ def _calculate_activation_memory(
     softmax_stats_bytes = 4 * effective_batch_size * num_heads * seq_length  # fp32 logsumexp
     per_layer_live_bytes = attn_live_bytes + ffn_live_bytes + softmax_stats_bytes
 
-    # Layer-input checkpoints (one B*S*H tensor per layer boundary)
-    boundary_bytes = effective_batch_size * seq_length * hidden_size * precision_bytes * num_layers
+    # Layer-input checkpoints (one B*S*H tensor per layer boundary), an encoder's at its width
+    enc_layers = min(max(0, int(encoder_layers or 0)), num_layers) if shape else 0
+    enc_width = int(shape.get("encoder_width", 0) or 0) or hidden_size
+    boundary_bytes = tokens * (hidden_size * (num_layers - enc_layers) + enc_width * enc_layers)
+    if enc_layers:
+        enc_ffn = int(shape.get("encoder_ffn", 0) or 0) or 4 * enc_width
+        per_layer_live_bytes = max(per_layer_live_bytes,
+                                   (4 * enc_width + 2 * enc_ffn) * tokens + softmax_stats_bytes)
 
     if gradient_checkpointing:
         # All layer-input checkpoints + one live layer during recompute

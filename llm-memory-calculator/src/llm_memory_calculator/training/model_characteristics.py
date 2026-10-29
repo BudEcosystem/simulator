@@ -627,6 +627,23 @@ def analyze_model_config(config: Dict[str, Any]) -> ModelCharacteristics:
 
     Automatically detects architecture type (MoE, attention variant, etc).
     """
+    # The decoder's geometry under the decoder-only names, read where the model keeps it (a
+    # multimodal model's `text_config`, an encoder-decoder's decoder spellings), and its routed
+    # experts under every spelling (layer_plan: the readers every other figure uses)
+    whole = config
+    try:
+        from ..layer_plan import (
+            _text_config, decoder_view, routed_expert_count, routed_expert_width,
+            shared_expert_width,
+        )
+
+        view = decoder_view(dict(config))
+        config = {k: v for k, v in _text_config(view).items() if v is not None}
+        experts = routed_expert_count(view)
+        expert_width = routed_expert_width(view) if experts else None
+        shared_width = shared_expert_width(view) if experts else 0
+    except Exception:  # noqa: BLE001 - a config the readers cannot read is read as it is
+        experts, expert_width, shared_width = 0, None, 0
     # Extract basic params
     hidden = config.get("hidden_size", 4096)
     intermediate = config.get("intermediate_size", hidden * 4)
@@ -634,7 +651,7 @@ def analyze_model_config(config: Dict[str, Any]) -> ModelCharacteristics:
     heads = config.get("num_attention_heads", 32)
     kv_heads = config.get("num_key_value_heads", heads)
     vocab = config.get("vocab_size", 32000)
-    params = config.get("num_parameters", 0)
+    params = whole.get("num_parameters", config.get("num_parameters", 0)) or 0
     max_pos = config.get("max_position_embeddings", 8192)
 
     # Detect attention type
@@ -661,7 +678,7 @@ def analyze_model_config(config: Dict[str, Any]) -> ModelCharacteristics:
     )
 
     # Detect MoE
-    num_experts = config.get("num_experts", config.get("num_local_experts", 1))
+    num_experts = experts or config.get("num_experts", config.get("num_local_experts", 1)) or 1
     moe_config = None
     ffn_type = FFNType.SWIGLU  # Default
 
@@ -670,9 +687,12 @@ def analyze_model_config(config: Dict[str, Any]) -> ModelCharacteristics:
             is_moe=True,
             num_experts=num_experts,
             num_experts_per_tok=config.get("num_experts_per_tok", config.get("num_selected_experts", 2)),
-            expert_intermediate_size=config.get("expert_intermediate_size", intermediate),
-            num_shared_experts=config.get("n_shared_experts", 0),
-            shared_expert_intermediate_size=config.get("shared_expert_intermediate_size", 0),
+            expert_intermediate_size=expert_width or config.get(
+                "expert_intermediate_size", intermediate),
+            # the shared experts' total width as one expert (layer_plan.shared_expert_width:
+            # a stated width, else a stated or class count times one routed expert's width)
+            num_shared_experts=1 if shared_width else 0,
+            shared_expert_intermediate_size=shared_width,
             first_k_dense_replace=config.get("first_k_dense_replace", 0),
         )
         ffn_type = FFNType.MOE_SHARED if moe_config.num_shared_experts > 0 else FFNType.MOE
@@ -684,13 +704,25 @@ def analyze_model_config(config: Dict[str, Any]) -> ModelCharacteristics:
         attn_params = layers * (hidden * hidden * 4)  # QKVO
         ffn_params = layers * (hidden * intermediate * 3)
         if moe_config:
-            ffn_params *= moe_config.num_experts
+            # every routed expert at its own width, not the dense FFN's
+            ffn_params = layers * (hidden * moe_config.expert_intermediate_size * 3) \
+                * moe_config.num_experts
         params = emb_params + attn_params + ffn_params
+        # held to at least the model's own count (memory_model.config_parameters_held_to_the_model,
+        # as every other training estimator is): the top-level fields above miss the routed
+        # experts under any other spelling (DeepSeek-V3's `n_routed_experts`: 38.6B of its 671B),
+        # an encoder-decoder's encoder, a multimodal model's towers and a `text_config`'s decoder
+        try:
+            from ..genz.serving.memory_model import config_parameters_held_to_the_model
+
+            params = int(config_parameters_held_to_the_model(dict(whole), params))
+        except Exception:  # noqa: BLE001 - a config the counter cannot read keeps the estimate
+            pass
 
     # Detect family
     family = ModelFamily.LLAMA  # Default
-    arch = config.get("architectures", [""])[0].lower() if config.get("architectures") else ""
-    model_type = config.get("model_type", "").lower()
+    arch = whole.get("architectures", [""])[0].lower() if whole.get("architectures") else ""
+    model_type = str(whole.get("model_type") or config.get("model_type") or "").lower()
 
     if "qwen" in arch or "qwen" in model_type:
         family = ModelFamily.QWEN
@@ -708,7 +740,7 @@ def analyze_model_config(config: Dict[str, Any]) -> ModelCharacteristics:
         family = ModelFamily.JAMBA
 
     return ModelCharacteristics(
-        name=config.get("_name_or_path", "unknown"),
+        name=whole.get("_name_or_path", "unknown"),
         family=family,
         num_parameters=params,
         num_layers=layers,

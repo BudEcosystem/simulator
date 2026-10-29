@@ -56,7 +56,10 @@ config does: depth stated only in a per-layer list, nested decoders (VisionEncod
 EncoderDecoderModel, MusicGen, BLIP-2 / InstructBLIP with a flan-T5 `text_config`, Florence-2),
 ProphetNet, RWKV, xLSTM, Llama 4's interleaved MoE, GGUF-derived short window patterns, a
 decoder-only stack's own cross-attention layers (Mllama's `cross_attention_layers`, with and
-without the tower's geometry), an image encoder whose length is its `seq_len` (Pix2Struct), and
+without the tower's geometry), an image encoder whose length is its `seq_len` (Pix2Struct), a windowed config that states a key its
+config class builds the layout from at a value other than the class's default (AFMoE's
+`global_attn_every_n_layers`, Llama 4's and SmolLM3's `no_rope_layers`, LFM2's `full_attn_idxs`,
+EXAONE 4's string pattern, a Qwen2-VL / dots1 `max_window_layers`), and
 the encoder-decoder and dense spellings around them; the fixture folder `cross_attention/` holds
 transformers 5.12's own Mllama, Pix2Struct and BLIP-2 (flan-T5) configs.
 """
@@ -617,7 +620,9 @@ def measure_training_estimators(cfg):
     ``predict_cluster_requirements``' per-GPU breakdown and minimum cluster memory), the
     comprehensive config builder (``_estimate_model_size``), the cluster optimizer's quick check
     and GPU-type filter (eight GPUs), the advanced training calculator (full and LoRA: weights and
-    total), the time estimator's parameters and the KV planner's active parameters."""
+    total), the time estimator's parameters, the KV planner's active parameters, and the training
+    optimizer (``analyze_model_config``'s count, the plan ``optimize_training`` returns, and
+    ``get_minimum_hardware_for_model``'s minimum memory for LoRA and full fine-tuning)."""
     import contextlib
     import copy
     import io
@@ -696,6 +701,25 @@ def measure_training_estimators(cfg):
 
         return int(TrainingTimeEstimator()._get_total_params(copy.deepcopy(cfg)))
 
+    def amc():
+        from llm_memory_calculator.training.model_characteristics import analyze_model_config
+
+        return int(analyze_model_config(copy.deepcopy(cfg)).num_parameters)
+
+    def topt():
+        from llm_memory_calculator.training.training_optimizer import optimize_training
+
+        plan = optimize_training(copy.deepcopy(cfg), total_tokens=100_000_000, max_gpus=64)
+        return int(plan.to_dict()["model"]["total_params"])
+
+    def minhw(method):
+        from llm_memory_calculator.training.training_optimizer import (
+            get_minimum_hardware_for_model,
+        )
+
+        r = get_minimum_hardware_for_model(copy.deepcopy(cfg), training_method=method)
+        return round(float(r["min_memory_gb"]), 6)
+
     def active():
         from llm_memory_calculator.kv.cost import active_parameters
 
@@ -711,6 +735,14 @@ def measure_training_estimators(cfg):
     run("advtrain_lora", lambda: adv("lora"))
     run("time_params", time_params)
     run("kvcost_active_params", active)
+    # the training optimizer's entry points (`training.optimize_training`,
+    # `compare_training_strategies`, `get_minimum_hardware_for_model`), which size the model by
+    # `analyze_model_config`: its parameters, the plan's, and the minimum memory for LoRA and full
+    # fine-tuning (round 18)
+    run("amc_params", amc)
+    run("topt_params", topt)
+    run("minhw_lora_gb", lambda: minhw("lora"))
+    run("minhw_full_gb", lambda: minhw("full"))
     return out
 
 
@@ -919,6 +951,58 @@ def synthetic_configs(fixtures_root):
                          vocab_size=50244),
         vision_config=dict(model_type="pix2struct_vision_model", hidden_size=1536, d_kv=64,
                            d_ff=3968, num_attention_heads=24, num_hidden_layers=18, seq_len=2048))
+    # a window stated with no layout, and a key the config class builds its layout from stated
+    # at a value other than the class's default (round 18): the shipped rule describes the
+    # class's default only, so the class (or, without it, every windowed layer full) answers
+    afmoe = dict(model_type="afmoe", architectures=["AfmoeForCausalLM"], hidden_size=2048,
+                 num_attention_heads=32, num_key_value_heads=4, head_dim=128,
+                 num_hidden_layers=32, intermediate_size=6144, moe_intermediate_size=1024,
+                 num_experts=128, num_experts_per_tok=8, num_dense_layers=2,
+                 sliding_window=2048, vocab_size=200192)
+    s["afmoe-global-every-2"] = dict(afmoe, global_attn_every_n_layers=2)
+    s["afmoe-global-every-4"] = dict(afmoe, global_attn_every_n_layers=4)
+    l4 = dict(model_type="llama4_text", hidden_size=5120, num_attention_heads=40,
+              num_key_value_heads=8, head_dim=128, num_hidden_layers=48, intermediate_size=8192,
+              intermediate_size_mlp=16384, num_local_experts=16, num_experts_per_tok=1,
+              interleave_moe_layer_step=1, attention_chunk_size=8192, vocab_size=202048)
+    s["llama4-no-rope-interval-2"] = dict(
+        model_type="llama4", architectures=["Llama4ForConditionalGeneration"],
+        text_config=dict(l4, no_rope_layer_interval=2))
+    s["llama4-no-rope-layers-half"] = dict(
+        model_type="llama4", architectures=["Llama4ForConditionalGeneration"],
+        text_config=dict(l4, no_rope_layers=[0, 1] * 24))
+    smol = dict(model_type="smollm3", architectures=["SmolLM3ForCausalLM"], hidden_size=2048,
+                num_attention_heads=16, num_key_value_heads=4, num_hidden_layers=36,
+                intermediate_size=11008, vocab_size=128256, use_sliding_window=True,
+                sliding_window=4096)
+    s["smollm3-window-all-rope"] = dict(smol, no_rope_layers=[1] * 36)
+    s["smollm3-window-interval-8"] = dict(smol, no_rope_layer_interval=8)
+    s["exaone4-string-pattern"] = dict(
+        model_type="exaone4", architectures=["Exaone4ForCausalLM"], hidden_size=2560,
+        num_attention_heads=32, num_key_value_heads=8, head_dim=80, num_hidden_layers=30,
+        intermediate_size=7168, vocab_size=102400, sliding_window=4096,
+        sliding_window_pattern="LLLG")
+    s["lfm2-full-attn-idxs"] = dict(
+        model_type="lfm2", architectures=["Lfm2ForCausalLM"], hidden_size=2048,
+        num_attention_heads=32, num_key_value_heads=8, num_hidden_layers=24,
+        intermediate_size=8192, vocab_size=65536, conv_L_cache=3, sliding_window=4096,
+        full_attn_idxs=[3, 7, 11, 15, 19, 23])
+    s["dots1-window-from-layer-8"] = dict(
+        model_type="dots1", architectures=["Dots1ForCausalLM"], hidden_size=4096,
+        num_attention_heads=32, num_key_value_heads=32, head_dim=128, num_hidden_layers=24,
+        intermediate_size=10944, moe_intermediate_size=1408, n_routed_experts=128,
+        num_experts_per_tok=6, n_shared_experts=2, first_k_dense_replace=1,
+        vocab_size=152064, use_sliding_window=True, sliding_window=4096, max_window_layers=8)
+    s["qwen2-vl-window-from-layer-8"] = dict(
+        model_type="qwen2_vl", architectures=["Qwen2VLForConditionalGeneration"],
+        text_config=dict(model_type="qwen2_vl_text", hidden_size=1536, num_attention_heads=12,
+                         num_key_value_heads=2, num_hidden_layers=28, intermediate_size=8960,
+                         vocab_size=151936, use_sliding_window=True, sliding_window=4096,
+                         max_window_layers=8),
+        # Qwen/Qwen2-VL-2B-Instruct's tower, as its hub config states it
+        vision_config=dict(depth=32, embed_dim=1280, mlp_ratio=4, num_heads=16, in_chans=3,
+                           hidden_size=1536, patch_size=14, spatial_merge_size=2,
+                           spatial_patch_size=14, temporal_patch_size=2))
     return s
 
 

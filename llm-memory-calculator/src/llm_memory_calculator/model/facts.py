@@ -211,6 +211,9 @@ class ModelFacts:
     # the routers, an encoder-decoder's encoder --: what vLLM allocates LoRA A and B buffers over
     # ("all linear layers support LoRA"; its fused-MoE LoRA wraps every expert)
     lora_linear_features: int = 0
+    # the elements a token holds live while one decoder layer's backward runs under layer
+    # checkpointing, from its attention or mixer maps (``_mixer_live_width``): the widest layer's
+    mixer_live_width: int = 0
 
     # ------------------------------------------------------------------ construction
 
@@ -917,6 +920,7 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     lora_features = _lora_linear_features(
         text, whole, h, nh, nkv, hd, layers, n_attn_layers + own_cross, n_layers, ffn_layers,
         encoder_decoder)
+    mixer_live = _mixer_live_width(text, h, nh, nkv, hd, layers, n_attn_layers)
 
     n_experts = routed_expert_count(dict(text))
     k_experts = _get(text, "num_experts_per_tok", "experts_per_token", "num_experts_per_token",
@@ -1009,7 +1013,38 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
         config_digest=digest,
         cross_attention=cross,
         lora_linear_features=lora_features,
+        mixer_live_width=mixer_live,
     )
+
+
+def _live_outputs(linears, h: int) -> int:
+    """The outputs a token holds live from a layer's maps during its backward: every map's output
+    but those that return a wider input to the residual stream (an O / out projection whose input,
+    another map's output, is counted already)."""
+    return int(sum(o for i, o in linears if not (o == h and i != h)))
+
+
+def _mixer_live_width(
+    text: Mapping[str, Any], h: int, nh: int, nkv: int, hd: int, layers: LayerCounts,
+    attn_layers: int,
+) -> int:
+    """The widest decoder layer's attention or mixer outputs a token (``_live_outputs``): an
+    attention layer's Q (with a query-width output gate), K, V and O; a recurrent layer's mixer
+    maps by the dispatch its weights use (Gated DeltaNet's q|k|v, z, a, b and its convolution's
+    output: wider than the four hidden-wide maps of a plain attention layer). The FFN's are left
+    to the caller."""
+    widths = []
+    if attn_layers:
+        widths.append(_live_outputs(_attention_linears(text, h, nh, nkv, hd), h))
+    if layers.recurrent:
+        if "gdn" in layers.mechanisms or "linear_num_value_heads" in text:
+            from ..mixer_params import gdn_linears
+
+            widths.append(_live_outputs(gdn_linears(dict(text), h), h))
+        else:
+            for mech in set(layers.recurrent_mechanisms or ("mamba2",)):
+                widths.append(_live_outputs(_recurrent_linears(mech, text, h), h))
+    return int(max(widths, default=0))
 
 
 def _lora_linear_features(

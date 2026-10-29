@@ -9561,6 +9561,13 @@ true
 "rule": "none"
 },
 "afmoe": {
+"depends": {
+"global_attn_every_n_layers": {
+"values": [
+4
+]
+}
+},
 "names": [
 "sliding_attention",
 "sliding_attention",
@@ -9627,6 +9634,13 @@ true
 "rule": "none"
 },
 "bamba": {
+"depends": {
+"attn_layer_indices": {
+"values": [
+null
+]
+}
+},
 "names": [
 "mamba"
 ],
@@ -9780,6 +9794,14 @@ true
 "rule": "none"
 },
 "cohere2": {
+"depends": {
+"sliding_window_pattern": {
+"values": [
+null,
+4
+]
+}
+},
 "names": [
 "sliding_attention",
 "sliding_attention",
@@ -9789,6 +9811,13 @@ true
 "rule": "period"
 },
 "cohere2_moe": {
+"depends": {
+"sliding_window_pattern": {
+"values": [
+4
+]
+}
+},
 "names": [
 "sliding_attention",
 "sliding_attention",
@@ -9943,6 +9972,18 @@ true
 "diffusion_gemma": {
 "rule": "none"
 },
+"diffusion_gemma_text": {
+"last": "full_attention",
+"names": [
+"sliding_attention",
+"sliding_attention",
+"sliding_attention",
+"sliding_attention",
+"sliding_attention",
+"full_attention"
+],
+"rule": "period"
+},
 "dinat": {
 "rule": "none"
 },
@@ -9968,10 +10009,8 @@ true
 "rule": "none"
 },
 "dots1": {
-"names": [
-"full_attention"
-],
-"rule": "period"
+"default": 62,
+"rule": "max_window_layers"
 },
 "dpr": {
 "rule": "none"
@@ -10037,6 +10076,13 @@ true
 "rule": "none"
 },
 "exaone4": {
+"depends": {
+"sliding_window_pattern": {
+"values": [
+4
+]
+}
+},
 "names": [
 "sliding_attention",
 "sliding_attention",
@@ -10052,6 +10098,13 @@ true
 "rule": "none"
 },
 "exaone_moe": {
+"depends": {
+"sliding_window_pattern": {
+"values": [
+4
+]
+}
+},
 "names": [
 "sliding_attention",
 "sliding_attention",
@@ -10140,6 +10193,14 @@ true
 "rule": "none"
 },
 "gemma3_text": {
+"depends": {
+"sliding_window_pattern": {
+"values": [
+null,
+6
+]
+}
+},
 "names": [
 "sliding_attention",
 "sliding_attention",
@@ -10178,6 +10239,18 @@ true
 "gemma4_audio": {
 "rule": "none"
 },
+"gemma4_text": {
+"last": "full_attention",
+"names": [
+"sliding_attention",
+"sliding_attention",
+"sliding_attention",
+"sliding_attention",
+"sliding_attention",
+"full_attention"
+],
+"rule": "period"
+},
 "gemma4_unified": {
 "rule": "none"
 },
@@ -10186,6 +10259,18 @@ true
 },
 "gemma4_unified_audio": {
 "rule": "none"
+},
+"gemma4_unified_text": {
+"last": "full_attention",
+"names": [
+"sliding_attention",
+"sliding_attention",
+"sliding_attention",
+"sliding_attention",
+"sliding_attention",
+"full_attention"
+],
+"rule": "period"
 },
 "gemma4_unified_vision": {
 "rule": "none"
@@ -10441,6 +10526,18 @@ true
 "rule": "none"
 },
 "jamba": {
+"depends": {
+"attn_layer_offset": {
+"values": [
+4
+]
+},
+"attn_layer_period": {
+"values": [
+8
+]
+}
+},
 "names": [
 "mamba",
 "mamba",
@@ -10520,6 +10617,13 @@ true
 "rule": "none"
 },
 "lfm2": {
+"depends": {
+"full_attn_idxs": {
+"values": [
+null
+]
+}
+},
 "names": [
 "full_attention"
 ],
@@ -10547,6 +10651,24 @@ true
 "rule": "none"
 },
 "llama4_text": {
+"depends": {
+"no_rope_layer_interval": {
+"values": [
+4
+]
+},
+"no_rope_layers": {
+"period": [
+1,
+1,
+1,
+0
+],
+"values": [
+null
+]
+}
+},
 "names": [
 "chunked_attention",
 "chunked_attention",
@@ -10731,6 +10853,14 @@ true
 "rule": "none"
 },
 "modernbert": {
+"depends": {
+"global_attn_every_n_layers": {
+"values": [
+null,
+3
+]
+}
+},
 "names": [
 "full_attention",
 "sliding_attention",
@@ -10739,6 +10869,14 @@ true
 "rule": "period"
 },
 "modernbert-decoder": {
+"depends": {
+"global_attn_every_n_layers": {
+"values": [
+null,
+3
+]
+}
+},
 "names": [
 "full_attention",
 "sliding_attention",
@@ -11059,10 +11197,8 @@ true
 "rule": "none"
 },
 "qwen2_5_vl_text": {
-"names": [
-"full_attention"
-],
-"rule": "period",
+"default": 80,
+"rule": "max_window_layers",
 "switch": false
 },
 "qwen2_5_vl_vision": {
@@ -11078,10 +11214,8 @@ true
 "rule": "none"
 },
 "qwen2_vl_text": {
-"names": [
-"full_attention"
-],
-"rule": "period",
+"default": 80,
+"rule": "max_window_layers",
 "switch": false
 },
 "qwen2_vl_vision": {
@@ -11331,6 +11465,24 @@ true
 "rule": "none"
 },
 "smollm3": {
+"depends": {
+"no_rope_layer_interval": {
+"values": [
+4
+]
+},
+"no_rope_layers": {
+"period": [
+1,
+1,
+1,
+0
+],
+"values": [
+null
+]
+}
+},
 "names": [
 "full_attention",
 "full_attention",
@@ -11408,6 +11560,14 @@ true
 "rule": "none"
 },
 "t5gemma2_decoder": {
+"depends": {
+"sliding_window_pattern": {
+"values": [
+null,
+6
+]
+}
+},
 "names": [
 "sliding_attention",
 "sliding_attention",
@@ -11422,6 +11582,14 @@ true
 "rule": "none"
 },
 "t5gemma2_text": {
+"depends": {
+"sliding_window_pattern": {
+"values": [
+null,
+6
+]
+}
+},
 "names": [
 "sliding_attention",
 "sliding_attention",
