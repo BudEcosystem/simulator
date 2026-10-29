@@ -93,39 +93,32 @@ class OnnxRuntimeEngine(InferenceEngine):
     LAYER_WORK = 6
 
     def activation_bytes(self, config, batch_size, seq_length, dtype_bytes, base_activation_bytes):
-        # Multimodal (vision/audio LLM): the DECODER dims live under `text_config`; the ORT arena's
-        # dominant prefill term is still the decoder's all-layers working set. Read the decoder dims from
-        # text_config when present (else the top level) so a multimodal config isn't mis-read as a tiny
-        # default decoder. (The vision/audio encoder is a separate, much smaller one-shot graph; the base
-        # floor below covers it.) Field lookups fall back to the top level for keys not nested.
-        core = config.get("text_config")
-        if not isinstance(core, dict):
-            core = config
+        # The DECODER's dims, read as every other reader reads them (``layer_plan``): a multimodal
+        # config's `text_config`, an encoder-decoder's decoder, every spelling of the depth
+        # (ChatGLM's `num_layers`, GPT-2's `n_layer`), width (`d_model`, `n_embd`), vocabulary and
+        # experts, and what the config leaves to its class. Read from `num_hidden_layers` /
+        # `n_layers` and `hidden_size` / `d_model` alone, ChatGLM was a 12-layer, 768-wide default.
+        # (The vision/audio encoder is a separate, much smaller one-shot graph; the base floor
+        # below covers it.)
+        from .layer_plan import (
+            _first, _pos_int, _text_config, decoder_view, depth, ffn_width, routed_expert_count,
+            routed_expert_width, vocab_size,
+        )
 
-        def field(*names, default=None):
-            for n in names:
-                if core.get(n) is not None:
-                    return core[n]
-                if config.get(n) is not None:
-                    return config[n]
-            return default
-
-        hidden = field("hidden_size", "d_model", default=768)
-        layers = field("num_hidden_layers", "n_layers", default=12)
-        vocab = field("vocab_size", default=32000)
+        view = decoder_view(config)
+        core = _text_config(view)
+        hidden = _pos_int(_first(core, "hidden_size", "d_model", "n_embd")) or 768
+        layers = depth(core) or 12
+        vocab = vocab_size(core) or vocab_size(config) or 32000
         per_token = layers * hidden * self.LAYER_WORK + vocab
         # MoE (sparse experts): the non-freeing arena also holds the k ACTIVE experts' MLP intermediates
         # per layer per token — the weights hold ALL N experts, but only k run per token, so the
         # activation scales with k (not N). Without this a sparse MoE prefill is under-counted vs a dense
-        # model of the same hidden size. Field aliases match the base config_normalizer.
-        n_experts = field("num_local_experts", "num_experts", "n_routed_experts", default=0) or 0
-        if n_experts and int(n_experts) > 1:
-            k = int(
-                field("num_experts_per_tok", "num_experts_per_token", "expert_top_k", default=2)
-            )
-            moe_inter = int(
-                field("moe_intermediate_size", "intermediate_size", default=hidden * 4)
-            )
+        # model of the same hidden size.
+        if routed_expert_count(view) > 1:
+            k = _pos_int(_first(core, "num_experts_per_tok", "num_experts_per_token",
+                                "expert_top_k")) or 2
+            moe_inter = routed_expert_width(view) or ffn_width(core) or hidden * 4
             per_token += layers * k * moe_inter
         # NOTE: genai's `search.chunk_size` (prefill chunking) does NOT reduce this peak — MEASURED on an
         # 8B GB10 prefill, chunk off/4096/512 all held ~31 GB, because the non-freeing BFC arena grows to

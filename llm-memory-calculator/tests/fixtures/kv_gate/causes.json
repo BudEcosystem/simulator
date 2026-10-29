@@ -78,5 +78,15 @@
   "config": "Qwen1.5-MoE",
   "reader": ".",
   "cause": "the chunked graph's shared expert at its stated width (one 5632-wide expert, not four); its weights are the model's"
+ },
+ {
+  "config": "^synth:nemotron-nas-linear-blocks$",
+  "reader": ".",
+  "cause": "a Nemotron-NAS (DeciLM) stack's block_configs: a no_op attention block and a replace_with_linear one hold no KV, read by GenZ's layer configs (LayerConfig no_op / linear) in every reader built on its ModelConfig; origin/main charged the KV of every block"
+ },
+ {
+  "config": "^onnx:qwen3\\.5-hybrid-genai$",
+  "reader": ".",
+  "cause": "bud_component.onnx_dir_to_hf_config refuses an ONNX-GenAI folder whose model.type is neither a known dense architecture nor sized by a sibling config.json (fail-closed, merged from fix/accuracy-remediation 92a6b79): genai_config.json carries no expert geometry, and a MoE or hybrid modelled dense omits the ONNX Runtime arena's expert term and over-admits; origin/main modelled this Qwen3.5 hybrid as a dense decoder"
  }
 ]

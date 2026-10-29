@@ -966,6 +966,46 @@
    "quantized": true,
    "routed_experts": true,
    "source": "transformers 5.12 GptOssForCausalLM for openai/gpt-oss-20b's own config (the corpus row config:models--openai--gpt-oss-20b, the model this MXFP4 GGUF quantizes): 20,914,757,184 parameters; KV: 24 layers alternating sliding_attention (window 128) and full_attention, 8 KV heads x 64 x 2 (K and V)"
+  },
+  "synth:recurrentgemma-2b": {
+   "base": "transformers",
+   "kv": [
+    [
+     "sliding",
+     2048,
+     512,
+     8
+    ],
+    [
+     "none",
+     null,
+     0,
+     18
+    ]
+   ],
+   "source": "transformers 5.12 RecurrentGemmaForCausalLM (every parameter); its DynamicCache names every layer sliding, but the class builds 18 of the 26 as RG-LRU recurrent blocks (block_types recurrent, recurrent, attention): the cache is the 8 local-attention layers', each 1 KV head x head_dim 256 (K + V: 512 elements a token) within attention_window_size=2048"
+  },
+  "synth:nemotron-nas-linear-blocks": {
+   "params": 2279604224,
+   "kv": [
+    [
+     "full",
+     null,
+     1024,
+     6
+    ],
+    [
+     "none",
+     null,
+     0,
+     2
+    ]
+   ],
+   "source": "config arithmetic over block_configs (transformers 5.12 has no class for nemotron-nas; DeciLM's modelling, as Llama-3.1-Nemotron-51B ships it): the weight matrices alone, a floor -- an untied 128,256 x 4,096 embedding and head (1,050,673,152); 4 full blocks of attention (Q / O 4,096 x 4,096, K / V 4,096 x 512 at 32 / n_heads_in_group 8 = 4 KV heads of 128: 37,748,736) and a gated FFN at ffn_mult 5.25 (int(2 x 5.25 x 4,096 / 3) = 14,336: 176,160,768); a no_op attention with a 2.625 FFN (7,168: 88,080,384); a linear attention (4,096 x 4,096) with a 5.25 FFN; a full attention with a linear FFN (4,096 x 4,096); a full attention with a no_op FFN. KV on the 6 blocks with softmax attention, 2 x 4 x 128 = 1,024 elements a token each; the no_op and the linear attention cache none",
+   "state_bytes": 0,
+   "state_bytes_source": "DeciLM holds no recurrent state: its no_op and linear blocks keep nothing a sequence carries",
+   "lm_matrix_params": 2279604224,
+   "input_embedding": 525336576
   }
  }
 }

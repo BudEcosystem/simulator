@@ -41,6 +41,37 @@ def get_calculator():
     return _calculator
 
 
+def estimate_parameter_count(config: Dict[str, Any], calculator=None) -> Optional[int]:
+    """The parameters BudSimulator stores for a model it is given as a config (the model manager,
+    ``/models/add/config``, the gated-config submission, the model loader, the database setup).
+
+    The calculator's own count (``ModelMemoryCalculator.calculate_model_weights``: every layer
+    kind, the experts, a gated FFN, tied embeddings) and, where the config states the top-level
+    fields, the API's older estimate (two embeddings, 4h^2 + 2hi + 4h a layer) -- the larger of
+    the two, so no stored count falls below the one the API stored before where the calculator's
+    sits below the checkpoint (Zamba2's shared blocks, an audio LLM's encoder). The callers had
+    asked the calculator for ``_calculate_transformer_params``, which it does not have: the
+    AttributeError was caught and no count was stored. None when neither can be read."""
+    calculator = calculator or get_calculator()
+    counts = []
+    if calculator is not None:
+        try:
+            counts.append(int(calculator.calculate_model_weights(dict(config), "bf16")[0]))
+        except Exception as e:  # noqa: BLE001 - a config the calculator cannot read
+            logger.warning(f"The calculator could not count the parameters: {e}")
+    try:
+        hidden = int(config["hidden_size"])
+        layers = int(config["num_hidden_layers"])
+        vocab = int(config.get("vocab_size") or 50000)
+        inter = int(config.get("intermediate_size") or hidden * 4)
+        counts.append(vocab * hidden * 2 + layers * (4 * hidden * hidden + 2 * hidden * inter
+                                                     + 4 * hidden))
+    except (KeyError, TypeError, ValueError):
+        pass
+    counts = [c for c in counts if c > 0]
+    return max(counts) if counts else None
+
+
 class ModelManager:
     """Manager class for model CRUD operations."""
     
@@ -193,7 +224,7 @@ class ModelManager:
                         # Check if we have enough architectural data to calculate parameters
                         required_fields = ['hidden_size', 'num_hidden_layers', 'num_attention_heads']
                         if all(field in config for field in required_fields):
-                            param_count = calculator._calculate_transformer_params(config)
+                            param_count = estimate_parameter_count(config, calculator) or 0
                             if param_count > 0:
                                 config['num_parameters'] = param_count
                                 logger.debug(f"Calculated parameter count for {model_id}: {param_count:,}")

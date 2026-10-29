@@ -1390,6 +1390,15 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         plan["recurrent"] = [MECH_RWKV] * n
         return _finish(plan, config, "rwkv_stack", notes)
 
+    # --- 15. The layout the config's own class derives (``class_layout``), when it places a
+    # layer that is not attention: LFM2's `full_attn_idxs` with no `layer_types` -- the class
+    # builds the other layers as short convolutions, each with its conv state and maps. A layout
+    # of attention kinds alone stays with the stated-names path (``stated_layer_types``). -----
+    names = class_layout(tc)
+    if names:
+        _apply_layer_names(plan, names, tc, n, notes)
+        if any(plan["recurrent"]):
+            return _finish(plan, config, "config_class", notes, ffn=plan.pop("_ffn", None))
     return None
 
 
@@ -1607,6 +1616,19 @@ def _config_class_layer_types(tc: Dict[str, Any]):
     return result
 
 
+def class_layout(tc: Dict[str, Any]) -> Optional[List[str]]:
+    """The per-layer names the config's own class derives (``_config_class_layer_types``) where
+    the config needs it: it states a window but no layout, or -- with no window -- it states a key
+    the class builds the layout from at a value the shipped rule was not checked at
+    (``layout_rule_applies``: LFM2's `full_attn_idxs`). None otherwise, and where the class
+    cannot be asked (every layer then stays full attention: the over-count)."""
+    if not _window(tc):
+        rule = (_class_default_snapshot().get("layouts") or {}).get(str(tc.get("model_type") or ""))
+        if not isinstance(rule, dict) or layout_rule_applies(rule, tc):
+            return None
+    return _config_class_layer_types(tc)[1]
+
+
 def max_window_layers_layout(tc: Dict[str, Any]) -> Optional[List[str]]:
     """Per-layer names from `max_window_layers`, or None.
 
@@ -1651,6 +1673,9 @@ def stated_layer_types(tc: Dict[str, Any]):
     if names:
         return names, "sliding_window_pattern", []
     if not _window(tc):
+        names = class_layout(tc)
+        if names:
+            return names, "config_class", []
         return None, "uniform", []
     known, names = _config_class_layer_types(tc)
     if names:
@@ -2352,26 +2377,6 @@ def layer_kinds(config: Dict[str, Any]) -> Dict[str, Any]:
         "notes": notes,
         "mechanisms": [],
     }
-
-
-def placed_mixers(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """The hybrid plan (``resolve_layer_plan``), else -- for a stack whose layer kinds come from
-    its stated names or its config class (``layer_kinds``: LFM2 with a window and
-    `full_attn_idxs`, whose class builds the other layers as short convolutions) -- the same
-    axes as a plan: ``attn``, ``recurrent``, ``num_attention_param_layers`` and
-    ``num_recurrent_layers``. None for a stack with no recurrent layer the kinds place. A
-    reader that sizes each layer's mixer (the LoRA buffers) reads the layers here, so a layout the
-    plan does not read is not taken for attention on some layers and nothing on the rest."""
-    plan = resolve_layer_plan(config)
-    if plan is not None:
-        return plan
-    kinds = layer_kinds(config)
-    recurrent = kinds.get("recurrent") or []
-    if not any(recurrent):
-        return None
-    return {"attn": kinds["attn"], "recurrent": recurrent,
-            "num_attention_param_layers": sum(1 for a in kinds["attn"] if a is not None),
-            "num_recurrent_layers": sum(1 for r in recurrent if r)}
 
 
 def _sliding_bound(attn: List[Optional[str]], tc: Dict[str, Any], chunked: bool,

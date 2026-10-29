@@ -33,6 +33,7 @@ try:
         analyze_hf_model
     )
     from src.db import ModelManager, HuggingFaceModelImporter
+    from src.db.model_manager import estimate_parameter_count
     from src.db.model_loader import patch_genz_model_dict
     from llm_memory_calculator.genz.Models import MODEL_DICT
 
@@ -571,7 +572,7 @@ async def submit_model_config(request: ConfigSubmitRequest):
             # Calculate parameter count if missing
             parameter_count = request.config.get('num_parameters')
             if not parameter_count:
-                parameter_count = memory_calculator._calculate_transformer_params(request.config)
+                parameter_count = estimate_parameter_count(request.config, memory_calculator) or 0
                 if parameter_count > 0:
                     request.config['num_parameters'] = parameter_count
             
@@ -1223,22 +1224,9 @@ async def add_model_from_config(request: AddModelFromConfigRequest):
         # Calculate parameter count if not provided
         parameter_count = request.config.get('num_parameters')
         if not parameter_count:
-            try:
-                # Estimate based on architecture
-                hidden_size = request.config['hidden_size']
-                num_layers = request.config['num_hidden_layers']
-                vocab_size = request.config.get('vocab_size', 50000)
-                intermediate_size = request.config.get('intermediate_size', hidden_size * 4)
-                
-                # Rough estimation
-                embedding_params = vocab_size * hidden_size * 2  # input + output embeddings
-                attention_params = num_layers * (4 * hidden_size * hidden_size)  # Q, K, V, O projections
-                ffn_params = num_layers * (2 * hidden_size * intermediate_size)  # FFN layers
-                layer_norm_params = num_layers * 4 * hidden_size  # Multiple LayerNorms per layer
-                
-                parameter_count = embedding_params + attention_params + ffn_params + layer_norm_params
-            except Exception:
-                parameter_count = None
+            # the calculator's count, never below the 4h^2 + 2hi estimate this route stored
+            # before (estimate_parameter_count)
+            parameter_count = estimate_parameter_count(request.config, memory_calculator)
         
         # Add metadata to config if provided
         if request.metadata:

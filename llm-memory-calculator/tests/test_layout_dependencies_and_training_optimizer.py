@@ -129,6 +129,7 @@ STATED_LAYOUT_KEYS = [
     ("smollm3-window-all-rope", 36),
     ("smollm3-window-interval-8", 32),
     ("lfm2-full-attn-idxs", 6),
+    ("lfm2-full-attn-idxs-no-window", 6),
     ("dots1-window-from-layer-8", 8),
     ("qwen2-vl-window-from-layer-8", 8),
 ]

@@ -423,6 +423,9 @@ def truth_profile(cfg_dict):
             # a floor, since vLLM also wraps the experts and a merged module's every slice
             out["routed_experts"] = any("experts" in path.split(".") for layer in layers
                                         for path, _ in layer.named_modules())
+            # an MLA cache: the compressed latent and its rotary key (DeepSeek's kv_a_proj)
+            out["mla"] = any(path.split(".")[-1] in _LATENT for layer in layers
+                             for path, _ in layer.named_modules())
             # every linear map: `nn.Linear` and GPT-2's `Conv1D` alike
             maps = [m for layer in layers for m in _linear_maps(layer)]
             out["lora_widest_out"] = int(max((o for _, _, o in maps), default=0))
@@ -701,8 +704,33 @@ def figure_truth(profile, reader, row=None):
          "the model's weights (GB)"),
         # the training estimators that size a model before any simulation (full fine-tuning,
         # bf16, AdamW): weights 2 B, fp32 gradients 4 B, AdamW's two fp32 moments 8 B a parameter
-        (r"^(creq_params|copt_quick\[0\]|time_params|amc_params|topt_params)$", lambda: params,
+        (r"^(creq_params|copt_quick\[0\]|time_params|amc_params|topt_params"
+         r"|route_add_params|conv_rt_params)$", lambda: params,
          "the model's parameters"),
+        # training.distributed.calculate_distributed_memory under ZeRO-3 over eight GPUs: bf16
+        # weights, fp32 gradients and AdamW's two fp32 moments (14 B a parameter), each sharded
+        # eight ways; activations on top
+        (r"^dist_zero3_gb$", lambda: None if params is None else 14 * params / 8 / 1e9,
+         "bf16 weights, fp32 gradients and AdamW's two fp32 moments sharded over 8 GPUs (14 B a"
+         " parameter / 8, GB; activations on top)"),
+        # AttentionConfig.compute_kv_cache_size: one layer's cache for a 4k sequence -- the widest
+        # layer that holds one (MLA: its latent and its rotary key), 2 B an element
+        (r"^amc_kv\[0\]$", lambda: None if not p.get("kv") or any(e[2] is None for e in p["kv"])
+         else max((e[2] for e in p["kv"] if e[0] != "none"), default=0) * 4096 * 2 / 1e9,
+         "the widest caching layer's K+V for a 4k sequence (GB)"),
+        (r"^conv_rt_kv_gb$", lambda: _scaled(_kv_bytes(p, 4096), GB), "a 4k sequence's KV (GB)"),
+        # the fp8 KV decision, as bytes a KV element (full layers, then windowed ones): an element
+        # is never held in fewer than 1 B, and a model whose cache is an MLA latent or that holds
+        # a recurrent state keeps its dtype (vLLM's fp8 path covers neither), as windowed layers
+        # do where the model has them
+        (r"^(kvfp8_bytes|plan_kv_bytes)\[0\]$",
+         lambda: 2 if p.get("mla") or any(any(s) for s in p.get("state") or []) else 1,
+         "bytes a full layer's KV element can be held in (MLA latents and hybrids keep the"
+         " model's dtype)"),
+        (r"^(kvfp8_bytes|plan_kv_bytes)\[1\]$",
+         lambda: 2 if p.get("mla") or any(any(s) for s in p.get("state") or [])
+         or any(e[0] == "sliding" for e in p.get("kv") or []) else 1,
+         "bytes a windowed layer's KV element can be held in (they keep the model's dtype)"),
         # get_minimum_hardware_for_model: LoRA holds the frozen bf16 weights (2 B a parameter),
         # full fine-tuning the weights, fp32 gradients and AdamW's two fp32 moments (14 B)
         (r"^minhw_lora_gb$", lambda: None if params is None else 2 * params / 1e9,
@@ -801,6 +829,8 @@ HELD_BY = {
     # the KV tier planner's tiers, sized toward its working set in the geometry's bytes a token
     "kvplan_derived": ["kvplan_ws_gib", "kvgeo_4096[0]"],
     "serving_requests": ["serving_bytes_per_token"],
+    # BudSimulator's /models/analyze: the calculator's KV at 4k and 32k and its totals, rounded
+    "route_analyze": ["kv_gb@4096", "kv_gb@32768", "report_weight_gb"],
     # B_eff = (device - weights) // (KV a token x context + a request's fixed bytes)
     "b_eff": ["serving_weight_bytes", "serving_bytes_per_token", "serving_state_bytes"],
 }
@@ -809,6 +839,8 @@ HELD_BY = {
 def _held_by(reader):
     import kv_corpus
 
+    if reader.startswith("route_analyze"):
+        return HELD_BY["route_analyze"]
     if kv_corpus.DERIVED_FIGURES.match(reader):
         return HELD_BY["kvplan_derived"]
     for key in ("tpar_options", "maxbatch"):
@@ -1022,6 +1054,12 @@ def corpus_configs(args):
                 cfg, _, _ = bud_component.gguf_to_hf_config(path)
                 configs["gguf:" + os.path.basename(path)] = cfg
             except Exception:  # noqa: BLE001
+                pass
+        for path in kv_corpus.collect_onnx_dirs(args):
+            try:
+                cfg, _ = bud_component.onnx_dir_to_hf_config(path)
+                configs["onnx:" + os.path.basename(path.rstrip(os.sep))] = cfg
+            except Exception:  # noqa: BLE001 -- a folder the reader refuses: its figures are lost
                 pass
     finally:
         sys.path.pop(0)

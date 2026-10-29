@@ -321,11 +321,15 @@ def onnx_dir_to_hf_config(path):
         moe_inter = hf.get("moe_intermediate_size") or hf.get("intermediate_size")
         if moe_inter:
             cfg["moe_intermediate_size"] = int(moe_inter)
-        # DeepSeek/Qwen-MoE always-active shared experts + leading dense (symmetric with the GGUF path).
-        n_shared = hf.get("n_shared_experts") or hf.get("num_shared_experts")
-        shared_inter = hf.get("shared_expert_intermediate_size")
-        if n_shared and int(n_shared) > 0 and shared_inter:
+        # DeepSeek/Qwen-MoE always-active shared experts + leading dense (symmetric with the GGUF path),
+        # carried as the source config states them: DeepSeek states only `n_shared_experts` (each as
+        # wide as a routed expert), Qwen-MoE only `shared_expert_intermediate_size` (one expert).
+        # Requiring both dropped every one of them.
+        n_shared = hf.get("n_shared_experts", hf.get("num_shared_experts"))
+        if n_shared is not None:
             cfg["n_shared_experts"] = int(n_shared)
+        shared_inter = hf.get("shared_expert_intermediate_size")
+        if shared_inter and (n_shared is None or int(n_shared) > 0):
             cfg["shared_expert_intermediate_size"] = int(shared_inter)
         fkd = hf.get("first_k_dense_replace")
         if fkd is not None:

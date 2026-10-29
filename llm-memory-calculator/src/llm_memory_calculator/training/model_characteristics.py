@@ -110,10 +110,12 @@ class AttentionConfig:
         seq_length: int,
         precision_bytes: float = 2,
     ) -> float:
-        """Compute KV cache size in GB."""
+        """One layer's KV cache in GB."""
         if self.attention_type == AttentionType.MLA:
-            # MLA stores compressed latent vectors
-            kv_elements = batch_size * seq_length * self.kv_lora_rank
+            # MLA caches the compressed latent and the decoupled rotary key beside it
+            # (DeepSeek: kv_lora_rank 512 + qk_rope_head_dim 64 a token); the latent alone
+            # under-counted the cache by the rotary key
+            kv_elements = batch_size * seq_length * (self.kv_lora_rank + self.qk_rope_head_dim)
         else:
             # Standard KV: batch × seq × kv_heads × head_dim × 2 (K and V)
             kv_elements = batch_size * seq_length * self.num_kv_heads * self.head_dim * 2
@@ -633,8 +635,8 @@ def analyze_model_config(config: Dict[str, Any]) -> ModelCharacteristics:
     whole = config
     try:
         from ..layer_plan import (
-            _text_config, decoder_view, routed_expert_count, routed_expert_width,
-            shared_expert_width,
+            _text_config, attention_head_dim, decoder_view, depth, routed_expert_count,
+            routed_expert_width, shared_expert_width, vocab_size,
         )
 
         view = decoder_view(dict(config))
@@ -642,15 +644,19 @@ def analyze_model_config(config: Dict[str, Any]) -> ModelCharacteristics:
         experts = routed_expert_count(view)
         expert_width = routed_expert_width(view) if experts else None
         shared_width = shared_expert_width(view) if experts else 0
+        stated_depth, stated_vocab = depth(config), vocab_size(config)
     except Exception:  # noqa: BLE001 - a config the readers cannot read is read as it is
         experts, expert_width, shared_width = 0, None, 0
+        attention_head_dim, stated_depth, stated_vocab = None, None, None
     # Extract basic params
     hidden = config.get("hidden_size", 4096)
     intermediate = config.get("intermediate_size", hidden * 4)
-    layers = config.get("num_hidden_layers", 32)
+    # the depth and vocabulary under every spelling (ChatGLM's `num_layers` and
+    # `padded_vocab_size` were a default 32 layers and 32,000 tokens)
+    layers = stated_depth or config.get("num_hidden_layers", 32)
     heads = config.get("num_attention_heads", 32)
     kv_heads = config.get("num_key_value_heads", heads)
-    vocab = config.get("vocab_size", 32000)
+    vocab = stated_vocab or config.get("vocab_size", 32000)
     params = whole.get("num_parameters", config.get("num_parameters", 0)) or 0
     max_pos = config.get("max_position_embeddings", 8192)
 
@@ -664,7 +670,10 @@ def analyze_model_config(config: Dict[str, Any]) -> ModelCharacteristics:
     else:
         attn_type = AttentionType.MHA
 
-    head_dim = hidden // heads
+    # the head width as the model's attention builds it (a stated `head_dim` wider than
+    # hidden / heads: Gemma 3, Qwen3-0.6B), and MLA's rotary key beside its latent
+    head_dim = (attention_head_dim(config, heads, hidden) if attention_head_dim else None) \
+        or hidden // heads
 
     attention = AttentionConfig(
         attention_type=attn_type,
@@ -674,6 +683,7 @@ def analyze_model_config(config: Dict[str, Any]) -> ModelCharacteristics:
         hidden_size=hidden,
         kv_lora_rank=config.get("kv_lora_rank", 0),
         q_lora_rank=config.get("q_lora_rank", 0),
+        qk_rope_head_dim=config.get("qk_rope_head_dim", 0) or 0,
         sliding_window=config.get("sliding_window"),
     )
 

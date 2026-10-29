@@ -200,7 +200,11 @@ class DynamicModelCollection(ModelCollection):
                 return int(config.num_parameters)
             
             # Use the sophisticated calculation method
-            param_count = calculator._calculate_transformer_params(hf_config)
+            from .model_manager import estimate_parameter_count
+
+            param_count = estimate_parameter_count(hf_config, calculator)
+            if not param_count:
+                raise ValueError("no parameter count for this config")
             return int(param_count)
             
         except Exception as e:

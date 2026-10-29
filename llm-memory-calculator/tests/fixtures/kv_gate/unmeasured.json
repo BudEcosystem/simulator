@@ -1,0 +1,115 @@
+{
+ "about": "The public functions of llm-memory-calculator/src, BudSimulator/src, BudSimulator/apis and bud_component.py that name a model-shape key (kv_corpus.SHAPE_KEYS) but that the corpus harness (scripts/kv_corpus.py) does not run, each with the reason it is not a memory or capacity figure of a model config -- a FLOP or time estimate, a benchmark record, a network-bound route whose figure is measured through another path. tests/test_kv_gate.py fails on any public reader neither run by the harness nor named here, and on an entry here that names no reader, gives no reason, or that the harness does run.",
+ "entries": [
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/collective_times.py",
+   "function": "estimate_local_activation_rate",
+   "reason": "the share of MoE tokens routed to an expert on the same device (a communication rate for the all-to-all time), from the expert count and expert-parallel degree it is given; a time or communication-rate estimate, not memory or capacity"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
+   "function": "create_backward_embedding_op",
+   "reason": "builds the backward embedding operator's FLOP and byte row for a training graph from the shape it is given; nothing in the repository calls it, and its bytes are an operator's traffic, not memory held"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
+   "function": "estimate_backward_flops",
+   "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
+   "function": "compute_backward_timing_from_forward",
+   "reason": "the backward pass's time from the forward pass's operators; a time or communication-rate estimate, not memory or capacity"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
+   "function": "calculate_flops_per_token_palm_style",
+   "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
+   "function": "calculate_attention_flops",
+   "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
+   "function": "calculate_ffn_flops",
+   "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
+   "function": "calculate_layernorm_flops",
+   "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
+   "function": "calculate_embedding_flops",
+   "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
+   "function": "calculate_total_training_flops",
+   "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/validation.py",
+   "function": "validate_kernel_overhead",
+   "reason": "a self-check of the kernel-launch overhead estimate on fixed layer counts; it reports pass / fail on timings, reads no model config"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/runtime/modules/legacy.py",
+   "function": "plan_kv_dtype",
+   "reason": "reads no model config: it renders the kv_plan's dtype for an engine that lists kv_fp8, and 'sliding_window' is the vLLM argument value it emits when the plan's skip flag is set. The fp8 KV decision on a model is kv.dtype.kv_fp8_support and the planner's KVDtypeV2, both measured (kvfp8_bytes, plan_kv_bytes)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py",
+   "function": "AttentionConfig.compute_attention_flops",
+   "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py",
+   "function": "MoEConfig.effective_params_ratio",
+   "reason": "the share of an MoE model's parameters a token runs through (a compute ratio); its memory figure, memory_multiplier, is measured (amc_kv[2])"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py",
+   "function": "MoEConfig.compute_efficiency",
+   "reason": "a fixed router-overhead efficiency factor by expert count, a compute factor, not memory or capacity"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/scaling_laws.py",
+   "function": "PipelineBubbleModel.compute_activation_delay",
+   "reason": "the pipeline's activation-passing delay as a fraction of step time; a time or communication-rate estimate, not memory or capacity; nothing in the repository calls it"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/validation/benchmark_database.py",
+   "function": "PublishedBenchmark.to_dict",
+   "reason": "serializes a published benchmark record; the shape keys are the record's own fields, not a model config the corpus holds"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/validation/benchmark_schema.py",
+   "function": "ExtendedBenchmark.to_dict",
+   "reason": "serializes a published benchmark record; the shape keys are the record's own fields, not a model config the corpus holds"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/validation/benchmark_schema.py",
+   "function": "ExtendedBenchmark.from_dict",
+   "reason": "serializes a published benchmark record; the shape keys are the record's own fields, not a model config the corpus holds"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/validation/inference_calibration.py",
+   "function": "fit_inference_calibration",
+   "reason": "fits a hardware's latency calibration against its published inference benchmarks (the models are the benchmarks', registered by name); a latency fit, not a memory or capacity figure of a corpus config"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/validation/multimodel_benchmarks.py",
+   "function": "get_multimodel_benchmarks",
+   "reason": "returns the published multi-model training benchmarks as records; serializes a published benchmark record; the shape keys are the record's own fields, not a model config the corpus holds"
+  },
+  {
+   "file": "BudSimulator/apis/routers/models.py",
+   "function": "submit_model_config",
+   "reason": "the gated-model submission route: it fetches HF Hub metadata, scrapes the model page and calls BudLLM over the network, which the harness does not do. Its one figure is the calculator's parameter count (ModelMemoryCalculator.calculate_model_weights), the same call /models/add/config and the model manager make, both measured (route_add_params, route_manager_params)"
+  }
+ ]
+}

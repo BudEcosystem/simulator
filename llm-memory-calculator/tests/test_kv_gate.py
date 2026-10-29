@@ -2,8 +2,9 @@
 allowlist names it, with both figures and the ground truth the branch's figure is held to.
 
 The corpus is every config this repository ships: prepopulated.db's rows, every fixture under
-tests/fixtures (the hub configs among them, and tests/fixtures/gguf's metadata-only GGUFs, read
-through the GGUF reader), the harness's synthetic shapes and GenZ's built-in models -- measured by scripts/kv_corpus.py through every reader of a model's memory (the
+tests/fixtures (the hub configs among them, tests/fixtures/gguf's metadata-only GGUFs, read
+through the GGUF reader, and tests/fixtures/onnx's ONNX-GenAI folders, read through the ONNX
+reader), the harness's synthetic shapes and GenZ's built-in models -- measured by scripts/kv_corpus.py through every reader of a model's memory (the
 calculator, the engine estimate, the FRD-027 facts and its vLLM planner, GenZ's graphs and runtime
 modelling, the serving and disaggregation paths, the prefix cache, the KV planner and
 BudSimulator's converter). tests/fixtures/kv_gate/origin-main.json is the same harness's
@@ -23,9 +24,12 @@ whose reader cannot import a third-party module it is declared to need
 reader needs transformers or torch (the config-class defaults ship with the package). The same check runs over
 the machine's HF cache and model folders with ``kv_corpus.py --gate``
 (docs/proofs/kv-layer-kinds-corpus-diff.md).
+
+Which readers that is, is read from the source: every public function that names a model-shape key
+(``kv_corpus.figure_readers``) is entered while the corpus runs (``kv_corpus.ran_code``) or named
+with its reason in tests/fixtures/kv_gate/unmeasured.json, else the inventory test fails.
 """
 
-import argparse
 import json
 import os
 import sys
@@ -58,12 +62,36 @@ def allowlist():
 
 
 @pytest.fixture(scope="module")
-def branch_rows(tmp_path_factory):
-    args = argparse.Namespace(
-        db=os.path.join(REPO, "BudSimulator", "data", "prepopulated.db"), fixtures=[FIXTURES],
-        hf_cache=None, models=None, repo_root=REPO,
-        genz_data=str(tmp_path_factory.mktemp("genz")), no_synthetic=False)
-    return kv_corpus.measure_corpus(args)
+def branch_run(tmp_path_factory):
+    """The corpus measured once, in a fresh interpreter, recording every function of the
+    repository it enters (``kv_corpus.py --inventory``: ``kv_corpus.ran_code``) for the reader
+    inventory. A fresh interpreter, so what the run enters does not depend on what other tests
+    imported first (a function a module calls as it is imported runs inside the run or not at
+    all), and the rows are what the corpus JSON the allowlist is built from holds."""
+    import subprocess
+
+    tmp = tmp_path_factory.mktemp("corpus")
+    rows_path, ran_path = str(tmp / "rows.json"), str(tmp / "ran.json")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (os.path.join(PACKAGE, "src"), env.get("PYTHONPATH")) if p)
+    subprocess.run(
+        [sys.executable, os.path.join(PACKAGE, "scripts", "kv_corpus.py"),
+         "--inventory", os.path.join(GATE, "unmeasured.json"),
+         "--db", os.path.join(REPO, "BudSimulator", "data", "prepopulated.db"),
+         "--fixtures", FIXTURES, "--repo-root", REPO, "--genz-data", str(tmp / "genz"),
+         "--out", rows_path, "--ran", ran_path],
+        env=env, cwd=str(tmp), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    with open(rows_path) as f:
+        rows = json.load(f)
+    with open(ran_path) as f:
+        ran = {tuple(x) for x in json.load(f)}
+    return {"rows": rows, "ran": ran}
+
+
+@pytest.fixture(scope="module")
+def branch_rows(branch_run):
+    return branch_run["rows"]
 
 
 def test_the_branch_measures_every_config_origin_main_did(baseline, branch_rows):
@@ -82,6 +110,20 @@ def test_the_gguf_fixtures_are_read_through_the_gguf_reader(baseline, branch_row
     for name in ggufs:
         assert "gguf_error" not in rows[name], rows[name].get("gguf_error")
         assert rows[name].get("gguf_config_keys"), name
+
+
+def test_the_onnx_folders_are_read_through_the_onnx_reader(baseline, branch_rows):
+    """The committed corpus runs the ONNX-GenAI reader (bud_component.onnx_dir_to_hf_config) on
+    tests/fixtures/onnx: a dense folder and a MoE one beside its source config.json are measured
+    through every reader; a hybrid folder with no config.json is refused (fail-closed)."""
+    rows = {r["name"]: r for r in branch_rows}
+    onnx = sorted(r["name"] for r in baseline if r["name"].startswith("onnx:"))
+    assert onnx == ["onnx:qwen1.5-moe-a2.7b-genai", "onnx:qwen2.5-0.5b-instruct-genai",
+                    "onnx:qwen3.5-hybrid-genai"], onnx
+    for name in onnx[:2]:
+        assert "onnx_error" not in rows[name], rows[name].get("onnx_error")
+        assert rows[name].get("eng_onnxruntime_4096_total_mb"), name
+    assert "not a known DENSE" in rows["onnx:qwen3.5-hybrid-genai"]["onnx_error"]
 
 
 def test_no_unsafe_move_outside_the_allowlist(baseline, branch_rows, allowlist):
@@ -235,3 +277,87 @@ def test_a_derived_figure_is_held_by_its_inputs():
         main, branch, {"entries": [dict(ws, truth=20.0), host]}))
     assert any("no ground truth" in f for f in kv_corpus.gate(
         main, branch, {"entries": [ws, dict(host, held_by=None)]}))
+
+
+# ------------------------------------------------------------------ the reader inventory
+
+UNMEASURED = os.path.join(GATE, "unmeasured.json")
+
+
+def test_every_public_figure_path_is_measured_or_excluded_with_its_reason(baseline, branch_run):
+    """Every public function of llm-memory-calculator/src, BudSimulator/src, BudSimulator/apis and
+    bud_component.py whose body names a model-shape key (``kv_corpus.figure_readers``, read from
+    the source with ``ast``) is run by the harness -- the corpus above, recorded as it ran -- or
+    named in tests/fixtures/kv_gate/unmeasured.json with the reason it is no memory or capacity
+    figure of a model config. A new reader fails here until the harness measures it (and the gate
+    holds what it computes) or the list says why not. Where a reader's declared third-party module
+    is not installed (``READER_DEPENDENCIES``) the functions only it reaches cannot run: the
+    inventory is checked where every reader runs."""
+    names = [r["name"] for r in baseline]
+    skipped = kv_corpus.unavailable_readers(baseline, branch_run["rows"], names)
+    if skipped:
+        pytest.skip("a reader's module is not installed here: " + ", ".join(sorted(skipped)))
+    readers = kv_corpus.figure_readers(REPO)
+    missing = kv_corpus.unmeasured_readers(readers, branch_run["ran"],
+                                           kv_corpus.load_exclusions(UNMEASURED))
+    assert not missing, "public readers neither measured nor excluded:\n" + "\n".join(
+        f"{r['file']}:{r['line']} {r['function']} {r['keys']}" for r in missing)
+
+
+def test_every_exclusion_names_an_unmeasured_reader_and_why(baseline, branch_run):
+    """An entry names a public reader the source holds, gives its reason, and is not run by the
+    harness -- a stale entry (the function is gone, renamed, or now measured) fails."""
+    names = [r["name"] for r in baseline]
+    readers = {(r["file"], r["function"]): r for r in kv_corpus.figure_readers(REPO)}
+    bad = []
+    for key, reason in kv_corpus.load_exclusions(UNMEASURED).items():
+        if key not in readers or not readers[key]["public"]:
+            bad.append(f"{key}: no public reader of a shape key by that name")
+        elif len(reason) < 40:
+            bad.append(f"{key}: no reason")
+        elif key in branch_run["ran"] and not kv_corpus.unavailable_readers(
+                baseline, branch_run["rows"], names):
+            bad.append(f"{key}: the harness runs it -- measured, not excluded")
+    assert not bad, "\n".join(bad)
+
+
+def test_the_inventory_finds_a_reader_and_fails_an_unmeasured_one(tmp_path):
+    """The inventory itself: a public function naming a shape key is found (as a string, an
+    attribute or a variable), a private one is found but not public, a function naming none is
+    not found; a reader the harness did not run fails unless the exclusions name it."""
+    pkg = tmp_path / "llm-memory-calculator" / "src" / "pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "m.py").write_text(
+        "def kv(cfg):\n    return cfg['num_key_value_heads']\n"
+        "class Graph:\n    def width(self, mc):\n        return mc.hidden_size\n"
+        "    def _depth(self, num_layers):\n        return num_layers\n"
+        "def other(x):\n    return x['name']\n")
+    readers = {r["function"]: r for r in kv_corpus.figure_readers(str(tmp_path))}
+    assert set(readers) == {"kv", "Graph.width", "Graph._depth"}
+    assert readers["kv"]["public"] and not readers["Graph._depth"]["public"]
+    rel = os.path.join("llm-memory-calculator", "src", "pkg", "m.py")
+    ran = {(rel, "kv")}
+    missing = kv_corpus.unmeasured_readers(list(readers.values()), ran, {})
+    assert [r["function"] for r in missing] == ["Graph.width"]
+    assert kv_corpus.unmeasured_readers(list(readers.values()), ran,
+                                        {(rel, "Graph.width"): "why"}) == []
+
+
+def test_ran_code_records_the_functions_entered(tmp_path):
+    """``ran_code`` names each function of the repository entered inside the block by its file and
+    qualified name, and nothing entered after it."""
+    src = tmp_path / "probe_mod.py"
+    src.write_text("class C:\n    def m(self):\n        return 1\n"
+                   "def f():\n    return C().m()\ndef g():\n    return 2\n")
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import importlib
+
+        mod = importlib.import_module("probe_mod")
+        with kv_corpus.ran_code(str(tmp_path)) as ran:
+            mod.f()
+        mod.g()
+    finally:
+        sys.path.remove(str(tmp_path))
+    assert {("probe_mod.py", "f"), ("probe_mod.py", "C.m")} <= ran.functions
+    assert ("probe_mod.py", "g") not in ran.functions

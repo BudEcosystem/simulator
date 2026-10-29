@@ -183,7 +183,8 @@ def get_runtime_breakdown(df:pd.DataFrame) -> RuntimeBreakdown:
                             'Attn Linear', 'MLA Latent'] + list(CROSS_SCORE_OPS):  # DeciLM's linear attention; cross / encoder; MLA's cache read
             runtime_breakdown.MHA += layer_latency
             runtime_breakdown.LA_layers += layer_latency
-        elif layer_name in ['Gate', 'up+gate', 'down', 'shared up+gate', 'shared down']:
+        elif layer_name in ['Gate', 'up+gate', 'down', 'shared up+gate', 'shared down',
+                            'FFN Linear']:  # DeciLM's linear FFN replacement
             runtime_breakdown.FFN += layer_latency
             runtime_breakdown.FFN_layers += layer_latency
         elif layer_name in ['Message Pass']:
@@ -193,7 +194,7 @@ def get_runtime_breakdown(df:pd.DataFrame) -> RuntimeBreakdown:
             runtime_breakdown.MHA += layer_latency
             runtime_breakdown.Collective += layer_latency
             runtime_breakdown.AR_time += layer_latency
-        elif layer_name in ['Gate AR', 'FFN AR']:
+        elif layer_name in ['Gate AR', 'FFN AR', 'FFN Linear AR']:
             runtime_breakdown.FFN += layer_latency
             runtime_breakdown.Collective += layer_latency
             runtime_breakdown.AR_time += layer_latency

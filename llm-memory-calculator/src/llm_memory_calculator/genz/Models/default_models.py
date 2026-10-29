@@ -320,20 +320,6 @@ class ModelConfig():
 
         super().__init__()
 
-    @property
-    def layers_block_type(self):
-        return [
-            "MHA-global" if i % self.attn_layer_period == self.attn_layer_offset else "Mamba"
-            for i in range(self.num_hidden_layers)
-        ]
-
-    @property
-    def layers_num_experts(self):
-        return [
-            self.num_experts if i % self.expert_layer_period == self.expert_layer_offset else 1
-            for i in range(self.num_hidden_layers)
-        ]
-
     def get_layer_view(self, layer_idx: int) -> 'ModelConfig':
         """Return a shallow copy of this config with per-layer overrides applied.
 

@@ -25,8 +25,10 @@ calculator's defaults), every hybrid fixture, every config.json in the HuggingFa
 the model folders that names a decoder geometry and states a token vocabulary (one that states
 none -- a codec, a speech encoder -- is no language model: named in `_not_language_models`, not
 measured), every GGUF in the model folders and the fixtures' metadata-only GGUFs (read
-through bud_component's GGUF reader, beside the file's own tensor count), and every built-in
-GenZ model. Model folders and caches are only read.
+through bud_component's GGUF reader, beside the file's own tensor count), every ONNX-GenAI folder
+(a `genai_config.json`, read through bud_component's ONNX reader), every built-in GenZ model (with
+the HF config BudSimulator's database stores for it, `genz_to_hf`), and the grounding store's
+memory fit over the planner fixtures' measured runs. Model folders and caches are only read.
 
 Figures, per config: the calculator's KV / state / weights / totals; the engine estimate
 (`estimate_memory_for_engine`, llama.cpp and generic, at 4k and 32k: KV, state, total,
@@ -47,7 +49,10 @@ per-sequence fixed bytes, its graph's weights and the serving path's weights; an
 (weights, KV), the prefix-cache analyser's bytes per token, the KV planner's `KVGeometry`, the
 vLLM planner (`engine/vllm.py`: limits, and the running sequences `predict` gives 1,024 clients
 at 1k and 8k prompts), its profile scheduler (`perf.predict.sim_config` + `perf.sched.simulate`)
-and its shared-slice sizing (`runtime.modules.capacity.shared_slice_mib`).
+and its shared-slice sizing (`runtime.modules.capacity.shared_slice_mib`); and the public figure
+paths the reader inventory below finds (``measure_routes``, ``measure_figure_paths``: BudSimulator's
+model API, the sampler, the training characteristics and distributed memory, GenZ's parallelism
+options, the fp8 KV decision, the ONNX Runtime engine).
 
 Fixture roots are read recursively, keeping the files that name a decoder (or an encoder-decoder's)
 geometry; the planner's engine records beside them are not model configs. Built-in synthetic
@@ -180,6 +185,8 @@ def collect(args):
             real = os.path.realpath(path)
             if real in seen_fixtures or os.sep + "kv_gate" + os.sep in path:
                 continue  # the gate's own baseline, allowlist and truths are no model configs
+            if os.path.exists(os.path.join(os.path.dirname(path), "genai_config.json")):
+                continue  # an ONNX-GenAI folder's files: measured through the ONNX reader
             seen_fixtures.add(real)
             try:
                 cfg = json.load(open(path))
@@ -277,7 +284,9 @@ def measure_config(name, cfg, genz_data):
     row.update(measure_genz(cfg, genz_data))
     row.update(measure_engine_and_facts(cfg))
     row.update(measure_converter(cfg))
+    row.update(measure_routes(cfg))
     row.update(measure_readers(cfg))
+    row.update(measure_figure_paths(cfg))
     return row
 
 
@@ -360,8 +369,312 @@ def measure_converter(cfg):
             out["conv_prefill_weights_mb"] = round(float(st["Total Weights (MB)"].values[0]), 6)
         except Exception as e:
             out["conv_weights_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+        # the converter's own check of the conversion (a flag: it reports, it sizes nothing)
+        try:
+            check = ModelConverter().validate_conversion(json.loads(json.dumps(cfg)), mc,
+                                                         "hf_to_genz")
+            out["conv_valid"] = bool(check.get("valid"))
+        except Exception as e:
+            out["conv_valid_error"] = f"{type(e).__name__}: {str(e)[:200]}"
     except Exception as e:
         out["conv_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    finally:
+        sys.path.remove(bud)
+    return out
+
+
+def measure_routes(cfg):
+    """BudSimulator's model API (``apis/routers/models.py``) over the config, served from a
+    model manager that holds just this config (``src.db.ModelManager.get_model_config`` runs as
+    written, its database never read): ``/models/analyze`` at 4k and 32k (KV and total GB, and
+    the bytes a token adds) and the parameters ``/models/add/config`` stores. ``/models/{id}/config``
+    and the manager run too: the count they report is the same function's
+    (``src.db.model_manager.estimate_parameter_count``). The routes' database is a scratch file."""
+    out = {}
+    if not REPO_ROOT:
+        return out
+    bud = os.path.join(REPO_ROOT, "BudSimulator")
+    sys.path.insert(0, bud)
+    try:
+        import asyncio
+        import contextlib
+        import io
+        import logging
+
+        from src.db import connection
+
+        scratch = os.path.join(GENZ_DATA or ".", "routes.db")
+        held = getattr(connection.DatabaseConnection, "_instance", None)
+        if held is None or getattr(held, "db_path", None) != scratch:
+            connection.DatabaseConnection._instance = None  # never the tree's own database
+            connection.DatabaseConnection(scratch)
+        logging.disable(logging.CRITICAL)
+        with contextlib.redirect_stdout(io.StringIO()):
+            from apis.routers import models as routes
+            from apis.schemas import AddModelFromConfigRequest, AnalyzeModelRequest
+            from src.db import ModelManager
+
+        class OneConfig(ModelManager):
+            def __init__(self, config):
+                self.config, self.added = config, {}
+
+            def get_user_model_config(self, model_id):
+                return json.loads(json.dumps(self.config))
+
+            def get_model(self, model_id):
+                return None
+
+            def add_model(self, **kwargs):
+                self.added = kwargs
+                return kwargs.get("model_id")
+
+        class NoHub:
+            def __getattr__(self, name):
+                def offline(*a, **k):
+                    raise RuntimeError("the harness reads no hub")
+                return offline
+
+        manager = OneConfig(cfg)
+        saved = routes.model_manager, routes.hf_loader
+        routes.model_manager, routes.hf_loader = manager, NoHub()
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                manager.get_model_config("m")
+                a = asyncio.run(routes.analyze_model(AnalyzeModelRequest(
+                    model_id="m", precision="bf16", batch_size=1, sequence_lengths=list(SEQS))))
+                out["route_analyze"] = [a.analysis[str(q)].kv_cache_gb for q in SEQS] + [
+                    a.analysis[str(q)].total_memory_gb for q in SEQS] + [
+                    a.insights.memory_per_token_bytes]
+                added = asyncio.run(routes.add_model_from_config(AddModelFromConfigRequest(
+                    model_id="m", config=json.loads(json.dumps(cfg)))))
+                if added.success and manager.added.get("parameter_count") is not None:
+                    out["route_add_params"] = int(manager.added["parameter_count"])
+                asyncio.run(routes.get_model_config("m", None))
+        finally:
+            routes.model_manager, routes.hf_loader = saved
+            logging.disable(logging.NOTSET)
+    except BaseException as e:  # noqa: BLE001 -- an HTTPException too is a figure to diff
+        detail = getattr(e, "detail", None) or str(e)
+        out["route_error"] = f"{type(e).__name__}: {str(detail)[:200]}"
+    finally:
+        sys.path.remove(bud)
+    return out
+
+
+#: The device, engine record and workload the runtime planner's numerics stage is measured with:
+#: vLLM 0.30 (it lists kv_fp8) on an H100 vGPU, fp8 KV asked for at deploy time.
+RUNTIME_PLAN_RECORD = "vllm@0.30.0"
+
+
+def measure_figure_paths(cfg):
+    """The public figure paths no reader above runs: the sampler's working set at 256 sequences
+    (``calculate_sampler_logits``), the training characteristics ``analyze_model_config`` returns
+    (a layer's KV at 4k, the KV ratio to MHA, the MoE memory multiplier, ``to_config_dict``) and
+    ``training.distributed.calculate_distributed_memory`` over them (ZeRO-3, eight GPUs), the
+    parallelism options GenZ enumerates for eight devices (inference and training: how many, and
+    the deepest pipeline), and the fp8 KV decision -- ``kv.dtype.kv_fp8_support`` and the runtime
+    planner's numerics stage (``KVDtypeV2``) -- as bytes a KV element on the full and the windowed
+    layers."""
+    import contextlib
+    import copy
+    import io
+
+    out = {}
+
+    def run(key, f):
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                out[key] = f()
+        except Exception as e:
+            out[key.split("[")[0] + "_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+
+    def sampler():
+        from llm_memory_calculator import calculate_memory
+
+        rep = calculate_memory(copy.deepcopy(cfg), batch_size=1, seq_length=4096,
+                               precision="bf16", max_num_seqs=256)
+        return _gb(rep.sampler_logits_bytes / 1e9)
+
+    held = {}
+
+    def characteristics():
+        from llm_memory_calculator.training.model_characteristics import analyze_model_config
+
+        if "m" not in held:
+            held["m"] = analyze_model_config(copy.deepcopy(cfg))
+        return held["m"]
+
+    def amc_kv():
+        m = characteristics()
+        return [_gb(m.attention.compute_kv_cache_size(1, 4096)),
+                round(float(m.attention.kv_cache_ratio), 9),
+                round(float(m.moe.memory_multiplier if m.moe is not None else 1.0), 9)]
+
+    def amc_config():
+        # the shape it restates (the parameter count is amc_params)
+        d = characteristics().to_config_dict()
+        return {k: v for k, v in d.items()
+                if isinstance(v, (int, float)) and k != "num_parameters"}
+
+    def distributed():
+        from llm_memory_calculator.training.distributed import calculate_distributed_memory
+
+        m = characteristics()
+        r = calculate_distributed_memory(
+            model_params=int(m.num_parameters), trainable_params=int(m.num_parameters),
+            precision="bf16", optimizer_bytes_per_param=8, batch_size=1, seq_length=2048,
+            hidden_size=int(m.hidden_size), num_layers=int(m.num_layers), num_gpus=8,
+            deepspeed_stage="zero3")
+        return round(float(r.total_per_gpu_gb), 6)
+
+    def par(f):
+        opts = list(f())
+        return [len(opts), max((int(o[1]) for o in opts), default=0)]
+
+    def genz_par():
+        from llm_memory_calculator.genz.LLM_inference.best_parallelization import (
+            get_various_parallization,
+        )
+
+        return par(lambda: get_various_parallization(model=copy.deepcopy(cfg), total_nodes=8))
+
+    def genz_trainpar():
+        from llm_memory_calculator.genz.LLM_training.training_parallelization import (
+            get_various_training_parallelization,
+        )
+
+        return par(lambda: get_various_training_parallelization(model=copy.deepcopy(cfg),
+                                                                 total_gpus=8))
+
+    def kvfp8():
+        from llm_memory_calculator.kv import constants
+        from llm_memory_calculator.kv.dtype import kv_fp8_support
+
+        s = kv_fp8_support(copy.deepcopy(cfg), frozenset({constants.KV_FP8_FEATURE}))
+        return [1 if s["eligible"] else 2,
+                1 if s["eligible"] and not s["skip_layers_sliding_window"] else 2]
+
+    def plan_kv():
+        from llm_memory_calculator.device import catalogue
+        from llm_memory_calculator.model.facts import ModelFacts
+        from llm_memory_calculator.runtime import plan
+        from llm_memory_calculator.runtime.context import Intent
+        from llm_memory_calculator.runtime.records import record
+
+        intent = Intent(concurrency=16, input_tokens=1024, output_tokens=256, enable_kv_fp8=True)
+        ctx = plan.context(intent, ModelFacts.from_config(copy.deepcopy(cfg)), copy.deepcopy(cfg),
+                           record(RUNTIME_PLAN_RECORD), catalogue.get(PLANNER_DEVICE))
+        st = plan.numerics(ctx)
+        fp8 = st.settings.get("kv.dtype") == "fp8"
+        skip = "kv-cache-dtype-skip-layers" in st.composition.args
+        return [1 if fp8 else 2, 1 if fp8 and not skip else 2]
+
+    run("report_sampler_gb", sampler)
+    run("amc_kv", amc_kv)
+    run("amc_config", amc_config)
+    run("dist_zero3_gb", distributed)
+    run("genz_par_options_8", genz_par)
+    run("genz_trainpar_options_8", genz_trainpar)
+    run("kvfp8_bytes", kvfp8)
+    run("plan_kv_bytes", plan_kv)
+    return out
+
+
+def collect_onnx_dirs(args):
+    """Every ONNX-GenAI model folder the corpus reads (a folder holding `genai_config.json`): the
+    fixture roots' (tests/fixtures/onnx: genai_config.json alone, with the source config.json
+    where the model is MoE) and the model folders'."""
+    out = []
+    seen = set()
+    for root in list(getattr(args, "fixtures", None) or []) + [getattr(args, "models", None)]:
+        if not root or not os.path.isdir(root):
+            continue
+        for path in sorted(glob.glob(os.path.join(root, "**", "genai_config.json"),
+                                     recursive=True)):
+            d = os.path.dirname(path)
+            if os.path.realpath(d) in seen:
+                continue
+            seen.add(os.path.realpath(d))
+            out.append(d)
+    return out
+
+
+def measure_onnx(path, repo_root, genz_data):
+    """An ONNX-GenAI folder through bud_component's ONNX reader (``onnx_dir_to_hf_config``) and
+    then every reader above, as a GGUF is."""
+    sys.path.insert(0, repo_root)
+    row = {"name": "onnx:" + os.path.basename(path.rstrip(os.sep))}
+    try:
+        import bud_component
+
+        cfg, _ = bud_component.onnx_dir_to_hf_config(path)
+        row["onnx_config_keys"] = sorted(k for k in cfg if k != "name")
+        row.update(
+            {k: v for k, v in measure_config(row["name"], cfg, genz_data).items() if k != "name"}
+        )
+    except Exception as e:
+        row["onnx_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    finally:
+        sys.path.pop(0)
+    return row
+
+
+def measure_grounding_fit(fixtures_root):
+    """The grounding store's memory fit (``grounding.fit.Fitter.fit_memory``) over the planner
+    fixtures' measured runs (tests/fixtures/planner: corpus, models, records): the engine overhead
+    it fits per record and model family (GiB), and the pooled CUDA-graph capture term."""
+    from pathlib import Path
+
+    from llm_memory_calculator.grounding.fit import Fitter
+    from llm_memory_calculator.grounding.seed import build_inputs
+
+    root = Path(fixtures_root) / "planner"
+    row = {"name": "grounding:fit_memory"}
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            fitter = Fitter(build_inputs(root / "corpus", root / "models", root / "records",
+                                         version="harness"))
+            for record_id in sorted(fitter.inputs.records):
+                fitter.fit_memory(record_id)
+        fit = {}
+        for (kind, key, detail), entry in sorted(fitter.entries.items(), key=str):
+            if kind.startswith("memory."):
+                name = "|".join([kind, key.engine, key.model] + [f"{k}={v}" for k, v in detail])
+                fit[name] = round(float(entry.value) / 2**30, 9)
+        row["fit_memory_gib"] = fit
+    except Exception as e:
+        row["fit_memory_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    return row
+
+
+def measure_genz_to_hf(model_name):
+    """The HF config BudSimulator's database stores for one of GenZ's built-in models
+    (``ModelConverter.genz_to_hf``, behind model_loader's sync of the built-in models and its
+    parameter estimate), read back by the calculator: a 4k sequence's KV and the parameters."""
+    out = {}
+    if not REPO_ROOT:
+        return out
+    bud = os.path.join(REPO_ROOT, "BudSimulator")
+    sys.path.insert(0, bud)
+    try:
+        import contextlib
+        import io
+
+        from llm_memory_calculator import calculate_memory
+        from llm_memory_calculator.genz.Models.default_models import MODEL_DICT
+        from src.db.model_converter import ModelConverter
+
+        with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            back = ModelConverter().genz_to_hf(MODEL_DICT.get_model(model_name))
+            rep = calculate_memory(back, batch_size=1, seq_length=4096, precision="bf16")
+        out["conv_rt_kv_gb"] = _gb(rep.kv_cache_bytes / 1e9)
+        out["conv_rt_params"] = int(rep.parameter_count)
+    except Exception as e:
+        out["conv_rt_error"] = f"{type(e).__name__}: {str(e)[:200]}"
     finally:
         sys.path.remove(bud)
     return out
@@ -987,6 +1300,10 @@ def synthetic_configs(fixtures_root):
         num_attention_heads=32, num_key_value_heads=8, num_hidden_layers=24,
         intermediate_size=8192, vocab_size=65536, conv_L_cache=3, sliding_window=4096,
         full_attn_idxs=[3, 7, 11, 15, 19, 23])
+    # the same with no window: the class still builds 18 of its 24 layers as short convolutions
+    # (round 19: without a window the stated `full_attn_idxs` was never read)
+    s["lfm2-full-attn-idxs-no-window"] = {
+        k: v for k, v in s["lfm2-full-attn-idxs"].items() if k != "sliding_window"}
     s["dots1-window-from-layer-8"] = dict(
         model_type="dots1", architectures=["Dots1ForCausalLM"], hidden_size=4096,
         num_attention_heads=32, num_key_value_heads=32, head_dim=128, num_hidden_layers=24,
@@ -1003,6 +1320,35 @@ def synthetic_configs(fixtures_root):
         vision_config=dict(depth=32, embed_dim=1280, mlp_ratio=4, num_heads=16, in_chans=3,
                            hidden_size=1536, patch_size=14, spatial_merge_size=2,
                            spatial_patch_size=14, temporal_patch_size=2))
+    # RecurrentGemma-2B (RecurrentGemmaConfig's defaults are its shape): two RG-LRU recurrent
+    # blocks to one local-attention block, a 2,048-token window (round 19: the RG-LRU mixer's
+    # parameters were read by no corpus config)
+    s["recurrentgemma-2b"] = dict(
+        model_type="recurrent_gemma", architectures=["RecurrentGemmaForCausalLM"],
+        hidden_size=2560, intermediate_size=15360, num_hidden_layers=26, num_attention_heads=10,
+        num_key_value_heads=1, head_dim=256, lru_width=2560, conv1d_width=4,
+        attention_window_size=2048, block_types=["recurrent", "recurrent", "attention"],
+        partial_rotary_factor=0.5, logits_soft_cap=30.0, vocab_size=256000,
+        hidden_activation="gelu_pytorch_tanh", attention_bias=False)
+    # A Nemotron-NAS (DeciLM) stack in Llama-3.1-Nemotron-51B's spelling: per-layer
+    # `block_configs`, some attention or FFN skipped (`no_op`) or replaced by one linear map
+    # (`replace_with_linear`) -- GenZ's linear FFN operators, read by no corpus config before
+    # round 19
+    nas = [dict(attention=dict(n_heads_in_group=8, no_op=False, replace_with_linear=False),
+                ffn=dict(ffn_mult=5.25, no_op=False, replace_with_linear=False))] * 4
+    nas += [dict(attention=dict(n_heads_in_group=None, no_op=True, replace_with_linear=False),
+                 ffn=dict(ffn_mult=2.625, no_op=False, replace_with_linear=False)),
+            dict(attention=dict(n_heads_in_group=None, no_op=False, replace_with_linear=True),
+                 ffn=dict(ffn_mult=5.25, no_op=False, replace_with_linear=False)),
+            dict(attention=dict(n_heads_in_group=8, no_op=False, replace_with_linear=False),
+                 ffn=dict(ffn_mult=None, no_op=False, replace_with_linear=True)),
+            dict(attention=dict(n_heads_in_group=8, no_op=False, replace_with_linear=False),
+                 ffn=dict(ffn_mult=None, no_op=True, replace_with_linear=False))]
+    s["nemotron-nas-linear-blocks"] = dict(
+        model_type="nemotron-nas", architectures=["DeciLMForCausalLM"], hidden_size=4096,
+        num_attention_heads=32, num_hidden_layers=8, vocab_size=128256, hidden_act="silu",
+        max_position_embeddings=131072, rope_theta=500000.0, tie_word_embeddings=False,
+        block_configs=nas)
     return s
 
 
@@ -1012,14 +1358,17 @@ def measure_engine_and_facts(cfg):
     try:
         from llm_memory_calculator.inference_engines import estimate_memory_for_engine
 
-        for engine in ("llamacpp", None):
+        for engine in ("llamacpp", None, "onnxruntime"):
             for seq in SEQS:
                 em = estimate_memory_for_engine(dict(cfg), engine, batch_size=1, seq_length=seq,
                                                 weight_precision="fp16", runtime_precision="fp16")
                 tag = f"eng_{engine}_{seq}"
+                out[tag + "_total_mb"] = round(em.total_bytes / 1e6, 6)
+                if engine == "onnxruntime":
+                    continue  # the engine sets the activation alone: its weights, KV and state
+                    # are the base engine's (above), its total holds its arena
                 out[tag + "_kv_mb"] = round(em.kv_cache_bytes / 1e6, 6)
                 out[tag + "_state_mb"] = round(getattr(em, "state_bytes", 0.0) / 1e6, 6)
-                out[tag + "_total_mb"] = round(em.total_bytes / 1e6, 6)
                 out[tag + "_params"] = int(em.parameter_count)
     except Exception as e:
         out["eng_error"] = f"{type(e).__name__}: {str(e)[:200]}"
@@ -1296,12 +1645,19 @@ def measure_corpus(args):
             rows.append(measure_config("synth:" + name, cfg, args.genz_data))
     for path in collect_ggufs(args):
         rows.append(measure_gguf(path, args.repo_root, args.genz_data))
+    for path in collect_onnx_dirs(args):
+        rows.append(measure_onnx(path, args.repo_root, args.genz_data))
+    for root in args.fixtures or []:
+        if os.path.isdir(os.path.join(root, "planner", "corpus")):
+            rows.append(measure_grounding_fit(root))
+            break
     try:
         from llm_memory_calculator.genz.Models.default_models import MODEL_DICT
 
         for model_name in sorted(MODEL_DICT.list_models()):
             row = {"name": "genz:" + model_name}
             row.update(measure_genz(model_name, args.genz_data))
+            row.update(measure_genz_to_hf(model_name))
             rows.append(row)
     except Exception:
         traceback.print_exc()
@@ -1380,19 +1736,31 @@ CAPACITY_FIGURES = re.compile(
 #: Neither memory nor capacity: kinds and layer counts, latencies (`runtime_*[0]`), vLLM's KV
 #: group counts, the KV planner's layer counts and block size, flags, GGUF bookkeeping, the KV
 #: tier planner's working-set tokens (a workload estimate) and its GPU pool (the device less the
-#: harness's fixed weights and other memory: it says only whether the planner planned).
+#: harness's fixed weights and other memory: it says only whether the planner planned); the ONNX
+#: reader's keys; the parallelism options GenZ enumerates (how many, the deepest pipeline: a
+#: factorization of the heads and the depth); the training characteristics' restated shape
+#: (``to_config_dict``: widths, depths, head and expert counts -- its parameter count is
+#: ``amc_params``) and its two ratios (KV to MHA's, experts to the experts a token runs: the
+#: amount they scale, a layer's KV, is ``amc_kv[0]``); and the grounding store's fitted memory
+#: terms, a residual of measured runs -- what a run measured less the weights and KV the facts
+#: account for -- so bytes the facts now count in the weights leave the fitted overhead (the gate
+#: holds those weights on the planner fixtures' own rows; section 12 of the proof lists every
+#: fitted term before and after).
 NOT_AN_AMOUNT = re.compile(
     r"^(count|genz_layer_kinds\..*|genz_ffn_kinds\..*|kv_(full|sliding|free|cross)_layers"
     r"|facts_layers\[\d+\]|conv_layers\[\d+\]|runtime_\w+\[0\]|vllm_limits\[[34]\]"
-    r"|kvgeo_\d+\[[124]\]|gguf_.*|kvplan_ws_tokens|kvplan_pool_gib)$")
+    r"|kvgeo_\d+\[[124]\]|gguf_.*|onnx_.*|kvplan_ws_tokens|kvplan_pool_gib"
+    r"|genz_(train)?par_options_\d+\[\d\]|amc_config\..*|amc_kv\[[12]\]|fit_memory_gib\..*)$")
 
 
 #: Memory figures a plan derives from other figures rather than sizes itself: the KV tier
 #: planner's GPU and CPU KV and the host and shared memory its T1 asks for are sized toward its
 #: working set and its KV geometry, and a tier it no longer judges worth its copies (recompute
-#: is cheaper) asks for none. A move of one is held, like a capacity, by the memory figures it
-#: is derived from (``held_by``), each held to its own truth.
-DERIVED_FIGURES = re.compile(r"^kvplan_(host|shm|gpu_kv|cpu_kv)_gib$")
+#: is cheaper) asks for none; BudSimulator's `/models/analyze` reports the calculator's KV and
+#: totals rounded (to 0.001 and 0.1 GB) and the bytes a token adds from those rounded figures. A
+#: move of one is held, like a capacity, by the memory figures it is derived from
+#: (``held_by``), each held to its own truth.
+DERIVED_FIGURES = re.compile(r"^(kvplan_(host|shm|gpu_kv|cpu_kv)_gib|route_analyze\[\d\])$")
 
 
 def _leaves(key, value):
@@ -1449,10 +1817,15 @@ def _figures(row):
 
 def _error_of(row, path):
     """The error a row records for the reader behind a figure (``runtime_prefill[1]`` ->
-    ``runtime_prefill_error``, ``facts_weight_bytes`` -> ``facts_weight_bytes_error`` or
-    ``facts_error``), or None."""
+    ``runtime_prefill_error``, ``facts_weight_bytes`` -> ``facts_weight_bytes_error``,
+    ``facts_weight_error`` or ``facts_error``; an ONNX folder the reader refused, ``onnx_error``),
+    or None."""
     top = re.split(r"[\[.]", path)[0]
-    for key in (top + "_error", top.split("_")[0] + "_error"):
+    parts = top.split("_")
+    # the figure's own error, then its reader's at every shorter prefix (`conv_rt_kv_gb` ->
+    # `conv_rt_error`, `route_add_params` -> `route_error`), then a whole row's reader's
+    for key in ["_".join(parts[:i]) + "_error" for i in range(len(parts), 0, -1)] + [
+            "onnx_error"]:
         if row.get(key):
             return str(row[key])
     return None
@@ -1480,7 +1853,8 @@ def _repo_owned(module):
 #: torch included: no reader needs them (the config-class defaults ship with the package), so a
 #: reader that came to depend on one fails in an environment without it instead of passing as
 #: "not measured".
-READER_DEPENDENCIES = {"gguf": ("gguf",), "conv": ("requests", "lxml", "json_repair")}
+READER_DEPENDENCIES = {"gguf": ("gguf",), "conv": ("requests", "lxml", "json_repair"),
+                       "route": ("fastapi", "requests", "lxml", "json_repair")}
 
 
 def _reader_of(row, path):
@@ -1623,6 +1997,184 @@ def _figure(rows, name, path):
     return None
 
 
+# ---------------------------------------------------------------- the reader inventory
+#
+# Every public function of the simulator's sources that reads a model-shape key (or a GenZ
+# ModelConfig shape field) is a figure path. Each one is either run by the harness above -- so
+# the gate holds what it computes -- or named in tests/fixtures/kv_gate/unmeasured.json with the
+# reason it is not a memory or capacity figure of a model config. tests/test_kv_gate.py runs the
+# corpus once, in a fresh interpreter (``--inventory ... --ran``), with ``ran_code`` recording
+# every function it enters, and fails on any reader in neither: the inventory is the source's,
+# not a reviewer's.
+
+#: The source trees the inventory reads, relative to the repository root.
+INVENTORY_ROOTS = ("llm-memory-calculator/src", "BudSimulator/src", "BudSimulator/apis",
+                   "bud_component.py")
+
+#: Model-shape keys (config keys and GenZ ModelConfig fields). A function reads one when its body
+#: names it: as a string (``cfg["hidden_size"]``, ``.get("vocab_size")``), an attribute
+#: (``mc.num_decoder_layers``), a keyword or a variable.
+SHAPE_KEYS = frozenset((
+    "num_hidden_layers", "num_layers", "n_layer", "n_layers", "num_decoder_layers",
+    "decoder_layers", "num_key_value_heads", "num_kv_heads", "head_dim", "hidden_size", "d_model",
+    "n_embd", "n_head", "num_attention_heads", "intermediate_size", "ffn_dim",
+    "moe_intermediate_size", "n_routed_experts", "num_experts", "vocab_size", "layer_types",
+    "get_kv_size", "kv_lora_rank", "sliding_window", "text_config"))
+
+
+def _inventory_files(repo):
+    for root in INVENTORY_ROOTS:
+        path = os.path.join(repo, root)
+        if os.path.isfile(path):
+            yield path
+            continue
+        for dirpath, dirnames, filenames in os.walk(path):
+            dirnames[:] = sorted(d for d in dirnames if d not in ("node_modules", "__pycache__"))
+            for f in sorted(filenames):
+                if f.endswith(".py"):
+                    yield os.path.join(dirpath, f)
+
+
+def _keys_named(node):
+    import ast
+
+    hits = set()
+    for n in ast.walk(node):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value in SHAPE_KEYS:
+            hits.add(n.value)
+        elif isinstance(n, ast.Attribute) and n.attr in SHAPE_KEYS:
+            hits.add(n.attr)
+        elif isinstance(n, ast.keyword) and n.arg in SHAPE_KEYS:
+            hits.add(n.arg)
+        elif isinstance(n, ast.Name) and n.id in SHAPE_KEYS:
+            hits.add(n.id)
+    return hits
+
+
+def figure_readers(repo):
+    """``[{file, function, line, public, keys}]``: every function and method of the inventory's
+    sources whose body names a model-shape key (``SHAPE_KEYS``). ``function`` is the qualified
+    name Python gives it (``Class.method``); ``public`` when neither it nor a class it sits in
+    starts with an underscore (``__init__`` and ``__call__`` are public)."""
+    import ast
+
+    out = []
+    for path in _inventory_files(repo):
+        try:
+            with open(path) as f:
+                tree = ast.parse(f.read(), filename=path)
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        rel = os.path.relpath(path, repo)
+
+        def visit(node, prefix, public):
+            for ch in ast.iter_child_nodes(node):
+                if isinstance(ch, ast.ClassDef):
+                    visit(ch, prefix + ch.name + ".", public and not ch.name.startswith("_"))
+                elif isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    keys = _keys_named(ch)
+                    if keys:
+                        out.append({
+                            "file": rel, "function": prefix + ch.name, "line": ch.lineno,
+                            "public": public and (not ch.name.startswith("_")
+                                                  or ch.name in ("__init__", "__call__")),
+                            "keys": sorted(keys)})
+
+        visit(tree, "", True)
+    return out
+
+
+class ran_code:
+    """Record every function of the repository entered while the block runs:
+    ``{(file relative to the repo, qualified name)}`` in ``.functions``. Python 3.12's
+    ``sys.monitoring`` reports each code object's first start and is then switched off for it,
+    so the harness runs at its own speed; before 3.12, ``sys.setprofile`` (every thread)."""
+
+    def __init__(self, repo):
+        self.repo = os.path.realpath(repo)
+        self.codes = set()
+
+    def _add(self, code):
+        self.codes.add(code)
+
+    def __enter__(self):
+        import threading
+
+        mon = getattr(sys, "monitoring", None)
+        self._tool = None
+        if mon is not None:
+            for tool in (mon.PROFILER_ID, 5, 4, 3):
+                if mon.get_tool(tool) is None:
+                    self._tool = tool
+                    break
+        if self._tool is not None:
+            mon.use_tool_id(self._tool, "kv_corpus.ran_code")
+
+            def start(code, offset):
+                self.codes.add(code)
+                return mon.DISABLE
+
+            mon.register_callback(self._tool, mon.events.PY_START, start)
+            mon.set_events(self._tool, mon.events.PY_START)
+        else:
+            def prof(frame, event, arg):
+                if event == "call":
+                    self.codes.add(frame.f_code)
+
+            self._prof = prof
+            sys.setprofile(prof)
+            threading.setprofile(prof)
+        return self
+
+    def __exit__(self, *exc):
+        import threading
+
+        if self._tool is not None:
+            mon = sys.monitoring
+            mon.set_events(self._tool, 0)
+            mon.register_callback(self._tool, mon.events.PY_START, None)
+            mon.free_tool_id(self._tool)
+            mon.restart_events()
+        else:
+            sys.setprofile(None)
+            threading.setprofile(None)
+        return False
+
+    @property
+    def functions(self):
+        out = set()
+        for code in self.codes:
+            path = os.path.realpath(code.co_filename)
+            if path.startswith(self.repo + os.sep):
+                out.add((os.path.relpath(path, self.repo),
+                         getattr(code, "co_qualname", code.co_name)))
+        return out
+
+
+def unmeasured_readers(readers, ran, excluded):
+    """The public readers (``figure_readers``) the harness never entered (``ran``: ``{(file,
+    qualified name)}``) and the exclusion list (``{(file, function): reason}``) does not name."""
+    return [r for r in readers if r["public"] and (r["file"], r["function"]) not in ran
+            and (r["file"], r["function"]) not in excluded]
+
+
+def load_exclusions(path):
+    """``{(file, function): reason}`` from tests/fixtures/kv_gate/unmeasured.json."""
+    with open(path) as f:
+        data = json.load(f)
+    return {(e["file"], e["function"]): e.get("reason", "") for e in data.get("entries", [])}
+
+
+def inventory(args, exclusions_path):
+    """Run the corpus with ``ran_code`` and return ``(rows, readers, ran, unmeasured)``."""
+    repo = args.repo_root
+    with ran_code(repo) as rec:
+        rows = measure_corpus(args)
+    readers = figure_readers(repo)
+    ran = rec.functions
+    return rows, readers, ran, unmeasured_readers(readers, ran, load_exclusions(exclusions_path))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out")
@@ -1640,7 +2192,24 @@ def main():
     ap.add_argument("--allowlist")
     ap.add_argument("--unsafe", nargs=2, metavar=("MAIN", "BRANCH"),
                     help="list every unsafe-direction move as JSON")
+    ap.add_argument("--inventory", metavar="EXCLUSIONS",
+                    help="run the corpus recording the functions it enters, and list every public"
+                         " reader of a model-shape key neither entered nor in EXCLUSIONS"
+                         " (tests/fixtures/kv_gate/unmeasured.json)")
+    ap.add_argument("--ran", help="with --inventory: write the functions the run entered here")
     args = ap.parse_args()
+    if args.inventory:
+        rows, readers, ran, missing = inventory(args, args.inventory)
+        if args.out:
+            json.dump(rows, open(args.out, "w"), indent=1, sort_keys=True, default=str)
+        if args.ran:
+            json.dump(sorted(ran), open(args.ran, "w"))
+        public = [r for r in readers if r["public"]]
+        print(json.dumps(missing, indent=1))
+        print(f"{len(readers)} readers, {len(public)} public, "
+              f"{sum((r['file'], r['function']) in ran for r in public)} run by the harness, "
+              f"{len(missing)} neither run nor excluded")
+        sys.exit(1 if missing else 0)
     if args.unsafe:
         a, b = json.load(open(args.unsafe[0])), json.load(open(args.unsafe[1]))
         moves = [(n, p, x, y, k, "moved") for n, p, x, y, k in unsafe_moves(a, b)]

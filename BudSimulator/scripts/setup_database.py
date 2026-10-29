@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.db import ModelManager, HuggingFaceModelImporter, DatabaseConnection
+from src.db.model_manager import estimate_parameter_count
 from src.hardware_registry import HardwareRegistry
 from src.bud_ai import call_bud_LLM
 from src.utils.text_extraction import extract_text_from_huggingface
@@ -251,7 +252,7 @@ class DatabaseSetup:
                 try:
                     config = json.loads(model.get('config_json', '{}'))
                     if config:
-                        param_count = self.memory_calculator._calculate_transformer_params(config)
+                        param_count = estimate_parameter_count(config, self.memory_calculator) or 0
                         if param_count > 0:
                             updates['parameter_count'] = param_count
                             needs_update = True

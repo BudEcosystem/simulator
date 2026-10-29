@@ -20,7 +20,6 @@ from .layer_plan import (
     encoder_block,
     encoder_decoder_stacks,
     layer_kinds,
-    placed_mixers,
     resolve_layer_plan,
 )
 from .mixer_params import recurrent_mixer_linears
@@ -1703,7 +1702,7 @@ class ModelMemoryCalculator:
         # plan places the kinds, the attention layers are the plan's and each recurrent layer adds
         # its mechanism's maps; counted from the attention layers alone, a hybrid's recurrent
         # layers held no adapter (Jamba 0.24 GB, where vLLM's floor is 0.31).
-        plan = placed_mixers(config)
+        plan = resolve_layer_plan(config)
         if plan is not None:
             num_layers = len(plan["attn"])  # the depth the plan places, every spelling read
             num_attention_layers = int(plan["num_attention_param_layers"])
@@ -1959,7 +1958,7 @@ class ModelMemoryCalculator:
         # a recurrent / linear-attention layer's maps are wrapped too: Mamba-2's in_proj
         # (2 x d_inner + 2 x groups x state + heads), Gated DeltaNet's in_proj_qkv, ...
         mixer = max((out for _, out in recurrent_mixer_linears(
-            core, placed_mixers(core), hidden)), default=0)
+            core, resolve_layer_plan(core), hidden)), default=0)
         return max(
             int(core.get("intermediate_size", 0) or 0),
             # a per-layer list (Hunyuan-A13B) is as wide as its widest entry
