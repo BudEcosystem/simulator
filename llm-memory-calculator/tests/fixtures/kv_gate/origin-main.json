@@ -1,5 +1,5 @@
 {
-"about": "origin/main (c17ef891) measured by scripts/kv_corpus.py over the committed corpus: prepopulated.db's rows with a config, every fixture under tests/fixtures (the GGUF reader on tests/fixtures/gguf's metadata-only GGUFs), the built-in synthetic shapes and GenZ's built-in models. The baseline tests/test_kv_gate.py holds the branch's figures against. Round 14 added, measured with the same harness on the same tree, the serving path's weights and the concurrency they leave: `serving_weight_bytes` (a ServingSimulator's weight load), `cluster_b_eff_4096` / `disagg_b_eff_4096` and the converter's `conv_serving_weight_bytes`.",
+"about": "origin/main (c17ef891) measured by scripts/kv_corpus.py over the committed corpus: prepopulated.db's rows with a config, every fixture under tests/fixtures (the GGUF reader on tests/fixtures/gguf's metadata-only GGUFs), the built-in synthetic shapes and GenZ's built-in models. The baseline tests/test_kv_gate.py holds the branch's figures against. Round 14 added, measured with the same harness on the same tree, the serving path's weights and the concurrency they leave: `serving_weight_bytes` (a ServingSimulator's weight load), `cluster_b_eff_4096` / `disagg_b_eff_4096` and the converter's `conv_serving_weight_bytes`. Round 15 added, measured with the same harness on the same tree, the training readers -- the parameter counter (`counter_params`), the training memory calculator's weights and total (`trainmem_weight_gb`, `trainmem_total_gb`) and GenZ's training_modeling parameters (`traingenz_params`) -- and the hub configs as shipped (tests/fixtures/hub_as_shipped) and the synthetic qwen2-window-depth-left-to-class; every figure the earlier rows held is unchanged.",
 "origin_main": "c17ef891da9300a2b80630a5a0671025d768728c",
 "rows": [
 {
@@ -13,6 +13,7 @@
 "conv_prefill_weights_mb": 43070.0,
 "conv_serving_weight_bytes": 43605032960,
 "conv_state_bytes": 0,
+"counter_params": 16972032000,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 524288000,
@@ -111,6 +112,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 22581903360,
+"trainmem_total_gb": 336.046234,
+"trainmem_weight_gb": 101.832192,
 "vllm_limits": [
 2183,
 34928,
@@ -134,6 +138,7 @@ true
 "conv_prefill_weights_mb": 1181.5,
 "conv_serving_weight_bytes": 927727616,
 "conv_state_bytes": 0,
+"counter_params": 463964160,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 104,
 "disagg_transfer_bytes_640": 62914560,
@@ -232,6 +237,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 619544576,
+"trainmem_total_gb": 9.18649,
+"trainmem_weight_gb": 2.783785,
 "vllm_limits": [
 47097,
 753552,
@@ -255,6 +263,7 @@ true
 "conv_prefill_weights_mb": 212112.0,
 "conv_serving_weight_bytes": 219924135936,
 "conv_state_bytes": 0,
+"counter_params": 111210414080,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 209715200,
 "eng_None_32768_kv_mb": 10737.41824,
@@ -340,6 +349,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 120605638656,
+"trainmem_total_gb": 2201.966199,
+"trainmem_weight_gb": 667.262484,
 "vllm_limits": [
 0,
 0,
@@ -363,6 +375,7 @@ false
 "conv_prefill_weights_mb": 27020.0,
 "conv_serving_weight_bytes": 26775388160,
 "conv_state_bytes": 0,
+"counter_params": 14167091200,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 4,
 "disagg_transfer_bytes_640": 524288000,
@@ -461,6 +474,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 14167080960,
+"trainmem_total_gb": 280.508406,
+"trainmem_weight_gb": 85.002547,
 "vllm_limits": [
 3547,
 56752,
@@ -484,6 +500,7 @@ true
 "conv_prefill_weights_mb": 3503.0,
 "conv_serving_weight_bytes": 3050831872,
 "conv_state_bytes": 0,
+"counter_params": 1836781568,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 49,
 "disagg_transfer_bytes_640": 125829120,
@@ -582,6 +599,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 1836777472,
+"trainmem_total_gb": 36.368275,
+"trainmem_weight_gb": 11.020689,
 "vllm_limits": [
 22661,
 362576,
@@ -605,6 +625,7 @@ true
 "conv_prefill_weights_mb": 62010.0,
 "conv_serving_weight_bytes": 63465062400,
 "conv_state_bytes": 0,
+"counter_params": 32512419840,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
@@ -703,6 +724,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 35196764160,
+"trainmem_total_gb": 643.745913,
+"trainmem_weight_gb": 195.074519,
 "vllm_limits": [
 2337,
 37392,
@@ -726,6 +750,7 @@ true
 "conv_prefill_weights_mb": 7533.75,
 "conv_serving_weight_bytes": 7121797120,
 "conv_state_bytes": 0,
+"counter_params": 3950269440,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 21,
 "disagg_transfer_bytes_640": 262144000,
@@ -824,6 +849,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 3950264320,
+"trainmem_total_gb": 78.215335,
+"trainmem_weight_gb": 23.701617,
 "vllm_limits": [
 10229,
 163664,
@@ -847,6 +875,7 @@ true
 "conv_prefill_weights_mb": 137872.0,
 "conv_serving_weight_bytes": 142077853696,
 "conv_state_bytes": 0,
+"counter_params": 72287272960,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1677721600,
@@ -945,6 +974,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 72287256576,
+"trainmem_total_gb": 1431.288005,
+"trainmem_weight_gb": 433.723638,
 "vllm_limits": [
 0,
 0,
@@ -968,6 +1000,7 @@ false
 "conv_prefill_weights_mb": 14726.0,
 "conv_serving_weight_bytes": 14196670464,
 "conv_state_bytes": 0,
+"counter_params": 7721197568,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
@@ -1066,6 +1099,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 7721189376,
+"trainmem_total_gb": 152.879712,
+"trainmem_weight_gb": 46.327185,
 "vllm_limits": [
 7084,
 113344,
@@ -1089,6 +1125,7 @@ true
 "conv_prefill_weights_mb": 25720.625,
 "conv_serving_weight_bytes": 3088580608,
 "conv_state_bytes": 0,
+"counter_params": 13796380672,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 49,
 "disagg_transfer_bytes_640": 125829120,
@@ -1187,6 +1224,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 50853511168,
+"trainmem_total_gb": 273.168337,
+"trainmem_weight_gb": 82.778284,
 "vllm_limits": [
 14933,
 238928,
@@ -1210,6 +1250,7 @@ true
 "conv_prefill_weights_mb": 230032.0,
 "conv_serving_weight_bytes": 238714617856,
 "conv_state_bytes": 0,
+"counter_params": 88393400320,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1677721600,
@@ -1308,6 +1349,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 120605638656,
+"trainmem_total_gb": 1750.189326,
+"trainmem_weight_gb": 530.360402,
 "vllm_limits": [
 0,
 0,
@@ -1331,6 +1375,7 @@ false
 "conv_prefill_weights_mb": 22982.0,
 "conv_serving_weight_bytes": 22853713920,
 "conv_state_bytes": 0,
+"counter_params": 9164038144,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 9,
 "disagg_transfer_bytes_640": 335544320,
@@ -1429,6 +1474,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 12049711104,
+"trainmem_total_gb": 181.447955,
+"trainmem_weight_gb": 54.984229,
 "vllm_limits": [
 5943,
 95088,
@@ -1452,6 +1500,7 @@ true
 "conv_prefill_weights_mb": 5051.0,
 "conv_serving_weight_bytes": 4674027520,
 "conv_state_bytes": 0,
+"counter_params": 2107314176,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 47,
 "disagg_transfer_bytes_640": 125829120,
@@ -1550,6 +1599,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 2648375296,
+"trainmem_total_gb": 41.724821,
+"trainmem_weight_gb": 12.643885,
 "vllm_limits": [
 21943,
 351088,
@@ -1573,6 +1625,7 @@ true
 "conv_prefill_weights_mb": 1201.8125,
 "conv_serving_weight_bytes": 987922432,
 "conv_state_bytes": 0,
+"counter_params": 494049024,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 833,
 "disagg_transfer_bytes_640": 7864320,
@@ -1671,6 +1724,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 663212032,
+"trainmem_total_gb": 9.782171,
+"trainmem_weight_gb": 2.964294,
 "vllm_limits": [
 376504,
 6024064,
@@ -1694,6 +1750,7 @@ true
 "conv_prefill_weights_mb": 28170.0,
 "conv_serving_weight_bytes": 27981250560,
 "conv_state_bytes": 0,
+"counter_params": 14770186240,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 18,
 "disagg_transfer_bytes_640": 125829120,
@@ -1792,6 +1849,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 16783441920,
+"trainmem_total_gb": 292.449688,
+"trainmem_weight_gb": 88.621117,
 "vllm_limits": [
 14396,
 230336,
@@ -1815,6 +1875,7 @@ true
 "conv_prefill_weights_mb": 3389.25,
 "conv_serving_weight_bytes": 3087138816,
 "conv_state_bytes": 0,
+"counter_params": 1543744512,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 339,
 "disagg_transfer_bytes_640": 18350080,
@@ -1913,6 +1974,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 1887215616,
+"trainmem_total_gb": 30.566141,
+"trainmem_weight_gb": 9.262467,
 "vllm_limits": [
 156721,
 2507536,
@@ -1936,6 +2000,7 @@ true
 "conv_prefill_weights_mb": 62490.0,
 "conv_serving_weight_bytes": 63968378880,
 "conv_state_bytes": 0,
+"counter_params": 32764078080,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
@@ -2034,6 +2099,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 35448422400,
+"trainmem_total_gb": 648.728746,
+"trainmem_weight_gb": 196.584468,
 "vllm_limits": [
 2217,
 35472,
@@ -2057,6 +2125,7 @@ false
 "conv_prefill_weights_mb": 6479.0,
 "conv_serving_weight_bytes": 6171394048,
 "conv_state_bytes": 0,
+"counter_params": 3085996032,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 243,
 "disagg_transfer_bytes_640": 23592960,
@@ -2155,6 +2224,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 3661398016,
+"trainmem_total_gb": 61.102721,
+"trainmem_weight_gb": 18.515976,
 "vllm_limits": [
 116627,
 1866032,
@@ -2178,6 +2250,7 @@ true
 "conv_prefill_weights_mb": 138672.0,
 "conv_serving_weight_bytes": 142916714496,
 "conv_state_bytes": 0,
+"counter_params": 72706703360,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 209715200,
@@ -2276,6 +2349,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 82101927936,
+"trainmem_total_gb": 1439.592727,
+"trainmem_weight_gb": 436.24022,
 "vllm_limits": [
 0,
 0,
@@ -2299,6 +2375,7 @@ false
 "conv_prefill_weights_mb": 14525.0,
 "conv_serving_weight_bytes": 14140571648,
 "conv_state_bytes": 0,
+"counter_params": 7615691776,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 122,
 "disagg_transfer_bytes_640": 36700160,
@@ -2397,6 +2474,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 8232247296,
+"trainmem_total_gb": 150.790697,
+"trainmem_weight_gb": 45.694151,
 "vllm_limits": [
 65027,
 1040432,
@@ -2420,6 +2500,7 @@ true
 "conv_prefill_weights_mb": 1744.570312,
 "conv_serving_weight_bytes": 1317310464,
 "conv_state_bytes": 0,
+"counter_params": 558618624,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 103,
 "disagg_transfer_bytes_640": 62914560,
@@ -2518,6 +2599,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 914755584,
+"trainmem_total_gb": 11.060649,
+"trainmem_weight_gb": 3.351712,
 "vllm_limits": [
 46016,
 736256,
@@ -2541,6 +2625,7 @@ true
 "conv_prefill_weights_mb": 73563.0,
 "conv_serving_weight_bytes": 75283038208,
 "conv_state_bytes": 0,
+"counter_params": 667980916736,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1119354880,
 "eng_None_32768_kv_mb": 2302.672896,
@@ -2626,6 +2711,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 6203976626176,
+"trainmem_total_gb": 13226.022151,
+"trainmem_weight_gb": 4007.8855,
 "vllm_limits": [
 0,
 0,
@@ -2649,6 +2737,7 @@ false
 "conv_prefill_weights_mb": 5287.0,
 "conv_serving_weight_bytes": 5124390912,
 "conv_state_bytes": 0,
+"counter_params": 16375844864,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 40,
 "disagg_transfer_bytes_640": 146800640,
@@ -2747,6 +2836,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 121383387136,
+"trainmem_total_gb": 324.241728,
+"trainmem_weight_gb": 98.255069,
 "vllm_limits": [
 11369,
 181904,
@@ -2770,6 +2862,7 @@ true
 "conv_prefill_weights_mb": 21291.125,
 "conv_serving_weight_bytes": 21734424576,
 "conv_state_bytes": 0,
+"counter_params": 8224867200,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 8,
 "disagg_transfer_bytes_640": 372244480,
@@ -2868,6 +2961,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 11163262976,
+"trainmem_total_gb": 162.852371,
+"trainmem_weight_gb": 49.349203,
 "vllm_limits": [
 5672,
 90752,
@@ -2891,6 +2987,7 @@ true
 "conv_prefill_weights_mb": 115960.0,
 "conv_serving_weight_bytes": 22007513088,
 "conv_state_bytes": 0,
+"counter_params": 54451511296,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 4,
 "disagg_transfer_bytes_640": 671088640,
@@ -2989,6 +3086,9 @@ null
 false
 ],
 "state_gb": 0.29360128,
+"traingenz_params": 11271143424,
+"trainmem_total_gb": 1078.139924,
+"trainmem_weight_gb": 326.709068,
 "vllm_limits": [
 0,
 0,
@@ -3012,6 +3112,7 @@ false
 "conv_prefill_weights_mb": 18500.0,
 "conv_serving_weight_bytes": 19136512000,
 "conv_state_bytes": 0,
+"counter_params": 7015636992,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 283,
 "disagg_transfer_bytes_640": 13107200,
@@ -3110,6 +3211,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 11000217600,
+"trainmem_total_gb": 138.909612,
+"trainmem_weight_gb": 42.093822,
 "vllm_limits": [
 170412,
 2726592,
@@ -3133,6 +3237,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 123532032,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 282,
 "disagg_transfer_bytes_640": 23592960,
@@ -3231,6 +3336,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 160167936,
+"trainmem_total_gb": 3.684174,
+"trainmem_weight_gb": 0.741192,
 "vllm_limits": [
 126274,
 2020384,
@@ -3254,6 +3362,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 1720216064,
 "disagg_b_eff_4096": 1,
 "disagg_error": "TypeError: 'NoneType' object is not iterable",
 "eng_None_32768_kv_mb": 0.0,
@@ -3328,6 +3437,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_error": "TypeError: 'NoneType' object is not iterable",
+"trainmem_total_gb": 34.060278,
+"trainmem_weight_gb": 10.321296,
 "vllm_limits": [
 21227,
 339632,
@@ -3351,6 +3463,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 123570432,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 104,
 "disagg_transfer_bytes_640": 62914560,
@@ -3449,6 +3562,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 406945792,
+"trainmem_total_gb": 3.684597,
+"trainmem_weight_gb": 0.741423,
 "vllm_limits": [
 4702,
 75232,
@@ -3472,6 +3588,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 162167808,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo",
 "eng_None_32768_kv_mb": 701.80864,
@@ -3546,6 +3663,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
+"trainmem_total_gb": 4.109168,
+"trainmem_weight_gb": 0.973007,
 "vllm_limits": [
 4702,
 75232,
@@ -3569,6 +3689,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 123532032,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'initializer_factor', 'initializer_range', 'i",
 "eng_None_32768_kv_mb": 0.0,
@@ -3643,6 +3764,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init",
+"trainmem_total_gb": 3.684174,
+"trainmem_weight_gb": 0.741192,
 "vllm_limits": [
 125989,
 2015824,
@@ -3666,6 +3790,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 123532032,
 "disagg_b_eff_4096": 1,
 "disagg_error": "TypeError: 'NoneType' object is not iterable",
 "eng_None_32768_kv_mb": 5368.70912,
@@ -3740,6 +3865,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_error": "TypeError: 'NoneType' object is not iterable",
+"trainmem_total_gb": 3.684174,
+"trainmem_weight_gb": 0.741192,
 "vllm_limits": [
 20644,
 330304,
@@ -3763,6 +3891,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 162167808,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo",
 "eng_None_32768_kv_mb": 701.80864,
@@ -3837,6 +3966,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
+"trainmem_total_gb": 4.109168,
+"trainmem_weight_gb": 0.973007,
 "vllm_limits": [
 4702,
 75232,
@@ -3860,6 +3992,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 123532032,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token_id', 'dtype', 'eos_token_id', 'id2label",
 "eng_None_32768_kv_mb": 0.0,
@@ -3934,6 +4067,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token",
+"trainmem_total_gb": 3.684174,
+"trainmem_weight_gb": 0.741192,
 "vllm_limits": [
 125606,
 2009696,
@@ -3957,6 +4093,7 @@ true
 "conv_prefill_weights_mb": 5126.75,
 "conv_serving_weight_bytes": 4956356608,
 "conv_state_bytes": 0,
+"counter_params": 15725195264,
 "disagg_b_eff_4096": 41,
 "disagg_transfer_bytes_640": 141557760,
 "eng_None_32768_kv_mb": 1019.215872,
@@ -4044,6 +4181,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 117063245824,
+"trainmem_total_gb": 311.358866,
+"trainmem_weight_gb": 94.351172,
 "vllm_limits": [
 87811,
 1404976,
@@ -4067,6 +4207,7 @@ true
 "conv_prefill_weights_mb": 5417.390625,
 "conv_serving_weight_bytes": 5268774912,
 "conv_state_bytes": 0,
+"counter_params": 254840832,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'attention_dropout', 'bos_token_id', 'chun",
 "eng_None_32768_kv_mb": 1758.068736,
@@ -4141,6 +4282,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a",
+"trainmem_total_gb": 5.128571,
+"trainmem_weight_gb": 1.529045,
 "vllm_limits": [
 94617,
 1513872,
@@ -4164,6 +4308,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 123570432,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 269,
 "disagg_transfer_bytes_640": 23592960,
@@ -4262,6 +4407,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 1212317696,
+"trainmem_total_gb": 3.684597,
+"trainmem_weight_gb": 0.741423,
 "vllm_limits": [
 4702,
 75232,
@@ -4285,6 +4433,7 @@ true
 "conv_prefill_weights_mb": 192.0,
 "conv_serving_weight_bytes": 167772160,
 "conv_state_bytes": 0,
+"counter_params": 168855552,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 317,
 "disagg_transfer_bytes_640": 20971520,
@@ -4383,6 +4532,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 167804928,
+"trainmem_total_gb": 3.34334,
+"trainmem_weight_gb": 1.013133,
 "vllm_limits": [
 141755,
 2268080,
@@ -4406,6 +4558,7 @@ true
 "conv_prefill_weights_mb": 73.125,
 "conv_serving_weight_bytes": 49414144,
 "conv_state_bytes": 0,
+"counter_params": 30259008,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 786,
 "disagg_transfer_bytes_640": 8519680,
@@ -4504,6 +4657,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 49427456,
+"trainmem_total_gb": 0.599128,
+"trainmem_weight_gb": 0.181554,
 "vllm_limits": [
 351373,
 5621968,
@@ -4527,6 +4683,7 @@ true
 "conv_prefill_weights_mb": 2354.40625,
 "conv_serving_weight_bytes": 2043887616,
 "conv_state_bytes": 0,
+"counter_params": 694389760,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout',",
 "eng_None_32768_kv_mb": 947.56864,
@@ -4601,6 +4758,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment",
+"trainmem_total_gb": 13.748917,
+"trainmem_weight_gb": 4.166339,
 "vllm_limits": [
 27344,
 437504,
@@ -4624,6 +4784,7 @@ true
 "conv_prefill_weights_mb": 6678.0,
 "conv_serving_weight_bytes": 6739197952,
 "conv_state_bytes": 0,
+"counter_params": 583897088,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout', 'd_ff', 'd_kv', 'd_model', 'dense_act_",
 "eng_None_32768_kv_mb": 1118.69952,
@@ -4698,6 +4859,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'",
+"trainmem_total_gb": 11.561162,
+"trainmem_weight_gb": 3.503383,
 "vllm_limits": [
 21856,
 349696,
@@ -4713,6 +4877,1069 @@ true
 {
 "attention_type": null,
 "cluster_b_eff_4096": 1,
+"conv_kv_size": 262144,
+"conv_layers": [
+0,
+32
+],
+"conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
+"conv_state_bytes": 0,
+"counter_params": 580466688,
+"disagg_b_eff_4096": 1,
+"disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config', 'tie_word_embeddings', 'torch_dtype',",
+"eng_None_32768_kv_mb": 0.0,
+"eng_None_32768_params": 580466688,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 1418.285414,
+"eng_None_4096_kv_mb": 0.0,
+"eng_None_4096_params": 580466688,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 1335.238195,
+"eng_llamacpp_32768_kv_mb": 0.0,
+"eng_llamacpp_32768_params": 580466688,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 1418.285414,
+"eng_llamacpp_4096_kv_mb": 0.0,
+"eng_llamacpp_4096_params": 580466688,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 1335.238195,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 2147483648,
+"facts_kv_bytes_per_token": 524288,
+"facts_layers": [
+32,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 18534346720,
+"genz_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config', 'tie_word_embeddings', 'torch_dtype',",
+"genz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config', 'tie_word_embeddings', 'torch_dtype',",
+"genz_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config', 'tie_word_embeddings', 'torch_dtype',",
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 0,
+"kv_gb@32768": 0.0,
+"kv_gb@4096": 0.0,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "multimodal",
+"name": "fixture:HuggingFaceM4_idefics2-8b.json",
+"prefix_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config",
+"report_kv_gb": 0.0,
+"report_params": 580466688,
+"report_state_gb": 0.0,
+"report_total_gb": 1.370099159,
+"report_weight_gb": 1.160933376,
+"runtime_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config",
+"runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config",
+"runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config",
+"serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config', 'tie_word_embeddings', 'torch_dtype',",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config', 'tie_word_embeddings', 'torch_dtype',",
+"sim_max_running": 104,
+"slice_mib_16x4352": [
+65536,
+true
+],
+"state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config",
+"trainmem_total_gb": 11.49324,
+"trainmem_weight_gb": 3.4828,
+"vllm_limits": [
+6759,
+108144,
+6759,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 84,
+"vllm_running_8192": 12
+},
+{
+"attention_type": null,
+"cluster_b_eff_4096": 1,
+"conv_kv_size": 262144,
+"conv_layers": [
+0,
+32
+],
+"conv_prefill_weights_mb": 14790.0,
+"conv_serving_weight_bytes": 14230224896,
+"conv_state_bytes": 0,
+"counter_params": 233117184,
+"disagg_b_eff_4096": 1,
+"disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type', 'text_config', 'transformers_version'",
+"eng_None_32768_kv_mb": 2639.003648,
+"eng_None_32768_params": 5374814976,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 13866.784256,
+"eng_None_4096_kv_mb": 759.955456,
+"eng_None_4096_params": 5374814976,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 11748.660736,
+"eng_llamacpp_32768_kv_mb": 2639.003648,
+"eng_llamacpp_32768_params": 5374814976,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 13866.784256,
+"eng_llamacpp_4096_kv_mb": 759.955456,
+"eng_llamacpp_4096_params": 5374814976,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 11748.660736,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 2147483648,
+"facts_kv_bytes_per_token": 524288,
+"facts_layers": [
+32,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 15508971520,
+"genz_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type', 'text_config', 'transformers_version'",
+"genz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type', 'text_config', 'transformers_version'",
+"genz_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type', 'text_config', 'transformers_version'",
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 0,
+"kv_gb@32768": 0.0,
+"kv_gb@4096": 0.0,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "audio-llm",
+"name": "fixture:Qwen_Qwen2-Audio-7B-Instruct.json",
+"prefix_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type",
+"report_kv_gb": 0.759955456,
+"report_params": 5374814976,
+"report_state_gb": 0.0,
+"report_total_gb": 11.950924493,
+"report_weight_gb": 10.749629952,
+"runtime_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type",
+"runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type",
+"runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type",
+"serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type', 'text_config', 'transformers_version'",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type', 'text_config', 'transformers_version'",
+"sim_max_running": 108,
+"slice_mib_16x4352": [
+62208,
+true
+],
+"state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type",
+"trainmem_total_gb": 4.889611,
+"trainmem_weight_gb": 1.398703,
+"vllm_limits": [
+7075,
+113200,
+7075,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 88,
+"vllm_running_8192": 13
+},
+{
+"attention_type": null,
+"cluster_b_eff_4096": 1,
+"conv_kv_size": 262144,
+"conv_layers": [
+0,
+32
+],
+"conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
+"conv_state_bytes": 0,
+"counter_params": 820587008,
+"disagg_b_eff_4096": 1,
+"disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_factor', 'initializer_range', 'model_type', ",
+"eng_None_32768_kv_mb": 0.0,
+"eng_None_32768_params": 820587008,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 1965.825434,
+"eng_None_4096_kv_mb": 0.0,
+"eng_None_4096_params": 820587008,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 1804.76416,
+"eng_llamacpp_32768_kv_mb": 0.0,
+"eng_llamacpp_32768_params": 820587008,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 1965.825434,
+"eng_llamacpp_4096_kv_mb": 0.0,
+"eng_llamacpp_4096_params": 820587008,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 1804.76416,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 805306368,
+"facts_kv_bytes_per_token": 196608,
+"facts_layers": [
+24,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 6705844224,
+"genz_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_factor', 'initializer_range', 'model_type', ",
+"genz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_factor', 'initializer_range', 'model_type', ",
+"genz_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_factor', 'initializer_range', 'model_type', ",
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 24,
+"kv_gb@32768": 0.0,
+"kv_gb@4096": 0.0,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "multimodal",
+"name": "fixture:Salesforce_blip2-flan-t5-xl.json",
+"prefix_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact",
+"report_kv_gb": 0.0,
+"report_params": 820587008,
+"report_state_gb": 0.0,
+"report_total_gb": 1.837482189,
+"report_weight_gb": 1.641174016,
+"runtime_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact",
+"runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact",
+"runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact",
+"serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_factor', 'initializer_range', 'model_type', ",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_factor', 'initializer_range', 'model_type', ",
+"sim_max_running": 331,
+"slice_mib_16x4352": [
+28160,
+true
+],
+"state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact",
+"trainmem_total_gb": 16.247623,
+"trainmem_weight_gb": 4.923522,
+"vllm_limits": [
+21814,
+349024,
+21814,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 272,
+"vllm_running_8192": 41
+},
+{
+"attention_type": "mha",
+"cluster_b_eff_4096": 26,
+"conv_kv_size": 262144,
+"conv_layers": [
+0,
+32
+],
+"conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
+"conv_state_bytes": 0,
+"counter_params": 2731388416,
+"decode_fit_refused": true,
+"disagg_b_eff_4096": 26,
+"disagg_transfer_bytes_640": 209715200,
+"eng_None_32768_kv_mb": 10737.41824,
+"eng_None_32768_params": 2731388416,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 16756.37207,
+"eng_None_4096_kv_mb": 1342.17728,
+"eng_None_4096_params": 2731388416,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 7084.307046,
+"eng_llamacpp_32768_kv_mb": 10737.41824,
+"eng_llamacpp_32768_params": 2731388416,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 16756.37207,
+"eng_llamacpp_4096_kv_mb": 1342.17728,
+"eng_llamacpp_4096_params": 2731388416,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 7084.307046,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 1342177280,
+"facts_kv_bytes_per_token": 327680,
+"facts_layers": [
+32,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 7226332160,
+"genz_chunked_kv_mb": 1440.0,
+"genz_decode_kv_mb": 1280.0,
+"genz_decode_weights_mb": 5045.625,
+"genz_ffn_kinds": {
+"Dense": 32
+},
+"genz_kv_size": 163840,
+"genz_layer_kinds": {
+"MHA-global": 32
+},
+"genz_prefill_kv_mb": 1280.0,
+"genz_prefill_weights_mb": 5291.25,
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 32,
+"kv_gb@32768": 10.73741824,
+"kv_gb@4096": 1.34217728,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+327680.0,
+32,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+327680.0,
+32,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "multimodal",
+"name": "fixture:Salesforce_blip2-opt-2.7b.json",
+"prefix_kv_bytes_per_token": 327680,
+"report_kv_gb": 1.34217728,
+"report_params": 2731388416,
+"report_state_gb": 0.0,
+"report_total_gb": 7.408613089,
+"report_weight_gb": 5.462776832,
+"runtime_chunked": [
+4.964997,
+5291.25,
+240.0
+],
+"runtime_decode": [
+4.699303,
+5045.625,
+161.25
+],
+"runtime_prefill": [
+11.703818,
+5291.25,
+160.0
+],
+"serving_bytes_per_token": 327680,
+"serving_requests_8gib_1k": 25,
+"serving_state_bytes": 0,
+"serving_weight_bytes": 6968442880,
+"sim_max_running": 196,
+"slice_mib_16x4352": [
+39168,
+true
+],
+"state_gb": 0.0,
+"traingenz_params": 3613327360,
+"trainmem_total_gb": 54.081491,
+"trainmem_weight_gb": 16.38833,
+"vllm_limits": [
+12840,
+205440,
+12840,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 160,
+"vllm_running_8192": 24
+},
+{
+"attention_type": null,
+"cluster_b_eff_4096": 1,
+"conv_kv_size": 131072,
+"conv_layers": [
+16,
+16
+],
+"conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
+"conv_state_bytes": 0,
+"counter_params": 820587008,
+"disagg_b_eff_4096": 1,
+"disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', 'is_encoder_decoder', 'model_type', 'num",
+"eng_None_32768_kv_mb": 0.0,
+"eng_None_32768_params": 820587008,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 1965.825434,
+"eng_None_4096_kv_mb": 0.0,
+"eng_None_4096_params": 820587008,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 1804.76416,
+"eng_llamacpp_32768_kv_mb": 0.0,
+"eng_llamacpp_32768_params": 820587008,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 1965.825434,
+"eng_llamacpp_4096_kv_mb": 0.0,
+"eng_llamacpp_4096_params": 820587008,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 1804.76416,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 805306368,
+"facts_kv_bytes_per_token": 196608,
+"facts_layers": [
+24,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 6705844224,
+"genz_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', 'is_encoder_decoder', 'model_type', 'num",
+"genz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', 'is_encoder_decoder', 'model_type', 'num",
+"genz_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', 'is_encoder_decoder', 'model_type', 'num",
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 24,
+"kv_gb@32768": 0.0,
+"kv_gb@4096": 0.0,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "multimodal",
+"name": "fixture:Salesforce_instructblip-flan-t5-xl.json",
+"prefix_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', ",
+"report_kv_gb": 0.0,
+"report_params": 820587008,
+"report_state_gb": 0.0,
+"report_total_gb": 1.837482189,
+"report_weight_gb": 1.641174016,
+"runtime_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', ",
+"runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', ",
+"runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', ",
+"serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', 'is_encoder_decoder', 'model_type', 'num",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', 'is_encoder_decoder', 'model_type', 'num",
+"sim_max_running": 331,
+"slice_mib_16x4352": [
+28160,
+true
+],
+"state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', ",
+"trainmem_total_gb": 16.247623,
+"trainmem_weight_gb": 4.923522,
+"vllm_limits": [
+21814,
+349024,
+21814,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 272,
+"vllm_running_8192": 41
+},
+{
+"attention_type": null,
+"cluster_b_eff_4096": 1,
+"conv_kv_size": 131072,
+"conv_layers": [
+16,
+16
+],
+"conv_prefill_weights_mb": 6678.0,
+"conv_serving_weight_bytes": 6739197952,
+"conv_state_bytes": 0,
+"counter_params": 70476800,
+"disagg_b_eff_4096": 1,
+"disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_rate', 'eos_token_id', 'initializer_factor",
+"eng_None_32768_kv_mb": 274.432,
+"eng_None_32768_params": 135813120,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 656.787866,
+"eng_None_4096_kv_mb": 45.056,
+"eng_None_4096_params": 135813120,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 372.047053,
+"eng_llamacpp_32768_kv_mb": 274.432,
+"eng_llamacpp_32768_params": 135813120,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 656.787866,
+"eng_llamacpp_4096_kv_mb": 45.056,
+"eng_llamacpp_4096_params": 135813120,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 372.047053,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 50331648,
+"facts_kv_bytes_per_token": 12288,
+"facts_layers": [
+6,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 166474752,
+"genz_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_rate', 'eos_token_id', 'initializer_factor",
+"genz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_rate', 'eos_token_id', 'initializer_factor",
+"genz_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_rate', 'eos_token_id', 'initializer_factor",
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 6,
+"kv_gb@32768": 0.0,
+"kv_gb@4096": 0.0,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "encoder-decoder",
+"name": "fixture:google-t5_t5-small.json",
+"prefix_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra",
+"report_kv_gb": 0.045056,
+"report_params": 135813120,
+"report_state_gb": 0.0,
+"report_total_gb": 0.393206415,
+"report_weight_gb": 0.27162624,
+"runtime_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra",
+"runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra",
+"runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra",
+"serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_rate', 'eos_token_id', 'initializer_factor",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_rate', 'eos_token_id', 'initializer_factor",
+"sim_max_running": 400,
+"slice_mib_16x4352": [
+6656,
+true
+],
+"state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra",
+"trainmem_total_gb": 3.100567,
+"trainmem_weight_gb": 0.422861,
+"vllm_limits": [
+382640,
+6122240,
+382640,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 1024,
+"vllm_running_8192": 724
+},
+{
+"attention_type": null,
+"cluster_b_eff_4096": 13,
+"conv_kv_size": 131072,
+"conv_layers": [
+16,
+16
+],
+"conv_prefill_weights_mb": 10084.0,
+"conv_serving_weight_bytes": 8524922880,
+"conv_state_bytes": 0,
+"counter_params": 281109504,
+"decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
+"disagg_transfer_bytes_640": 335544320,
+"eng_None_32768_kv_mb": 274.432,
+"eng_None_32768_params": 371283968,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 1087.464243,
+"eng_None_4096_kv_mb": 45.056,
+"eng_None_4096_params": 371283968,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 822.85609,
+"eng_llamacpp_32768_kv_mb": 274.432,
+"eng_llamacpp_32768_params": 371283968,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 1087.464243,
+"eng_llamacpp_4096_kv_mb": 45.056,
+"eng_llamacpp_4096_params": 371283968,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 822.85609,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 67108864,
+"facts_kv_bytes_per_token": 16384,
+"facts_layers": [
+8,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 646464512,
+"genz_chunked_kv_mb": 2304.0,
+"genz_decode_kv_mb": 2048.0,
+"genz_decode_weights_mb": 11554.0,
+"genz_ffn_kinds": {
+"Dense": 32
+},
+"genz_kv_size": 262144,
+"genz_layer_kinds": {
+"MHA-global": 32
+},
+"genz_prefill_kv_mb": 2048.0,
+"genz_prefill_weights_mb": 13508.0,
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 8,
+"kv_gb@32768": 0.0,
+"kv_gb@4096": 0.0,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "encoder-decoder",
+"name": "fixture:google_mt5-small.json",
+"prefix_kv_bytes_per_token": 524288,
+"report_kv_gb": 0.045056,
+"report_params": 371283968,
+"report_state_gb": 0.0,
+"report_total_gb": 0.83998892,
+"report_weight_gb": 0.742567936,
+"runtime_chunked": [
+12.457169,
+13508.0,
+384.0
+],
+"runtime_decode": [
+8.735644,
+11554.0,
+258.0
+],
+"runtime_prefill": [
+26.525452,
+13508.0,
+256.0
+],
+"serving_bytes_per_token": 524288,
+"serving_requests_8gib_1k": 16,
+"serving_state_bytes": 0,
+"serving_weight_bytes": 15000928256,
+"sim_max_running": 400,
+"slice_mib_16x4352": [
+7424,
+true
+],
+"state_gb": 0.0,
+"traingenz_params": 8525447168,
+"trainmem_total_gb": 5.565968,
+"trainmem_weight_gb": 1.686657,
+"vllm_limits": [
+280958,
+4495328,
+280958,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 1024,
+"vllm_running_8192": 532
+},
+{
+"attention_type": null,
+"cluster_b_eff_4096": 1,
+"conv_kv_size": 262144,
+"conv_layers": [
+0,
+32
+],
+"conv_prefill_weights_mb": 12853.0,
+"conv_serving_weight_bytes": 13214679040,
+"conv_state_bytes": 0,
+"counter_params": 444269312,
+"disagg_b_eff_4096": 1,
+"disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id', 'projector_hidden_act', 'text_config'",
+"eng_None_32768_kv_mb": 0.0,
+"eng_None_32768_params": 444269312,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 1064.542106,
+"eng_None_4096_kv_mb": 0.0,
+"eng_None_4096_params": 444269312,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 981.494886,
+"eng_llamacpp_32768_kv_mb": 0.0,
+"eng_llamacpp_32768_params": 444269312,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 1064.542106,
+"eng_llamacpp_4096_kv_mb": 0.0,
+"eng_llamacpp_4096_params": 444269312,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 981.494886,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 2147483648,
+"facts_kv_bytes_per_token": 524288,
+"facts_layers": [
+32,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 18315765760,
+"genz_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id', 'projector_hidden_act', 'text_config'",
+"genz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id', 'projector_hidden_act', 'text_config'",
+"genz_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id', 'projector_hidden_act', 'text_config'",
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 0,
+"kv_gb@32768": 0.0,
+"kv_gb@4096": 0.0,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "multimodal",
+"name": "fixture:llava-hf_llava-1.5-7b-hf.json",
+"prefix_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id",
+"report_kv_gb": 0.0,
+"report_params": 444269312,
+"report_state_gb": 0.0,
+"report_total_gb": 1.000086139,
+"report_weight_gb": 0.888538624,
+"runtime_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id",
+"runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id",
+"runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id",
+"serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id', 'projector_hidden_act', 'text_config'",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id', 'projector_hidden_act', 'text_config'",
+"sim_max_running": 105,
+"slice_mib_16x4352": [
+81582,
+false
+],
+"state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id",
+"trainmem_total_gb": 8.796532,
+"trainmem_weight_gb": 2.665616,
+"vllm_limits": [
+6864,
+109824,
+6864,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 85,
+"vllm_running_8192": 13
+},
+{
+"attention_type": null,
+"cluster_b_eff_4096": 1,
+"conv_kv_size": 131072,
+"conv_layers": [
+16,
+16
+],
+"conv_prefill_weights_mb": 6977.390625,
+"conv_serving_weight_bytes": 6896164864,
+"conv_state_bytes": 0,
+"counter_params": 124324608,
+"disagg_b_eff_4096": 1,
+"disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ignore_index', 'is_encoder_decoder', 'mode",
+"eng_error": "TypeError: int() argument must be a string, a bytes-like object or a real number, not 'list'",
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 75497472,
+"facts_kv_bytes_per_token": 18432,
+"facts_layers": [
+6,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 384072192,
+"genz_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ignore_index', 'is_encoder_decoder', 'mode",
+"genz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ignore_index', 'is_encoder_decoder', 'mode",
+"genz_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ignore_index', 'is_encoder_decoder', 'mode",
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 6,
+"kv_gb@32768": 0.0,
+"kv_gb@4096": 0.0,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+0.0,
+6,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+0.0,
+6,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "multimodal",
+"name": "fixture:microsoft_Florence-2-base-ft.json",
+"prefix_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig",
+"report_error": "TypeError: int() argument must be a string, a bytes-like object or a real number, not 'list'",
+"runtime_chunked_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig",
+"runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig",
+"runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig",
+"serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ignore_index', 'is_encoder_decoder', 'mode",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ignore_index', 'is_encoder_decoder', 'mode",
+"sim_max_running": 400,
+"slice_mib_16x4352": [
+7424,
+true
+],
+"state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig",
+"trainmem_total_gb": 3.692893,
+"trainmem_weight_gb": 0.745948,
+"vllm_limits": [
+252546,
+4040736,
+252546,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 1024,
+"vllm_running_8192": 478
+},
+{
+"attention_type": null,
+"cluster_b_eff_4096": 46,
+"conv_kv_size": 98304,
+"conv_layers": [
+12,
+12
+],
+"conv_prefill_weights_mb": 5442.390625,
+"conv_serving_weight_bytes": 5281882112,
+"conv_state_bytes": 0,
+"counter_params": 124805376,
+"decode_fit_refused": true,
+"disagg_b_eff_4096": 46,
+"disagg_transfer_bytes_640": 125829120,
+"eng_None_32768_kv_mb": 1318.551552,
+"eng_None_32768_params": 241512192,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 1907.272397,
+"eng_None_4096_kv_mb": 261.586944,
+"eng_None_4096_params": 241512192,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 797.459558,
+"eng_llamacpp_32768_kv_mb": 1318.551552,
+"eng_llamacpp_32768_params": 241512192,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 1907.272397,
+"eng_llamacpp_4096_kv_mb": 261.586944,
+"eng_llamacpp_4096_params": 241512192,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 797.459558,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 150994944,
+"facts_kv_bytes_per_token": 36864,
+"facts_layers": [
+12,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 612352512,
+"genz_chunked_kv_mb": 864.0,
+"genz_decode_kv_mb": 768.0,
+"genz_decode_weights_mb": 4005.195312,
+"genz_ffn_kinds": {
+"Dense": 12
+},
+"genz_kv_size": 98304,
+"genz_layer_kinds": {
+"MHA-global": 12
+},
+"genz_prefill_kv_mb": 768.0,
+"genz_prefill_weights_mb": 4410.390625,
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 12,
+"kv_gb@32768": 0.0,
+"kv_gb@4096": 0.0,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+0.0,
+12,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+0.0,
+12,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "encoder-decoder",
+"name": "fixture:openai_whisper-small.json",
+"prefix_kv_bytes_per_token": 196608,
+"report_kv_gb": 0.261586944,
+"report_params": 241512192,
+"report_state_gb": 0.0,
+"report_total_gb": 0.861824993,
+"report_weight_gb": 0.483024384,
+"runtime_chunked": [
+4.084111,
+4410.391,
+144.0
+],
+"runtime_decode": [
+3.70201,
+4005.195,
+96.75
+],
+"runtime_prefill": [
+9.405931,
+4410.391,
+96.0
+],
+"serving_bytes_per_token": 196608,
+"serving_requests_8gib_1k": 42,
+"serving_state_bytes": 0,
+"serving_weight_bytes": 5281882112,
+"sim_max_running": 400,
+"slice_mib_16x4352": [
+8960,
+true
+],
+"state_gb": 0.0,
+"traingenz_params": 2853576704,
+"trainmem_total_gb": 2.923074,
+"trainmem_weight_gb": 0.748832,
+"vllm_limits": [
+126669,
+2026704,
+126669,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 1024,
+"vllm_running_8192": 239
+},
+{
+"attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 0,
@@ -4721,6 +5948,7 @@ true
 "conv_serving_weight_bytes_error": "TypeError: unsupported operand type(s) for *: 'int' and 'NoneType'",
 "conv_state_bytes": 0,
 "conv_weights_error": "TypeError: unsupported operand type(s) for /: 'NoneType' and 'int'",
+"counter_params": 706906112,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', 'attention_types', 'bos_token_id', 'embe",
 "eng_None_32768_kv_mb": 0.0,
@@ -4795,6 +6023,8 @@ null
 true
 ],
 "state_gb": 0.00172032,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', ",
+"trainmem_error": "TypeError: unsupported operand type(s) for /: 'NoneType' and 'int'",
 "vllm_limits": [
 22571,
 361136,
@@ -4818,6 +6048,7 @@ true
 "conv_prefill_weights_mb": 4892.0,
 "conv_serving_weight_bytes": 4861198336,
 "conv_state_bytes": 0,
+"counter_params": 2569396224,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 151,
 "disagg_transfer_bytes_640": 39321600,
@@ -4916,6 +6147,9 @@ null
 true
 ],
 "state_gb": 0.000270336,
+"traingenz_params": 2753806336,
+"trainmem_total_gb": 50.874045,
+"trainmem_weight_gb": 15.416377,
 "vllm_limits": [
 263394,
 4214304,
@@ -4939,6 +6173,7 @@ true
 "conv_prefill_weights_mb": 436189.5,
 "conv_serving_weight_bytes": 8445493248,
 "conv_state_bytes": 0,
+"counter_params": 229304285184,
 "disagg_b_eff_4096": 33,
 "disagg_transfer_bytes_640": 162529280,
 "eng_None_32768_kv_mb": 8321.499136,
@@ -5024,6 +6259,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 228250853376,
+"trainmem_total_gb": 4540.224847,
+"trainmem_weight_gb": 1375.825711,
 "vllm_limits": [
 0,
 0,
@@ -5047,6 +6285,7 @@ false
 "conv_prefill_weights_mb": 851439.0,
 "conv_serving_weight_bytes": 47756869632,
 "conv_state_bytes": 0,
+"counter_params": 457319264256,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 209715200,
 "eng_None_32768_kv_mb": 1342.17728,
@@ -5132,6 +6371,9 @@ null
 false
 ],
 "state_gb": 0.29360128,
+"traingenz_params": 449405386752,
+"trainmem_total_gb": 9054.921432,
+"trainmem_weight_gb": 2743.915586,
 "vllm_limits": [
 0,
 0,
@@ -5155,6 +6397,7 @@ false
 "conv_prefill_weights_mb": 11948.75,
 "conv_serving_weight_bytes": 11751260160,
 "conv_state_bytes": 0,
+"counter_params": 21506831360,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 71,
 "disagg_transfer_bytes_640": 68157440,
@@ -5253,6 +6496,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 6537748480,
+"trainmem_total_gb": 425.835261,
+"trainmem_weight_gb": 129.040988,
 "vllm_limits": [
 36572,
 585152,
@@ -5276,6 +6522,7 @@ true
 "conv_prefill_weights_mb": 150467.0,
 "conv_serving_weight_bytes": 5454168064,
 "conv_state_bytes": 0,
+"counter_params": 79733992192,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 93,
 "disagg_transfer_bytes_640": 62914560,
@@ -5374,6 +6621,9 @@ null
 false
 ],
 "state_gb": 0.077266944,
+"traingenz_params": 774522142720,
+"trainmem_total_gb": 1578.733045,
+"trainmem_weight_gb": 478.403953,
 "vllm_limits": [
 0,
 0,
@@ -5397,6 +6647,7 @@ false
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 4945124864,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 66,
 "disagg_transfer_bytes_640": 83886080,
@@ -5495,6 +6746,9 @@ null
 true
 ],
 "state_gb": 0.051511296,
+"traingenz_params": 4375511040,
+"trainmem_total_gb": 97.913472,
+"trainmem_weight_gb": 29.670749,
 "vllm_limits": [
 3767,
 1988976,
@@ -5518,6 +6772,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 27919350016,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
@@ -5616,6 +6871,9 @@ null
 false
 ],
 "state_gb": 0.153944064,
+"traingenz_params": 26367754240,
+"trainmem_total_gb": 552.80313,
+"trainmem_weight_gb": 167.5161,
 "vllm_limits": [
 378,
 296352,
@@ -5639,6 +6897,7 @@ false
 "conv_prefill_weights_mb": 11112.5,
 "conv_serving_weight_bytes": 11488460800,
 "conv_state_bytes": 0,
+"counter_params": 2446020000,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 353894400,
@@ -5737,6 +6996,9 @@ null
 true
 ],
 "state_gb": 0.072479232,
+"traingenz_params": 5826703360,
+"trainmem_total_gb": 48.431196,
+"trainmem_weight_gb": 14.67612,
 "vllm_limits": [
 5261,
 757584,
@@ -5760,6 +7022,7 @@ true
 "conv_prefill_weights_mb": 175620.0,
 "conv_serving_weight_bytes": 14495514624,
 "conv_state_bytes": 0,
+"counter_params": 52912758784,
 "disagg_b_eff_4096": 53,
 "disagg_transfer_bytes_640": 83886080,
 "eng_None_32768_kv_mb": 536.870912,
@@ -5848,6 +7111,9 @@ null
 false
 ],
 "state_gb": 0.01605632,
+"traingenz_params": 92879192064,
+"trainmem_total_gb": 1047.672624,
+"trainmem_weight_gb": 317.476553,
 "vllm_limits": [
 0,
 0,
@@ -5871,6 +7137,7 @@ false
 "conv_prefill_weights_mb": 73563.0,
 "conv_serving_weight_bytes": 75283038208,
 "conv_state_bytes": 0,
+"counter_params": 667980916736,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1119354880,
 "eng_None_32768_kv_mb": 2302.672896,
@@ -5956,6 +7223,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 6203976626176,
+"trainmem_total_gb": 13226.022151,
+"trainmem_weight_gb": 4007.8855,
 "vllm_limits": [
 0,
 0,
@@ -5979,6 +7249,7 @@ false
 "conv_prefill_weights_mb": 15316.0,
 "conv_serving_weight_bytes": 15009316864,
 "conv_state_bytes": 0,
+"counter_params": 9780501632,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 52,
 "disagg_transfer_bytes_640": 83886080,
@@ -6077,6 +7348,9 @@ null
 true
 ],
 "state_gb": 0.123104768,
+"traingenz_params": 8835825664,
+"trainmem_total_gb": 193.653932,
+"trainmem_weight_gb": 58.68301,
 "vllm_limits": [
 4304,
 4476160,
@@ -6100,6 +7374,7 @@ true
 "conv_prefill_weights_mb": 56630.5,
 "conv_serving_weight_bytes": 4932501504,
 "conv_state_bytes": 0,
+"counter_params": 31452695040,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 56,
 "disagg_transfer_bytes_640": 104857600,
@@ -6198,6 +7473,9 @@ null
 false
 ],
 "state_gb": 0.152819712,
+"traingenz_params": 30686183424,
+"trainmem_total_gb": 622.763362,
+"trainmem_weight_gb": 188.71617,
 "vllm_limits": [
 689,
 716560,
@@ -6221,6 +7499,7 @@ false
 "conv_prefill_weights_mb": 201432.0,
 "conv_serving_weight_bytes": 10951327744,
 "conv_state_bytes": 0,
+"counter_params": 102499885056,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 119,
 "disagg_transfer_bytes_640": 41943040,
@@ -6315,6 +7594,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 931148595200,
+"trainmem_total_gb": 2029.497724,
+"trainmem_weight_gb": 614.99931,
 "vllm_limits": [
 0,
 0,
@@ -6338,6 +7620,7 @@ false
 "conv_prefill_weights_mb": 3860.0,
 "conv_serving_weight_bytes": 3785359360,
 "conv_state_bytes": 0,
+"counter_params": 2023868416,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 83,
 "disagg_transfer_bytes_640": 73400320,
@@ -6436,6 +7719,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 2141421568,
+"trainmem_total_gb": 40.072595,
+"trainmem_weight_gb": 12.14321,
 "vllm_limits": [
 38792,
 620672,
@@ -6459,6 +7745,7 @@ true
 "conv_prefill_weights_mb": 7953.75,
 "conv_serving_weight_bytes": 7315783680,
 "conv_state_bytes": 0,
+"counter_params": 4329313280,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 53,
 "disagg_transfer_bytes_640": 104857600,
@@ -6557,6 +7844,9 @@ true
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 4380098560,
+"trainmem_total_gb": 85.720403,
+"trainmem_weight_gb": 25.97588,
 "vllm_limits": [
 25739,
 411824,
@@ -6580,6 +7870,7 @@ true
 "conv_prefill_weights_mb": 25856.0,
 "conv_serving_weight_bytes": 17448304640,
 "conv_state_bytes": 0,
+"counter_params": 7286194176,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 11,
 "disagg_transfer_bytes_640": 335544320,
@@ -6678,6 +7969,9 @@ null
 false
 ],
 "state_gb": 0.272367616,
+"traingenz_params": 11006902272,
+"trainmem_total_gb": 144.266645,
+"trainmem_weight_gb": 43.717165,
 "vllm_limits": [
 217,
 114576,
@@ -6701,6 +7995,7 @@ false
 "conv_prefill_weights_mb": 95875.875,
 "conv_serving_weight_bytes": 5341446144,
 "conv_state_bytes": 0,
+"counter_params": 48819169920,
 "disagg_b_eff_4096": 36,
 "disagg_transfer_bytes_640": 159252480,
 "eng_None_32768_kv_mb": 264.241152,
@@ -6788,6 +8083,9 @@ null
 false
 ],
 "state_gb": 0.0434176,
+"traingenz_params": 441629789184,
+"trainmem_total_gb": 966.619564,
+"trainmem_weight_gb": 292.91502,
 "vllm_limits": [
 0,
 0,
@@ -6811,6 +8109,7 @@ false
 "conv_prefill_weights_mb": 2182.818604,
 "conv_serving_weight_bytes": 2186448000,
 "conv_state_bytes": 0,
+"counter_params": 1611064000,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 242,
 "disagg_transfer_bytes_640": 26214400,
@@ -6909,6 +8208,9 @@ false
 true
 ],
 "state_gb": 0.007168,
+"traingenz_params": 1275702400,
+"trainmem_total_gb": 31.899067,
+"trainmem_weight_gb": 9.666384,
 "vllm_limits": [
 9959,
 1752784,
@@ -6932,6 +8234,7 @@ true
 "conv_prefill_weights_mb": 30629.375,
 "conv_serving_weight_bytes": 30942822400,
 "conv_state_bytes": 0,
+"counter_params": 9476187008,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 12,
 "disagg_transfer_bytes_640": 146800640,
@@ -7030,6 +8333,9 @@ null
 true
 ],
 "state_gb": 0.143548416,
+"traingenz_params": 17472573440,
+"trainmem_total_gb": 187.628503,
+"trainmem_weight_gb": 56.857122,
 "vllm_limits": [
 2520,
 3306240,
@@ -7053,6 +8359,7 @@ true
 "conv_prefill_weights_mb": 32416.0,
 "conv_serving_weight_bytes": 32916897792,
 "conv_state_bytes": 0,
+"counter_params": 8135050240,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 11,
 "disagg_transfer_bytes_640": 136314880,
@@ -7151,6 +8458,9 @@ null
 true
 ],
 "state_gb": 0.102137856,
+"traingenz_params": 18304794624,
+"trainmem_total_gb": 161.073995,
+"trainmem_weight_gb": 48.810301,
 "vllm_limits": [
 3176,
 3303040,
@@ -7174,6 +8484,7 @@ true
 "conv_prefill_weights_mb": 222757.03125,
 "conv_serving_weight_bytes": 4860887040,
 "conv_state_bytes": 0,
+"counter_params": 117368392320,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 126,
 "disagg_transfer_bytes_640": 47185920,
@@ -7273,6 +8584,9 @@ true
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 117014860800,
+"trainmem_total_gb": 2323.894168,
+"trainmem_weight_gb": 704.210354,
 "vllm_limits": [
 16363,
 261808,
@@ -7296,6 +8610,7 @@ true
 "conv_prefill_weights_mb": 10311.015625,
 "conv_serving_weight_bytes": 8646041600,
 "conv_state_bytes": 0,
+"counter_params": 2768839680,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 12,
 "disagg_transfer_bytes_640": 419430400,
@@ -7394,6 +8709,9 @@ null
 true
 ],
 "state_gb": 0.0229376,
+"traingenz_params": 4452392960,
+"trainmem_total_gb": 54.823026,
+"trainmem_weight_gb": 16.613038,
 "vllm_limits": [
 2202,
 105696,
@@ -7417,6 +8735,7 @@ true
 "conv_serving_weight_bytes": 6150217728,
 "conv_state_bytes": 0,
 "conv_weights_error": "TypeError: unsupported operand type(s) for /: 'list' and 'int'",
+"counter_params": 78379909120,
 "disagg_b_eff_4096": 68,
 "disagg_transfer_bytes_640": 83886080,
 "eng_None_32768_kv_mb": 4294.967296,
@@ -7485,6 +8804,9 @@ true
 "serving_state_bytes": 0,
 "serving_weight_bytes": 6150217728,
 "state_gb": 0.0,
+"traingenz_params": 80507363328,
+"trainmem_total_gb": 1551.922201,
+"trainmem_weight_gb": 470.279455,
 "vllm_error": "TypeError: int() argument must be a string, a bytes-like object or a real number, not 'list'"
 },
 {
@@ -7498,6 +8820,7 @@ true
 "conv_prefill_weights_mb": 54780.0,
 "conv_serving_weight_bytes": 54767124480,
 "conv_state_bytes": 0,
+"counter_params": 33643258624,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 94371840,
@@ -7596,6 +8919,9 @@ null
 false
 ],
 "state_gb": 0.304201728,
+"traingenz_params": 34006794240,
+"trainmem_total_gb": 666.136521,
+"trainmem_weight_gb": 201.859552,
 "vllm_limits": [
 0,
 0,
@@ -7619,6 +8945,7 @@ false
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 27425866752,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 325058560,
@@ -7717,6 +9044,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 31490758656,
+"trainmem_total_gb": 543.032162,
+"trainmem_weight_gb": 164.555201,
 "vllm_limits": [
 2067,
 33072,
@@ -7740,6 +9070,7 @@ false
 "conv_prefill_weights_mb": 1433.5,
 "conv_serving_weight_bytes": 1191968768,
 "conv_state_bytes": 0,
+"counter_params": 596101120,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 88,
 "disagg_transfer_bytes_640": 73400320,
@@ -7838,6 +9169,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 692961280,
+"trainmem_total_gb": 11.802802,
+"trainmem_weight_gb": 3.576607,
 "vllm_limits": [
 40225,
 643600,
@@ -7861,6 +9195,7 @@ true
 "conv_prefill_weights_mb": 39878.4375,
 "conv_serving_weight_bytes": 3626680320,
 "conv_state_bytes": 0,
+"counter_params": 21487201920,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 195,
 "disagg_transfer_bytes_640": 31457280,
@@ -7960,6 +9295,9 @@ true
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 21065103360,
+"trainmem_total_gb": 425.446598,
+"trainmem_weight_gb": 128.923212,
 "vllm_limits": [
 155360,
 2485760,
@@ -7983,6 +9321,7 @@ true
 "conv_prefill_weights_mb": 73563.0,
 "conv_serving_weight_bytes": 75283038208,
 "conv_state_bytes": 0,
+"counter_params": 667980916736,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1119354880,
 "eng_None_32768_kv_mb": 2302.672896,
@@ -8068,6 +9407,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 6203976626176,
+"trainmem_total_gb": 13226.022151,
+"trainmem_weight_gb": 4007.8855,
 "vllm_limits": [
 0,
 0,
@@ -8091,6 +9433,7 @@ false
 "conv_prefill_weights_mb": 2544.609375,
 "conv_serving_weight_bytes": 1509949440,
 "conv_state_bytes": 0,
+"counter_params": 1132470720,
 "decode_fit_refused": false,
 "disagg_b_eff_4096": 4940,
 "disagg_transfer_bytes_640": 1310720,
@@ -8189,6 +9532,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 1340755200,
+"trainmem_total_gb": 22.42292,
+"trainmem_weight_gb": 6.794824,
 "vllm_limits": [
 2200491,
 35207856,
@@ -8212,6 +9558,7 @@ true
 "conv_prefill_weights_mb": 2597.34375,
 "conv_serving_weight_bytes": 1565245440,
 "conv_state_bytes": 0,
+"counter_params": 1160118720,
 "decode_fit_refused": false,
 "disagg_b_eff_4096": 4933,
 "disagg_transfer_bytes_640": 1310720,
@@ -8310,6 +9657,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 1368403200,
+"trainmem_total_gb": 22.970351,
+"trainmem_weight_gb": 6.960712,
 "vllm_limits": [
 2198804,
 35180864,
@@ -8333,6 +9683,7 @@ true
 "conv_prefill_weights_mb": 2742.0,
 "conv_serving_weight_bytes": 1630535680,
 "conv_state_bytes": 0,
+"counter_params": 1605382144,
 "decode_fit_refused": false,
 "disagg_b_eff_4096": 2462,
 "disagg_transfer_bytes_640": 2621440,
@@ -8431,6 +9782,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 1462779904,
+"trainmem_total_gb": 31.786566,
+"trainmem_weight_gb": 9.632293,
 "vllm_limits": [
 1098579,
 17577264,
@@ -8454,6 +9808,7 @@ true
 "conv_prefill_weights_mb": 2742.0,
 "conv_serving_weight_bytes": 1630535680,
 "conv_state_bytes": 0,
+"counter_params": 1605382144,
 "decode_fit_refused": false,
 "disagg_b_eff_4096": 2462,
 "disagg_transfer_bytes_640": 2621440,
@@ -8552,6 +9907,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 1462779904,
+"trainmem_total_gb": 31.786566,
+"trainmem_weight_gb": 9.632293,
 "vllm_limits": [
 1098579,
 17577264,
@@ -8575,6 +9933,7 @@ true
 "conv_prefill_weights_mb": 2742.0,
 "conv_serving_weight_bytes": 1630535680,
 "conv_state_bytes": 0,
+"counter_params": 1605382144,
 "decode_fit_refused": false,
 "disagg_b_eff_4096": 2462,
 "disagg_transfer_bytes_640": 2621440,
@@ -8673,6 +10032,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 1462779904,
+"trainmem_total_gb": 31.786566,
+"trainmem_weight_gb": 9.632293,
 "vllm_limits": [
 1098579,
 17577264,
@@ -8696,6 +10058,7 @@ true
 "conv_prefill_weights_mb": 39878.4375,
 "conv_serving_weight_bytes": 3626680320,
 "conv_state_bytes": 0,
+"counter_params": 21487201920,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 195,
 "disagg_transfer_bytes_640": 31457280,
@@ -8795,6 +10158,9 @@ true
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 21065103360,
+"trainmem_total_gb": 425.446598,
+"trainmem_weight_gb": 128.923212,
 "vllm_limits": [
 85423,
 1366768,
@@ -8818,6 +10184,7 @@ true
 "conv_prefill_weights_mb": 39878.4375,
 "conv_serving_weight_bytes": 3626680320,
 "conv_state_bytes": 0,
+"counter_params": 21487201920,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 195,
 "disagg_transfer_bytes_640": 31457280,
@@ -8917,6 +10284,9 @@ true
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 21065103360,
+"trainmem_total_gb": 425.446598,
+"trainmem_weight_gb": 128.923212,
 "vllm_limits": [
 155360,
 2485760,
@@ -8940,6 +10310,7 @@ true
 "conv_prefill_weights_mb": 15316.0,
 "conv_serving_weight_bytes": 15009316864,
 "conv_state_bytes": 0,
+"counter_params": 8030261248,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 52,
 "disagg_transfer_bytes_640": 83886080,
@@ -9038,6 +10409,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 8835825664,
+"trainmem_total_gb": 158.999173,
+"trainmem_weight_gb": 48.181567,
 "vllm_limits": [
 28078,
 449248,
@@ -9061,6 +10435,7 @@ true
 "conv_prefill_weights_mb": 25720.625,
 "conv_serving_weight_bytes": 3088580608,
 "conv_state_bytes": 0,
+"counter_params": 13796380672,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 49,
 "disagg_transfer_bytes_640": 125829120,
@@ -9159,6 +10534,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 50853511168,
+"trainmem_total_gb": 273.168337,
+"trainmem_weight_gb": 82.778284,
 "vllm_limits": [
 14933,
 238928,
@@ -9182,6 +10560,7 @@ true
 "conv_prefill_weights_mb": 58235.0,
 "conv_serving_weight_bytes": 6058147840,
 "conv_state_bytes": 0,
+"counter_params": 30843473920,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 91,
 "disagg_transfer_bytes_640": 62914560,
@@ -9280,6 +10659,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 233356263424,
+"trainmem_total_gb": 610.700784,
+"trainmem_weight_gb": 185.060844,
 "vllm_limits": [
 28265,
 452240,
@@ -9303,6 +10685,7 @@ true
 "conv_prefill_weights_mb": 15622.0,
 "conv_serving_weight_bytes": 15136194560,
 "conv_state_bytes": 0,
+"counter_params": 8191025152,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 46,
 "disagg_transfer_bytes_640": 94371840,
@@ -9401,6 +10784,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 9096986624,
+"trainmem_total_gb": 162.182298,
+"trainmem_weight_gb": 49.146151,
 "vllm_limits": [
 28016,
 448256,
@@ -9424,6 +10810,7 @@ true
 "conv_prefill_weights_mb": 15622.0,
 "conv_serving_weight_bytes": 15136194560,
 "conv_state_bytes": 0,
+"counter_params": 8191025152,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 46,
 "disagg_transfer_bytes_640": 94371840,
@@ -9522,6 +10909,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 9096986624,
+"trainmem_total_gb": 162.182298,
+"trainmem_weight_gb": 49.146151,
 "vllm_limits": [
 24791,
 396656,
@@ -9545,6 +10935,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 27919350016,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
@@ -9643,6 +11034,9 @@ null
 true
 ],
 "state_gb": 0.153944064,
+"traingenz_params": 26367754240,
+"trainmem_total_gb": 552.80313,
+"trainmem_weight_gb": 167.5161,
 "vllm_limits": [
 844,
 661696,
@@ -9666,6 +11060,7 @@ false
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 27919350016,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
@@ -9764,6 +11159,9 @@ null
 true
 ],
 "state_gb": 0.153944064,
+"traingenz_params": 26367754240,
+"trainmem_total_gb": 552.80313,
+"trainmem_weight_gb": 167.5161,
 "vllm_limits": [
 1064,
 834176,
@@ -9787,6 +11185,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 27919350016,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
@@ -9885,6 +11284,9 @@ null
 false
 ],
 "state_gb": 0.153944064,
+"traingenz_params": 26367754240,
+"trainmem_total_gb": 552.80313,
+"trainmem_weight_gb": 167.5161,
 "vllm_limits": [
 378,
 296352,
@@ -9908,6 +11310,7 @@ false
 "conv_prefill_weights_mb": 6126.0,
 "conv_serving_weight_bytes": 6030360576,
 "conv_state_bytes": 0,
+"counter_params": 2411550720,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 78,
 "disagg_transfer_bytes_640": 73400320,
@@ -10006,6 +11409,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 3564453888,
+"trainmem_total_gb": 47.748704,
+"trainmem_weight_gb": 14.469304,
 "vllm_limits": [
 37050,
 592800,
@@ -10029,6 +11435,7 @@ true
 "conv_prefill_weights_mb": 13162.40625,
 "conv_serving_weight_bytes": 13376897024,
 "conv_state_bytes": 0,
+"counter_params": 301890560,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
@@ -10127,6 +11534,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 6901415936,
+"trainmem_total_gb": 5.977433,
+"trainmem_weight_gb": 1.811343,
 "vllm_limits": [
 27594,
 441504,
@@ -10150,6 +11560,7 @@ true
 "conv_prefill_weights_mb": 1201.8125,
 "conv_serving_weight_bytes": 987922432,
 "conv_state_bytes": 0,
+"counter_params": 494049024,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 833,
 "disagg_transfer_bytes_640": 7864320,
@@ -10248,6 +11659,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 663212032,
+"trainmem_total_gb": 9.782171,
+"trainmem_weight_gb": 2.964294,
 "vllm_limits": [
 376504,
 6024064,
@@ -10271,6 +11685,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 27919350016,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
@@ -10369,6 +11784,9 @@ null
 false
 ],
 "state_gb": 0.153944064,
+"traingenz_params": 26367754240,
+"trainmem_total_gb": 552.80313,
+"trainmem_weight_gb": 167.5161,
 "vllm_limits": [
 378,
 296352,
@@ -10389,9 +11807,135 @@ false
 0,
 32
 ],
+"conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
+"conv_state_bytes": 0,
+"counter_params": 3352502272,
+"decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
+"disagg_transfer_bytes_640": 335544320,
+"eng_None_32768_kv_mb": 6442.450944,
+"eng_None_32768_params": 3352502272,
+"eng_None_32768_state_mb": 0.0,
+"eng_None_32768_total_mb": 14033.292493,
+"eng_None_4096_kv_mb": 805.306368,
+"eng_None_4096_params": 3352502272,
+"eng_None_4096_state_mb": 0.0,
+"eng_None_4096_total_mb": 7953.229414,
+"eng_llamacpp_32768_kv_mb": 6442.450944,
+"eng_llamacpp_32768_params": 3352502272,
+"eng_llamacpp_32768_state_mb": 0.0,
+"eng_llamacpp_32768_total_mb": 14033.292493,
+"eng_llamacpp_4096_kv_mb": 805.306368,
+"eng_llamacpp_4096_params": 3352502272,
+"eng_llamacpp_4096_state_mb": 0.0,
+"eng_llamacpp_4096_total_mb": 7953.229414,
+"facts_full_attention": true,
+"facts_kv_bytes_4096": 2147483648,
+"facts_kv_bytes_per_token": 524288,
+"facts_layers": [
+32,
+0,
+0,
+null
+],
+"facts_state_bytes": 0,
+"facts_weight_bytes": 17704689664,
+"genz_chunked_kv_mb": 2304.0,
+"genz_decode_kv_mb": 2048.0,
+"genz_decode_weights_mb": 12602.0,
+"genz_ffn_kinds": {
+"Dense": 32
+},
+"genz_kv_size": 262144,
+"genz_layer_kinds": {
+"MHA-global": 32
+},
+"genz_prefill_kv_mb": 2048.0,
+"genz_prefill_weights_mb": 12852.0,
+"kv_cross_layers": 0,
+"kv_free_layers": 0,
+"kv_full_layers": 0,
+"kv_gb@32768": 6.442450944,
+"kv_gb@4096": 0.805306368,
+"kv_sliding_layers": 0,
+"kv_source": "uniform",
+"kvgeo_32768": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"kvgeo_4096": [
+0.0,
+1,
+0,
+0.0,
+16,
+0.0
+],
+"model_type": "unknown",
+"name": "synth:qwen2-window-depth-left-to-class",
+"prefix_kv_bytes_per_token": 524288,
+"report_kv_gb": 0.805306368,
+"report_params": 3352502272,
+"report_state_gb": 0.0,
+"report_total_gb": 8.202874388,
+"report_weight_gb": 6.705004544,
+"runtime_chunked": [
+11.873853,
+12852.0,
+384.0
+],
+"runtime_decode": [
+9.374459,
+12602.0,
+258.0
+],
+"runtime_prefill": [
+25.351494,
+12852.0,
+256.0
+],
+"serving_bytes_per_token": 524288,
+"serving_requests_8gib_1k": 16,
+"serving_state_bytes": 0,
+"serving_weight_bytes": 13214154752,
+"sim_max_running": 105,
+"slice_mib_16x4352": [
+64512,
+true
+],
+"state_gb": 0.0,
+"traingenz_params": 6738673664,
+"trainmem_total_gb": 66.379545,
+"trainmem_weight_gb": 20.115014,
+"vllm_limits": [
+6858,
+109728,
+6858,
+1,
+0,
+0.0,
+true
+],
+"vllm_running_1024": 85,
+"vllm_running_8192": 12
+},
+{
+"attention_type": "mha",
+"cluster_b_eff_4096": 13,
+"conv_kv_size": 262144,
+"conv_layers": [
+0,
+32
+],
 "conv_prefill_weights_mb": 13137.265625,
 "conv_serving_weight_bytes": 13363716096,
 "conv_state_bytes": 0,
+"counter_params": 123570432,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
@@ -10490,6 +12034,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 6888235008,
+"trainmem_total_gb": 3.684597,
+"trainmem_weight_gb": 0.741423,
 "vllm_limits": [
 127069,
 2033104,
@@ -10513,6 +12060,7 @@ true
 "conv_prefill_weights_mb": 13140.0,
 "conv_serving_weight_bytes": 13365149696,
 "conv_state_bytes": 0,
+"counter_params": 6647455744,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
@@ -10611,6 +12159,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 6889668608,
+"trainmem_total_gb": 131.619624,
+"trainmem_weight_gb": 39.884734,
 "vllm_limits": [
 6707,
 107312,
@@ -10634,6 +12185,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 2357735424,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
@@ -10732,6 +12284,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 6738673664,
+"trainmem_total_gb": 46.683161,
+"trainmem_weight_gb": 14.146413,
 "vllm_limits": [
 8131,
 130096,
@@ -10755,6 +12310,7 @@ true
 "conv_prefill_weights_mb": 63712.0,
 "conv_serving_weight_bytes": 65741520896,
 "conv_state_bytes": 0,
+"counter_params": 41303293952,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1258291200,
@@ -10853,6 +12409,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 33405403136,
+"trainmem_total_gb": 817.80522,
+"trainmem_weight_gb": 247.819764,
 "vllm_limits": [
 0,
 0,
@@ -10876,6 +12435,7 @@ false
 "conv_prefill_weights_mb": 15316.0,
 "conv_serving_weight_bytes": 15009316864,
 "conv_state_bytes": 0,
+"counter_params": 7538479104,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 52,
 "disagg_transfer_bytes_640": 83886080,
@@ -10974,6 +12534,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 8835825664,
+"trainmem_total_gb": 149.261886,
+"trainmem_weight_gb": 45.230875,
 "vllm_limits": [
 28078,
 449248,
@@ -10997,6 +12560,7 @@ true
 "conv_prefill_weights_mb": 13812.0,
 "conv_serving_weight_bytes": 14220787712,
 "conv_state_bytes": 0,
+"counter_params": 7144214528,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 53,
 "disagg_transfer_bytes_640": 83886080,
@@ -11095,6 +12659,9 @@ true
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 8047296512,
+"trainmem_total_gb": 141.455448,
+"trainmem_weight_gb": 42.865287,
 "vllm_limits": [
 28971,
 463536,
@@ -11118,6 +12685,7 @@ true
 "conv_prefill_weights_mb": 19376.0,
 "conv_serving_weight_bytes": 18482200576,
 "conv_state_bytes": 0,
+"counter_params": 9271069696,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 17,
 "disagg_transfer_bytes_640": 220200960,
@@ -11216,6 +12784,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 10467487744,
+"trainmem_total_gb": 183.56718,
+"trainmem_weight_gb": 55.626418,
 "vllm_limits": [
 9855,
 157680,
@@ -11239,6 +12810,7 @@ true
 "conv_prefill_weights_mb": 714.0,
 "conv_serving_weight_bytes": 617611264,
 "conv_state_bytes": 0,
+"counter_params": 241733632,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 1261,
 "disagg_transfer_bytes_640": 5242880,
@@ -11337,6 +12909,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 399540224,
+"trainmem_total_gb": 4.786326,
+"trainmem_weight_gb": 1.450402,
 "vllm_limits": [
 564155,
 9026480,
@@ -11360,6 +12935,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 151881984,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 28,
 "disagg_transfer_bytes_640": 125829120,
@@ -11458,6 +13034,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 103739883520,
+"trainmem_total_gb": 3.996024,
+"trainmem_weight_gb": 0.911292,
 "vllm_limits": [
 0,
 0,
@@ -11481,6 +13060,7 @@ false
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 151881984,
 "disagg_b_eff_4096": 28,
 "disagg_transfer_bytes_640": 125829120,
 "eng_None_32768_kv_mb": 6442.450944,
@@ -11566,6 +13146,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 780197232640,
+"trainmem_total_gb": 3.996024,
+"trainmem_weight_gb": 0.911292,
 "vllm_limits": [
 0,
 0,
@@ -11589,6 +13172,7 @@ false
 "conv_prefill_weights_mb": 3464.789062,
 "conv_serving_weight_bytes": 3427160064,
 "conv_state_bytes": 0,
+"counter_params": 1309554688,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 49,
 "disagg_transfer_bytes_640": 125829120,
@@ -11687,6 +13271,9 @@ null
 true
 ],
 "state_gb": 0.00688128,
+"traingenz_params": 1816743936,
+"trainmem_total_gb": 25.929183,
+"trainmem_weight_gb": 7.857328,
 "vllm_limits": [
 22571,
 361136,
@@ -11710,6 +13297,7 @@ true
 "conv_prefill_weights_mb": 13138.0,
 "conv_serving_weight_bytes": 13364101120,
 "conv_state_bytes": 0,
+"counter_params": 6646931456,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
@@ -11808,6 +13396,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 6888620032,
+"trainmem_total_gb": 131.609243,
+"trainmem_weight_gb": 39.881589,
 "vllm_limits": [
 6707,
 107312,
@@ -11831,6 +13422,7 @@ true
 "conv_prefill_weights_mb": 20736.0,
 "conv_serving_weight_bytes": 20669530112,
 "conv_state_bytes": 0,
+"counter_params": 2183850336,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'auto_map', 'bos_token_id', 'chunk_size', '",
 "eng_None_32768_kv_mb": 805.306368,
@@ -11905,6 +13497,9 @@ null
 true
 ],
 "state_gb": 0.025534464,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au",
+"trainmem_total_gb": 43.240237,
+"trainmem_weight_gb": 13.103102,
 "vllm_limits": [
 25363,
 405808,
@@ -11928,6 +13523,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 123570432,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at the top level and in nested blocks. Refu",
 "eng_None_32768_kv_mb": 1610.612736,
@@ -12002,6 +13598,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at ",
+"trainmem_total_gb": 3.684597,
+"trainmem_weight_gb": 0.741423,
 "vllm_limits": [
 25363,
 405808,
@@ -12025,6 +13624,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 2622843904,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddings', 'transformers_version', 'video_tok",
 "eng_None_32768_kv_mb": 1073.741824,
@@ -12099,6 +13699,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi",
+"trainmem_total_gb": 51.932309,
+"trainmem_weight_gb": 15.737063,
 "vllm_limits": [
 31388,
 502208,
@@ -12122,6 +13725,7 @@ true
 "conv_prefill_weights_mb": 6678.0,
 "conv_serving_weight_bytes": 6739197952,
 "conv_state_bytes": 0,
+"counter_params": 70476800,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
@@ -12220,6 +13824,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 6739722240,
+"trainmem_total_gb": 3.100567,
+"trainmem_weight_gb": 0.422861,
 "vllm_limits": [
 382640,
 6122240,
@@ -12243,6 +13850,7 @@ true
 "conv_prefill_weights_mb": 6678.0,
 "conv_serving_weight_bytes": 6739197952,
 "conv_state_bytes": 0,
+"counter_params": 185190400,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
@@ -12341,6 +13949,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 6739722240,
+"trainmem_total_gb": 4.362417,
+"trainmem_weight_gb": 1.111142,
 "vllm_limits": [
 46813,
 749008,
@@ -12364,6 +13975,7 @@ true
 "conv_prefill_weights_mb": 16260.0,
 "conv_serving_weight_bytes": 15000928256,
 "conv_state_bytes": 0,
+"counter_params": 153052160,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
@@ -12462,6 +14074,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 8525447168,
+"trainmem_total_gb": 4.008896,
+"trainmem_weight_gb": 0.918313,
 "vllm_limits": [
 281214,
 4499424,
@@ -12485,6 +14100,7 @@ true
 "conv_prefill_weights_mb": 13162.40625,
 "conv_serving_weight_bytes": 13376897024,
 "conv_state_bytes": 0,
+"counter_params": 694389760,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
@@ -12583,6 +14199,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 6901415936,
+"trainmem_total_gb": 13.748917,
+"trainmem_weight_gb": 4.166339,
 "vllm_limits": [
 27344,
 437504,
@@ -12606,6 +14225,7 @@ true
 "conv_prefill_weights_mb": 13259.828125,
 "conv_serving_weight_bytes": 13427974144,
 "conv_state_bytes": 0,
+"counter_params": 67325440,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
@@ -12704,6 +14324,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 6952493056,
+"trainmem_total_gb": 3.065902,
+"trainmem_weight_gb": 0.403953,
 "vllm_limits": [
 380038,
 6080608,
@@ -12727,6 +14350,7 @@ true
 "conv_prefill_weights_mb": 1279.226562,
 "conv_serving_weight_bytes": 1278857216,
 "conv_state_bytes": 0,
+"counter_params": 182628352,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 75,
 "disagg_transfer_bytes_640": 83886080,
@@ -12825,6 +14449,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 1278988288,
+"trainmem_total_gb": 3.616041,
+"trainmem_weight_gb": 1.09577,
 "vllm_limits": [
 34622,
 553952,
@@ -12848,6 +14475,7 @@ true
 "conv_prefill_weights_mb": 799675.21875,
 "conv_serving_weight_bytes": 11812847616,
 "conv_state_bytes": 0,
+"counter_params": 52268105728,
 "disagg_b_eff_4096": 12,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 7032.274944,
@@ -12933,6 +14561,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 558297628672,
+"trainmem_total_gb": 1034.908493,
+"trainmem_weight_gb": 313.608634,
 "vllm_limits": [
 0,
 0,
@@ -12956,6 +14587,7 @@ false
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 123570432,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev",
 "eng_None_32768_kv_mb": 701.80864,
@@ -13030,6 +14662,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
+"trainmem_total_gb": 3.684597,
+"trainmem_weight_gb": 0.741423,
 "vllm_limits": [
 4702,
 75232,
@@ -13053,6 +14688,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 123570432,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev",
 "eng_None_32768_kv_mb": 701.80864,
@@ -13127,6 +14763,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
+"trainmem_total_gb": 3.684597,
+"trainmem_weight_gb": 0.741423,
 "vllm_limits": [
 4702,
 75232,
@@ -13150,6 +14789,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 123570432,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 304,
 "disagg_transfer_bytes_640": 20971520,
@@ -13248,6 +14888,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 1204944896,
+"trainmem_total_gb": 3.684597,
+"trainmem_weight_gb": 0.741423,
 "vllm_limits": [
 4702,
 75232,
@@ -13271,6 +14914,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 123570432,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 104,
 "disagg_transfer_bytes_640": 62914560,
@@ -13369,6 +15013,9 @@ null
 false
 ],
 "state_gb": 0.0,
+"traingenz_params": 406945792,
+"trainmem_total_gb": 3.684597,
+"trainmem_weight_gb": 0.741423,
 "vllm_limits": [
 4702,
 75232,
@@ -13392,6 +15039,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 1663986176,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 282,
 "disagg_transfer_bytes_640": 23592960,
@@ -13490,6 +15138,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 162435072,
+"trainmem_total_gb": 32.946926,
+"trainmem_weight_gb": 9.983917,
 "vllm_limits": [
 21221,
 339536,
@@ -13513,6 +15164,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 1663986176,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 282,
 "disagg_transfer_bytes_640": 23592960,
@@ -13611,6 +15263,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 162435072,
+"trainmem_total_gb": 32.946926,
+"trainmem_weight_gb": 9.983917,
 "vllm_limits": [
 21221,
 339536,
@@ -13634,6 +15289,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 290113024,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t",
 "eng_None_32768_kv_mb": 0.0,
@@ -13708,6 +15364,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
+"trainmem_total_gb": 5.744238,
+"trainmem_weight_gb": 1.740678,
 "vllm_limits": [
 93844,
 1501504,
@@ -13731,6 +15390,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 123570432,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
@@ -13829,6 +15489,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 7754743808,
+"trainmem_total_gb": 3.684597,
+"trainmem_weight_gb": 0.741423,
 "vllm_limits": [
 7075,
 113200,
@@ -13852,6 +15515,7 @@ true
 "conv_prefill_weights_mb": 15316.0,
 "conv_serving_weight_bytes": 15009316864,
 "conv_state_bytes": 0,
+"counter_params": 7538479104,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 52,
 "disagg_transfer_bytes_640": 83886080,
@@ -13950,6 +15614,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 8835825664,
+"trainmem_total_gb": 149.261886,
+"trainmem_weight_gb": 45.230875,
 "vllm_limits": [
 28078,
 449248,
@@ -13973,6 +15640,7 @@ true
 "conv_prefill_weights_mb": 8680.0,
 "conv_serving_weight_bytes": 7759462400,
 "conv_state_bytes": 0,
+"counter_params": 2988794880,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 61,
 "disagg_transfer_bytes_640": 89128960,
@@ -14071,6 +15739,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 4907683840,
+"trainmem_total_gb": 59.178139,
+"trainmem_weight_gb": 17.932769,
 "vllm_limits": [
 29394,
 470304,
@@ -14094,6 +15765,7 @@ true
 "conv_prefill_weights_mb": 8680.0,
 "conv_serving_weight_bytes": 7759462400,
 "conv_state_bytes": 0,
+"counter_params": 2988794880,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 61,
 "disagg_transfer_bytes_640": 89128960,
@@ -14192,6 +15864,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 4907683840,
+"trainmem_total_gb": 59.178139,
+"trainmem_weight_gb": 17.932769,
 "vllm_limits": [
 29394,
 470304,
@@ -14215,6 +15890,7 @@ true
 "conv_prefill_weights_mb": 5126.75,
 "conv_serving_weight_bytes": 4956356608,
 "conv_state_bytes": 0,
+"counter_params": 15725195264,
 "disagg_b_eff_4096": 41,
 "disagg_transfer_bytes_640": 141557760,
 "eng_None_32768_kv_mb": 1019.215872,
@@ -14302,6 +15978,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 117063245824,
+"trainmem_total_gb": 311.358866,
+"trainmem_weight_gb": 94.351172,
 "vllm_limits": [
 87811,
 1404976,
@@ -14325,6 +16004,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 1137317376,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 495,
 "disagg_transfer_bytes_640": 13107200,
@@ -14423,6 +16103,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 802242560,
+"trainmem_total_gb": 22.518884,
+"trainmem_weight_gb": 6.823904,
 "vllm_limits": [
 221502,
 3544032,
@@ -14446,6 +16129,7 @@ true
 "conv_prefill_weights_mb": 12852.0,
 "conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"counter_params": 1136487936,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 495,
 "disagg_transfer_bytes_640": 13107200,
@@ -14544,6 +16228,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 802242560,
+"trainmem_total_gb": 22.502461,
+"trainmem_weight_gb": 6.818928,
 "vllm_limits": [
 221502,
 3544032,
@@ -14567,6 +16254,7 @@ true
 "conv_prefill_weights_mb": 6676.0,
 "conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"counter_params": 713446400,
 "disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t",
 "eng_None_32768_kv_mb": 0.0,
@@ -14641,6 +16329,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
+"trainmem_total_gb": 14.126239,
+"trainmem_weight_gb": 4.280678,
 "vllm_limits": [
 61354,
 981664,
@@ -14664,6 +16355,7 @@ true
 "conv_prefill_weights_mb": 4148.0,
 "conv_serving_weight_bytes": 3332374528,
 "conv_state_bytes": 0,
+"counter_params": 1901268992,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 196,
 "disagg_transfer_bytes_640": 31457280,
@@ -14774,6 +16466,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 2325938176,
+"trainmem_total_gb": 37.645126,
+"trainmem_weight_gb": 11.407614,
 "vllm_limits": [
 88602,
 1417632,
@@ -14797,6 +16492,7 @@ true
 "conv_prefill_weights_mb": 780.46875,
 "conv_serving_weight_bytes": 723763200,
 "conv_state_bytes": 0,
+"counter_params": 369808320,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 251,
 "disagg_transfer_bytes_640": 26214400,
@@ -14907,6 +16603,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 448634880,
+"trainmem_total_gb": 7.322205,
+"trainmem_weight_gb": 2.21885,
 "vllm_limits": [
 113686,
 1818976,
@@ -14930,6 +16629,7 @@ true
 "conv_prefill_weights_mb": 4563.28125,
 "conv_serving_weight_bytes": 3626680320,
 "conv_state_bytes": 0,
+"counter_params": 1992044160,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 195,
 "disagg_transfer_bytes_640": 31457280,
@@ -15040,6 +16740,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 2552002560,
+"trainmem_total_gb": 39.442474,
+"trainmem_weight_gb": 11.952265,
 "vllm_limits": [
 88043,
 1408688,
@@ -15063,6 +16766,7 @@ true
 "conv_prefill_weights_mb": 305.419922,
 "conv_serving_weight_bytes": 273374208,
 "conv_state_bytes": 0,
+"counter_params": 109986816,
 "decode_fit_refused": true,
 "disagg_b_eff_4096": 282,
 "disagg_transfer_bytes_640": 23592960,
@@ -15172,6 +16876,9 @@ null
 true
 ],
 "state_gb": 0.0,
+"traingenz_params": 160164864,
+"trainmem_total_gb": 2.177739,
+"trainmem_weight_gb": 0.659921,
 "vllm_limits": [
 126489,
 2023824,

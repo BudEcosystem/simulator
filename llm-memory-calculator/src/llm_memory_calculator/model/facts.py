@@ -22,7 +22,6 @@ from typing import Any, Dict, FrozenSet, Mapping, Optional, Tuple
 from ..layer_plan import (
     ATTN_FULL,
     ATTN_SLIDING,
-    TOWER_CLASS_KEYS as _TOWER_CLASS_KEYS,
     attention_head_dim,
     attention_heads,
     attention_output_gate,
@@ -30,14 +29,25 @@ from ..layer_plan import (
     cross_attention_cache,
     decoder_view,
     encoder_decoder_stacks,
+    encoder_is_tower,
+    encoder_view,
     routed_expert_count,
     routed_expert_width,
     shared_expert_width,
     stated_qk_norm,
     layer_kinds,
     resolve_layer_plan,
+    with_class_geometry,
 )
-from ..stack_params import adapter_params, encoder_params, stack_params, tower_embedding_params, tower_view
+from ..stack_params import (
+    adapter_params,
+    vision_tower_params,
+    audio_tower_params,
+    encoder_params,
+    stack_params,
+    tower_embedding_params,
+    tower_view,
+)
 from ..state_memory import _per_layer_bytes  # noqa: PLC2701 - the one per-mechanism state formula
 from .classes import arch_class, size_bucket
 from .recognise import recognised as _recognised
@@ -698,89 +708,6 @@ def _moe_layer_count(text: Mapping[str, Any], n_layers: int) -> int:
     )
 
 
-def _vision_params(config: Mapping[str, Any]) -> int:
-    vision = config.get("vision_config")
-    if not isinstance(vision, Mapping):
-        return 0
-    # what the tower leaves out is its config class's default (Mllama's tower builds 8 global
-    # layers and a 7680-wide output whether or not the config says so)
-    from ..layer_plan import config_class_default
-
-    mt = vision.get("model_type")
-    vision = {**{k: config_class_default(mt, k) for k in _TOWER_CLASS_KEYS
-                 if config_class_default(mt, k) is not None}, **dict(vision)}
-    vh = int(_get(vision, "hidden_size", "embed_dim", default=0) or 0)
-    if not vh:
-        return 0
-    # a tower's stated extra layers count too (Mllama's `num_global_layers` after its 32)
-    depth = int(_get(vision, "depth", "num_hidden_layers", default=24)) + int(
-        _get(vision, "num_global_layers", default=0) or 0)
-    vi = int(_get(vision, "intermediate_size", "mlp_dim", default=4 * vh))
-    patch = int(_get(vision, "patch_size", default=14))
-    temporal = int(_get(vision, "temporal_patch_size", default=1))
-    channels = int(_get(vision, "in_channels", "num_channels", default=3))
-    merge = int(_get(vision, "spatial_merge_size", default=1))
-    out_h = int(
-        _get(vision, "out_hidden_size", default=_get(_text(config), "hidden_size", default=vh))
-    )
-    pos = int(_get(vision, "num_position_embeddings", default=0) or 0)
-    tiles = int(_get(vision, "max_num_tiles", default=0) or 0)
-    image = _get(vision, "image_size", default=None)
-    if not pos and tiles and isinstance(image, int) and patch:
-        # a tiled tower (Mllama): a position per patch and class token, and per supported aspect
-        # ratio a position table over every tile's patches, and a pre- and post-tile embedding
-        per_tile = (image // patch) ** 2 + 1
-        ratios = len(vision.get("supported_aspect_ratios") or []) + 1
-        pos = per_tile + ratios * tiles * per_tile + 2 * ratios * tiles
-    block = 4 * vh * vh + 4 * vh + 2 * vh * vi + vi + vh + 4 * vh
-    proj_in = int(_get(vision, "vision_output_dim", default=0) or 0)
-    if proj_in:
-        # the projector from the tower's stated output width (Mllama concatenates intermediate
-        # layers: 7680) to the language model's
-        merger = proj_in * out_h + out_h
-    else:
-        merged = vh * merge * merge
-        merger = merged * merged + merged + merged * out_h + out_h + 2 * vh
-    return int(depth * block + channels * temporal * patch * patch * vh + vh + pos * vh + merger)
-
-
-#: An audio encoder beside a decoder-only language model, by the key its config sits under
-#: (transformers 5.12: Qwen2-Audio's, Voxtral's and Voxtral-Realtime's `audio_config`; a hub
-#: model's `audio_encoder_config`). Its blocks are read at their own geometry
-#: (``stack_params.tower_view``), as an encoder-decoder's encoder is.
-AUDIO_TOWER_KEYS = ("audio_config", "audio_encoder_config")
-#: The frames an audio projector concatenates into one language-model position, by spelling
-#: (Voxtral's `downsample_factor`, MOSS-Transcribe's `audio_merge_size`), or the projector's
-#: stated input width (`adaptor_input_dim`).
-_AUDIO_MERGE_KEYS = ("downsample_factor", "audio_merge_size")
-
-
-def _audio_tower_params(config: Mapping[str, Any]) -> int:
-    """The audio encoder a decoder-only language model holds beside it, and the projector to the
-    language model: its blocks (``stack_params``), its convolutional front end and frame
-    positions (``tower_embedding_params``), and the projector from the tower's width times the
-    frames it merges (else its stated input width) to the language model's, then the language
-    model's width to itself -- two matrices, as Voxtral's (`linear_1`, act, `linear_2`) and
-    MOSS-Transcribe's `vq_adaptor` build it; Qwen2-Audio's single projection is over-counted by
-    the second. No config states the projector's depth, and one matrix left MOSS-Transcribe 1.05M
-    below its checkpoint. 0 for a config with no such tower, or a tower that states no stack (a
-    discrete audio tokenizer)."""
-    total = 0
-    out_h = int(_get(_text(config), "hidden_size", "d_model", default=0) or 0)
-    for key in AUDIO_TOWER_KEYS:
-        view = tower_view(config.get(key))
-        blocks = stack_params(view)
-        if not blocks:
-            continue
-        total += blocks + tower_embedding_params(view)
-        if out_h:
-            vh = int(view["hidden_size"])
-            merge = int(_get(config, *_AUDIO_MERGE_KEYS, default=1) or 1)
-            proj_in = int(_get(config, "adaptor_input_dim", default=vh * merge) or vh * merge)
-            total += proj_in * out_h + out_h + out_h * out_h + out_h
-    return int(total)
-
-
 def _state_table(
     text: Mapping[str, Any], mechanisms: Tuple[str, ...], h: int
 ) -> Dict[str, Tuple[float, float]]:
@@ -822,6 +749,9 @@ def _mtp_params(
 
 
 def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
+    # what a block leaves to its config class is the class's (a hub BLIP-2 `vision_config` that
+    # states only its model type is Blip2VisionConfig's 39-layer tower)
+    config = with_class_geometry(config) if isinstance(config, dict) else config
     # An encoder-decoder's KV and decoder weights are its decoder's, under the decoder's own
     # spellings (Whisper's `decoder_layers`, T5's `num_heads`); its encoder is its own stack.
     stacks = encoder_decoder_stacks(config) if isinstance(config, dict) else None
@@ -836,7 +766,11 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     ok, reason = _recognised(config)
     if not ok:
         flags.add("architecture: unrecognised")
-    encoder_decoder = bool(config.get("is_encoder_decoder") or text.get("is_encoder_decoder"))
+    # an encoder-decoder is what the stacks reader finds (a decoder depth of its own, both stacks
+    # nested), flagged or not: an mT5 config that leaves `is_encoder_decoder` to its class (True)
+    # was counted without its encoder and cross-attention
+    encoder_decoder = bool(stacks is not None or config.get("is_encoder_decoder")
+                           or text.get("is_encoder_decoder"))
     h = int(_get(text, "hidden_size", "d_model", "n_embd", default=4096) or 4096)
     n_layers = int(
         _get(text, "num_hidden_layers", "n_layer", "num_layers", "decoder_layers", default=32) or 32
@@ -905,7 +839,10 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
         # sized at the decoder's width and its stated stage count, Donut's Swin encoder was 50M
         # of its 74M
         roles["attention"] += n_layers * 4 * h * h
-        enc = encoder_params(whole) if isinstance(whole, dict) else 0
+        # with what the encoder holds before its first block (a patch encoder's projection and
+        # positions -- Pix2Struct's tower is its encoder --, an audio encoder's convolutions)
+        enc = (encoder_params(whole) + tower_embedding_params(encoder_view(whole))
+               if isinstance(whole, dict) else 0)
         if not enc:
             enc_layers = int((stacks or {}).get("encoder")
                              or _get(text, "encoder_layers", default=n_layers) or n_layers)
@@ -923,11 +860,13 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     mtp_layers, mtp_roles = _mtp_params(text, h, attn_large, ffn, n_layers)
     # the tower, and an adapter stack between it and the language model (BLIP-2's Q-Former and
     # its projection: stack_params.adapter_params)
-    vision = _vision_params(config) + (adapter_params(whole) if isinstance(whole, dict) else 0)
+    # (a tower that is the encoder -- Pix2Struct's, BLIP's -- is counted once, as the encoder)
+    tower = 0 if encoder_is_tower(whole) else vision_tower_params(config)
+    vision = tower + (adapter_params(whole) if isinstance(whole, dict) else 0)
     # an audio encoder beside a decoder-only language model (an encoder-decoder's encoder is
     # counted with its stacks, above)
     if stacks is None:
-        vision += _audio_tower_params(config)
+        vision += audio_tower_params(config)
     native, qc = _native_format(config)
     native_rb = _native_role_bytes(native, qc, {**roles, **mtp_roles})
 

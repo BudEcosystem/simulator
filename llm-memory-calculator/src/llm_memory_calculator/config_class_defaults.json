@@ -1,5 +1,442 @@
 {
 "about": "Config-class defaults (scripts/config_class_defaults.py): what a config that leaves a key out means, read by layer_plan.config_class_default.",
+"auto_sub_configs": {
+"EvollaModel": [
+"protein_encoder_config"
+],
+"aria": [
+"vision_config"
+],
+"audioflamingo3": [
+"audio_config",
+"text_config"
+],
+"aya_vision": [
+"text_config",
+"vision_config"
+],
+"bark": [
+"codec_config"
+],
+"blip-2": [
+"text_config"
+],
+"chmv2": [
+"backbone_config"
+],
+"cohere2_vision": [
+"text_config",
+"vision_config"
+],
+"colmodernvbert": [
+"vlm_config"
+],
+"colpali": [
+"vlm_config",
+"text_config"
+],
+"colqwen2": [
+"vlm_config"
+],
+"conditional_detr": [
+"backbone_config"
+],
+"cosmos3_omni": [
+"vision_config",
+"text_config"
+],
+"csm": [
+"codec_config"
+],
+"d_fine": [
+"backbone_config"
+],
+"dab-detr": [
+"backbone_config"
+],
+"dbrx": [
+"attn_config",
+"ffn_config"
+],
+"deepseek_vl": [
+"text_config",
+"vision_config"
+],
+"deepseek_vl_hybrid": [
+"text_config",
+"vision_config",
+"high_res_vision_config"
+],
+"deformable_detr": [
+"backbone_config"
+],
+"deimv2": [
+"backbone_config"
+],
+"depth_anything": [
+"backbone_config"
+],
+"depth_pro": [
+"image_model_config",
+"patch_model_config",
+"fov_model_config"
+],
+"detr": [
+"backbone_config"
+],
+"diffusion_gemma": [
+"vision_config"
+],
+"dpt": [
+"backbone_config"
+],
+"edgetam_video": [
+"vision_config",
+"prompt_encoder_config",
+"mask_decoder_config"
+],
+"esm": [
+"esmfold_config"
+],
+"evolla": [
+"protein_encoder_config"
+],
+"exaone4_5": [
+"vision_config",
+"text_config"
+],
+"fast_vlm": [
+"text_config",
+"vision_config"
+],
+"flava": [
+"image_codebook_config"
+],
+"florence2": [
+"text_config"
+],
+"fuyu": [
+"text_config"
+],
+"glm46v": [
+"text_config",
+"vision_config"
+],
+"glmasr": [
+"text_config",
+"audio_config"
+],
+"glmga": [
+"text_config",
+"vision_config"
+],
+"got_ocr2": [
+"text_config",
+"vision_config"
+],
+"granite4_vision": [
+"text_config",
+"vision_config",
+"qformer_config"
+],
+"granite_speech": [
+"text_config",
+"projector_config"
+],
+"granite_speech_plus": [
+"text_config",
+"projector_config"
+],
+"grounding-dino": [
+"backbone_config",
+"text_config"
+],
+"higgs_audio_v2_tokenizer": [
+"acoustic_model_config",
+"semantic_model_config"
+],
+"idefics2": [
+"text_config"
+],
+"idefics3": [
+"text_config"
+],
+"instructblip": [
+"text_config"
+],
+"instructblipvideo": [
+"text_config"
+],
+"internvl": [
+"text_config"
+],
+"janus": [
+"text_config"
+],
+"kyutai_speech_to_text": [
+"codec_config"
+],
+"lfm2_vl": [
+"text_config",
+"vision_config"
+],
+"lightglue": [
+"keypoint_detector_config"
+],
+"lighton_ocr": [
+"text_config",
+"vision_config"
+],
+"llava": [
+"text_config",
+"vision_config"
+],
+"llava_next": [
+"text_config",
+"vision_config"
+],
+"llava_next_video": [
+"text_config",
+"vision_config"
+],
+"llava_onevision": [
+"text_config",
+"vision_config"
+],
+"lw_detr": [
+"backbone_config"
+],
+"mask2former": [
+"backbone_config"
+],
+"maskformer": [
+"backbone_config",
+"decoder_config"
+],
+"minicpmv4_6": [
+"text_config"
+],
+"minimax_m3_vl": [
+"text_config",
+"vision_config"
+],
+"mistral3": [
+"text_config",
+"vision_config"
+],
+"mm-grounding-dino": [
+"backbone_config",
+"text_config"
+],
+"modernvbert": [
+"text_config",
+"vision_config"
+],
+"moshi": [
+"audio_encoder_config"
+],
+"mpt": [
+"attn_config"
+],
+"musicflamingo": [
+"audio_config",
+"text_config"
+],
+"omdet-turbo": [
+"backbone_config",
+"text_config"
+],
+"oneformer": [
+"backbone_config"
+],
+"ovis2": [
+"vision_config"
+],
+"paligemma": [
+"text_config",
+"vision_config"
+],
+"pe_audio": [
+"text_config"
+],
+"pe_audio_encoder": [
+"dac_config"
+],
+"perception_lm": [
+"text_config"
+],
+"pi0": [
+"vlm_config",
+"dit_config"
+],
+"pp_chart2table": [
+"text_config",
+"vision_config"
+],
+"pp_doclayout_v2": [
+"backbone_config",
+"reading_order_config"
+],
+"pp_doclayout_v3": [
+"backbone_config"
+],
+"pp_formulanet": [
+"vision_config"
+],
+"pp_ocrv5_mobile_det": [
+"backbone_config"
+],
+"pp_ocrv5_mobile_rec": [
+"backbone_config"
+],
+"pp_ocrv5_server_det": [
+"backbone_config"
+],
+"pp_ocrv5_server_rec": [
+"backbone_config"
+],
+"pp_ocrv6_medium_det": [
+"backbone_config"
+],
+"pp_ocrv6_small_det": [
+"backbone_config"
+],
+"pp_ocrv6_small_rec": [
+"backbone_config"
+],
+"pp_ocrv6_tiny_rec": [
+"backbone_config"
+],
+"prompt_depth_anything": [
+"backbone_config"
+],
+"qianfan_ocr": [
+"text_config"
+],
+"qwen2_audio": [
+"text_config",
+"audio_config"
+],
+"qwen3_omni_moe": [
+"talker_config",
+"code2wav_config"
+],
+"rf_detr": [
+"backbone_config"
+],
+"rt_detr": [
+"backbone_config"
+],
+"rt_detr_v2": [
+"backbone_config"
+],
+"sam": [
+"prompt_encoder_config",
+"mask_decoder_config"
+],
+"sam2": [
+"vision_config",
+"prompt_encoder_config",
+"mask_decoder_config"
+],
+"sam2_video": [
+"vision_config",
+"prompt_encoder_config",
+"mask_decoder_config"
+],
+"sam2_vision_model": [
+"backbone_config"
+],
+"sam3_lite_text": [
+"vision_config"
+],
+"sam3_tracker": [
+"vision_config",
+"prompt_encoder_config",
+"mask_decoder_config"
+],
+"sam3_tracker_video": [
+"vision_config",
+"prompt_encoder_config",
+"mask_decoder_config"
+],
+"sam3_video": [
+"detector_config",
+"tracker_config"
+],
+"sam3_vision_model": [
+"backbone_config"
+],
+"sam_hq": [
+"prompt_encoder_config",
+"mask_decoder_config"
+],
+"shieldgemma2": [
+"text_config",
+"vision_config"
+],
+"slanet": [
+"backbone_config"
+],
+"slanext": [
+"vision_config"
+],
+"smolvlm": [
+"text_config"
+],
+"superglue": [
+"keypoint_detector_config"
+],
+"table-transformer": [
+"backbone_config"
+],
+"tvp": [
+"backbone_config"
+],
+"upernet": [
+"backbone_config"
+],
+"uvdoc": [
+"backbone_config"
+],
+"vibevoice_asr": [
+"acoustic_tokenizer_encoder_config",
+"semantic_tokenizer_encoder_config",
+"text_config"
+],
+"video_llama_3": [
+"text_config"
+],
+"video_llava": [
+"text_config",
+"vision_config"
+],
+"vipllava": [
+"text_config",
+"vision_config"
+],
+"vitmatte": [
+"backbone_config"
+],
+"vitpose": [
+"backbone_config"
+],
+"voxtral": [
+"text_config",
+"audio_config"
+],
+"voxtral_realtime": [
+"text_config",
+"audio_config"
+],
+"xcodec": [
+"acoustic_model_config",
+"semantic_model_config"
+],
+"zoedepth": [
+"backbone_config"
+]
+},
 "defaults": {
 "EvollaModel": {
 "hidden_act": "silu",
@@ -2531,6 +2968,7 @@
 "tie_word_embeddings": true
 },
 "longt5": {
+"feed_forward_proj": "relu",
 "model_type": "longt5",
 "relative_attention_num_buckets": 32,
 "tie_word_embeddings": true
@@ -3097,9 +3535,10 @@
 "tie_word_embeddings": true
 },
 "mt5": {
+"feed_forward_proj": "gated-gelu",
 "model_type": "mt5",
 "relative_attention_num_buckets": 32,
-"tie_word_embeddings": true
+"tie_word_embeddings": false
 },
 "musicflamingo": {
 "model_type": "musicflamingo",
@@ -3559,6 +3998,7 @@
 "patch_size": 16
 },
 "pop2piano": {
+"feed_forward_proj": "gated-gelu",
 "model_type": "pop2piano",
 "relative_attention_num_buckets": 32,
 "tie_word_embeddings": true
@@ -4436,9 +4876,10 @@
 "tie_word_embeddings": true
 },
 "t5": {
+"feed_forward_proj": "relu",
 "model_type": "t5",
 "relative_attention_num_buckets": 32,
-"tie_word_embeddings": true
+"tie_word_embeddings": false
 },
 "t5_gemma_module": {
 "hidden_activation": "gelu_pytorch_tanh",
@@ -4579,16 +5020,18 @@
 "model_type": "tvp"
 },
 "udop": {
+"feed_forward_proj": "relu",
 "image_size": 224,
 "model_type": "udop",
 "patch_size": 16,
 "relative_attention_num_buckets": 32,
-"tie_word_embeddings": true
+"tie_word_embeddings": false
 },
 "umt5": {
+"feed_forward_proj": "gated-gelu",
 "model_type": "umt5",
 "relative_attention_num_buckets": 32,
-"tie_word_embeddings": true
+"tie_word_embeddings": false
 },
 "unispeech": {
 "hidden_act": "gelu",
@@ -4675,7 +5118,7 @@
 "intermediate_size": 3072,
 "model_type": "vilt",
 "patch_size": 32,
-"tie_word_embeddings": true
+"tie_word_embeddings": false
 },
 "vipllava": {
 "model_type": "vipllava",
@@ -4919,10 +5362,4004 @@
 "model_type": "zoedepth"
 }
 },
+"geometry": {
+"EvollaModel": {
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8,
+"resampler_depth": 6
+},
+"afmoe": {
+"head_dim": 128,
+"hidden_size": 2048,
+"intermediate_size": 6144,
+"num_attention_heads": 16,
+"num_hidden_layers": 32,
+"num_key_value_heads": 16
+},
+"aimv2_text_model": {
+"hidden_size": 768,
+"intermediate_size": 2048,
+"num_attention_heads": 6,
+"num_hidden_layers": 12
+},
+"aimv2_vision_model": {
+"hidden_size": 1024,
+"image_size": 224,
+"intermediate_size": 2816,
+"num_attention_heads": 8,
+"num_hidden_layers": 24,
+"patch_size": 14
+},
+"albert": {
+"hidden_size": 4096,
+"intermediate_size": 16384,
+"num_attention_heads": 64,
+"num_hidden_layers": 12
+},
+"align_text_model": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"align_vision_model": {
+"image_size": 600,
+"num_hidden_layers": 64
+},
+"altclip_text_model": {
+"hidden_size": 1024,
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 24
+},
+"altclip_vision_model": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 32
+},
+"apertus": {
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"arcee": {
+"head_dim": 80,
+"hidden_size": 2560,
+"intermediate_size": 18432,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"aria_text": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 4096,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"audio-spectrogram-transformer": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"num_mel_bins": 128,
+"patch_size": 16
+},
+"audioflamingo3_encoder": {
+"hidden_size": 1280,
+"intermediate_size": 5120,
+"max_source_positions": 1500,
+"num_attention_heads": 20,
+"num_hidden_layers": 32,
+"num_mel_bins": 128
+},
+"autoformer": {
+"d_model": 64,
+"decoder_attention_heads": 2,
+"decoder_ffn_dim": 32,
+"decoder_layers": 2,
+"encoder_attention_heads": 2,
+"encoder_ffn_dim": 32,
+"encoder_layers": 2
+},
+"bamba": {
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"bart": {
+"d_model": 1024,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 4096,
+"decoder_layers": 12,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 4096,
+"encoder_layers": 12
+},
+"beit": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"bert": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"bert-generation": {
+"hidden_size": 1024,
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 24
+},
+"big_bird": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"bigbird_pegasus": {
+"d_model": 1024,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 4096,
+"decoder_layers": 16,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 4096,
+"encoder_layers": 16
+},
+"biogpt": {
+"hidden_size": 1024,
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 24
+},
+"bit": {
+"depths": [
+3,
+4,
+6,
+3
+],
+"hidden_sizes": [
+256,
+512,
+1024,
+2048
+]
+},
+"bitnet": {
+"hidden_size": 2560,
+"intermediate_size": 6912,
+"num_attention_heads": 20,
+"num_hidden_layers": 30,
+"num_key_value_heads": 5
+},
+"blenderbot": {
+"d_model": 2560,
+"decoder_attention_heads": 32,
+"decoder_ffn_dim": 10240,
+"decoder_layers": 24,
+"encoder_attention_heads": 32,
+"encoder_ffn_dim": 10240,
+"encoder_layers": 2
+},
+"blenderbot-small": {
+"d_model": 512,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 2048,
+"decoder_layers": 8,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 2048,
+"encoder_layers": 8
+},
+"blip_2_qformer": {
+"cross_attention_frequency": 2,
+"encoder_hidden_size": 1408,
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"blip_2_vision_model": {
+"hidden_size": 1408,
+"image_size": 224,
+"intermediate_size": 6144,
+"num_attention_heads": 16,
+"num_hidden_layers": 39,
+"patch_size": 14
+},
+"blip_text_model": {
+"encoder_hidden_size": 768,
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 8,
+"num_hidden_layers": 12
+},
+"blip_vision_model": {
+"hidden_size": 768,
+"image_size": 384,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"bloom": {
+"hidden_size": 64,
+"n_head": 8,
+"n_layer": 2
+},
+"blt": {
+"patch_size": 4
+},
+"blt_global_transformer": {
+"head_dim": 128,
+"hidden_size": 2048,
+"intermediate_size": 5632,
+"num_attention_heads": 16,
+"num_hidden_layers": 25,
+"num_key_value_heads": 16
+},
+"blt_local_decoder": {
+"head_dim": 64,
+"hidden_size": 1024,
+"intermediate_size": 2816,
+"num_attention_heads": 16,
+"num_hidden_layers": 9,
+"num_key_value_heads": 16
+},
+"blt_local_encoder": {
+"hidden_size": 1024,
+"intermediate_size": 2730,
+"num_attention_heads": 16,
+"num_hidden_layers": 1,
+"num_key_value_heads": 16
+},
+"blt_patcher": {
+"head_dim": 64,
+"hidden_size": 768,
+"intermediate_size": 2048,
+"num_attention_heads": 12,
+"num_hidden_layers": 14,
+"num_key_value_heads": 12
+},
+"bridgetower": {
+"hidden_size": 768,
+"num_attention_heads": 12,
+"num_hidden_layers": 6
+},
+"bridgetower_text_model": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"bridgetower_vision_model": {
+"hidden_size": 768,
+"image_size": 288,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"bros": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"camembert": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"canine": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"chameleon": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"chameleon_vqgan": {
+"embed_dim": 256
+},
+"chinese_clip_text_model": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"chinese_clip_vision_model": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 32
+},
+"chmv2": {
+"patch_size": 16
+},
+"clap": {
+"hidden_size": 768,
+"num_hidden_layers": 16
+},
+"clap_audio_model": {
+"depths": [
+2,
+2,
+6,
+2
+],
+"hidden_size": 768,
+"mlp_ratio": 4.0,
+"num_attention_heads": [
+4,
+8,
+16,
+32
+],
+"num_hidden_layers": 4,
+"num_mel_bins": 64,
+"patch_size": 4
+},
+"clap_text_model": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"clip_text_model": {
+"hidden_size": 512,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_hidden_layers": 12
+},
+"clip_vision_model": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 32
+},
+"clipseg": {
+"decoder_num_attention_heads": 4
+},
+"clipseg_text_model": {
+"hidden_size": 512,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_hidden_layers": 12
+},
+"clipseg_vision_model": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 32
+},
+"clvp_decoder": {
+"hidden_size": 1024,
+"num_attention_heads": 16,
+"num_hidden_layers": 30
+},
+"clvp_encoder": {
+"hidden_size": 768,
+"intermediate_size": 1536,
+"num_attention_heads": 12,
+"num_hidden_layers": 20
+},
+"codegen": {
+"n_embd": 4096,
+"n_head": 16,
+"n_layer": 28
+},
+"cohere": {
+"hidden_size": 8192,
+"intermediate_size": 22528,
+"num_attention_heads": 64,
+"num_hidden_layers": 40,
+"num_key_value_heads": 64
+},
+"cohere2": {
+"head_dim": 128,
+"hidden_size": 8192,
+"intermediate_size": 22528,
+"num_attention_heads": 64,
+"num_hidden_layers": 40,
+"num_key_value_heads": 64
+},
+"cohere2_moe": {
+"head_dim": 128,
+"hidden_size": 8192,
+"intermediate_size": 22528,
+"num_attention_heads": 64,
+"num_hidden_layers": 40,
+"num_key_value_heads": 64
+},
+"cohere_asr": {
+"head_dim": 128,
+"hidden_size": 1024,
+"intermediate_size": 4096,
+"num_attention_heads": 8,
+"num_hidden_layers": 8,
+"num_key_value_heads": 8
+},
+"conditional_detr": {
+"d_model": 256,
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 2048,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 2048,
+"encoder_layers": 6
+},
+"convbert": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"convnext": {
+"depths": [
+3,
+3,
+9,
+3
+],
+"hidden_sizes": [
+96,
+192,
+384,
+768
+],
+"image_size": 224,
+"patch_size": 4
+},
+"convnextv2": {
+"depths": [
+3,
+3,
+9,
+3
+],
+"hidden_sizes": [
+96,
+192,
+384,
+768
+],
+"image_size": 224,
+"patch_size": 4
+},
+"cpmant": {
+"hidden_size": 4096,
+"num_attention_heads": 32,
+"num_hidden_layers": 48
+},
+"csm": {
+"head_dim": 64,
+"hidden_size": 2048,
+"intermediate_size": 8192,
+"num_attention_heads": 32,
+"num_hidden_layers": 16,
+"num_key_value_heads": 8
+},
+"csm_depth_decoder_model": {
+"head_dim": 128,
+"hidden_size": 1024,
+"intermediate_size": 8192,
+"num_attention_heads": 8,
+"num_hidden_layers": 4,
+"num_key_value_heads": 2
+},
+"ctrl": {
+"n_embd": 1280,
+"n_head": 16,
+"n_layer": 48
+},
+"cvt": {
+"depth": [
+1,
+2,
+10
+],
+"embed_dim": [
+64,
+192,
+384
+],
+"mlp_ratio": [
+4.0,
+4.0,
+4.0
+],
+"num_heads": [
+1,
+3,
+6
+]
+},
+"cwm": {
+"head_dim": 128,
+"hidden_size": 6144,
+"intermediate_size": 21504,
+"num_attention_heads": 48,
+"num_hidden_layers": 64,
+"num_key_value_heads": 8
+},
+"d_fine": {
+"d_model": 256,
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 1024,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 1024,
+"encoder_layers": 1,
+"head_dim": 32
+},
+"dab-detr": {
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 2048,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 2048,
+"encoder_layers": 6,
+"hidden_size": 256
+},
+"dac": {
+"encoder_hidden_size": 64,
+"hidden_size": 1024
+},
+"data2vec-audio": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"data2vec-text": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"data2vec-vision": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"dbrx": {
+"d_model": 2048,
+"n_heads": 16,
+"n_layers": 24,
+"num_key_value_heads": 1
+},
+"deberta": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"deberta-v2": {
+"hidden_size": 1536,
+"intermediate_size": 6144,
+"num_attention_heads": 24,
+"num_hidden_layers": 24
+},
+"decision_transformer": {
+"hidden_size": 128,
+"n_head": 1,
+"n_layer": 3
+},
+"deepseek_ocr2_encoder": {
+"hidden_size": 4096,
+"intermediate_size": 22016,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"deepseek_ocr2_sam_vision_model": {
+"hidden_size": 768,
+"image_size": 1024,
+"mlp_dim": 3072,
+"mlp_ratio": 4.0,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"deepseek_ocr2_text": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"deepseek_v2": {
+"head_dim": 64,
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"deepseek_v3": {
+"head_dim": 64,
+"hidden_size": 7168,
+"intermediate_size": 18432,
+"num_attention_heads": 128,
+"num_hidden_layers": 61,
+"num_key_value_heads": 128
+},
+"deepseek_v32": {
+"head_dim": 64,
+"hidden_size": 7168,
+"intermediate_size": 18432,
+"num_attention_heads": 128,
+"num_hidden_layers": 61,
+"num_key_value_heads": 128
+},
+"deepseek_v4": {
+"head_dim": 512,
+"hidden_size": 4096,
+"num_attention_heads": 64,
+"num_hidden_layers": 43,
+"num_key_value_heads": 1
+},
+"deformable_detr": {
+"d_model": 256,
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 1024,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 1024,
+"encoder_layers": 6
+},
+"deimv2": {
+"d_model": 256,
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 1024,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 1024,
+"encoder_layers": 1,
+"head_dim": 32
+},
+"deit": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"depth_anything": {
+"patch_size": 14
+},
+"depth_pro": {
+"patch_size": 384
+},
+"detr": {
+"d_model": 256,
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 2048,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 2048,
+"encoder_layers": 6
+},
+"dia_decoder": {
+"head_dim": 128,
+"hidden_size": 2048,
+"intermediate_size": 8192,
+"num_attention_heads": 16,
+"num_hidden_layers": 18,
+"num_key_value_heads": 4
+},
+"dia_encoder": {
+"head_dim": 128,
+"hidden_size": 1024,
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 12,
+"num_key_value_heads": 16
+},
+"diffllama": {
+"head_dim": 64,
+"hidden_size": 2048,
+"intermediate_size": 8192,
+"num_attention_heads": 32,
+"num_hidden_layers": 16,
+"num_key_value_heads": 32
+},
+"diffusion_gemma_text": {
+"head_dim": 256,
+"hidden_size": 2304,
+"intermediate_size": 9216,
+"num_attention_heads": 8,
+"num_hidden_layers": 30,
+"num_key_value_heads": 4
+},
+"dinat": {
+"depths": [
+3,
+4,
+6,
+5
+],
+"embed_dim": 64,
+"hidden_size": 512,
+"mlp_ratio": 3.0,
+"num_heads": [
+2,
+4,
+8,
+16
+],
+"num_layers": 4,
+"patch_size": 4
+},
+"dinov2": {
+"hidden_size": 768,
+"image_size": 224,
+"mlp_ratio": 4,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 14
+},
+"dinov2_with_registers": {
+"hidden_size": 768,
+"image_size": 224,
+"mlp_ratio": 4,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"dinov3_convnext": {
+"depths": [
+3,
+3,
+9,
+3
+],
+"hidden_sizes": [
+96,
+192,
+384,
+768
+],
+"image_size": 224
+},
+"dinov3_vit": {
+"hidden_size": 384,
+"image_size": 224,
+"intermediate_size": 1536,
+"num_attention_heads": 6,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"distilbert": {
+"dim": 768,
+"n_heads": 12,
+"n_layers": 6
+},
+"doge": {
+"hidden_size": 1024,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"donut-swin": {
+"depths": [
+2,
+2,
+6,
+2
+],
+"embed_dim": 96,
+"hidden_size": 768,
+"image_size": 224,
+"mlp_ratio": 4.0,
+"num_heads": [
+3,
+6,
+12,
+24
+],
+"num_layers": 4,
+"patch_size": 4
+},
+"dots1": {
+"hidden_size": 4608,
+"intermediate_size": 10944,
+"num_attention_heads": 32,
+"num_hidden_layers": 62,
+"num_key_value_heads": 32
+},
+"dpr": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"dpt": {
+"hidden_size": 768,
+"image_size": 384,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"edgetam_video": {
+"image_size": 1024
+},
+"efficientloftr": {
+"hidden_size": 256,
+"intermediate_size": 512,
+"num_attention_heads": 8,
+"num_key_value_heads": 8
+},
+"efficientnet": {
+"image_size": 600,
+"num_hidden_layers": 64
+},
+"electra": {
+"hidden_size": 256,
+"intermediate_size": 1024,
+"num_attention_heads": 4,
+"num_hidden_layers": 12
+},
+"emu3_text_model": {
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"emu3_vqgan": {
+"embed_dim": 4,
+"hidden_size": 1024,
+"num_attention_heads": 1
+},
+"encodec": {
+"hidden_size": 128
+},
+"eomt": {
+"hidden_size": 1024,
+"image_size": 640,
+"mlp_ratio": 4,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"patch_size": 16
+},
+"eomt_dinov3": {
+"hidden_size": 1024,
+"image_size": 640,
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"patch_size": 16
+},
+"ernie": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"ernie4_5": {
+"head_dim": 128,
+"hidden_size": 1024,
+"intermediate_size": 3072,
+"num_attention_heads": 16,
+"num_hidden_layers": 18,
+"num_key_value_heads": 2
+},
+"ernie4_5_moe": {
+"hidden_size": 2560,
+"intermediate_size": 12288,
+"num_attention_heads": 20,
+"num_hidden_layers": 28,
+"num_key_value_heads": 4
+},
+"ernie4_5_vl_moe_text": {
+"hidden_size": 2560,
+"intermediate_size": 12288,
+"num_attention_heads": 20,
+"num_hidden_layers": 28,
+"num_key_value_heads": 4
+},
+"ernie4_5_vl_moe_vision": {
+"depth": 32,
+"hidden_size": 1280,
+"intermediate_size": 5120,
+"num_heads": 16,
+"patch_size": 14
+},
+"esm": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"eurobert": {
+"head_dim": 64,
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"num_key_value_heads": 12
+},
+"evolla": {
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8,
+"resampler_depth": 6
+},
+"exaone4": {
+"hidden_size": 4096,
+"intermediate_size": 16384,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"exaone4_5_vision": {
+"depth": 32,
+"hidden_size": 3584,
+"intermediate_size": 3420,
+"num_heads": 16,
+"num_key_value_heads": 8,
+"patch_size": 14
+},
+"exaone_moe": {
+"hidden_size": 4096,
+"intermediate_size": 16384,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"falcon": {
+"ffn_hidden_size": 18176,
+"hidden_size": 4544,
+"num_attention_heads": 71,
+"num_hidden_layers": 32,
+"num_kv_heads": 71
+},
+"falcon_h1": {
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"falcon_mamba": {
+"hidden_size": 768,
+"intermediate_size": 1536,
+"num_hidden_layers": 32
+},
+"fastspeech2_conformer": {
+"decoder_layers": 4,
+"decoder_num_attention_heads": 2,
+"encoder_layers": 4,
+"encoder_num_attention_heads": 2,
+"hidden_size": 384,
+"max_source_positions": 5000,
+"num_mel_bins": 80
+},
+"flaubert": {
+"n_heads": 16,
+"n_layers": 12
+},
+"flava": {
+"hidden_size": 768
+},
+"flava_image_model": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"flava_multimodal_model": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 6
+},
+"flava_text_model": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"flex_olmo": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"florence_vision": {
+"depths": [
+1,
+1,
+9,
+1
+],
+"embed_dim": [
+128,
+256,
+512,
+1024
+],
+"mlp_ratio": 4.0,
+"num_heads": [
+4,
+8,
+16,
+32
+],
+"patch_size": [
+7,
+3,
+3,
+3
+]
+},
+"fnet": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_hidden_layers": 12
+},
+"focalnet": {
+"depths": [
+2,
+2,
+6,
+2
+],
+"embed_dim": 96,
+"hidden_sizes": [
+192,
+384,
+768,
+768
+],
+"image_size": 224,
+"mlp_ratio": 4.0,
+"patch_size": 4
+},
+"fsmt": {
+"d_model": 1024,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 4096,
+"decoder_layers": 12,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 4096,
+"encoder_layers": 12
+},
+"funnel": {
+"d_model": 768,
+"n_head": 12,
+"num_decoder_layers": 2
+},
+"fuyu": {
+"hidden_size": 4096,
+"image_size": 300,
+"intermediate_size": 16384,
+"num_attention_heads": 64,
+"num_hidden_layers": 36,
+"patch_size": 30
+},
+"gemma": {
+"head_dim": 256,
+"hidden_size": 3072,
+"intermediate_size": 24576,
+"num_attention_heads": 16,
+"num_hidden_layers": 28,
+"num_key_value_heads": 16
+},
+"gemma2": {
+"head_dim": 256,
+"hidden_size": 2304,
+"intermediate_size": 9216,
+"num_attention_heads": 8,
+"num_hidden_layers": 26,
+"num_key_value_heads": 4
+},
+"gemma3_text": {
+"head_dim": 256,
+"hidden_size": 2304,
+"intermediate_size": 9216,
+"num_attention_heads": 8,
+"num_hidden_layers": 26,
+"num_key_value_heads": 4
+},
+"gemma3n_audio": {
+"hidden_size": 1536
+},
+"gemma3n_text": {
+"head_dim": 256,
+"hidden_size": 2048,
+"intermediate_size": [
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384,
+16384
+],
+"num_attention_heads": 8,
+"num_hidden_layers": 35,
+"num_key_value_heads": 2
+},
+"gemma3n_vision": {
+"hidden_size": 2048
+},
+"gemma4_audio": {
+"hidden_size": 1024,
+"num_attention_heads": 8,
+"num_hidden_layers": 12
+},
+"gemma4_text": {
+"head_dim": 256,
+"hidden_size": 2304,
+"intermediate_size": 9216,
+"num_attention_heads": 8,
+"num_hidden_layers": 30,
+"num_key_value_heads": 4
+},
+"gemma4_unified_text": {
+"head_dim": 256,
+"hidden_size": 2304,
+"intermediate_size": 9216,
+"num_attention_heads": 8,
+"num_hidden_layers": 30,
+"num_key_value_heads": 4
+},
+"gemma4_unified_vision": {
+"patch_size": 16
+},
+"gemma4_vision": {
+"head_dim": 64,
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 16,
+"num_key_value_heads": 12,
+"patch_size": 16
+},
+"git": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 6
+},
+"git_vision_model": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"glm": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 13696,
+"num_attention_heads": 32,
+"num_hidden_layers": 40,
+"num_key_value_heads": 2
+},
+"glm4": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 13696,
+"num_attention_heads": 32,
+"num_hidden_layers": 40,
+"num_key_value_heads": 2
+},
+"glm4_moe": {
+"hidden_size": 4096,
+"intermediate_size": 10944,
+"num_attention_heads": 96,
+"num_hidden_layers": 46,
+"num_key_value_heads": 8
+},
+"glm4_moe_lite": {
+"hidden_size": 2048,
+"intermediate_size": 10240,
+"num_attention_heads": 20,
+"num_hidden_layers": 47,
+"num_key_value_heads": 20
+},
+"glm4v_moe_text": {
+"hidden_size": 4096,
+"intermediate_size": 10944,
+"num_attention_heads": 96,
+"num_hidden_layers": 46,
+"num_key_value_heads": 8
+},
+"glm4v_moe_vision": {
+"depth": 24,
+"hidden_size": 1536,
+"image_size": 336,
+"intermediate_size": 13696,
+"num_heads": 12,
+"patch_size": 14
+},
+"glm4v_text": {
+"hidden_size": 4096,
+"intermediate_size": 13696,
+"num_attention_heads": 32,
+"num_hidden_layers": 40,
+"num_key_value_heads": 2
+},
+"glm4v_vision": {
+"depth": 24,
+"hidden_size": 1536,
+"image_size": 336,
+"intermediate_size": 13696,
+"num_heads": 12,
+"patch_size": 14
+},
+"glm_image_text": {
+"hidden_size": 4096,
+"intermediate_size": 13696,
+"num_attention_heads": 32,
+"num_hidden_layers": 40,
+"num_key_value_heads": 2
+},
+"glm_image_vision": {
+"depth": 40,
+"hidden_size": 1536,
+"image_size": 2048,
+"intermediate_size": 6144,
+"num_heads": 16,
+"patch_size": 16
+},
+"glm_image_vqmodel": {
+"embed_dim": 2048
+},
+"glm_moe_dsa": {
+"head_dim": 64,
+"hidden_size": 6144,
+"intermediate_size": 12288,
+"num_attention_heads": 64,
+"num_hidden_layers": 78,
+"num_key_value_heads": 64
+},
+"glm_ocr_text": {
+"hidden_size": 1024,
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 16,
+"num_key_value_heads": 8
+},
+"glm_ocr_vision": {
+"depth": 24,
+"hidden_size": 1024,
+"image_size": 336,
+"intermediate_size": 4096,
+"num_heads": 16,
+"patch_size": 14
+},
+"glmasr_encoder": {
+"hidden_size": 1280,
+"intermediate_size": 5120,
+"num_attention_heads": 20,
+"num_hidden_layers": 32,
+"num_key_value_heads": 20,
+"num_mel_bins": 128
+},
+"glpn": {
+"depths": [
+2,
+2,
+2,
+2
+],
+"hidden_sizes": [
+32,
+64,
+160,
+256
+],
+"num_attention_heads": [
+1,
+2,
+5,
+8
+]
+},
+"gpt-sw3": {
+"n_embd": 768,
+"n_head": 12,
+"n_layer": 12
+},
+"gpt2": {
+"n_embd": 768,
+"n_head": 12,
+"n_layer": 12
+},
+"gpt_bigcode": {
+"n_embd": 768,
+"n_head": 12,
+"n_layer": 12,
+"num_key_value_heads": 1
+},
+"gpt_neo": {
+"hidden_size": 2048,
+"num_heads": 16,
+"num_layers": 24
+},
+"gpt_neox": {
+"hidden_size": 6144,
+"intermediate_size": 24576,
+"num_attention_heads": 64,
+"num_hidden_layers": 44
+},
+"gpt_neox_japanese": {
+"hidden_size": 2560,
+"num_attention_heads": 32,
+"num_hidden_layers": 32
+},
+"gpt_oss": {
+"head_dim": 64,
+"hidden_size": 2880,
+"intermediate_size": 2880,
+"num_attention_heads": 64,
+"num_hidden_layers": 36,
+"num_key_value_heads": 8
+},
+"gptj": {
+"n_embd": 4096,
+"n_head": 16,
+"n_layer": 28
+},
+"granite": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"granite4_vision_text": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"granite_speech_encoder": {
+"num_heads": 8,
+"num_layers": 10
+},
+"granite_speech_plus_encoder": {
+"num_heads": 8,
+"num_layers": 10
+},
+"granitemoe": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"granitemoehybrid": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"granitemoeshared": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"grounding-dino": {
+"d_model": 256,
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 2048,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 2048,
+"encoder_layers": 6
+},
+"groupvit_text_model": {
+"hidden_size": 256,
+"intermediate_size": 1024,
+"num_attention_heads": 4,
+"num_hidden_layers": 12
+},
+"groupvit_vision_model": {
+"depths": [
+6,
+3,
+3
+],
+"hidden_size": 384,
+"image_size": 224,
+"intermediate_size": 1536,
+"num_attention_heads": 6,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"helium": {
+"head_dim": 128,
+"hidden_size": 2560,
+"intermediate_size": 7040,
+"num_attention_heads": 20,
+"num_hidden_layers": 24,
+"num_key_value_heads": 20
+},
+"hgnet_v2": {
+"depths": [
+3,
+4,
+6,
+3
+],
+"hidden_sizes": [
+256,
+512,
+1024,
+2048
+]
+},
+"hiera": {
+"depths": [
+2,
+3,
+16,
+3
+],
+"embed_dim": 96,
+"hidden_size": 768,
+"image_size": [
+224,
+224
+],
+"mlp_ratio": 4.0,
+"num_heads": [
+1,
+2,
+4,
+8
+],
+"patch_size": [
+7,
+7
+]
+},
+"higgs_audio_v2": {
+"head_dim": 128,
+"hidden_size": 3072,
+"intermediate_size": 8192,
+"num_attention_heads": 24,
+"num_hidden_layers": 28,
+"num_key_value_heads": 8
+},
+"hrm_text": {
+"head_dim": 128,
+"hidden_size": 1536,
+"intermediate_size": 4096,
+"num_attention_heads": 12,
+"num_hidden_layers": 128
+},
+"hubert": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"hunyuan_v1_dense": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"hunyuan_v1_moe": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"hy_v3": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 13312,
+"num_attention_heads": 64,
+"num_hidden_layers": 80,
+"num_key_value_heads": 8
+},
+"hyperclovax": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"ibert": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"idefics": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32
+},
+"idefics2_perceiver": {
+"hidden_size": 4096,
+"num_key_value_heads": 4,
+"resampler_depth": 3,
+"resampler_head_dim": 96,
+"resampler_n_heads": 16,
+"resampler_n_latents": 64
+},
+"idefics2_vision": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 32
+},
+"idefics3_vision": {
+"hidden_size": 1152,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 16,
+"num_hidden_layers": 12,
+"patch_size": 32
+},
+"idefics_perciever": {
+"resampler_depth": 6,
+"resampler_head_dim": 96,
+"resampler_n_heads": 16,
+"resampler_n_latents": 64
+},
+"idefics_vision": {
+"embed_dim": 768,
+"image_size": 224,
+"intermediate_size": 5120,
+"num_attention_heads": 16,
+"num_hidden_layers": 32,
+"patch_size": 14
+},
+"ijepa": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"imagegpt": {
+"n_embd": 512,
+"n_head": 8,
+"n_layer": 24
+},
+"informer": {
+"d_model": 64,
+"decoder_attention_heads": 2,
+"decoder_ffn_dim": 32,
+"decoder_layers": 2,
+"encoder_attention_heads": 2,
+"encoder_ffn_dim": 32,
+"encoder_layers": 2
+},
+"instructblip_qformer": {
+"cross_attention_frequency": 2,
+"encoder_hidden_size": 1408,
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"instructblip_vision_model": {
+"hidden_size": 1408,
+"image_size": 224,
+"intermediate_size": 6144,
+"num_attention_heads": 16,
+"num_hidden_layers": 39,
+"patch_size": 14
+},
+"instructblipvideo_qformer": {
+"cross_attention_frequency": 2,
+"encoder_hidden_size": 1408,
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"instructblipvideo_vision_model": {
+"hidden_size": 1408,
+"image_size": 224,
+"intermediate_size": 6144,
+"num_attention_heads": 16,
+"num_hidden_layers": 39,
+"patch_size": 14
+},
+"internvl_vision": {
+"hidden_size": 1024,
+"image_size": [
+448,
+448
+],
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"patch_size": [
+14,
+14
+]
+},
+"jais2": {
+"head_dim": 128,
+"hidden_size": 3328,
+"intermediate_size": 26624,
+"num_attention_heads": 26,
+"num_hidden_layers": 32,
+"num_key_value_heads": 26
+},
+"jamba": {
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"janus_vision_model": {
+"depth": 2,
+"hidden_size": 1024,
+"image_size": 384,
+"mlp_ratio": 4.0,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"patch_size": 16
+},
+"janus_vqgan": {
+"embed_dim": 8,
+"num_hidden_layers": 2
+},
+"jetmoe": {
+"hidden_size": 2048,
+"intermediate_size": 5632,
+"kv_channels": 128,
+"num_attention_heads": 32,
+"num_hidden_layers": 12,
+"num_key_value_heads": 16
+},
+"jina_embeddings_v3": {
+"hidden_size": 1024,
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 24
+},
+"kosmos_2_5_text_model": {
+"embed_dim": 1536,
+"ffn_dim": 6144
+},
+"kosmos_2_5_vision_model": {
+"head_dim": 64,
+"hidden_size": 1536,
+"intermediate_size": 3968,
+"num_attention_heads": 24,
+"num_hidden_layers": 18
+},
+"kosmos_2_text_model": {
+"embed_dim": 2048,
+"ffn_dim": 8192
+},
+"kosmos_2_vision_model": {
+"hidden_size": 1024,
+"image_size": 224,
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"patch_size": 14
+},
+"kyutai_speech_to_text": {
+"ffn_dim": 11264,
+"head_dim": 64,
+"hidden_size": 2048,
+"num_attention_heads": 32,
+"num_hidden_layers": 48,
+"num_key_value_heads": 32
+},
+"laguna": {
+"head_dim": 128,
+"hidden_size": 2048,
+"intermediate_size": 8192,
+"num_attention_heads": 48,
+"num_hidden_layers": 40,
+"num_key_value_heads": 8
+},
+"lasr_encoder": {
+"hidden_size": 512,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_hidden_layers": 17,
+"num_key_value_heads": 8,
+"num_mel_bins": 128
+},
+"layoutlm": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"layoutlmv2": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"layoutlmv3": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"layoutxlm": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"led": {
+"d_model": 1024,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 4096,
+"decoder_layers": 12,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 4096,
+"encoder_layers": 12
+},
+"levit": {
+"depths": [
+4,
+4,
+4
+],
+"hidden_sizes": [
+128,
+256,
+384
+],
+"image_size": 224,
+"mlp_ratio": [
+2,
+2,
+2
+],
+"num_attention_heads": [
+4,
+8,
+12
+],
+"patch_size": 16
+},
+"lfm2": {
+"hidden_size": 2560,
+"intermediate_size": 12288,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"lfm2_moe": {
+"hidden_size": 2048,
+"intermediate_size": 7168,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"lightglue": {
+"hidden_size": 256,
+"intermediate_size": 512,
+"num_attention_heads": 4,
+"num_hidden_layers": 9,
+"num_key_value_heads": 4
+},
+"lilt": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"llama": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"llama4_text": {
+"head_dim": 128,
+"hidden_size": 5120,
+"intermediate_size": 8192,
+"num_attention_heads": 40,
+"num_hidden_layers": 48,
+"num_key_value_heads": 8
+},
+"llama4_vision_model": {
+"hidden_size": 768,
+"image_size": 448,
+"intermediate_size": 5632,
+"num_attention_heads": 16,
+"num_hidden_layers": 34,
+"patch_size": 14
+},
+"longcat_flash": {
+"ffn_hidden_size": 12288,
+"head_dim": 64,
+"hidden_size": 6144,
+"num_attention_heads": 64,
+"num_hidden_layers": 56,
+"num_key_value_heads": 64,
+"num_layers": 28
+},
+"longformer": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"longt5": {
+"d_ff": 2048,
+"d_kv": 64,
+"d_model": 512,
+"num_decoder_layers": 6,
+"num_heads": 8,
+"num_layers": 6
+},
+"luke": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"lw_detr": {
+"d_model": 256,
+"decoder_ffn_dim": 2048,
+"decoder_layers": 3
+},
+"lw_detr_vit": {
+"hidden_size": 768,
+"image_size": 256,
+"mlp_ratio": 4,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"lxmert": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12
+},
+"m2m_100": {
+"d_model": 1024,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 4096,
+"decoder_layers": 12,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 4096,
+"encoder_layers": 12
+},
+"mamba": {
+"hidden_size": 768,
+"intermediate_size": 1536,
+"num_hidden_layers": 32
+},
+"mamba2": {
+"head_dim": 64,
+"hidden_size": 4096,
+"num_heads": 128,
+"num_hidden_layers": 64
+},
+"marian": {
+"d_model": 1024,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 4096,
+"decoder_layers": 12,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 4096,
+"encoder_layers": 12
+},
+"markuplm": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"mask2former": {
+"decoder_layers": 10,
+"encoder_layers": 6,
+"num_attention_heads": 8
+},
+"maskformer": {
+"num_attention_heads": 8,
+"num_hidden_layers": 6
+},
+"maskformer-swin": {
+"depths": [
+2,
+2,
+6,
+2
+],
+"embed_dim": 96,
+"hidden_size": 768,
+"image_size": 224,
+"mlp_ratio": 4.0,
+"num_heads": [
+3,
+6,
+12,
+24
+],
+"patch_size": 4
+},
+"mbart": {
+"d_model": 1024,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 4096,
+"decoder_layers": 12,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 4096,
+"encoder_layers": 12
+},
+"megatron-bert": {
+"hidden_size": 1024,
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 24
+},
+"mellum": {
+"head_dim": 128,
+"hidden_size": 2304,
+"intermediate_size": 7168,
+"num_attention_heads": 32,
+"num_hidden_layers": 28,
+"num_key_value_heads": 4
+},
+"metaclip_2_text_model": {
+"hidden_size": 512,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_hidden_layers": 12
+},
+"metaclip_2_vision_model": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 32
+},
+"mgp-str": {
+"hidden_size": 768,
+"image_size": [
+32,
+128
+],
+"mlp_ratio": 4.0,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 4
+},
+"mimi": {
+"head_dim": 64,
+"hidden_size": 512,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_hidden_layers": 8,
+"num_key_value_heads": 8
+},
+"minicpmv4_6": {
+"image_size": 448,
+"patch_size": 16
+},
+"minicpmv4_6_vision": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"minimax": {
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"minimax_m2": {
+"head_dim": 128,
+"hidden_size": 3072,
+"intermediate_size": 1536,
+"num_attention_heads": 48,
+"num_hidden_layers": 62,
+"num_key_value_heads": 8
+},
+"minimax_m3_vl_text": {
+"head_dim": 128,
+"hidden_size": 6144,
+"intermediate_size": 3072,
+"num_attention_heads": 64,
+"num_hidden_layers": 60,
+"num_key_value_heads": 4
+},
+"minimax_m3_vl_vision": {
+"hidden_size": 1280,
+"image_size": 2016,
+"intermediate_size": 5120,
+"num_attention_heads": 16,
+"num_hidden_layers": 32,
+"patch_size": 14
+},
+"ministral": {
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"ministral3": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 34,
+"num_key_value_heads": 8
+},
+"mistral": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"mistral4": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 12288,
+"num_attention_heads": 32,
+"num_hidden_layers": 36,
+"num_key_value_heads": 32
+},
+"mixtral": {
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"mlcd": {
+"hidden_size": 1664,
+"image_size": 336,
+"intermediate_size": 8192,
+"num_attention_heads": 16,
+"num_hidden_layers": 48,
+"patch_size": 14
+},
+"mlcd_vision_model": {
+"hidden_size": 1664,
+"image_size": 336,
+"intermediate_size": 8192,
+"num_attention_heads": 16,
+"num_hidden_layers": 48,
+"patch_size": 14
+},
+"mllama_text_model": {
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 40,
+"num_key_value_heads": 8
+},
+"mllama_vision_model": {
+"hidden_size": 1280,
+"image_size": 448,
+"intermediate_size": 5120,
+"max_num_tiles": 4,
+"num_hidden_layers": 32,
+"patch_size": 14
+},
+"mm-grounding-dino": {
+"d_model": 256,
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 2048,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 2048,
+"encoder_layers": 6
+},
+"mobilebert": {
+"hidden_size": 512,
+"intermediate_size": 512,
+"num_attention_heads": 4,
+"num_hidden_layers": 24
+},
+"mobilenet_v1": {
+"image_size": 224
+},
+"mobilenet_v2": {
+"image_size": 224
+},
+"mobilevit": {
+"hidden_sizes": [
+144,
+192,
+240
+],
+"image_size": 256,
+"mlp_ratio": 2.0,
+"num_attention_heads": 4,
+"patch_size": 2
+},
+"mobilevitv2": {
+"image_size": 256,
+"patch_size": 2
+},
+"modernbert": {
+"hidden_size": 768,
+"intermediate_size": 1152,
+"num_attention_heads": 12,
+"num_hidden_layers": 22
+},
+"modernbert-decoder": {
+"hidden_size": 768,
+"intermediate_size": 1152,
+"num_attention_heads": 12,
+"num_hidden_layers": 22
+},
+"moonshine": {
+"decoder_num_attention_heads": 8,
+"decoder_num_hidden_layers": 6,
+"decoder_num_key_value_heads": 8,
+"encoder_num_attention_heads": 8,
+"encoder_num_hidden_layers": 6,
+"encoder_num_key_value_heads": 8,
+"hidden_size": 288,
+"intermediate_size": 1152
+},
+"moonshine_streaming": {
+"head_dim": 40,
+"hidden_size": 320,
+"intermediate_size": 1280,
+"num_attention_heads": 8,
+"num_hidden_layers": 6
+},
+"moonshine_streaming_encoder": {
+"head_dim": 40,
+"hidden_size": 320,
+"intermediate_size": 1280,
+"num_attention_heads": 8,
+"num_hidden_layers": 6,
+"num_key_value_heads": 8
+},
+"moshi": {
+"ffn_dim": 22528,
+"head_dim": 128,
+"hidden_size": 4096,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"moshi_depth": {
+"ffn_dim": 5632,
+"head_dim": 64,
+"hidden_size": 1024,
+"num_attention_heads": 16,
+"num_hidden_layers": 6,
+"num_key_value_heads": 16
+},
+"mpnet": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"mpt": {
+"d_model": 2048,
+"n_heads": 16,
+"n_layers": 24
+},
+"mra": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"mt5": {
+"d_ff": 1024,
+"d_kv": 64,
+"d_model": 512,
+"num_decoder_layers": 8,
+"num_heads": 6,
+"num_layers": 8
+},
+"musicflamingo": {
+"head_dim": 1280
+},
+"musicgen_decoder": {
+"ffn_dim": 4096,
+"hidden_size": 1024,
+"num_attention_heads": 16,
+"num_hidden_layers": 24
+},
+"musicgen_melody_decoder": {
+"ffn_dim": 4096,
+"hidden_size": 1024,
+"num_attention_heads": 16,
+"num_hidden_layers": 24
+},
+"mvp": {
+"d_model": 1024,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 4096,
+"decoder_layers": 12,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 4096,
+"encoder_layers": 12
+},
+"nanochat": {
+"hidden_size": 768,
+"intermediate_size": 8192,
+"num_attention_heads": 6,
+"num_hidden_layers": 12,
+"num_key_value_heads": 6
+},
+"nemotron": {
+"head_dim": 128,
+"hidden_size": 6144,
+"intermediate_size": 24576,
+"num_attention_heads": 48,
+"num_hidden_layers": 32
+},
+"nemotron_h": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 21504,
+"num_attention_heads": 32,
+"num_key_value_heads": 8
+},
+"nllb-moe": {
+"d_model": 1024,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 4096,
+"decoder_layers": 12,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 4096,
+"encoder_layers": 12
+},
+"nomic_bert": {
+"head_dim": 64,
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"nystromformer": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"olmo": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"olmo2": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"olmo3": {
+"hidden_size": 4096,
+"intermediate_size": 11008,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"olmo_hybrid": {
+"hidden_size": 3840,
+"intermediate_size": 11008,
+"num_attention_heads": 30,
+"num_hidden_layers": 32,
+"num_key_value_heads": 30
+},
+"olmoe": {
+"hidden_size": 2048,
+"intermediate_size": 2048,
+"num_attention_heads": 16,
+"num_hidden_layers": 16,
+"num_key_value_heads": 16
+},
+"omdet-turbo": {
+"d_model": 256,
+"encoder_attention_heads": 8,
+"encoder_layers": 1,
+"image_size": 640
+},
+"oneformer": {
+"decoder_layers": 10,
+"encoder_layers": 6,
+"num_attention_heads": 8
+},
+"openai-gpt": {
+"n_embd": 768,
+"n_head": 12,
+"n_layer": 12
+},
+"openai_privacy_filter": {
+"head_dim": 64,
+"hidden_size": 640,
+"intermediate_size": 640,
+"num_attention_heads": 14,
+"num_hidden_layers": 8,
+"num_key_value_heads": 2
+},
+"opt": {
+"ffn_dim": 3072,
+"hidden_size": 768,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"ovis2": {
+"hidden_size": 1536
+},
+"owlv2_text_model": {
+"hidden_size": 512,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_hidden_layers": 12
+},
+"owlv2_vision_model": {
+"hidden_size": 768,
+"image_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"owlvit_text_model": {
+"hidden_size": 512,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_hidden_layers": 12
+},
+"owlvit_vision_model": {
+"hidden_size": 768,
+"image_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 32
+},
+"paddleocr_vl_text": {
+"head_dim": 128,
+"hidden_size": 1024,
+"intermediate_size": 3072,
+"num_attention_heads": 16,
+"num_hidden_layers": 18,
+"num_key_value_heads": 2
+},
+"paddleocr_vl_vision": {
+"hidden_size": 1152,
+"image_size": 384,
+"intermediate_size": 4304,
+"num_attention_heads": 16,
+"num_hidden_layers": 27,
+"patch_size": 14
+},
+"paligemma": {
+"hidden_size": 2048
+},
+"parakeet_encoder": {
+"hidden_size": 1024,
+"intermediate_size": 4096,
+"num_attention_heads": 8,
+"num_hidden_layers": 24,
+"num_key_value_heads": 8,
+"num_mel_bins": 80
+},
+"parakeet_rnnt": {
+"num_decoder_layers": 2
+},
+"parakeet_tdt": {
+"num_decoder_layers": 2
+},
+"patchtsmixer": {
+"d_model": 8,
+"num_layers": 3
+},
+"patchtst": {
+"d_model": 128,
+"ffn_dim": 512,
+"num_attention_heads": 4,
+"num_hidden_layers": 3
+},
+"pe_audio_encoder": {
+"head_dim": 128,
+"hidden_size": 1792,
+"intermediate_size": 4800,
+"num_attention_heads": 14,
+"num_hidden_layers": 6,
+"num_key_value_heads": 14
+},
+"pegasus": {
+"d_model": 1024,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 4096,
+"decoder_layers": 12,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 4096,
+"encoder_layers": 12
+},
+"pegasus_x": {
+"d_model": 1024,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 4096,
+"decoder_layers": 16,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 4096,
+"encoder_layers": 16
+},
+"perceiver": {
+"d_model": 768,
+"image_size": 56
+},
+"persimmon": {
+"hidden_size": 4096,
+"intermediate_size": 16384,
+"num_attention_heads": 64,
+"num_hidden_layers": 36
+},
+"phi": {
+"hidden_size": 2048,
+"intermediate_size": 8192,
+"num_attention_heads": 32,
+"num_hidden_layers": 24,
+"num_key_value_heads": 32
+},
+"phi3": {
+"hidden_size": 3072,
+"intermediate_size": 8192,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"phi4_multimodal": {
+"hidden_size": 3072,
+"intermediate_size": 8192,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"phi4_multimodal_audio": {
+"hidden_size": 1024,
+"intermediate_size": 1536,
+"num_attention_heads": 16
+},
+"phi4_multimodal_vision": {
+"hidden_size": 1152,
+"image_size": 448,
+"intermediate_size": 4304,
+"num_attention_heads": 16,
+"num_hidden_layers": 27,
+"patch_size": 14
+},
+"phimoe": {
+"hidden_size": 4096,
+"intermediate_size": 6400,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"pix2struct_text_model": {
+"d_ff": 2048,
+"d_kv": 64,
+"hidden_size": 768,
+"num_heads": 12,
+"num_layers": 12
+},
+"pix2struct_vision_model": {
+"d_ff": 2048,
+"d_kv": 64,
+"hidden_size": 768,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"pixio": {
+"hidden_size": 1280,
+"image_size": 256,
+"mlp_ratio": 4,
+"num_attention_heads": 16,
+"num_hidden_layers": 32,
+"patch_size": 16
+},
+"pixtral": {
+"head_dim": 64,
+"hidden_size": 1024,
+"image_size": 1024,
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"patch_size": 16
+},
+"plbart": {
+"d_model": 768,
+"decoder_attention_heads": 12,
+"decoder_ffn_dim": 3072,
+"decoder_layers": 6,
+"encoder_attention_heads": 12,
+"encoder_ffn_dim": 3072,
+"encoder_layers": 6
+},
+"poolformer": {
+"depths": [
+2,
+2,
+6,
+2
+],
+"hidden_sizes": [
+64,
+128,
+320,
+512
+],
+"mlp_ratio": 4.0,
+"patch_size": 16
+},
+"pop2piano": {
+"d_ff": 2048,
+"d_kv": 64,
+"d_model": 512,
+"num_decoder_layers": 6,
+"num_heads": 8,
+"num_layers": 6
+},
+"pp_doclayout_v2": {
+"d_model": 256,
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 1024,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 1024,
+"encoder_layers": 1
+},
+"pp_doclayout_v3": {
+"d_model": 256,
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 1024,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 1024,
+"encoder_layers": 1
+},
+"pp_lcnet": {
+"depths": [
+1,
+2,
+2,
+6,
+2
+]
+},
+"pp_lcnet_v3": {
+"depths": [
+1,
+2,
+2,
+5,
+4
+]
+},
+"pp_lcnet_v4": {
+"depths": [
+1,
+2,
+7,
+3
+]
+},
+"pp_ocrv5_mobile_rec": {
+"depth": 2,
+"hidden_size": 120,
+"mlp_ratio": 2.0,
+"num_attention_heads": 8
+},
+"pp_ocrv5_server_rec": {
+"depth": 2,
+"hidden_size": 120,
+"mlp_ratio": 2.0,
+"num_attention_heads": 8
+},
+"pp_ocrv6_small_rec": {
+"depth": 2,
+"hidden_size": 120,
+"mlp_ratio": 2.0,
+"num_attention_heads": 8
+},
+"pp_ocrv6_tiny_rec": {
+"hidden_size": 120
+},
+"prompt_depth_anything": {
+"patch_size": 14
+},
+"prophetnet": {
+"decoder_ffn_dim": 4096,
+"encoder_ffn_dim": 4096,
+"hidden_size": 1024,
+"num_decoder_attention_heads": 16,
+"num_decoder_layers": 12,
+"num_encoder_attention_heads": 16,
+"num_encoder_layers": 12
+},
+"pvt": {
+"depths": [
+2,
+2,
+2,
+2
+],
+"hidden_sizes": [
+64,
+128,
+320,
+512
+],
+"image_size": 224,
+"num_attention_heads": [
+1,
+2,
+5,
+8
+]
+},
+"pvt_v2": {
+"depths": [
+2,
+2,
+2,
+2
+],
+"hidden_sizes": [
+32,
+64,
+160,
+256
+],
+"image_size": [
+224,
+224
+],
+"num_attention_heads": [
+1,
+2,
+5,
+8
+]
+},
+"qianfan_ocr_vision": {
+"hidden_size": 1024,
+"image_size": [
+448,
+448
+],
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"patch_size": [
+14,
+14
+]
+},
+"qwen2": {
+"hidden_size": 4096,
+"intermediate_size": 22016,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"qwen2_5_omni_audio_encoder": {
+"d_model": 1280,
+"encoder_attention_heads": 20,
+"encoder_ffn_dim": 5120,
+"encoder_layers": 32,
+"max_source_positions": 1500,
+"num_mel_bins": 128
+},
+"qwen2_5_omni_dit": {
+"head_dim": 64,
+"hidden_size": 1024,
+"num_attention_heads": 16,
+"num_hidden_layers": 22
+},
+"qwen2_5_omni_talker": {
+"head_dim": 128,
+"hidden_size": 3584,
+"intermediate_size": 18944,
+"num_attention_heads": 28,
+"num_hidden_layers": 28,
+"num_key_value_heads": 4
+},
+"qwen2_5_omni_text": {
+"hidden_size": 3584,
+"intermediate_size": 18944,
+"num_attention_heads": 28,
+"num_hidden_layers": 28,
+"num_key_value_heads": 4
+},
+"qwen2_5_omni_vision_encoder": {
+"depth": 32,
+"hidden_size": 3584,
+"intermediate_size": 3420,
+"num_heads": 16,
+"patch_size": 14
+},
+"qwen2_5_vl_text": {
+"hidden_size": 8192,
+"intermediate_size": 29568,
+"num_attention_heads": 64,
+"num_hidden_layers": 80,
+"num_key_value_heads": 8
+},
+"qwen2_5_vl_vision": {
+"depth": 32,
+"hidden_size": 3584,
+"intermediate_size": 3420,
+"num_heads": 16,
+"patch_size": 14
+},
+"qwen2_audio_encoder": {
+"d_model": 1280,
+"encoder_attention_heads": 20,
+"encoder_ffn_dim": 5120,
+"encoder_layers": 32,
+"max_source_positions": 1500,
+"num_mel_bins": 128
+},
+"qwen2_moe": {
+"hidden_size": 2048,
+"intermediate_size": 5632,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"num_key_value_heads": 16
+},
+"qwen2_vl_text": {
+"hidden_size": 8192,
+"intermediate_size": 29568,
+"num_attention_heads": 64,
+"num_hidden_layers": 80,
+"num_key_value_heads": 8
+},
+"qwen2_vl_vision": {
+"depth": 32,
+"embed_dim": 1280,
+"hidden_size": 3584,
+"mlp_ratio": 4,
+"num_heads": 16,
+"patch_size": 14
+},
+"qwen3": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 22016,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"qwen3_5_moe_text": {
+"head_dim": 256,
+"hidden_size": 2048,
+"num_attention_heads": 16,
+"num_hidden_layers": 40,
+"num_key_value_heads": 2
+},
+"qwen3_5_moe_vision": {
+"depth": 27,
+"hidden_size": 1152,
+"intermediate_size": 4304,
+"num_heads": 16,
+"patch_size": 16
+},
+"qwen3_5_text": {
+"head_dim": 256,
+"hidden_size": 4096,
+"intermediate_size": 12288,
+"num_attention_heads": 16,
+"num_hidden_layers": 32,
+"num_key_value_heads": 4
+},
+"qwen3_5_vision": {
+"depth": 27,
+"hidden_size": 1152,
+"intermediate_size": 4304,
+"num_heads": 16,
+"patch_size": 16
+},
+"qwen3_moe": {
+"hidden_size": 2048,
+"intermediate_size": 6144,
+"num_attention_heads": 32,
+"num_hidden_layers": 24,
+"num_key_value_heads": 4
+},
+"qwen3_next": {
+"head_dim": 256,
+"hidden_size": 2048,
+"intermediate_size": 5632,
+"num_attention_heads": 16,
+"num_hidden_layers": 48,
+"num_key_value_heads": 2
+},
+"qwen3_omni_moe_audio_encoder": {
+"d_model": 1280,
+"encoder_attention_heads": 20,
+"encoder_ffn_dim": 5120,
+"encoder_layers": 32,
+"max_source_positions": 1500,
+"num_mel_bins": 128
+},
+"qwen3_omni_moe_talker_code_predictor": {
+"head_dim": 128,
+"hidden_size": 1024,
+"intermediate_size": 3072,
+"num_attention_heads": 16,
+"num_hidden_layers": 5,
+"num_key_value_heads": 8
+},
+"qwen3_omni_moe_talker_text": {
+"hidden_size": 1024,
+"intermediate_size": 2048,
+"num_attention_heads": 16,
+"num_hidden_layers": 20,
+"num_key_value_heads": 2
+},
+"qwen3_omni_moe_text": {
+"hidden_size": 2048,
+"intermediate_size": 18944,
+"num_attention_heads": 28,
+"num_hidden_layers": 28,
+"num_key_value_heads": 4
+},
+"qwen3_omni_moe_vision_encoder": {
+"depth": 27,
+"hidden_size": 1152,
+"intermediate_size": 4304,
+"num_heads": 16,
+"patch_size": 16
+},
+"qwen3_vl_moe_text": {
+"head_dim": 128,
+"hidden_size": 2048,
+"intermediate_size": 5632,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"num_key_value_heads": 16
+},
+"qwen3_vl_moe_vision": {
+"depth": 27,
+"hidden_size": 1152,
+"intermediate_size": 4304,
+"num_heads": 16,
+"patch_size": 16
+},
+"qwen3_vl_text": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 22016,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"qwen3_vl_vision": {
+"depth": 27,
+"hidden_size": 1152,
+"intermediate_size": 4304,
+"num_heads": 16,
+"patch_size": 16
+},
+"recurrent_gemma": {
+"head_dim": 256,
+"hidden_size": 2560,
+"intermediate_size": 7680,
+"num_attention_heads": 10,
+"num_hidden_layers": 26,
+"num_key_value_heads": 10
+},
+"reformer": {
+"hidden_size": 256,
+"num_attention_heads": 12,
+"num_hidden_layers": 6
+},
+"regnet": {
+"depths": [
+2,
+6,
+12,
+2
+],
+"hidden_sizes": [
+128,
+192,
+512,
+1088
+]
+},
+"rembert": {
+"hidden_size": 1152,
+"intermediate_size": 4608,
+"num_attention_heads": 18,
+"num_hidden_layers": 32
+},
+"resnet": {
+"depths": [
+3,
+4,
+6,
+3
+],
+"hidden_sizes": [
+256,
+512,
+1024,
+2048
+]
+},
+"rf_detr": {
+"d_model": 256,
+"decoder_ffn_dim": 2048,
+"decoder_layers": 3,
+"intermediate_size": 1024
+},
+"rf_detr_dinov2": {
+"hidden_size": 768,
+"image_size": 224,
+"mlp_ratio": 4,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 14
+},
+"roberta": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"roberta-prelayernorm": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"roc_bert": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"roformer": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"rt_detr": {
+"d_model": 256,
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 1024,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 1024,
+"encoder_layers": 1
+},
+"rt_detr_resnet": {
+"depths": [
+3,
+4,
+6,
+3
+],
+"hidden_sizes": [
+256,
+512,
+1024,
+2048
+]
+},
+"rt_detr_v2": {
+"d_model": 256,
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 1024,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 1024,
+"encoder_layers": 1
+},
+"rwkv": {
+"hidden_size": 4096,
+"intermediate_size": 16384,
+"num_hidden_layers": 32
+},
+"sam2_hiera_det_model": {
+"hidden_size": 96,
+"image_size": [
+1024,
+1024
+],
+"mlp_ratio": 4.0,
+"num_attention_heads": 1
+},
+"sam2_video": {
+"image_size": 1024
+},
+"sam3_detr_decoder": {
+"hidden_size": 256,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_layers": 6
+},
+"sam3_detr_encoder": {
+"hidden_size": 256,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_layers": 6
+},
+"sam3_geometry_encoder": {
+"hidden_size": 256,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_layers": 3
+},
+"sam3_lite_text_detr_decoder": {
+"hidden_size": 256,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_layers": 6
+},
+"sam3_lite_text_detr_encoder": {
+"hidden_size": 256,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_layers": 6
+},
+"sam3_lite_text_geometry_encoder": {
+"hidden_size": 256,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_layers": 3
+},
+"sam3_lite_text_mask_decoder": {
+"hidden_size": 256,
+"num_attention_heads": 8
+},
+"sam3_lite_text_text_model": {
+"hidden_size": 512,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_hidden_layers": 12
+},
+"sam3_mask_decoder": {
+"hidden_size": 256,
+"num_attention_heads": 8
+},
+"sam3_tracker_video": {
+"image_size": 1008
+},
+"sam3_vit_model": {
+"hidden_size": 1024,
+"image_size": 1008,
+"intermediate_size": 4736,
+"num_attention_heads": 16,
+"num_hidden_layers": 32,
+"patch_size": 14
+},
+"sam_hq_vision_model": {
+"hidden_size": 768,
+"image_size": 1024,
+"mlp_dim": 3072,
+"mlp_ratio": 4.0,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"sam_vision_model": {
+"hidden_size": 768,
+"image_size": 1024,
+"mlp_dim": 3072,
+"mlp_ratio": 4.0,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"sapiens2": {
+"hidden_size": 1024,
+"image_size": 224,
+"intermediate_size": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"patch_size": 16
+},
+"seamless_m4t": {
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 8192,
+"decoder_layers": 24,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 8192,
+"encoder_layers": 24,
+"hidden_size": 1024,
+"max_source_positions": 4096
+},
+"seamless_m4t_v2": {
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 8192,
+"decoder_layers": 24,
+"encoder_attention_heads": 16,
+"encoder_ffn_dim": 8192,
+"encoder_layers": 24,
+"hidden_size": 1024
+},
+"seed_oss": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 27648,
+"num_attention_heads": 80,
+"num_hidden_layers": 64,
+"num_key_value_heads": 8
+},
+"segformer": {
+"depths": [
+2,
+2,
+2,
+2
+],
+"hidden_sizes": [
+32,
+64,
+160,
+256
+],
+"num_attention_heads": [
+1,
+2,
+5,
+8
+]
+},
+"seggpt": {
+"hidden_size": 1024,
+"image_size": [
+896,
+448
+],
+"mlp_dim": 4096,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"patch_size": 16
+},
+"sew": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"sew-d": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"siglip2_text_model": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"siglip2_vision_model": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"siglip_text_model": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"siglip_vision_model": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"slanet": {
+"hidden_size": 256
+},
+"slanext": {
+"hidden_size": 512
+},
+"smollm3": {
+"hidden_size": 2048,
+"intermediate_size": 11008,
+"num_attention_heads": 16,
+"num_hidden_layers": 36,
+"num_key_value_heads": 4
+},
+"smolvlm_vision": {
+"hidden_size": 1152,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 16,
+"num_hidden_layers": 12,
+"patch_size": 32
+},
+"solar_open": {
+"head_dim": 128,
+"hidden_size": 4096,
+"num_attention_heads": 64,
+"num_hidden_layers": 48,
+"num_key_value_heads": 8
+},
+"speech_to_text": {
+"d_model": 256,
+"decoder_attention_heads": 4,
+"decoder_ffn_dim": 2048,
+"decoder_layers": 6,
+"encoder_attention_heads": 4,
+"encoder_ffn_dim": 2048,
+"encoder_layers": 12,
+"max_source_positions": 6000
+},
+"speecht5": {
+"decoder_attention_heads": 12,
+"decoder_ffn_dim": 3072,
+"decoder_layers": 6,
+"encoder_attention_heads": 12,
+"encoder_ffn_dim": 3072,
+"encoder_layers": 12,
+"hidden_size": 768,
+"num_mel_bins": 80
+},
+"splinter": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"squeezebert": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"stablelm": {
+"hidden_size": 2560,
+"intermediate_size": 6912,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 32
+},
+"starcoder2": {
+"hidden_size": 3072,
+"intermediate_size": 12288,
+"num_attention_heads": 24,
+"num_hidden_layers": 30,
+"num_key_value_heads": 2
+},
+"superglue": {
+"hidden_size": 256,
+"num_attention_heads": 4
+},
+"swiftformer": {
+"depths": [
+3,
+3,
+6,
+4
+],
+"embed_dims": [
+48,
+56,
+112,
+220
+],
+"image_size": 224,
+"mlp_ratio": 4
+},
+"swin": {
+"depths": [
+2,
+2,
+6,
+2
+],
+"embed_dim": 96,
+"hidden_size": 768,
+"image_size": 224,
+"mlp_ratio": 4.0,
+"num_heads": [
+3,
+6,
+12,
+24
+],
+"num_layers": 4,
+"patch_size": 4
+},
+"swin2sr": {
+"depths": [
+6,
+6,
+6,
+6,
+6,
+6
+],
+"embed_dim": 180,
+"image_size": 64,
+"mlp_ratio": 2.0,
+"num_heads": [
+6,
+6,
+6,
+6,
+6,
+6
+],
+"num_layers": 6,
+"patch_size": 1
+},
+"swinv2": {
+"depths": [
+2,
+2,
+6,
+2
+],
+"embed_dim": 96,
+"hidden_size": 768,
+"image_size": 224,
+"mlp_ratio": 4.0,
+"num_heads": [
+3,
+6,
+12,
+24
+],
+"num_layers": 4,
+"patch_size": 4
+},
+"switch_transformers": {
+"d_ff": 2048,
+"d_kv": 64,
+"d_model": 768,
+"num_decoder_layers": 12,
+"num_heads": 12,
+"num_layers": 12
+},
+"t5": {
+"d_ff": 2048,
+"d_kv": 64,
+"d_model": 512,
+"num_decoder_layers": 6,
+"num_heads": 8,
+"num_layers": 6
+},
+"t5_gemma_module": {
+"head_dim": 256,
+"hidden_size": 2304,
+"intermediate_size": 9216,
+"num_attention_heads": 8,
+"num_hidden_layers": 26,
+"num_key_value_heads": 4
+},
+"t5gemma2_decoder": {
+"head_dim": 256,
+"hidden_size": 2304,
+"intermediate_size": 9216,
+"num_attention_heads": 8,
+"num_hidden_layers": 26,
+"num_key_value_heads": 4
+},
+"t5gemma2_text": {
+"head_dim": 256,
+"hidden_size": 2304,
+"intermediate_size": 9216,
+"num_attention_heads": 8,
+"num_hidden_layers": 26,
+"num_key_value_heads": 4
+},
+"table-transformer": {
+"d_model": 256,
+"decoder_attention_heads": 8,
+"decoder_ffn_dim": 2048,
+"decoder_layers": 6,
+"encoder_attention_heads": 8,
+"encoder_ffn_dim": 2048,
+"encoder_layers": 6
+},
+"tapas": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"textnet": {
+"depths": [
+3,
+4,
+4,
+4
+],
+"hidden_sizes": [
+64,
+64,
+128,
+256,
+512
+],
+"image_size": [
+640,
+640
+]
+},
+"time_series_transformer": {
+"d_model": 64,
+"decoder_attention_heads": 2,
+"decoder_ffn_dim": 32,
+"decoder_layers": 2,
+"encoder_attention_heads": 2,
+"encoder_ffn_dim": 32,
+"encoder_layers": 2
+},
+"timesfm": {
+"head_dim": 80,
+"hidden_size": 1280,
+"intermediate_size": 1280,
+"num_attention_heads": 16,
+"num_hidden_layers": 50
+},
+"timesfm2_5": {
+"head_dim": 80,
+"hidden_size": 1280,
+"intermediate_size": 1280,
+"num_attention_heads": 16,
+"num_hidden_layers": 20,
+"num_key_value_heads": 16
+},
+"timesformer": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"trocr": {
+"d_model": 1024,
+"decoder_attention_heads": 16,
+"decoder_ffn_dim": 4096,
+"decoder_layers": 12
+},
+"tvp": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"udop": {
+"d_ff": 4096,
+"d_kv": 64,
+"d_model": 1024,
+"image_size": 224,
+"num_decoder_layers": 24,
+"num_heads": 16,
+"num_layers": 24,
+"patch_size": 16
+},
+"umt5": {
+"d_ff": 1024,
+"d_kv": 64,
+"d_model": 512,
+"num_decoder_layers": 8,
+"num_heads": 6,
+"num_layers": 8
+},
+"unispeech": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"unispeech-sat": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"univnet": {
+"num_mel_bins": 100
+},
+"upernet": {
+"hidden_size": 512
+},
+"uvdoc_backbone": {
+"depths": [
+1,
+1,
+1,
+3,
+3,
+3
+]
+},
+"vaultgemma": {
+"head_dim": 256,
+"hidden_size": 2304,
+"intermediate_size": 9216,
+"num_attention_heads": 8,
+"num_hidden_layers": 26,
+"num_key_value_heads": 4
+},
+"vibevoice_acoustic_tokenizer": {
+"depths": [
+3,
+3,
+3,
+3,
+3,
+3,
+8
+],
+"hidden_size": 64
+},
+"vibevoice_acoustic_tokenizer_decoder": {
+"depths": [
+3,
+3,
+3,
+3,
+3,
+3,
+8
+],
+"hidden_size": 64
+},
+"vibevoice_acoustic_tokenizer_encoder": {
+"depths": [
+3,
+3,
+3,
+3,
+3,
+3,
+8
+],
+"hidden_size": 64
+},
+"video_llama_3_vision": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"videomae": {
+"decoder_num_attention_heads": 6,
+"decoder_num_hidden_layers": 4,
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"videomt": {
+"hidden_size": 1024,
+"image_size": 640,
+"mlp_ratio": 4,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"patch_size": 16
+},
+"vilt": {
+"hidden_size": 768,
+"image_size": 384,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 32
+},
+"visual_bert": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"vit": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"vit_mae": {
+"decoder_num_attention_heads": 16,
+"decoder_num_hidden_layers": 8,
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"vit_msn": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"vitdet": {
+"hidden_size": 768,
+"image_size": 224,
+"mlp_ratio": 4,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"vitmatte": {
+"hidden_size": 384
+},
+"vitpose_backbone": {
+"hidden_size": 768,
+"image_size": [
+256,
+192
+],
+"mlp_ratio": 4,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": [
+16,
+16
+]
+},
+"vits": {
+"ffn_dim": 768,
+"hidden_size": 192,
+"num_attention_heads": 2,
+"num_hidden_layers": 6
+},
+"vivit": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"vjepa2": {
+"hidden_size": 1024,
+"mlp_ratio": 4.0,
+"num_attention_heads": 16,
+"num_hidden_layers": 24,
+"patch_size": 16
+},
+"voxtral": {
+"hidden_size": 3072
+},
+"voxtral_encoder": {
+"hidden_size": 1280,
+"intermediate_size": 5120,
+"max_source_positions": 1500,
+"num_attention_heads": 20,
+"num_hidden_layers": 32,
+"num_mel_bins": 128
+},
+"voxtral_realtime": {
+"hidden_size": 3072
+},
+"voxtral_realtime_encoder": {
+"head_dim": 64,
+"hidden_size": 1280,
+"intermediate_size": 5120,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_mel_bins": 128
+},
+"voxtral_realtime_text": {
+"head_dim": 128,
+"hidden_size": 4096,
+"intermediate_size": 14336,
+"num_attention_heads": 32,
+"num_hidden_layers": 32,
+"num_key_value_heads": 8
+},
+"wav2vec2": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"wav2vec2-bert": {
+"hidden_size": 1024,
+"intermediate_size": 4096,
+"max_source_positions": 5000,
+"num_attention_heads": 16,
+"num_hidden_layers": 24
+},
+"wav2vec2-conformer": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"max_source_positions": 5000,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"wavlm": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"whisper": {
+"d_model": 384,
+"decoder_attention_heads": 6,
+"decoder_ffn_dim": 1536,
+"decoder_layers": 4,
+"encoder_attention_heads": 6,
+"encoder_ffn_dim": 1536,
+"encoder_layers": 4,
+"max_source_positions": 1500,
+"num_mel_bins": 80
+},
+"xclip_text_model": {
+"hidden_size": 512,
+"intermediate_size": 2048,
+"num_attention_heads": 8,
+"num_hidden_layers": 12
+},
+"xclip_vision_model": {
+"hidden_size": 768,
+"image_size": 224,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 32
+},
+"xglm": {
+"d_model": 1024,
+"ffn_dim": 4096,
+"num_layers": 24
+},
+"xlm": {
+"n_heads": 16,
+"n_layers": 12
+},
+"xlm-roberta": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"xlm-roberta-xl": {
+"hidden_size": 2560,
+"intermediate_size": 10240,
+"num_attention_heads": 32,
+"num_hidden_layers": 36
+},
+"xlnet": {
+"d_model": 1024,
+"n_head": 16,
+"n_layer": 24
+},
+"xlstm": {
+"hidden_size": 4096,
+"num_heads": 8,
+"num_hidden_layers": 32
+},
+"xmod": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"yolos": {
+"hidden_size": 768,
+"image_size": [
+512,
+864
+],
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12,
+"patch_size": 16
+},
+"yoso": {
+"hidden_size": 768,
+"intermediate_size": 3072,
+"num_attention_heads": 12,
+"num_hidden_layers": 12
+},
+"youtu": {
+"head_dim": 64,
+"hidden_size": 2048,
+"intermediate_size": 6144,
+"num_attention_heads": 16,
+"num_hidden_layers": 32,
+"num_key_value_heads": 16
+},
+"zamba": {
+"attention_head_dim": 464,
+"hidden_size": 3712,
+"intermediate_size": 14848,
+"num_attention_heads": 16,
+"num_hidden_layers": 76,
+"num_key_value_heads": 16
+},
+"zamba2": {
+"attention_head_dim": 160,
+"hidden_size": 2560,
+"intermediate_size": 10240,
+"kv_channels": 80,
+"num_attention_heads": 32,
+"num_hidden_layers": 54,
+"num_key_value_heads": 32
+}
+},
+"geometry_keys": [
+"num_hidden_layers",
+"num_layers",
+"n_layer",
+"n_layers",
+"depth",
+"num_decoder_layers",
+"decoder_layers",
+"encoder_layers",
+"num_encoder_layers",
+"decoder_num_hidden_layers",
+"encoder_num_hidden_layers",
+"depths",
+"hidden_size",
+"d_model",
+"n_embd",
+"embed_dim",
+"dim",
+"hidden_sizes",
+"embed_dims",
+"dim_embed",
+"num_attention_heads",
+"n_head",
+"n_heads",
+"num_heads",
+"num_attention_head",
+"encoder_attention_heads",
+"decoder_attention_heads",
+"encoder_num_attention_heads",
+"decoder_num_attention_heads",
+"num_encoder_attention_heads",
+"num_decoder_attention_heads",
+"num_key_value_heads",
+"num_kv_heads",
+"multi_query_group_num",
+"decoder_num_key_value_heads",
+"encoder_num_key_value_heads",
+"head_dim",
+"d_kv",
+"kv_channels",
+"attention_head_dim",
+"intermediate_size",
+"d_ff",
+"ffn_dim",
+"encoder_ffn_dim",
+"decoder_ffn_dim",
+"mlp_dim",
+"n_inner",
+"ffn_hidden_size",
+"mlp_ratio",
+"encoder_hidden_size",
+"cross_attention_frequency",
+"image_size",
+"patch_size",
+"max_num_tiles",
+"num_mel_bins",
+"max_source_positions",
+"resampler_depth",
+"resampler_n_latents",
+"resampler_n_heads",
+"resampler_head_dim"
+],
 "keys": [
 "model_type",
 "tie_word_embeddings",
 "relative_attention_num_buckets",
+"feed_forward_proj",
 "hidden_act",
 "activation_function",
 "hidden_activation",
@@ -4941,5 +9378,835 @@
 "image_size",
 "patch_size"
 ],
-"transformers": "5.12.1"
+"sub_configs": {
+"aimv2": {
+"text_config": "aimv2_text_model",
+"vision_config": "aimv2_vision_model"
+},
+"align": {
+"text_config": "align_text_model",
+"vision_config": "align_vision_model"
+},
+"altclip": {
+"text_config": "altclip_text_model",
+"vision_config": "altclip_vision_model"
+},
+"aria": {
+"text_config": "aria_text",
+"vision_config": "idefics3_vision"
+},
+"audioflamingo3": {
+"audio_config": "audioflamingo3_encoder",
+"text_config": "qwen2"
+},
+"aya_vision": {
+"text_config": "cohere2",
+"vision_config": "siglip_vision_model"
+},
+"bark": {
+"coarse_acoustics_config": "coarse_acoustics",
+"codec_config": "encodec",
+"fine_acoustics_config": "fine_acoustics",
+"semantic_config": "semantic"
+},
+"blip": {
+"text_config": "blip_text_model",
+"vision_config": "blip_vision_model"
+},
+"blip-2": {
+"qformer_config": "blip_2_qformer",
+"text_config": "opt",
+"vision_config": "blip_2_vision_model"
+},
+"blt": {
+"decoder_config": "blt_local_decoder",
+"encoder_config": "blt_local_encoder",
+"global_config": "blt_global_transformer",
+"patcher_config": "blt_patcher"
+},
+"bridgetower": {
+"text_config": "bridgetower_text_model",
+"vision_config": "bridgetower_vision_model"
+},
+"chameleon": {
+"vq_config": "chameleon_vqgan"
+},
+"chinese_clip": {
+"text_config": "chinese_clip_text_model",
+"vision_config": "chinese_clip_vision_model"
+},
+"chmv2": {
+"backbone_config": "dinov3_vit"
+},
+"clap": {
+"audio_config": "clap_audio_model",
+"text_config": "clap_text_model"
+},
+"clip": {
+"text_config": "clip_text_model",
+"vision_config": "clip_vision_model"
+},
+"clipseg": {
+"text_config": "clipseg_text_model",
+"vision_config": "clipseg_vision_model"
+},
+"clvp": {
+"decoder_config": "clvp_decoder",
+"speech_config": "clvp_encoder",
+"text_config": "clvp_encoder"
+},
+"cohere2_vision": {
+"text_config": "cohere2",
+"vision_config": "siglip_vision_model"
+},
+"cohere_asr": {
+"encoder_config": "parakeet_encoder"
+},
+"colmodernvbert": {
+"vlm_config": "modernvbert"
+},
+"colpali": {
+"text_config": "gemma",
+"vlm_config": "paligemma"
+},
+"colqwen2": {
+"vlm_config": "qwen2_vl"
+},
+"conditional_detr": {
+"backbone_config": "timm_backbone"
+},
+"cosmos3_omni": {
+"text_config": "qwen3_vl_text",
+"vision_config": "qwen3_vl_vision"
+},
+"csm": {
+"codec_config": "mimi",
+"depth_decoder_config": "csm_depth_decoder_model"
+},
+"d_fine": {
+"backbone_config": "hgnet_v2"
+},
+"dab-detr": {
+"backbone_config": "timm_backbone"
+},
+"deepseek_ocr2": {
+"text_config": "deepseek_ocr2_text",
+"vision_config": "deepseek_ocr2_vision"
+},
+"deepseek_ocr2_vision": {
+"encoder_config": "deepseek_ocr2_encoder",
+"sam_config": "deepseek_ocr2_sam_vision_model"
+},
+"deepseek_vl": {
+"text_config": "llama",
+"vision_config": "siglip_vision_model"
+},
+"deepseek_vl_hybrid": {
+"high_res_vision_config": "sam_vision_model",
+"text_config": "llama",
+"vision_config": "siglip_vision_model"
+},
+"deformable_detr": {
+"backbone_config": "timm_backbone"
+},
+"deimv2": {
+"backbone_config": "hgnet_v2"
+},
+"depth_anything": {
+"backbone_config": "dinov2"
+},
+"depth_pro": {
+"fov_model_config": "dinov2",
+"image_model_config": "dinov2",
+"patch_model_config": "dinov2"
+},
+"detr": {
+"backbone_config": "timm_backbone"
+},
+"dia": {
+"decoder_config": "dia_decoder",
+"encoder_config": "dia_encoder"
+},
+"diffusion_gemma": {
+"text_config": "diffusion_gemma_text"
+},
+"edgetam_video": {
+"vision_config": "sam2_vision_model"
+},
+"emu3": {
+"text_config": "emu3_text_model",
+"vq_config": "emu3_vqgan"
+},
+"ernie4_5_vl_moe": {
+"text_config": "ernie4_5_vl_moe_text",
+"vision_config": "ernie4_5_vl_moe_vision"
+},
+"exaone4_5": {
+"text_config": "exaone4",
+"vision_config": "exaone4_5_vision"
+},
+"fast_vlm": {
+"text_config": "qwen2",
+"vision_config": "timm_wrapper"
+},
+"fastspeech2_conformer_with_hifigan": {
+"model_config": "fastspeech2_conformer",
+"vocoder_config": "fastspeech2_conformer_hifigan"
+},
+"flava": {
+"image_config": "flava_image_model",
+"multimodal_config": "flava_multimodal_model",
+"text_config": "flava_text_model"
+},
+"florence2": {
+"text_config": "bart",
+"vision_config": "florence_vision"
+},
+"fuyu": {
+"text_config": "persimmon"
+},
+"gemma3": {
+"text_config": "gemma3_text",
+"vision_config": "siglip_vision_model"
+},
+"gemma3n": {
+"audio_config": "gemma3n_audio",
+"text_config": "gemma3n_text",
+"vision_config": "gemma3n_vision"
+},
+"gemma4": {
+"audio_config": "gemma4_audio",
+"text_config": "gemma4_text",
+"vision_config": "gemma4_vision"
+},
+"gemma4_assistant": {
+"text_config": "gemma4_text"
+},
+"gemma4_unified": {
+"audio_config": "gemma4_unified_audio",
+"text_config": "gemma4_unified_text",
+"vision_config": "gemma4_unified_vision"
+},
+"gemma4_unified_assistant": {
+"text_config": "gemma4_unified_text"
+},
+"git": {
+"vision_config": "git_vision_model"
+},
+"glm46v": {
+"text_config": "glm4v_text",
+"vision_config": "glm4v_vision"
+},
+"glm4v": {
+"text_config": "glm4v_text",
+"vision_config": "glm4v_vision"
+},
+"glm4v_moe": {
+"text_config": "glm4v_moe_text",
+"vision_config": "glm4v_moe_vision"
+},
+"glm_image": {
+"text_config": "glm_image_text",
+"vision_config": "glm_image_vision",
+"vq_config": "glm_image_vqmodel"
+},
+"glm_ocr": {
+"text_config": "glm_ocr_text",
+"vision_config": "glm_ocr_vision"
+},
+"glmasr": {
+"audio_config": "glmasr_encoder",
+"text_config": "llama"
+},
+"glmga": {
+"text_config": "glm4v_text",
+"vision_config": "glm4v_vision"
+},
+"got_ocr2": {
+"text_config": "qwen2"
+},
+"granite4_vision": {
+"qformer_config": "blip_2_qformer",
+"text_config": "llama",
+"vision_config": "siglip_vision_model"
+},
+"granite_speech": {
+"encoder_config": "granite_speech_encoder",
+"projector_config": "blip_2_qformer",
+"text_config": "granite"
+},
+"granite_speech_plus": {
+"encoder_config": "granite_speech_plus_encoder",
+"projector_config": "blip_2_qformer",
+"text_config": "granite"
+},
+"grounding-dino": {
+"backbone_config": "swin",
+"text_config": "bert"
+},
+"groupvit": {
+"text_config": "groupvit_text_model",
+"vision_config": "groupvit_vision_model"
+},
+"higgs_audio_v2_tokenizer": {
+"acoustic_model_config": "dac",
+"semantic_model_config": "hubert"
+},
+"idefics": {
+"perceiver_config": "idefics_perciever",
+"vision_config": "idefics_vision"
+},
+"idefics2": {
+"perceiver_config": "idefics2_perceiver",
+"text_config": "mistral",
+"vision_config": "idefics2_vision"
+},
+"idefics3": {
+"text_config": "llama",
+"vision_config": "idefics3_vision"
+},
+"instructblip": {
+"qformer_config": "instructblip_qformer",
+"text_config": "opt",
+"vision_config": "instructblip_vision_model"
+},
+"instructblipvideo": {
+"qformer_config": "instructblipvideo_qformer",
+"text_config": "opt",
+"vision_config": "instructblipvideo_vision_model"
+},
+"internvl": {
+"text_config": "qwen2",
+"vision_config": "internvl_vision"
+},
+"janus": {
+"text_config": "llama",
+"vision_config": "janus_vision_model",
+"vq_config": "janus_vqgan"
+},
+"kosmos-2": {
+"text_config": "kosmos_2_text_model",
+"vision_config": "kosmos_2_vision_model"
+},
+"kosmos-2.5": {
+"text_config": "kosmos_2_5_text_model",
+"vision_config": "kosmos_2_5_vision_model"
+},
+"kyutai_speech_to_text": {
+"codec_config": "mimi"
+},
+"lasr_ctc": {
+"encoder_config": "lasr_encoder"
+},
+"lfm2_vl": {
+"text_config": "lfm2",
+"vision_config": "siglip2_vision_model"
+},
+"lightglue": {
+"keypoint_detector_config": "superpoint"
+},
+"lighton_ocr": {
+"text_config": "qwen3",
+"vision_config": "pixtral"
+},
+"llama4": {
+"text_config": "llama4_text",
+"vision_config": "llama4_vision_model"
+},
+"llava": {
+"text_config": "llama",
+"vision_config": "clip_vision_model"
+},
+"llava_next": {
+"text_config": "llama",
+"vision_config": "clip_vision_model"
+},
+"llava_next_video": {
+"text_config": "llama",
+"vision_config": "clip_vision_model"
+},
+"llava_onevision": {
+"text_config": "qwen2",
+"vision_config": "siglip_vision_model"
+},
+"lw_detr": {
+"backbone_config": "lw_detr_vit"
+},
+"mask2former": {
+"backbone_config": "swin"
+},
+"maskformer": {
+"backbone_config": "swin",
+"decoder_config": "detr"
+},
+"metaclip_2": {
+"text_config": "metaclip_2_text_model",
+"vision_config": "metaclip_2_vision_model"
+},
+"minicpmv4_6": {
+"text_config": "qwen3_5_text",
+"vision_config": "minicpmv4_6_vision"
+},
+"minimax_m3_vl": {
+"text_config": "minimax_m3_vl_text",
+"vision_config": "minimax_m3_vl_vision"
+},
+"mistral3": {
+"text_config": "mistral",
+"vision_config": "pixtral"
+},
+"mllama": {
+"text_config": "mllama_text_model",
+"vision_config": "mllama_vision_model"
+},
+"mm-grounding-dino": {
+"backbone_config": "swin",
+"text_config": "bert"
+},
+"modernvbert": {
+"text_config": "modernbert",
+"vision_config": "siglip_vision_model"
+},
+"moonshine_streaming": {
+"encoder_config": "moonshine_streaming_encoder"
+},
+"moshi": {
+"audio_encoder_config": "mimi",
+"depth_decoder_config": "moshi_depth"
+},
+"musicflamingo": {
+"audio_config": "audioflamingo3_encoder",
+"text_config": "qwen2"
+},
+"omdet-turbo": {
+"backbone_config": "timm_backbone",
+"text_config": "clip_text_model"
+},
+"oneformer": {
+"backbone_config": "swin"
+},
+"ovis2": {
+"text_config": "qwen2"
+},
+"owlv2": {
+"text_config": "owlv2_text_model",
+"vision_config": "owlv2_vision_model"
+},
+"owlvit": {
+"text_config": "owlvit_text_model",
+"vision_config": "owlvit_vision_model"
+},
+"paddleocr_vl": {
+"text_config": "paddleocr_vl_text",
+"vision_config": "paddleocr_vl_vision"
+},
+"paligemma": {
+"text_config": "gemma",
+"vision_config": "siglip_vision_model"
+},
+"parakeet_ctc": {
+"encoder_config": "parakeet_encoder"
+},
+"parakeet_rnnt": {
+"encoder_config": "parakeet_encoder"
+},
+"parakeet_tdt": {
+"encoder_config": "parakeet_encoder"
+},
+"pe_audio": {
+"audio_config": "pe_audio_encoder",
+"text_config": "modernbert"
+},
+"pe_audio_encoder": {
+"dac_config": "dac"
+},
+"perception_lm": {
+"text_config": "llama",
+"vision_config": "timm_wrapper"
+},
+"phi4_multimodal": {
+"audio_config": "phi4_multimodal_audio",
+"vision_config": "phi4_multimodal_vision"
+},
+"pi0": {
+"dit_config": "gemma",
+"vlm_config": "paligemma"
+},
+"pix2struct": {
+"text_config": "pix2struct_text_model",
+"vision_config": "pix2struct_vision_model"
+},
+"pp_chart2table": {
+"text_config": "qwen2"
+},
+"pp_doclayout_v2": {
+"backbone_config": "hgnet_v2"
+},
+"pp_doclayout_v3": {
+"backbone_config": "hgnet_v2"
+},
+"pp_formulanet": {
+"text_config": "pp_formulanet"
+},
+"pp_ocrv5_mobile_det": {
+"backbone_config": "pp_lcnet_v3"
+},
+"pp_ocrv5_mobile_rec": {
+"backbone_config": "pp_lcnet_v3"
+},
+"pp_ocrv5_server_det": {
+"backbone_config": "hgnet_v2"
+},
+"pp_ocrv5_server_rec": {
+"backbone_config": "hgnet_v2"
+},
+"pp_ocrv6_medium_det": {
+"backbone_config": "pp_lcnet_v4"
+},
+"pp_ocrv6_small_det": {
+"backbone_config": "pp_lcnet_v4"
+},
+"pp_ocrv6_small_rec": {
+"backbone_config": "pp_lcnet_v4"
+},
+"pp_ocrv6_tiny_rec": {
+"backbone_config": "pp_lcnet_v4"
+},
+"prompt_depth_anything": {
+"backbone_config": "dinov2"
+},
+"qianfan_ocr": {
+"text_config": "qwen3",
+"vision_config": "qianfan_ocr_vision"
+},
+"qwen2_5_omni": {
+"talker_config": "qwen2_5_omni_talker",
+"thinker_config": "qwen2_5_omni_thinker",
+"token2wav_config": "qwen2_5_omni_token2wav"
+},
+"qwen2_5_omni_thinker": {
+"audio_config": "qwen2_5_omni_audio_encoder",
+"text_config": "qwen2_5_omni_text",
+"vision_config": "qwen2_5_omni_vision_encoder"
+},
+"qwen2_5_omni_token2wav": {
+"bigvgan_config": "qwen2_5_omni_bigvgan",
+"dit_config": "qwen2_5_omni_dit"
+},
+"qwen2_5_vl": {
+"text_config": "qwen2_5_vl_text",
+"vision_config": "qwen2_5_vl_vision"
+},
+"qwen2_audio": {
+"audio_config": "qwen2_audio_encoder",
+"text_config": "qwen2"
+},
+"qwen2_vl": {
+"text_config": "qwen2_vl_text",
+"vision_config": "qwen2_vl_vision"
+},
+"qwen3_5": {
+"text_config": "qwen3_5_text",
+"vision_config": "qwen3_5_vision"
+},
+"qwen3_5_moe": {
+"text_config": "qwen3_5_moe_text",
+"vision_config": "qwen3_5_moe_vision"
+},
+"qwen3_omni_moe": {
+"thinker_config": "qwen3_omni_moe_thinker"
+},
+"qwen3_omni_moe_thinker": {
+"audio_config": "qwen3_omni_moe_audio_encoder",
+"text_config": "qwen3_omni_moe_text",
+"vision_config": "qwen3_omni_moe_vision_encoder"
+},
+"qwen3_vl": {
+"text_config": "qwen3_vl_text",
+"vision_config": "qwen3_vl_vision"
+},
+"qwen3_vl_moe": {
+"text_config": "qwen3_vl_moe_text",
+"vision_config": "qwen3_vl_moe_vision"
+},
+"rf_detr": {
+"backbone_config": "rf_detr_dinov2"
+},
+"rt_detr": {
+"backbone_config": "rt_detr_resnet"
+},
+"rt_detr_v2": {
+"backbone_config": "rt_detr_resnet"
+},
+"sam": {
+"vision_config": "sam_vision_model"
+},
+"sam2": {
+"vision_config": "sam2_vision_model"
+},
+"sam2_video": {
+"vision_config": "sam2_vision_model"
+},
+"sam2_vision_model": {
+"backbone_config": "sam2_hiera_det_model"
+},
+"sam3": {
+"detr_decoder_config": "sam3_detr_decoder",
+"detr_encoder_config": "sam3_detr_encoder",
+"geometry_encoder_config": "sam3_geometry_encoder",
+"mask_decoder_config": "sam3_mask_decoder",
+"text_config": "clip_text_model",
+"vision_config": "sam3_vision_model"
+},
+"sam3_lite_text": {
+"detr_decoder_config": "sam3_lite_text_detr_decoder",
+"detr_encoder_config": "sam3_lite_text_detr_encoder",
+"geometry_encoder_config": "sam3_lite_text_geometry_encoder",
+"mask_decoder_config": "sam3_lite_text_mask_decoder",
+"text_config": "sam3_lite_text_text_model",
+"vision_config": "sam3_vision_model"
+},
+"sam3_tracker": {
+"vision_config": "sam3_vision_model"
+},
+"sam3_tracker_video": {
+"vision_config": "sam3_vision_model"
+},
+"sam3_video": {
+"detector_config": "sam3",
+"tracker_config": "sam3_tracker_video"
+},
+"sam3_vision_model": {
+"backbone_config": "sam3_vit_model"
+},
+"sam_hq": {
+"vision_config": "sam_hq_vision_model"
+},
+"sapiens2": {
+"head_config": "sapiens2_head"
+},
+"shieldgemma2": {
+"text_config": "gemma3_text",
+"vision_config": "siglip_vision_model"
+},
+"siglip": {
+"text_config": "siglip_text_model",
+"vision_config": "siglip_vision_model"
+},
+"siglip2": {
+"text_config": "siglip2_text_model",
+"vision_config": "siglip2_vision_model"
+},
+"slanet": {
+"backbone_config": "pp_lcnet"
+},
+"smolvlm": {
+"text_config": "llama",
+"vision_config": "smolvlm_vision"
+},
+"superglue": {
+"keypoint_detector_config": "superpoint"
+},
+"t5gemma": {
+"decoder": "t5_gemma_module",
+"encoder": "t5_gemma_module"
+},
+"t5gemma2": {
+"decoder": "t5gemma2_decoder",
+"encoder": "t5gemma2_encoder"
+},
+"t5gemma2_encoder": {
+"text_config": "t5gemma2_text",
+"vision_config": "siglip_vision_model"
+},
+"table-transformer": {
+"backbone_config": "timm_backbone"
+},
+"tvp": {
+"backbone_config": "resnet"
+},
+"upernet": {
+"backbone_config": "resnet"
+},
+"uvdoc": {
+"backbone_config": "uvdoc_backbone"
+},
+"vibevoice_asr": {
+"acoustic_tokenizer_encoder_config": "vibevoice_acoustic_tokenizer_encoder",
+"semantic_tokenizer_encoder_config": "vibevoice_acoustic_tokenizer_encoder",
+"text_config": "qwen2"
+},
+"video_llama_3": {
+"text_config": "qwen2",
+"vision_config": "video_llama_3_vision"
+},
+"video_llava": {
+"text_config": "llama",
+"vision_config": "clip_vision_model"
+},
+"vipllava": {
+"text_config": "llama",
+"vision_config": "clip_vision_model"
+},
+"vitmatte": {
+"backbone_config": "vitdet"
+},
+"vitpose": {
+"backbone_config": "vitpose_backbone"
+},
+"voxtral": {
+"audio_config": "voxtral_encoder",
+"text_config": "llama"
+},
+"voxtral_realtime": {
+"audio_config": "voxtral_realtime_encoder",
+"text_config": "voxtral_realtime_text"
+},
+"xclip": {
+"text_config": "xclip_text_model",
+"vision_config": "xclip_vision_model"
+},
+"xcodec": {
+"acoustic_model_config": "dac",
+"semantic_model_config": "hubert"
+},
+"zoedepth": {
+"backbone_config": "beit"
+}
+},
+"tie_forced": [
+"mt5",
+"t5",
+"udop",
+"umt5",
+"vilt"
+],
+"transformers": "5.12.1",
+"width_derived": {
+"arcee": [
+"head_dim"
+],
+"aria_text": [
+"head_dim"
+],
+"blt_global_transformer": [
+"head_dim"
+],
+"blt_local_decoder": [
+"head_dim"
+],
+"blt_local_encoder": [
+"intermediate_size"
+],
+"blt_patcher": [
+"head_dim"
+],
+"cohere2": [
+"head_dim"
+],
+"cohere_asr": [
+"head_dim"
+],
+"csm": [
+"head_dim"
+],
+"csm_depth_decoder_model": [
+"head_dim"
+],
+"d_fine": [
+"head_dim"
+],
+"deepseek_ocr2_sam_vision_model": [
+"mlp_dim"
+],
+"deepseek_ocr2_text": [
+"head_dim"
+],
+"deimv2": [
+"head_dim"
+],
+"diffllama": [
+"head_dim"
+],
+"eurobert": [
+"head_dim"
+],
+"falcon": [
+"ffn_hidden_size"
+],
+"falcon_mamba": [
+"intermediate_size"
+],
+"hyperclovax": [
+"head_dim"
+],
+"jais2": [
+"head_dim"
+],
+"kyutai_speech_to_text": [
+"head_dim"
+],
+"llama": [
+"head_dim"
+],
+"mamba": [
+"intermediate_size"
+],
+"mimi": [
+"head_dim"
+],
+"mistral": [
+"head_dim"
+],
+"moonshine_streaming": [
+"head_dim"
+],
+"moonshine_streaming_encoder": [
+"head_dim"
+],
+"moshi": [
+"head_dim"
+],
+"moshi_depth": [
+"head_dim"
+],
+"nemotron": [
+"head_dim"
+],
+"nomic_bert": [
+"head_dim"
+],
+"pixtral": [
+"head_dim"
+],
+"qwen3_vl_moe_text": [
+"head_dim"
+],
+"recurrent_gemma": [
+"head_dim"
+],
+"rwkv": [
+"intermediate_size"
+],
+"sam_hq_vision_model": [
+"mlp_dim"
+],
+"sam_vision_model": [
+"mlp_dim"
+],
+"seggpt": [
+"mlp_dim"
+],
+"voxtral_realtime_text": [
+"head_dim"
+],
+"zamba": [
+"attention_head_dim"
+],
+"zamba2": [
+"attention_head_dim",
+"intermediate_size",
+"kv_channels"
+]
+}
 }

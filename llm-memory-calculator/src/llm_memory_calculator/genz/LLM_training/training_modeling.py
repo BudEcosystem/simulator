@@ -2821,10 +2821,7 @@ def training_modeling(
 
     # Calculate total and active parameters
     # For MoE: total_params includes all experts (for memory), active_params for MFU/FLOPs
-    total_params, active_params = _calculate_total_params(
-        num_layers, hidden_size, intermediate_size, vocab_size, num_heads,
-        num_experts=num_experts, expert_top_k=expert_top_k
-    )
+    total_params, active_params = training_parameter_counts(model_config)
 
     # Calculate trainable parameters based on method
     # Use total_params for memory and optimizer state calculations
@@ -3761,6 +3758,50 @@ def training_modeling(
         model_df=forward_model_df,
         summary_table=forward_summary,
     )
+
+
+def training_parameter_counts(model_config) -> Tuple[int, int]:
+    """``(total, active)``: the parameters ``training_modeling`` sizes the weights, gradients and
+    optimizer state from -- the ModelConfig's decoder fields (``_calculate_total_params``), held
+    to at least the model's own count (``_held_to_the_model``)."""
+    num_layers = getattr(model_config, 'num_decoder_layers', 32) or 32
+    hidden_size = getattr(model_config, 'hidden_size', 4096) or 4096
+    intermediate_size = getattr(model_config, 'intermediate_size', None) or (hidden_size * 4)
+    vocab_size = getattr(model_config, 'vocab_size', 32000) or 32000
+    num_heads = getattr(model_config, 'num_attention_heads', 32) or 32
+    num_experts = getattr(model_config, 'num_experts', 1) or 1
+    expert_top_k = getattr(model_config, 'expert_top_k', 2) or 2
+    total_params, active_params = _calculate_total_params(
+        num_layers, hidden_size, intermediate_size, vocab_size, num_heads,
+        num_experts=num_experts, expert_top_k=expert_top_k
+    )
+    return _held_to_the_model(model_config, total_params, active_params)
+
+
+def _held_to_the_model(model_config, total_params: int, active_params: int) -> Tuple[int, int]:
+    """``(total, active)``: the decoder fields' count, held to at least the model's own.
+
+    A ModelConfig read from a model config carries it (``source_config``), and the serving
+    path's count of it (``memory_model.model_parameter_count``: the FRD-027 facts -- an
+    encoder-decoder's encoder and cross-attention, every tower and adapter) is the model the
+    device trains. The decoder fields alone are an encoder-decoder's decoder, a multimodal model's
+    language model: counted from them, Whisper large-v3 was 971.8M of its 1,543.5M parameters,
+    and the weights, gradients and optimizer state were sized below the model. Where the fields'
+    count is the larger (a GQA decoder, read as four full attention matrices) it stands, so no
+    figure is lowered; the stacks they do not hold are added to the active count as well (every
+    token passes through them). A ModelConfig built by hand (GenZ's catalogue, a dict) has no
+    config to count and keeps the fields' count."""
+    if not isinstance(getattr(model_config, "source_config", None), dict):
+        return total_params, active_params
+    try:
+        from ..serving.memory_model import model_parameter_count
+
+        counted = int(model_parameter_count(model_config))
+    except Exception:  # noqa: BLE001 - a config the counter cannot read keeps the fields' count
+        return total_params, active_params
+    if counted <= total_params:
+        return total_params, active_params
+    return counted, active_params + (counted - total_params)
 
 
 def _calculate_total_params(

@@ -317,8 +317,19 @@ class TrainingTimeEstimator:
         attention_params = 4 * hidden * hidden  # Q, K, V, O
         ffn_params = 3 * hidden * intermediate  # up, gate, down (SwiGLU)
         layer_params = attention_params + ffn_params
+        rough = embedding_params + layers * layer_params + vocab * hidden
 
-        return embedding_params + layers * layer_params + vocab * hidden
+        # held to at least the model's own count (UniversalParameterCounter: an encoder-decoder's
+        # encoder and cross-attention, a multimodal model's towers, geometry a config leaves to
+        # its class), which the top-level fields above do not see -- a flat T5 was read at the
+        # 4,096-wide default; the rough count stands where it is the larger, so none is lowered
+        try:
+            from ..parameter_counter import UniversalParameterCounter
+
+            counted = int(UniversalParameterCounter().count_parameters(dict(config)))
+        except Exception:  # noqa: BLE001 - a config the counter cannot read keeps the estimate
+            counted = 0
+        return max(rough, counted)
 
     def _estimate_tps(
         self,

@@ -20,13 +20,22 @@ from .layer_plan import (
     encoder_view,
     ffn_activation,
     layer_kinds,
+    learned_positions,
     moe_layers,
     resolve_layer_plan,
     shared_expert_width,
     stated_gated_ffn,
+    with_class_geometry,
 )
 from .mixer_params import recurrent_mixer_params
-from .stack_params import adapter_params, stack_params, tower_view
+from .stack_params import (
+    adapter_params,
+    audio_tower_params,
+    vision_tower_params,
+    stack_params,
+    tower_embedding_params,
+    tower_view,
+)
 
 
 class UniversalParameterCounter:
@@ -76,6 +85,11 @@ class UniversalParameterCounter:
             config = vars(config)
         elif not isinstance(config, dict):
             raise ValueError("Config must be a dict or have __dict__ attribute")
+
+        # What a block leaves to its config class is the class's (layer_plan.with_class_geometry):
+        # LLaVA-1.5's hub `text_config` states no depth, width or heads, and was counted as a
+        # default 12-layer stack (469M for a 7.06B model).
+        config = with_class_geometry(config)
         
         # A wrapper around a language model and nothing else (a `text_config` beside no tower,
         # the outer block stating no stack of its own) is that language model: counted from the
@@ -83,9 +97,19 @@ class UniversalParameterCounter:
         # Read through the normalizer, the hoisted width met a default depth (247M for an 8.1B
         # model).
         tc = config.get('text_config')
-        if (isinstance(tc, dict) and not any(isinstance(config.get(k), dict) for k in TOWER_KEYS)
+        if (isinstance(tc, dict) and not isinstance(config.get('vision_config'), dict)
                 and not depth(config) and not encoder_decoder_stacks(config)):
-            return self._calculate_multimodal_params(config, respect_weight_tying)
+            # a language model beside an audio tower (Qwen2-Audio) is counted with the tower
+            return self._held_to_the_facts(
+                config, self._calculate_multimodal_params(config, respect_weight_tying))
+
+        # An encoder-decoder is counted as one, its encoder and cross-attention with its decoder
+        # (_calculate_text_model_params, the counter a nested one already took). Normalized as a
+        # decoder-only stack, a flat T5 was one stack at a default width (t5-small 51.8M of
+        # 60.5M; whisper-small 124.8M of 241.7M), and the training API sized it from that.
+        if not isinstance(tc, dict) and encoder_decoder_stacks(config):
+            return self._held_to_the_facts(
+                config, self._calculate_text_model_params(config, respect_weight_tying))
 
         # Normalize config to handle various key formats
         config = ConfigNormalizer.normalize_config(config)
@@ -95,7 +119,8 @@ class UniversalParameterCounter:
         
         try:
             if arch_type == "multimodal":
-                return self._calculate_multimodal_params(config, respect_weight_tying)
+                return self._held_to_the_facts(
+                    config, self._calculate_multimodal_params(config, respect_weight_tying))
             elif arch_type == "mamba":
                 return self._calculate_mamba_params(config)
             elif arch_type == "hybrid":
@@ -109,6 +134,23 @@ class UniversalParameterCounter:
             warnings.warn(f"Error calculating params for {arch_type}: {e}. Using fallback.")
             return self._fallback_calculation(config)
     
+    @staticmethod
+    def _held_to_the_facts(config: Dict[str, Any], counted: int) -> int:
+        """An encoder-decoder's or a multimodal model's count, held to at least the FRD-027
+        facts' count of the same config (``params_total + vision_params``: the count the serving
+        path and the vLLM planner take, which the KV gate holds to every parameter of the model).
+        This counter sizes the stacks around a decoder from fewer of their parts (no conformer
+        convolution module, no audio codec, no DaViT channel blocks' norms): the facts' figure
+        stands where it is the larger, this one where it is (a tied head the facts count
+        apart)."""
+        try:
+            from .model.facts import ModelFacts
+
+            facts = ModelFacts.from_config(dict(config))
+            return int(max(counted, facts.params_total + facts.vision_params))
+        except Exception:  # noqa: BLE001 - a config the facts cannot read keeps this count
+            return int(counted)
+
     def _detect_architecture_type(self, config: Dict[str, Any]) -> str:
         """Detect the primary architecture type from config."""
         # Check for multimodal first (they have nested configs)
@@ -616,54 +658,20 @@ class UniversalParameterCounter:
             total_params += text_params
         
         # Process vision config
-        if 'vision_config' in config and isinstance(config['vision_config'], dict):
-            vision_config = config['vision_config']
-            
-            # Vision transformer parameters
-            hidden_size = vision_config.get('hidden_size', 768)
-            num_layers = vision_config.get('num_hidden_layers', 12)
-            image_size = vision_config.get('image_size', 224)
-            patch_size = vision_config.get('patch_size', 16)
-            num_patches = (image_size // patch_size) ** 2
-            
-            # Patch embedding
-            channels = vision_config.get('num_channels', 3)
-            vision_params = channels * patch_size * patch_size * hidden_size
-            
-            # Position embeddings: a ViT's per patch (+1 for CLS). A tower whose length is its
-            # `seq_len` (Pix2Struct's flattened variable-resolution patches) positions them by row
-            # and by column, `seq_len` rows each, behind a linear patch projection.
-            if vision_config.get('seq_len'):
-                seq_len = int(vision_config['seq_len'])
-                patch_in = int(vision_config.get('patch_embed_hidden_size') or hidden_size)
-                vision_params += 2 * seq_len * hidden_size + patch_in * hidden_size + hidden_size \
-                    - channels * patch_size * patch_size * hidden_size
-            else:
-                vision_params += (num_patches + 1) * hidden_size  # +1 for CLS token
-            
-            # The tower's blocks at its own geometry (stack_params: any spelling of its widths
-            # and heads, its gated FFN, a hierarchical tower's stages, biases and norms); a
-            # default 4h^2 + 2h x ffn per layer left Pix2Struct's gated 2048-wide MLPs at 2/3
-            tower = stack_params(tower_view(vision_config))
-            if tower:
-                vision_params += tower
-            else:
-                for _ in range(num_layers):
-                    vision_params += 4 * hidden_size * hidden_size  # Q, K, V, O
-                    intermediate_size = vision_config.get('intermediate_size', hidden_size * 4)
-                    vision_params += 2 * hidden_size * intermediate_size
-                    vision_params += 2 * hidden_size
-                vision_params += hidden_size  # final norm
-            
-            # Projector (if specified)
-            if 'projector_input_dim' in vision_config and 'projector_output_dim' in vision_config:
-                vision_params += vision_config['projector_input_dim'] * vision_config['projector_output_dim']
-            
-            total_params += vision_params
-        
+        # The image tower and its projector: the one count the FRD-027 facts take
+        # (stack_params.vision_tower_params: a ViT's blocks at its own geometry, its patch
+        # embedding, positions and norms, a hierarchical tower's stages, the projector to the
+        # language model, which this counter left out -- LLaVA-1.5's 21.0M)
+        total_params += vision_tower_params(config)
+
         # An adapter stack between the tower and the language model (BLIP-2's Q-Former and its
-        # projection, 106.7M parameters)
+        # projection, 106.7M parameters; Idefics2's perceiver resampler)
         total_params += adapter_params(config)
+
+        # an audio encoder beside a decoder-only language model (Qwen2-Audio's `audio_config`);
+        # an encoder-decoder's encoder is counted with its stacks
+        if not encoder_decoder_stacks(config):
+            total_params += audio_tower_params(config)
 
         # Cross-modal projector (if not already counted)
         if 'multi_modal_projector_dim' in config:
@@ -691,6 +699,21 @@ class UniversalParameterCounter:
         cross = cross_attention_cache(text_config)
         if cross:
             params += self._calculate_attention_params(dec, cross["layers"], hidden)
+            # its K and V read the encoder's output, at the width the decoder states for it
+            # (BLIP's text decoder: `encoder_hidden_size` 1,024 beside its 768)
+            kv_in = int(text_config.get('cross_attention_hidden_size')
+                        or text_config.get('encoder_hidden_size') or hidden)
+            if kv_in > hidden:
+                params += 2 * int(cross["layers"]) * (kv_in - hidden) * hidden
+        dec_layers = int(dec.get('num_hidden_layers') or 0)
+        dec_ffn = int(dec.get('intermediate_size') or 4 * hidden)
+        # the decoder's learned positions where its own count did not take them (Whisper's
+        # `max_target_positions`), and its biases -- Q / K / V / O and the FFN's, which BART,
+        # Marian and Whisper build and T5 does not (a T5 is over-counted by them)
+        if not (dec.get('max_position_embeddings') or 0):
+            params += learned_positions(dec) * hidden
+        params += (dec_layers + int((cross or {}).get('layers') or 0)) * 4 * hidden
+        params += dec_layers * (dec_ffn + hidden)
         enc = None if decoder_only_block(text_config) else encoder_view(text_config)
         if enc:
             enc_hidden = enc.get('hidden_size') or hidden
@@ -698,6 +721,15 @@ class UniversalParameterCounter:
             params += self._calculate_attention_params(enc, enc_layers, enc_hidden)
             params += self._calculate_ffn_params(enc, enc_layers, enc_hidden)
             params += self._calculate_norm_params(enc, enc_layers, enc_hidden)
+            enc_ffn = int(enc.get('intermediate_size') or 4 * enc_hidden)
+            params += enc_layers * (4 * enc_hidden + enc_ffn + enc_hidden)  # its biases
+            # what the encoder holds before its first block: an audio encoder's convolutions and
+            # frame positions (Whisper), a patch encoder's projection and positions
+            # (a text encoder's own learned positions: BART's, Marian's)
+            params += tower_embedding_params(enc) or learned_positions(enc) * enc_hidden
+            if enc.get('own_embedding'):
+                # an encoder in its own block embeds its own tokens (MusicGen's T5 text encoder)
+                params += int(enc.get('vocab_size') or 0) * enc_hidden
         return params
 
     def _calculate_diffusion_params(self, config: Dict[str, Any]) -> int:

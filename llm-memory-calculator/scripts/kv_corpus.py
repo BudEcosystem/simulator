@@ -87,18 +87,53 @@ def _is_llm_config(cfg):
     return bool(n and h)
 
 
+_CLASS_SNAPSHOT = {}
+
+
+def _class_snapshot():
+    """The config-class defaults this branch ships (``config_class_defaults.json``), read from the
+    file beside the script whichever tree is measured, so both trees measure the same corpus."""
+    if not _CLASS_SNAPSHOT:
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src",
+                            "llm_memory_calculator", "config_class_defaults.json")
+        try:
+            with open(path) as f:
+                _CLASS_SNAPSHOT.update(json.load(f))
+        except Exception:
+            _CLASS_SNAPSHOT.update({"geometry": {}, "sub_configs": {}})
+    return _CLASS_SNAPSHOT
+
+
+def _class_states_stack(scope, parent_type=None, key=None):
+    """A block that states no depth or width of its own but whose config class builds both
+    (LLaVA-1.5's, Qwen2-Audio's and Idefics2's hub `text_config` names only `llama`, `qwen2`,
+    `mistral`): a language model all the same, read by the readers at its class's geometry."""
+    snap = _class_snapshot()
+    mt = scope.get("model_type") or snap.get("sub_configs", {}).get(str(parent_type), {}).get(key)
+    geo = snap.get("geometry", {}).get(str(mt or ""), {})
+    return any(geo.get(k) for k in _DEPTH) and any(geo.get(k) for k in _WIDTH)
+
+
 def _is_model_config(cfg):
     """A decoder config, or an encoder-decoder's (its decoder's depth under its own spelling or
-    in a nested block: BART's defaults state no `num_hidden_layers`, Dia nests both stacks)."""
+    in a nested block: BART's defaults state no `num_hidden_layers`, Dia nests both stacks), or
+    a `text_config` that leaves its whole geometry to its config class (``_class_states_stack``)."""
     if _is_llm_config(cfg):
         return True
     if not isinstance(cfg, dict):
         return False
+    tc = cfg.get("text_config")
+    if isinstance(tc, dict) and not any(tc.get(k) for k in _DEPTH + _WIDTH) and _class_states_stack(
+            tc, cfg.get("model_type"), "text_config"):
+        return True
     for scope in (cfg, cfg.get("text_config")):
         if not isinstance(scope, dict):
             continue
         if any(scope.get(k) for k in _DEPTH) and any(scope.get(k) for k in _WIDTH):
             return True
+        if any(scope.get(k) for k in _WIDTH) and not any(scope.get(k) for k in _DEPTH) and \
+                _class_states_stack(scope):
+            return True  # a depth left to the class (Qwen2Config's 32)
         block = scope.get("decoder_config") or scope.get("decoder")
         if isinstance(block, dict) and _is_llm_config(block):
             return True
@@ -388,6 +423,65 @@ def measure_readers(cfg):
             out["slice_error"] = f"{type(e).__name__}: {str(e)[:160]}"
     except Exception as e:
         out["vllm_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    out.update(measure_training(cfg))
+    return out
+
+
+def measure_training(cfg):
+    """The training readers: the parameter counter they size a model from
+    (``UniversalParameterCounter.count_parameters``: TrainingMemoryCalculator,
+    AdvancedTrainingCalculator, BudSimulator's training and use-case routes), the training
+    memory calculator's weights and total (full fine-tuning, AdamW, bf16, one 2,048-token
+    sequence), and the parameters GenZ's ``training_modeling`` sizes weights, gradients and
+    optimizer state from (``training_parameter_counts`` over the ModelConfig ``get_configs``
+    reads)."""
+    import contextlib
+    import copy
+    import io
+
+    out = {}
+    try:
+        from llm_memory_calculator.parameter_counter import UniversalParameterCounter
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            out["counter_params"] = int(
+                UniversalParameterCounter().count_parameters(copy.deepcopy(cfg)))
+    except Exception as e:
+        out["counter_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    try:
+        from llm_memory_calculator.training.calculator import TrainingMemoryCalculator
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            t = TrainingMemoryCalculator().calculate_training_memory(
+                copy.deepcopy(cfg), batch_size=1, seq_length=2048, precision="bf16",
+                method="full", optimizer="adamw")
+        out["trainmem_weight_gb"] = round(float(t.weight_memory_gb), 6)
+        out["trainmem_total_gb"] = round(float(t.total_memory_gb), 6)
+    except Exception as e:
+        out["trainmem_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    try:
+        import importlib
+
+        from llm_memory_calculator.genz.Models.get_language_model import get_configs
+
+        # the module (the package exports a function of the same name)
+        tm = importlib.import_module("llm_memory_calculator.genz.LLM_training.training_modeling")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            mc = get_configs(copy.deepcopy(cfg))
+        counts = getattr(tm, "training_parameter_counts", None)
+        if counts is None:  # a tree before the function: the same arithmetic, inline
+            total, _ = tm._calculate_total_params(
+                getattr(mc, "num_decoder_layers", 32) or 32, getattr(mc, "hidden_size", 4096) or 4096,
+                getattr(mc, "intermediate_size", None) or 4 * (getattr(mc, "hidden_size", 4096) or 4096),
+                getattr(mc, "vocab_size", 32000) or 32000, getattr(mc, "num_attention_heads", 32) or 32,
+                num_experts=getattr(mc, "num_experts", 1) or 1,
+                expert_top_k=getattr(mc, "expert_top_k", 2) or 2)
+        else:
+            total, _ = counts(mc)
+        out["traingenz_params"] = int(total)
+    except Exception as e:
+        out["traingenz_error"] = f"{type(e).__name__}: {str(e)[:160]}"
     return out
 
 
@@ -400,6 +494,11 @@ def synthetic_configs(fixtures_root):
         return json.load(open(os.path.join(fixtures_root, sub, name + ".json")))
 
     s = {}
+    # a window stated, the depth left to the config class (Qwen2-Audio's hub `text_config`, flat):
+    # Qwen2Config's 32 layers, every one full attention (`use_sliding_window` is False)
+    s["qwen2-window-depth-left-to-class"] = dict(
+        model_type="qwen2", architectures=["Qwen2ForCausalLM"], hidden_size=4096,
+        num_attention_heads=32, vocab_size=32000, sliding_window=32768)
     s["gpt2"] = dict(model_type="gpt2", architectures=["GPT2LMHeadModel"], n_layer=12, n_head=12,
                      n_embd=768, n_positions=1024, vocab_size=50257)
     s["mpt-7b"] = dict(model_type="mpt", d_model=4096, n_heads=32, n_layers=32, expansion_ratio=4,

@@ -199,6 +199,37 @@ def _decoder_layers(model, n, decoder_only=False):
     return dict(model.named_modules())[path]
 
 
+def _untied_head(cfg_dict, cfg, model):
+    """The LM head's parameters when the checkpoint holds it apart but the build shares it with
+    the token embedding: a config class that ties whatever the config says (transformers 5.12's
+    T5, mT5 and UMT5: "we tie weights always"), built for a config that states an untied head
+    (`tie_word_embeddings: false`: T5 v1.1, flan-T5, mT5, whose checkpoints carry `lm_head`) or
+    leaves the flag out (transformers 4.x's MT5Config defaulted to untied; the simulator reads
+    an omitted flag on such a class as untied). 0 otherwise."""
+    try:
+        out_emb, in_emb = model.get_output_embeddings(), model.get_input_embeddings()
+    except Exception:  # noqa: BLE001
+        return 0
+    w_out = getattr(out_emb, "weight", None)
+    if w_out is None or w_out is not getattr(in_emb, "weight", None):
+        return 0
+    try:
+        tc = cfg.get_text_config(decoder=True)
+    except Exception:  # noqa: BLE001
+        tc = cfg
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            forced = type(tc)(tie_word_embeddings=False).tie_word_embeddings is True
+    except Exception:  # noqa: BLE001
+        forced = False
+    if not forced:
+        return 0
+    text = cfg_dict.get("text_config") if isinstance(cfg_dict.get("text_config"), dict) else {}
+    stated = text.get("tie_word_embeddings", cfg_dict.get("tie_word_embeddings"))
+    return int(w_out.numel()) if stated is not True else 0
+
+
 def truth_profile(cfg_dict):
     """The ground truth for one config (see the module docstring), or ``{"error": ...}``."""
     warnings.simplefilter("ignore")
@@ -209,6 +240,10 @@ def truth_profile(cfg_dict):
         return {"error": f"transformers cannot build it: {str(e)[:300]}"}
     out = {"class": type(model).__name__,
            "params": int(sum(p.numel() for p in model.parameters()))}
+    untied = _untied_head(cfg_dict, cfg, model)
+    if untied:
+        out["params"] += untied
+        out["untied_head"] = untied
     # the language model GenZ graphs: an encoder-decoder whole; a multimodal decoder's text
     # model and its head
     lm_set = list(model.parameters())
@@ -227,9 +262,9 @@ def truth_profile(cfg_dict):
     if codec is not None:
         drop = {id(p) for p in codec.parameters()}
         lm_set = [p for p in lm_set if id(p) not in drop]
-    out["lm_params"] = int(sum(p.numel() for p in lm_set))
+    out["lm_params"] = int(sum(p.numel() for p in lm_set)) + untied
     # GenZ graphs matrices: the norm and bias vectors are no operator's weights
-    out["lm_matrix_params"] = int(sum(p.numel() for p in lm_set if p.dim() >= 2))
+    out["lm_matrix_params"] = int(sum(p.numel() for p in lm_set if p.dim() >= 2)) + untied
     try:
         out["input_embedding"] = int(model.get_input_embeddings().weight.numel())
     except Exception:  # noqa: BLE001
@@ -457,6 +492,9 @@ def figure_truth(profile, reader):
     emb = p.get("input_embedding", 0) or 0
     gathered = p.get("gathered", emb) or emb
     src = p.get("source") or f"transformers 5.12 {p.get('class', '')}"
+    if p.get("untied_head"):
+        src += (f", with the {p['untied_head']:,}-parameter LM head the class ties whatever the"
+                " config says and the checkpoint holds apart")
     if reader in p.get("figures", {}):  # a figure's truth written by hand
         v = p["figures"][reader]
         return v["truth"], v["source"]
@@ -512,7 +550,16 @@ def figure_truth(profile, reader):
          "a sequence's recurrent state (GB, 2 B an element)"),
         (r"^eng_\w+_\d+_state_mb$", lambda: _scaled(_fixed_bytes(p, cross=False), MB),
          "a sequence's recurrent state (MB, 2 B an element)"),
-        (r"^(report_params|eng_\w+_params)$", lambda: params, "the model's parameters"),
+        (r"^(report_params|eng_\w+_params|counter_params|traingenz_params)$", lambda: params,
+         "the model's parameters"),
+        # TrainingMemoryCalculator, full fine-tuning in bf16 with AdamW: its own accounting -- bf16
+        # weights and their fp32 master copy (6 B a parameter), fp32 gradients (4 B), AdamW's two
+        # fp32 moments (8 B); the total's activations are above it
+        (r"^trainmem_weight_gb$", lambda: None if params is None else 6 * params / 1e9,
+         "the weights the trainer holds (bf16 and an fp32 master copy: 6 B a parameter, GB)"),
+        (r"^trainmem_total_gb$", lambda: None if params is None else 18 * params / 1e9,
+         "weights, master copy, gradients and AdamW state (18 B a parameter, GB; activations"
+         " on top)"),
         (r"^report_weight_gb$", lambda: _scaled(None if params is None else 2 * params, GB),
          "the model's weights (GB)"),
         (r"^report_total_gb$", lambda: None if params is None or _kv_bytes(p, 4096) is None

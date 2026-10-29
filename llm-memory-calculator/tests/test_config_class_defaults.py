@@ -46,11 +46,9 @@ def test_a_class_default_is_read_without_transformers(no_transformers, model_typ
 
 
 def test_every_key_a_reader_asks_for_is_in_the_snapshot():
-    from llm_memory_calculator.model import facts
-
     keys = set(layer_plan.CLASS_DEFAULT_KEYS)
     asked = set(layer_plan.ACTIVATION_KEYS) | set(layer_plan.ROPE_KEYS) | set(
-        facts._TOWER_CLASS_KEYS) | {"tie_word_embeddings", "model_type",
+        layer_plan.TOWER_CLASS_KEYS) | {"tie_word_embeddings", "model_type",
                                     "relative_attention_num_buckets"}
     assert asked <= keys, sorted(asked - keys)
     snap = layer_plan._class_default_snapshot()

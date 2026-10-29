@@ -159,7 +159,8 @@ def _text_config(config: Dict[str, Any]) -> Dict[str, Any]:
     used to be. Nesting is a packaging detail, orthogonal to architecture.
     """
     tc = config.get("text_config")
-    return tc if isinstance(tc, dict) else config
+    # what the block leaves to its config class is the class's (``with_class_geometry``)
+    return with_class_geometry(tc if isinstance(tc, dict) else config)
 
 
 def _blank(n: int) -> Dict[str, Any]:
@@ -209,7 +210,9 @@ def with_decoder_names(block: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def depth(tc: Dict[str, Any]) -> int:
-    """Decoder depth: the stated layer count, else the length of a per-layer list."""
+    """Decoder depth: the stated layer count, else the length of a per-layer list, else -- a
+    block that states no depth at all -- its config class's (``class_geometry``: Qwen2Config's
+    32 for Qwen2-Audio's `text_config`), else 0."""
     n = _first(tc, "num_hidden_layers", "n_layers", "num_layers", "n_layer")
     if n:
         return int(n)
@@ -217,6 +220,12 @@ def depth(tc: Dict[str, Any]) -> int:
         v = tc.get(key)
         if isinstance(v, (list, tuple, str)) and v:
             return len(v)
+    if isinstance(tc, dict) and tc.get("model_type") and not any(
+            tc.get(k) is not None for k in CLASS_GEOMETRY_ROLES[0]):
+        n = _first(class_geometry(tc.get("model_type")), "num_hidden_layers", "n_layers",
+                   "num_layers", "n_layer")
+        if _pos_int(n):
+            return int(n)
     return 0
 
 
@@ -252,9 +261,10 @@ CROSS_HEAD_DIM_KEYS = ("cross_head_dim",)
 
 
 #: A hierarchical tower's per-stage widths, where it states them (ConvNeXt / PVT `hidden_sizes`,
-#: some `embed_dims`); a Swin-family tower states only its first stage's `embed_dim` and doubles
-#: it at every stage after (SwinConfig: `hidden_size = embed_dim * 2 ** (len(depths) - 1)`).
-STAGE_WIDTH_KEYS = ("hidden_sizes", "embed_dims")
+#: some `embed_dims`, Florence-2's DaViT `embed_dim` as a list -- `dim_embed` in its hub file);
+#: a Swin-family tower states only its first stage's `embed_dim` (a number) and doubles it at
+#: every stage after (SwinConfig: `hidden_size = embed_dim * 2 ** (len(depths) - 1)`).
+STAGE_WIDTH_KEYS = ("hidden_sizes", "embed_dims", "embed_dim", "dim_embed")
 
 
 def encoder_stages(block: Any) -> Optional[List[Dict[str, int]]]:
@@ -290,10 +300,16 @@ def encoder_stages(block: Any) -> Optional[List[Dict[str, int]]]:
     heads = block.get("num_heads", block.get("num_attention_heads"))
     ratio = block.get("mlp_ratio") or 4
     ratios = ratio if isinstance(ratio, (list, tuple)) and len(ratio) == n else [ratio] * n
+    # A stage that states channel-attention groups (`num_groups`: DaViT, Florence-2's tower) runs
+    # a channel-attention block after each window block -- two blocks, each with its MLP, per
+    # unit of `depths` (transformers 5.12 Florence2VisionBlock: spatial_block, channel_block).
+    groups = block.get("num_groups")
+    dual = isinstance(groups, (list, tuple)) and len(groups) == n and all(
+        _pos_int(g) for g in groups)
     stages = []
     for i, (d, w) in enumerate(zip(depths, widths)):
         h = heads[i] if isinstance(heads, (list, tuple)) and len(heads) == n else heads
-        stages.append({"layers": int(d), "hidden_size": int(w),
+        stages.append({"layers": int(d) * (2 if dual else 1), "hidden_size": int(w),
                        "num_attention_heads": _pos_int(h) or max(w // 32, 1),
                        "intermediate_size": int(float(ratios[i]) * w)})
     return stages
@@ -379,6 +395,7 @@ def composed_text_config(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     statement, and the block is returned flagged as transformers flags it. Erring on a decoder
     that would not attend to the tower over-counts, never under-counts. Any other `text_config`
     is returned as it is."""
+    config = with_class_geometry(config)
     tc = config.get("text_config") if isinstance(config, dict) else None
     if not isinstance(tc, dict):
         return None
@@ -421,6 +438,7 @@ def _stacks_holder(config: Dict[str, Any]):
     """
     if not isinstance(config, dict):
         return None, None
+    config = with_class_geometry(config)
     own = _own_stacks(config)
     if own and own["decoder"]:
         return config, own
@@ -433,6 +451,20 @@ def _stacks_holder(config: Dict[str, Any]):
                 inner = dict(inner, encoder=_block_depth(enc, "encoder"))
             return tc, inner
     return (config, own) if own else (None, None)
+
+
+def encoder_is_tower(config: Dict[str, Any]) -> bool:
+    """Whether an encoder-decoder's encoder is the config's other-modality tower (Pix2Struct's
+    and BLIP's `vision_config` beside a decoder-only `text_config`): the tower is then counted
+    once, as the encoder, never again beside it."""
+    if not isinstance(config, dict):
+        return False
+    config = with_class_geometry(config)
+    holder, stacks = _stacks_holder(config)
+    if not stacks or holder is None or holder is config:
+        return False
+    enc = _encoder_of(config, holder)
+    return enc is not None and any(config.get(k) is enc for k in TOWER_KEYS)
 
 
 def encoder_decoder_stacks(config: Dict[str, Any]) -> Optional[Dict[str, int]]:
@@ -502,6 +534,7 @@ def decoder_view(config: Dict[str, Any]) -> Dict[str, Any]:
     (`n_layer` / `n_embd` / `n_head`: ``DECODER_NAME_ALIASES``), nested or flat, is also given
     the decoder-only names. Any other config is returned as it is.
     """
+    config = with_class_geometry(config)
     holder, stacks = _stacks_holder(config)
     if stacks is None:
         # a decoder-only config: its own geometry, under the decoder-only names (GPT-2's)
@@ -526,6 +559,7 @@ def encoder_view(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     (``ENCODER_*_KEYS``; T5's `num_heads` / `d_model` / `d_ff`, shared by both stacks). The GenZ
     prefill graph runs this stack once a request, over the encoder's tokens.
     """
+    config = with_class_geometry(config)
     holder, stacks = _stacks_holder(config)
     if not stacks or not stacks["encoder"]:
         return None
@@ -703,6 +737,7 @@ def cross_attention_cache(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     (``_encoder_output_tokens``; for interleaved layers the tower's, ``encoder_tokens``), None
     when the config does not state it: the readers then charge the cache over the whole sequence.
     """
+    config = with_class_geometry(config)
     holder, stacks = _stacks_holder(config)
     if not stacks:
         return _interleaved_cross_cache(config)
@@ -1089,6 +1124,7 @@ def resolve_layer_plan(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     recognized but cannot be modelled faithfully -- a loud approximation beats a
     silent wrong number.
     """
+    config = with_class_geometry(config)
     tc = _text_config(config)
     n = depth(tc)
     if not n:
@@ -1767,6 +1803,11 @@ def stated_gated_ffn(config: Dict[str, Any]) -> Optional[bool]:
             return v.lower().startswith("gated-")
     if str(tc.get("model_type") or "").lower() in CLASS_GATED_FFN:
         return True
+    # a config that leaves the projection out takes its class's (MT5Config's `gated-gelu`, where
+    # T5Config's is `relu`): an mT5 without the key had its encoder counted with two matrices
+    v = config_class_default(tc.get("model_type"), "feed_forward_proj")
+    if isinstance(v, str) and v:
+        return v.lower().startswith("gated-")
     return None
 
 
@@ -1891,7 +1932,8 @@ TOWER_CLASS_KEYS = ("num_global_layers", "vision_output_dim", "intermediate_size
 #: snapshot (``config_class_defaults.json``) holds each one for every model type transformers 5.12
 #: knows.
 CLASS_DEFAULT_KEYS = tuple(dict.fromkeys(
-    ("model_type", "tie_word_embeddings", "relative_attention_num_buckets") + ACTIVATION_KEYS
+    ("model_type", "tie_word_embeddings", "relative_attention_num_buckets", "feed_forward_proj")
+    + ACTIVATION_KEYS
     + ROPE_KEYS + TOWER_CLASS_KEYS))
 
 _CLASS_DEFAULT_CACHE: Dict[str, Any] = {}
@@ -1954,6 +1996,158 @@ def config_class_default(model_type: str, name: str) -> Any:
     return value
 
 
+#: A stack's geometry, by role, as config classes spell it (transformers 5.12's `to_dict()`
+#: names). A config block that states NO spelling of a role leaves that role to its config class
+#: -- BLIP-2's and InstructBLIP's hub `vision_config` and `qformer_config` state only their
+#: model type, Qwen2-Audio's and LLaVA-1.5's `text_config` no depth, width or heads -- and the
+#: class builds its defaults there (Blip2VisionConfig: 39 layers 1,408 wide; Qwen2Config: 32
+#: layers 4,096 wide). A key the class sizes from its own width is not filled beside a stated
+#: width (``width_derived``). A role is filled whole or not at all: a block that states any spelling of
+#: a role keeps its own reading of the rest, because a class derives the rest from what is
+#: stated (T5's `num_decoder_layers` from `num_layers`, every class's KV heads from its heads,
+#: a head width from the width and heads), which a class default cannot stand in for.
+CLASS_GEOMETRY_ROLES = (
+    ("num_hidden_layers", "num_layers", "n_layer", "n_layers", "depth", "num_decoder_layers",
+     "decoder_layers", "encoder_layers", "num_encoder_layers", "decoder_num_hidden_layers",
+     "encoder_num_hidden_layers", "depths"),
+    ("hidden_size", "d_model", "n_embd", "embed_dim", "dim", "hidden_sizes", "embed_dims",
+     "dim_embed"),
+    ("num_attention_heads", "n_head", "n_heads", "num_heads", "num_attention_head",
+     "encoder_attention_heads", "decoder_attention_heads", "encoder_num_attention_heads",
+     "decoder_num_attention_heads", "num_encoder_attention_heads", "num_decoder_attention_heads",
+     "num_key_value_heads", "num_kv_heads", "multi_query_group_num", "decoder_num_key_value_heads",
+     "encoder_num_key_value_heads", "head_dim", "d_kv", "kv_channels", "attention_head_dim"),
+    ("intermediate_size", "d_ff", "ffn_dim", "encoder_ffn_dim", "decoder_ffn_dim", "mlp_dim",
+     "n_inner", "ffn_hidden_size", "mlp_ratio"),
+    ("encoder_hidden_size",),
+    ("cross_attention_frequency",),
+    ("image_size",),
+    ("patch_size",),
+    ("max_num_tiles",),
+    ("num_mel_bins",),
+    ("max_source_positions",),
+    ("resampler_depth",),
+    ("resampler_n_latents",),
+    ("resampler_n_heads",),
+    ("resampler_head_dim",),
+)
+CLASS_GEOMETRY_KEYS = tuple(k for role in CLASS_GEOMETRY_ROLES for k in role)
+
+_CLASS_GEOMETRY_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def geometry_value(v: Any) -> bool:
+    """Whether ``v`` is a geometry value a class default can stand in with: a positive number,
+    or a list of positive numbers (a hierarchical tower's per-stage depths and widths)."""
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, (int, float)):
+        return v > 0
+    return (isinstance(v, (list, tuple)) and bool(v)
+            and all(isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0 for x in v))
+
+
+def class_geometry(model_type: Any) -> Dict[str, Any]:
+    """The geometry (``CLASS_GEOMETRY_KEYS``) the model type's config class builds when a config
+    states none: from the shipped snapshot (``config_class_defaults.json``'s ``geometry``,
+    transformers 5.12's classes), else the installed transformers' class for a model type the
+    snapshot does not hold, else nothing."""
+    mt = str(model_type or "")
+    if not mt:
+        return {}
+    if mt in _CLASS_GEOMETRY_CACHE:
+        return _CLASS_GEOMETRY_CACHE[mt]
+    snap = _class_default_snapshot().get("geometry", {})
+    if mt in snap:
+        value = dict(snap[mt])
+    else:
+        value = {}
+        try:
+            import logging
+
+            from transformers import CONFIG_MAPPING
+
+            tf_log = logging.getLogger("transformers")
+            level = tf_log.level
+            tf_log.setLevel(logging.ERROR)
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    stated = CONFIG_MAPPING[mt]().to_dict()
+            finally:
+                tf_log.setLevel(level)
+            value = {k: stated[k] for k in CLASS_GEOMETRY_KEYS
+                     if k in stated and geometry_value(stated[k])}
+        except Exception:
+            value = {}
+    _CLASS_GEOMETRY_CACHE[mt] = value
+    return value
+
+
+def with_class_geometry(config: Any) -> Any:
+    """``config`` with every role of its geometry it leaves to its config class
+    (``CLASS_GEOMETRY_ROLES``) filled with the class's default, in the block itself and in every
+    nested block that names its model type (a `text_config`, `vision_config`, `qformer_config`,
+    `audio_config`, an encoder-decoder's `encoder` / `decoder`). ``config`` itself when nothing
+    is left out; never mutated.
+
+    Read as nothing, such a block was a stack of 0 layers: BLIP-2's 985.9M-parameter tower and
+    105.1M Q-Former were left out of the weights, and Qwen2-Audio's language model had no layer
+    holding KV."""
+    return _with_class_geometry(config, None)
+
+
+def nested_config_class(model_type: Any, key: str) -> Optional[str]:
+    """The model type of the class the ``model_type``'s config class builds its nested ``key``
+    block as: the class it fixes (Blip2Config's `vision_config`: blip_2_vision_model; Idefics2's
+    `perceiver_config`: idefics2_perceiver, though the hub file names it `idefics2`), else, for a
+    block read through AutoConfig, the class it builds when the block names none (Florence2's
+    `text_config`: bart); None when the composite is unknown."""
+    subs = _class_default_snapshot().get("sub_configs", {}).get(str(model_type or ""), {})
+    v = subs.get(key)
+    return v if isinstance(v, str) and v else None
+
+
+#: Composite keys whose block AutoConfig reads by the block's own model type (a `text_config`,
+#: LLaVA's `vision_config`): the composite's class is only the default for a block that names none.
+def _auto_read(model_type: Any, key: str) -> bool:
+    auto = _class_default_snapshot().get("auto_sub_configs", {}).get(str(model_type or ""), ())
+    return key in auto
+
+
+def _with_class_geometry(config: Any, class_type: Optional[str], auto: bool = False) -> Any:
+    if not isinstance(config, dict):
+        return config
+    stated_type = config.get("model_type")
+    # a fixed sub-config class is what transformers builds whatever the block names; a block read
+    # through AutoConfig is its own model type's class, the composite's default when it names none
+    own = (stated_type or class_type) if auto else (class_type or stated_type)
+    add: Dict[str, Any] = {}
+    for k, v in config.items():
+        if isinstance(v, dict):
+            done = _with_class_geometry(v, nested_config_class(own, k), _auto_read(own, k))
+            if done is not v:
+                add[k] = done
+    if own and not stated_type and class_type:
+        # the class the composite builds for a block that names none is the block's model type
+        add["model_type"] = own
+    geometry = class_geometry(own)
+    if geometry:
+        # beside a width the block states, what the class sizes from its own width is another
+        # model's (FalconConfig's `ffn_hidden_size` is 4 x its 4,544; a Llama `head_dim` is its
+        # width over its heads): those keys (the snapshot's `width_derived`) are not filled
+        derived = set()
+        if any(config.get(k) is not None for k in CLASS_GEOMETRY_ROLES[1]):
+            derived = set(_class_default_snapshot().get("width_derived", {}).get(str(own), ()))
+        for role in CLASS_GEOMETRY_ROLES:
+            if any(config.get(k) is not None for k in role):
+                continue
+            for k in role:
+                if k in geometry and k not in derived:
+                    add[k] = geometry[k]
+    return {**config, **add} if add else config
+
+
 def ffn_activation(config: Dict[str, Any]) -> str:
     """The FFN's activation, lower-cased: the config's own (``ACTIVATION_KEYS``), else its config
     class's default (``config_class_default``), else ''. The config given is read as it is -- a
@@ -1985,6 +2179,7 @@ def layer_kinds(config: Dict[str, Any]) -> Dict[str, Any]:
     ``recurrent``, ``ffn``, ``kv_shared``, plus ``sliding_window`` and
     ``encoder_tokens``.
     """
+    config = with_class_geometry(config)
     plan = resolve_layer_plan(config)
     tc = _text_config(config)
     if plan is not None:

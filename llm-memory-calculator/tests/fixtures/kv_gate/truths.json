@@ -637,12 +637,14 @@
   },
   "synth:mllama-own-cross-layers-no-tower-geometry": {
    "base": "transformers",
-   "source": "transformers 5.12 MllamaForConditionalGeneration (the tower at its class defaults)",
    "build_as": {
     "text_config": {
      "pad_token_id": null
     }
-   }
+   },
+   "source": "transformers 5.12 MllamaForConditionalGeneration (the tower's geometry its class's: MllamaVisionConfig; its pad token (128004, beyond the reduced 32000-token vocabulary) unset)",
+   "encoder_tokens": 4100,
+   "encoder_tokens_source": "one image at the tower class's max_num_tiles 4, each tile (448/14)^2 + 1 = 1,025 patch and class tokens: 4,100 tokens (MllamaVisionConfig's defaults, which the synthetic leaves to it)"
   },
   "gguf:Qwen3.5-2B-Q4_K_M.metadata.gguf": {
    "params": 1881825088,
@@ -842,6 +844,36 @@
    "base": "transformers",
    "encoder_tokens": 0,
    "encoder_tokens_source": "a text encoder over the request's own prompt: no fixed length, so no fixed cross-attention cache (the readers carry it over the sequence in their per-token rate)"
+  },
+  "fixture:google-t5_t5-small.json": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "the encoder reads the request's own input -- the tokens a request states -- so its cross-attention cache grows with that input and is charged a token at a time (serving_bytes_per_token); nothing of it is fixed"
+  },
+  "fixture:google_mt5-small.json": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "the encoder reads the request's own input -- the tokens a request states -- so its cross-attention cache grows with that input and is charged a token at a time (serving_bytes_per_token); nothing of it is fixed"
+  },
+  "fixture:Salesforce_blip2-flan-t5-xl.json": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "the encoder reads the request's own input -- the tokens a request states, the Q-Former's 32 query tokens ahead of the prompt among them -- so its cross-attention cache grows with that input and is charged a token at a time (serving_bytes_per_token); nothing of it is fixed"
+  },
+  "fixture:Salesforce_instructblip-flan-t5-xl.json": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "the encoder reads the request's own input -- the tokens a request states, the Q-Former's 32 query tokens ahead of the prompt among them -- so its cross-attention cache grows with that input and is charged a token at a time (serving_bytes_per_token); nothing of it is fixed"
+  },
+  "fixture:microsoft_Florence-2-base-ft.json": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "the encoder reads the request's own input -- the tokens a request states, the image's tokens ahead of the prompt among them -- so its cross-attention cache grows with that input and is charged a token at a time (serving_bytes_per_token); nothing of it is fixed"
+  },
+  "fixture:openai_whisper-small.json": {
+   "base": "transformers",
+   "encoder_tokens": 1500,
+   "encoder_tokens_source": "the audio encoder's max_source_positions: a 30 s window, 3,000 mel frames halved by its stride-2 convolution"
   }
  }
 }

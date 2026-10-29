@@ -1,6 +1,21 @@
 [
  {
   "config": ".",
+  "reader": "^(counter_params|trainmem_weight_gb|trainmem_total_gb)$",
+  "cause": "the parameter counter the training readers size a model from counts every encoder-decoder with its encoder, cross-attention and the encoder's front end, a language model with its audio or image tower and projector, and the geometry a config leaves to its class; origin/main normalized an encoder-decoder as one decoder stack at a default width and a multimodal model's text block at a default depth; the ground truth is the whole model"
+ },
+ {
+  "config": ".",
+  "reader": "^traingenz_params$",
+  "cause": "GenZ's training_modeling holds the ModelConfig's decoder-field count to at least the model's own (the serving path's count of the config it was read from); origin/main's ModelConfig was a generic 7B default where its loader could not read the config, or the decoder alone; the ground truth is the whole model"
+ },
+ {
+  "config": "hub_as_shipped|Qwen2-Audio|llava|idefics2|blip2|instructblip|Florence|qwen2-window-depth-left-to-class|no-tower-geometry",
+  "reader": ".",
+  "cause": "a block that leaves a role of its geometry to its config class is read at the class's (layer_plan.with_class_geometry: BLIP-2's 39-layer tower and 12-layer Q-Former, Qwen2Config's 32 layers, MllamaVisionConfig's 448-pixel image); origin/main read nothing there, or a generic default; the ground truth is transformers' model for the config as shipped"
+ },
+ {
+  "config": ".",
   "reader": "^(serving_weight_bytes|conv_serving_weight_bytes)$",
   "cause": "the serving path's weights are the model's own parameter count -- the FRD-027 facts' count of the config the GenZ model was read from (an encoder-decoder's encoder and cross-attention, vision and audio towers, adapters, every expert) -- where origin/main counted the GenZ ModelConfig's decoder fields (a generic 7B default where its loader or converter could not read the config); the ground truth is the whole model"
  },
