@@ -375,6 +375,115 @@ built-in MoE model counted one expert: Mixtral-8x7B weighed 14.2 GB on origin/ma
 the gate holds them: the weights to the model's every parameter at 2 B, a concurrency to the three
 memory figures it is sized from.
 
+## Geometry a config leaves to its config class
+
+What a config does not state is its config class's default, and that holds for a stack's geometry
+as much as for a flag. A hub config often states a sub-config by its model type alone: BLIP-2's
+and InstructBLIP's `vision_config` and `qformer_config` (Salesforce/blip2-opt-2.7b,
+blip2-flan-t5-xl, instructblip-flan-t5-xl), Idefics2's `perceiver_config`; or leaves its language
+model's depth, width and heads to the class (Qwen/Qwen2-Audio-7B-Instruct's and
+llava-hf/llava-1.5-7b-hf's `text_config` name only `qwen2` / `llama`). transformers builds the
+class's defaults there -- a 39-layer, 1,408-wide tower and a 12-layer Q-Former for BLIP-2, 32
+layers of 4,096 for Qwen2 -- and the readers read nothing: the tower and the Q-Former were counted
+as 0 (the facts' weights of the hub BLIP-2 flan-T5-xl 2,850M of its checkpoint's 3,942M, below
+origin/main's 3,353M), Qwen2-Audio's language model had 0 layers holding KV with transformers
+5.12 installed (its window is placed by Qwen2Config's derived `layer_types`, then fitted to a
+depth of 0) and 32 without it, and GenZ's loader refused LLaVA-1.5, Idefics2 and Qwen2-Audio.
+
+`layer_plan.with_class_geometry(config)` fills every role of a stack's geometry a block leaves
+out (`CLASS_GEOMETRY_ROLES`: depth, width, heads -- with the KV heads and head width --, FFN
+width, a Q-Former's cross-attention width and frequency, a tower's image and patch size, an audio
+tower's mel bins and frames, a perceiver's depth, latents and heads) from the shipped snapshot
+(`config_class_defaults.json`'s `geometry`: transformers 5.12's `to_dict()` of each class), in
+the block itself and every nested block, as the class the composite builds it: a sub-config a
+composite fixes (`sub_configs`: Blip2Config's `vision_config` is a Blip2VisionConfig, Idefics2's
+`perceiver_config` an Idefics2PerceiverConfig though the hub file names it `idefics2`), else the
+block's own model type, else -- a block read through AutoConfig that names none -- the class the
+composite builds by default (Florence-2's `text_config`: BART). A role is filled whole or not at
+all: a block that states any spelling of a role keeps its own reading of the rest, because a
+class derives the rest from what is stated (T5's `num_decoder_layers` from `num_layers`, the KV
+heads from the heads, a head width from the width and heads), which a class default cannot stand
+in for; and the heads and the FFN width are the class's only where the width is too, since the
+class sizes them from its own width (FalconConfig's `ffn_hidden_size` is four times its 4,544:
+beside Falcon-40B's stated 8,192 that is another model's). Every reader takes it: the layer-kind table's entries (`layer_kinds`,
+`resolve_layer_plan`, `decoder_view`, `encoder_view`, the stacks and cross-attention readers,
+`_text_config`, and `depth`, which reads a class's depth for a block that states none), the
+FRD-027 facts, the parameter counter, the tower and adapter readers (`stack_params`), and through
+them the calculator, GenZ's loader, BudSimulator's converter and every planner. The figures are
+the same with transformers 5.12, an older release or none installed.
+
+The towers and adapters this reaches are read at their own geometry, by the config's keys:
+
+* **A hierarchical tower that states its stages** under `embed_dim` as a list (transformers 5.12's
+  Florence2VisionConfig) or `dim_embed` (Florence-2's hub file), with `depths` and `num_heads`
+  per stage, is read stage by stage; one that states channel-attention groups (`num_groups`:
+  DaViT) runs a channel-attention block after each window block, two blocks a unit of `depths`;
+  one that states a patch size per stage embeds each stage by its own convolution
+  (`stack_params.stage_embedding_params`), where Swin merges 2 x 2 neighbours.
+* **A projector from a tower to the language model** whose hidden width no config states is two
+  matrices at the wider of the tower's (merged) width and the language model's
+  (`stack_params._projector_params`): Qwen-VL's merger keeps the merged width, LLaVA's projector
+  the language model's (LLaVA-1.5's 21.0M had been read as 5.2M). A ViT tower with no merge
+  learns a position per patch and its class token's.
+* **A perceiver resampler** (`perceiver_config`: `resampler_depth` layers of
+  `resampler_n_latents` latents, `resampler_n_heads` x `resampler_head_dim` queries and
+  `num_key_value_heads` K / V heads at the block's width, a gated MLP four times as wide) and the
+  gated projection that feeds it from the tower at the language model's FFN width
+  (`stack_params.resampler_params`: Idefics2's 743.2M connector).
+* **A tower that is an encoder-decoder's encoder** (Pix2Struct's and BLIP's `vision_config`
+  beside a decoder-only `text_config`) is counted once, as the encoder, with its patch projection
+  and positions (`layer_plan.encoder_is_tower`); the facts had also counted it as a tower beside
+  the model (Pix2Struct 362.8M of its 282.3M).
+* **A Q-Former that reads the prompt's text** (`CLASS_TEXT_QFORMER`: transformers 5.12's
+  InstructBlipQFormerModel builds token and position embeddings and a text FFN beside every
+  layer's query FFN; Blip2QFormerModel builds neither): 80.5M on InstructBLIP flan-T5-xl.
+
+A config class that ties its head whatever the config says (transformers 5.12's T5, mT5, UMT5,
+UDOP and ViLT: built with `tie_word_embeddings=False`, the class sets it True; the snapshot lists
+them as `tie_forced`) does not say what its checkpoints hold -- T5 v1.1, flan-T5 and mT5 ship
+`lm_head` apart, and transformers 4.x's MT5Config defaulted to an untied head -- so the snapshot
+records such a class untied: a config that leaves the flag out is counted with its head (the
+original t5-small, whose checkpoint ties, is over-counted by its 16.4M head). The ground-truth
+tool counts the head the same way (`kv_truth._untied_head`): a build that shares the head where
+the config states it untied, or leaves the flag out on such a class, adds it -- google/flan-t5-xl
+is then its checkpoint's 2,849,757,184, where the 5.12 build is 2,783,959,040.
+
+## The weights the training readers hold
+
+The training readers size weights, gradients and optimizer state from a parameter count, and
+counted an encoder-decoder as its decoder alone:
+
+* `UniversalParameterCounter.count_parameters` (TrainingMemoryCalculator, AdvancedTrainingCalculator,
+  BudSimulator's `/api/simulator/estimate-training`, `/recommend-cluster`, `/check-fit` and the
+  use-case routes) normalized a flat encoder-decoder as one decoder stack (t5-small 51.8M of
+  60.5M, mT5-small 275.0M of 300.2M, whisper-small 124.8M of 241.7M, flan-T5-xl 1,289M of 2,850M).
+  It now counts every encoder-decoder, flat or nested, with one counter
+  (`_calculate_text_model_params`): the decoder with its learned positions and biases, its
+  cross-attention (K and V at the encoder's stated width: BLIP's `encoder_hidden_size`), and the
+  encoder -- its blocks, biases, its own learned positions or audio / patch front end, and its
+  own token table when it sits in its own block (MusicGen's T5). A language model beside an audio
+  tower (Qwen2-Audio) is counted with the tower (`stack_params.audio_tower_params`), and an image
+  tower and its projector with the facts' counter (`stack_params.vision_tower_params`), which
+  added LLaVA's projector the counter had left out. Its count of an encoder-decoder or a model
+  with towers is held to at least the FRD-027 facts' count of the same config
+  (`_held_to_the_facts`), which the gate holds to every parameter: this counter sizes the stacks
+  around a decoder from fewer of their parts (cohere-transcribe's conformer convolution modules,
+  MusicGen's and Dia's codec-side tables, ProphetNet's n-gram stream), and sat 0.3 - 29 % below
+  the model on them; a decoder-only model keeps its own count.
+* GenZ's `training_modeling` (and through it `rank_clusters_for_training`,
+  `auto_configure_training` and AdvancedTrainingCalculator's GenZ path) counted the `ModelConfig`'s
+  decoder fields (Whisper large-v3 971.8M of 1,543.5M). `training_parameter_counts` holds that
+  count to at least the model's own (`memory_model.model_parameter_count`, the serving path's)
+  for a `ModelConfig` read from a config; a GQA decoder's fields, read as four full attention
+  matrices, count more than the model, and that figure stands, so no training figure is lowered.
+  TrainingTimeEstimator's rough count is held to the parameter counter's the same way.
+
+`scripts/kv_corpus.py` measures them for every row (`counter_params`, `trainmem_weight_gb`,
+`trainmem_total_gb` -- full fine-tuning, AdamW, bf16, one 2,048-token sequence -- and
+`traingenz_params`), and the gate holds them: the counts to every parameter, the trainer's
+weights to 6 B a parameter (bf16 and its fp32 master copy) and its total to 18 B (with fp32
+gradients and AdamW's two moments; activations on top).
+
 ## What is conservative, and why
 
 Under-sizing KV is what OOMs a deployment, so every unknown **layer kind** errs high, and says so
@@ -498,6 +607,13 @@ the gate holds below its ground truth and why):
   check is not below the prefill check's. The input embedding table is the exception for every
   model, as on origin/main.
 
+* **A learned position table the parameter counter charges a RoPE model that states its rotation
+  only under `rope_parameters`** (transformers 5.x's spelling: Qwen3.5 / 3.6, ModernBERT): its
+  check reads `rope_theta`, `rope_scaling`, `rotary_pct` and `rotary_emb_base`, on origin/main as
+  here, so Qwen3.6-27B is counted 1.34B (262,144 x 5,120) over, 28.70B against its checkpoint's
+  27.78B. Reading `rope_parameters` there lowers figures that sit below their truth for other
+  reasons (ModernBERT encoders' counter figures, 320M of 395M), so it waits for those.
+
 ## What errs low, measured
 
 `scripts/kv_corpus.py --gate` holds every figure the branch moves in the unsafe direction against
@@ -538,6 +654,23 @@ these, stated rather than hidden:
   stored copy of the token table (388,956,160, beside `tie_word_embeddings: true`) and 8 codebook
   heads (21,012,480). Both sit above origin/main's reading on the HF loader's path and below it on
   the converter's, where origin/main fell back to a generic 7B (13.2 GB).
+* **The parameter counter's count of a decoder-only hybrid or MoE model** (the training readers'
+  count -- `counter_params`, `trainmem_*` -- and the calculator's `report_params`), at or above
+  origin/main's and below the model: Zamba2-2.7B 2,577M of 2,844M, the RWKV synthetic 1,414M of 1,515M, xLSTM 6,857M of 6,865M, Kimi-Linear 49,005M of
+  49,123M, Hunyuan-A13B 79,588M of 80,393M, Llama 4 Scout's text model 107,770M of 108,225M,
+  DeepSeek-V3 667,981M of 671,026M (origin/main the same). The facts' count of each -- the serving
+  path's and GenZ training's floor -- holds them; an encoder-decoder's or a multimodal model's
+  counter figure is held to the facts' (*The weights the training readers hold*).
+* **The calculator's own count** (`calculate_memory`'s `report_params`, which sends an
+  encoder-decoder to `_calculate_encoder_decoder_params` and reads a multimodal model's language
+  model) leaves out what that path does not read, on origin/main as here: Qwen2-Audio's audio
+  tower and the geometry its `text_config` leaves to the class (5,374.8M of 8,397.1M), NLLB-MoE's
+  experts (3,360.9M of 54,500.6M), the hub mT5 that leaves its flags to the class (247.5M of
+  300.2M; origin/main 153.1M). The training and serving readers count these models whole.
+* **Attention biases a class builds and no config key states** (Qwen1.5 / 2 / 2.5's Q / K / V
+  biases) are in neither the facts' nor the counter's count, on origin/main as here: Qwen2.5-7B
+  15,230,974,976 B of 15,231,233,024 (2 parts in 100,000), and the synthetic Qwen2 that leaves its
+  depth to the class 11,066.9M of 11,067.3M.
 * **A neural codec or a speech encoder** (a TTS model's speech tokenizer, Mimi, w2v-BERT) states
   a stack's geometry but no token vocabulary: it is not a language model, which every reader
   sizes, and the corpus names it (`_not_language_models`) without measuring it. Read as one, the

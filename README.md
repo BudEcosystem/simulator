@@ -308,7 +308,14 @@ FRD-027 facts' count of the config the GenZ model was read from, encoder, cross-
 and audio towers, adapters and every expert -- not the decoder's fields alone, which had held
 Whisper large-v3 at 1.81 of its 3.09 GB and admitted more requests than a device holds. A nested
 or flat decoder spelled the GPT-2 way (`n_layer` / `n_embd` / `n_head`) is read under the names
-its class aliases them to. A gate holds every figure that moves below origin/main's -- or a capacity above it, or
+its class aliases them to. A block that leaves a role of its geometry to its config class (a hub BLIP-2's
+`vision_config` and `qformer_config` that state only their model type, Qwen2-Audio's and LLaVA-1.5's
+`text_config` with no depth, width or heads) is read at the class's defaults, as transformers builds it
+(`layer_plan.with_class_geometry`, from the shipped snapshot), with a perceiver resampler, a text-reading
+Q-Former and a staged DaViT tower counted at their own geometry. The training readers count the whole model
+too: the parameter counter behind the training API counts every encoder-decoder with its encoder and
+cross-attention and a language model with its towers, and GenZ's `training_modeling` holds its decoder-field
+count to at least the model's own. A gate holds every figure that moves below origin/main's -- or a capacity above it, or
 a figure only the branch reports, or one it no longer reports -- to a ground truth (transformers'
 own model for the config, a checkpoint's tensors, or the cited arithmetic):
 `llm-memory-calculator/tests/test_kv_gate.py` over every config the repository ships (the GGUF

@@ -287,7 +287,16 @@ The calculator provides detailed breakdown:
   disaggregation's `B_eff`) are the model's own parameter count -- the FRD-027 facts' count of the
   config the GenZ model was read from, every stack, tower, adapter and expert -- and a decoder
   spelled the GPT-2 way (`n_layer` / `n_embd` / `n_head`, flat or nested) is read under the names
-  its class aliases them to.
+  its class aliases them to. What a config block leaves to its config class -- a sub-config that
+  states only its model type (a hub BLIP-2's tower and Q-Former), a `text_config` with no depth,
+  width or heads (Qwen2-Audio, LLaVA-1.5) -- is the class's (`layer_plan.with_class_geometry`,
+  from the shipped snapshot's `geometry`, the class the composite builds the block as), in every
+  reader. The training readers -- `UniversalParameterCounter.count_parameters` (the training
+  memory calculator and API) and GenZ's `training_modeling` -- count the whole model: an
+  encoder-decoder with its encoder and cross-attention, a language model with its towers; the
+  harness measures them (`counter_params`, `trainmem_*`, `traingenz_params`) and the gate holds
+  them. A class that ties its head whatever the config says (transformers 5.12's T5 family) is
+  read untied where the config leaves the flag out, as its checkpoints hold it.
 - **Activation Memory**: Intermediate activations during forward pass
 - **State Memory**: the fixed per-sequence state of recurrent layers (Gated DeltaNet, Mamba,
   KDA, linear attention, short conv, RWKV, xLSTM, RG-LRU) -- constant in sequence length, the
