@@ -13,7 +13,7 @@ table, and every part of the simulator answers from it:
 | `ModelMemoryCalculator.calculate_kv_cache` / `kv_cache_breakdown` / `calculate_state_memory` | KV bytes per kind, fixed state |
 | `bud_component.py --gguf` (via `gguf_layers.hf_layer_keys_from_gguf`) | the same kinds from a GGUF's llama.cpp keys |
 | GenZ graph (`get_language_model.layer_configs_from_hf`, `ModelConfig.get_kv_size`) -- the prefill, decode **and chunked** builders (`create_full_chunked_model`: chunked serving, speculative decoding, the simulation engine's chunked feature) | per-layer operators; KV only on attention layers, the window on windowed ones; which FFNs are MoE (`layer_plan.moe_layers`) and how wide a dense one is (`layer_plan.dense_ffn_width`) |
-| GenZ serving (`MemoryModel.bytes_per_token_kv` and `state_bytes_per_sequence`, `request_bytes`, the scheduler's admission check, cluster and disaggregation `B_eff`, the disaggregation transfer; the prefix cache's price of a cached token (`PrefixCacheAnalyzer`, BudSimulator `/cache/analyze`); BudSimulator `/api/v2/memory/tiers`) | per-token KV, and the per-request fixed state (`ModelConfig.get_state_bytes`) |
+| GenZ serving (`MemoryModel.bytes_per_token_kv` and `state_bytes_per_sequence`, `request_bytes`, the scheduler's admission check, cluster and disaggregation `B_eff`, the disaggregation transfer; the prefix cache's price of a cached token (`PrefixCacheAnalyzer`, BudSimulator `/cache/analyze`); BudSimulator `/api/v2/memory/tiers`) | per-token KV, and the per-request fixed state (`ModelConfig.get_state_bytes`); the weights the device holds beside them (`memory_model.estimate_weight_bytes`: a `ServingSimulator` run's weight load and the `B_eff` budget) from the model's own parameter count -- see *The weights the serving path holds* |
 | `UniversalParameterCounter`, `model.facts` (FRD-027), `model.recognise` | weights per mixer, KV per token, the known vocabulary. `model.facts` reads the layer kinds for every config: a `model_type` outside the recogniser is still flagged `architecture: unrecognised`, but which layers hold KV comes from the table, not from that allowlist |
 | BudSimulator `ModelConverter.hf_to_genz` | database models graphed like HF configs: the same depth, per-layer kinds, window, Mamba decision and all-recurrent stack's state (`get_language_model.graph_layer_kinds`), the same MLA latent (`kv_lora_rank`, `qk_rope_head_dim`), the decoder read from under `text_config` or an encoder-decoder's own spellings (`layer_plan.decoder_view`), and the encoder's depth from its own stack (`layer_plan.encoder_decoder_stacks`) |
 | The vLLM planner (`engine/vllm.py`: `limits`, `predict`; the profile scheduler `perf.sched`; the shared-slice sizing `runtime.modules.capacity`) | the facts' full and sliding layers as KV-cache groups; a running sequence's blocks in every group (`Limits.blocks_per_sequence`) |
@@ -66,7 +66,7 @@ gguf-py's `Keys` (`gguf/constants.py`).
 | Sparse / compressed attention | every token (upper bound) | `deepseek_sparse_attention`, `compressed_sparse_attention`, `heavily_compressed_attention`, `minimax_m3_sparse`, `sparse` | DeepSeek-V3.2/V4, MiniMax-M3 |
 | MLA (latent KV) | `kv_lora_rank + qk_rope_head_dim`, no factor 2 | `kv_lora_rank` (non-null), `qk_rope_head_dim` | DeepSeek-V2/V3, Kimi |
 | Cross-attention layers of their own | the tower's tokens, fixed per request; **no** self-attention cache on those layers | `cross_attention_layers` (in `text_config`); K / V at the stack's own heads and width (`cross_num_key_value_heads` / `cross_head_dim` where stated); the tower's output read as an encoder's is (below): a stated length, else `max_num_tiles x ((image_size / patch_size)^2 + 1)` from `vision_config` -- **one image's**: no config states how many images a request carries, and the plan says so in a note (see *What is conservative*) | Mllama |
-| Encoder-decoder (the decoder's self-attention) | every token, on the **decoder's** layers | the decoder's depth: `decoder_layers` (BART, Whisper, Marian, M2M-100, Pegasus), `num_decoder_layers` (T5, mT5, UMT5, LongT5, Switch, ProphetNet; T5's `num_layers` is the encoder's), `decoder_num_hidden_layers` (Moonshine), a nested `decoder_config` / `decoder` block (Dia, EncoderDecoderModel, VisionEncoderDecoder, MusicGen; a block spelling its depth `decoder_layers`, as TrOCR's, included; a block that is itself a whole encoder-decoder config -- Donut's and Nougat's `mbart` -- is read by its `decoder_layers` before its `num_hidden_layers`, which MBartConfig aliases to `encoder_layers`, and its own `encoder_*` keys and `is_encoder_decoder` / `add_cross_attention` flags describe the block, so they are not lifted over the model's), else the stated depth; heads `decoder_attention_heads`, `decoder_num_attention_heads`, `num_decoder_attention_heads` (ProphetNet), `decoder_num_key_value_heads`, T5's `num_heads`; width `d_model`; FFN `decoder_ffn_dim`, `d_ff`; head width `d_kv`. The encoder's depth: `encoder_layers`, `num_encoder_layers`, `encoder_num_hidden_layers`, a nested `encoder_config` / `encoder` / `text_encoder` (MusicGen) block, else the stated depth; its heads `encoder_attention_heads`, `encoder_num_attention_heads`, `num_encoder_attention_heads`. A whole encoder-decoder nested under `text_config` (BLIP-2 / InstructBLIP with flan-T5, Florence-2) is read there | T5, BART, Whisper, Moonshine, Dia, cohere_asr, ProphetNet, BLIP-2 (flan-T5), Florence-2 |
+| Encoder-decoder (the decoder's self-attention) | every token, on the **decoder's** layers | the decoder's depth: `decoder_layers` (BART, Whisper, Marian, M2M-100, Pegasus), `num_decoder_layers` (T5, mT5, UMT5, LongT5, Switch, ProphetNet; T5's `num_layers` is the encoder's), `decoder_num_hidden_layers` (Moonshine), a nested `decoder_config` / `decoder` block (Dia, EncoderDecoderModel, VisionEncoderDecoder, MusicGen; a block spelling its depth `decoder_layers`, as TrOCR's, included; a block that is itself a whole encoder-decoder config -- Donut's and Nougat's `mbart` -- is read by its `decoder_layers` before its `num_hidden_layers`, which MBartConfig aliases to `encoder_layers`, and its own `encoder_*` keys and `is_encoder_decoder` / `add_cross_attention` flags describe the block, so they are not lifted over the model's), else the stated depth; heads `decoder_attention_heads`, `decoder_num_attention_heads`, `num_decoder_attention_heads` (ProphetNet), `decoder_num_key_value_heads`, T5's `num_heads`; width `d_model`; FFN `decoder_ffn_dim`, `d_ff`; head width `d_kv`; a nested decoder spelled the GPT-2 way (`n_layer`, `n_embd`, `n_head`, `n_positions`, `n_inner`: a ViT-GPT2 captioner's `decoder`) under the decoder-only names its class aliases them to (`layer_plan.DECODER_NAME_ALIASES`, transformers' `attribute_map`), as a flat GPT-2 config is. The encoder's depth: `encoder_layers`, `num_encoder_layers`, `encoder_num_hidden_layers`, a nested `encoder_config` / `encoder` / `text_encoder` (MusicGen) block, else the stated depth; its heads `encoder_attention_heads`, `encoder_num_attention_heads`, `num_encoder_attention_heads`. A whole encoder-decoder nested under `text_config` (BLIP-2 / InstructBLIP with flan-T5, Florence-2) is read there | T5, BART, Whisper, Moonshine, Dia, cohere_asr, ProphetNet, BLIP-2 (flan-T5), Florence-2 |
 | Encoder-decoder (the decoder's cross-attention) | the encoder's output tokens, fixed per request, on every decoder layer | the cross-attention's K / V heads `cross_num_key_value_heads` (else `cross_num_attention_heads`, else the decoder's self-attention heads) and width `cross_head_dim` (else the decoder's head width): Dia's are 16 KV heads of 128 against 4 for self-attention. The encoder's output length: `max_source_positions` (Whisper, Speech2Text; the config, its encoder block or `audio_config`), the nested encoder block's `max_position_embeddings` (Dia's 1,024-token text encoder, cohere_asr's 5,000-position audio encoder), an image encoder's patches (`image_size` / `patch_size` of a VisionEncoderDecoder's ViT, each a square int or a [height, width] pair, plus the class token; a staged tower that states `depths` -- Swin, Donut-Swin, FocalNet, NAT, ConvNeXt -- merges 2 x 2 between stages and has no class token: Donut's 2,560 x 1,920 at patch 4 over 4 stages is 80 x 60 = 4,800 tokens, Nougat's 896 x 672 is 28 x 21 = 588), an image encoder's `seq_len` (Pix2Struct: its encoder is the `vision_config` beside a `text_config` that says `is_decoder` and states no encoder of its own -- read as the decoder of that tower whatever the block's own `is_encoder_decoder` says, as transformers' composite config overwrites it: the hub files of google/deplot and pix2struct-* omit the outer flag, the class default `true`, and keep a stale `false` in `text_config`; BLIP's `text_config` is the same shape, and BlipTextLayer builds its cross-attention exactly when `is_decoder`); else unstated (T5, BART, Moonshine, BLIP-2's flan-T5, Florence-2): charged over the sequence, see *What is conservative* | Whisper, Dia, cohere_asr, TrOCR, Donut, Nougat, Pix2Struct, BLIP, MusicGen, T5, BART |
 | KV-shared layers | none of their own | `num_kv_shared_layers` (the last N layers) | Gemma 3n |
 | Gated DeltaNet | fixed: `nv x dk x dv` fp32 + conv | `layer_types: linear_attention` with `linear_num_value_heads`, `linear_key_head_dim`, `linear_value_head_dim`, `linear_num_key_heads`, `linear_conv_kernel_dim`; `full_attention_interval` | Qwen3-Next, Qwen3.5/3.6 |
@@ -317,6 +317,64 @@ reader: a flat config that states two stacks under an encoder-decoder's spelling
 (`encoder_decoder_stacks`: mT5's `num_layers` and `num_decoder_layers`) is an encoder-decoder to
 `detect_model_type` and the parameter count as it is to the layer plan.
 
+A nested decoder spelled the GPT-2 way -- a VisionEncoderDecoder's or EncoderDecoderModel's
+`decoder` with `n_layer`, `n_embd`, `n_head` (a ViT-GPT2 captioner) -- is read under the
+decoder-only names its class aliases those to (`layer_plan.DECODER_NAME_ALIASES`: GPT2Config's
+`attribute_map`, and GPT-J's, CodeGen's, GPT-BigCode's, CTRL's, OpenAI-GPT's and BLOOM's, which
+a test checks against transformers; GPT-2's FFN width `n_inner`), by `decoder_view` for the
+nested block and for a flat config alike, and `layer_plan.depth` reads `n_layer`. Unread, the
+block was no decoder: `calculate_kv_cache` charged 0 KV, and GenZ, the serving path and the
+prefix cache raised (`Could not locate the decoder's geometry`), on origin/main as on round 13.
+The harness's ViT-GPT2 shape now holds 6 x 2 x 768 K + V a token and 6 x 2 x 768 x 197 of
+cross-attention in every reader (the ViT's (224 / 16)^2 + 1 tokens); a flat GPT-2 config is
+graphed at its own 12 x 768 (GenZ graphed the generic 32 x 4,096) and the KV planner charges its
+36,864 B a token (it charged 0).
+
+## The weights the serving path holds
+
+`genz.serving.memory_model.estimate_weight_bytes` is the weight a serving simulation loads into
+the device tier (`ServingSimulator._estimate_weight_bytes`) and what the cluster and
+disaggregation `B_eff` take off the device before they divide the rest by a request's KV and
+fixed bytes. It is the model's own parameter count (`memory_model.model_parameter_count`) at the
+serving precision, split by tensor parallelism: a GenZ `ModelConfig` read from a model config --
+by the HF loader or by BudSimulator's converter -- carries that config (`source_config`), and its
+parameters are the FRD-027 facts' count of it (`params_total + vision_params`): the decoder, an
+encoder-decoder's encoder and cross-attention, every tower and adapter beside the language model
+(a vision tower, an audio encoder -- `audio_config` / `audio_encoder_config`, read at its own
+geometry by `stack_params.tower_view`, with its convolutional front end and its projector -- and
+BLIP-2's Q-Former), every routed and shared expert. That is the count the vLLM planner reserves
+before it sizes the KV blocks. A `ModelConfig` built by hand (GenZ's built-in dictionary) has no
+config to count: it is counted from its own fields, with its routed and shared experts on the
+layers it places them (`layer_type`), each Mamba layer as its Mamba mixer
+(`mixer_params.mamba1_params` over its `mamba_*` fields, with no FFN in a stack of Mamba layers
+alone), its token embedding and an LM head (no tying stated: an upper bound) and its norms; an
+object with the decoder fields alone keeps the decoder formula. The facts count every recurrent
+layer other than a Gated DeltaNet one by its own mechanism's count (`mixer_params`: Mamba-1,
+Mamba-2, Kimi Delta Attention, lightning attention, short convolution, RWKV, mLSTM, RG-LRU),
+where they had counted them all with one copy of a Mamba-2 formula that left out the
+convolution's bias: Mamba-Codestral sat 393,216 parameters below transformers', and Kimi-Linear
+137,675,680 below its checkpoint (its KDA layers counted as Mamba-2; KDA's own count,
+`mixer_params.kda_params`, lacked the per-head beta projection `b_proj` [32, 2304] too). Bamba-9B-v2, Falcon-H1-34B and Kimi-Linear are now
+their truths to the parameter. GenZ's built-in Falcon-Mamba 7B states the hub config's 65,024-token vocabulary (it
+said 50,280, state-spaces/mamba's).
+
+The formula it replaced counted `num_decoder_layers` x (attention + 3 x hidden x intermediate)
+plus one embedding of whatever the `ModelConfig` held. Once the loader and the converter gave an
+encoder-decoder's `ModelConfig` its own decoder (round 7 on), and the converter a multimodal
+model's language model, that was the decoder alone: Whisper large-v3 1.81 GB of its 3.09 GB, a
+flan-T5-xl 2.45 of 5.57, Qwen3.5-4B 7.48 of 9.08, NLLB-MoE 4.27 of 109 -- below origin/main
+(whose reading of the same configs fell back to a generic 7B and happened to sit higher) and
+below the model -- and the cluster admitted more requests than the device holds: Whisper
+large-v3 on a 40 GB A100 at 4,096 tokens, 44 where the memory holds 43 (origin/main 13). It now
+loads 3.62 GB (the facts' 1,811M parameters: 17 % over transformers' 1,543M) and admits 42. A
+built-in MoE model counted one expert: Mixtral-8x7B weighed 14.2 GB on origin/main and was given
+53 concurrent requests on a 40 GB card it does not fit; it now weighs 93.4 GB (its 46,702,792,704 parameters) and is given 1.
+`scripts/kv_corpus.py` measures the figure (`serving_weight_bytes` through a `ServingSimulator`,
+`conv_serving_weight_bytes` on the converter's `ModelConfig`) and both concurrencies
+(`cluster_b_eff_4096`, `disagg_b_eff_4096`, uncapped by the scheduler's batch) for every row, and
+the gate holds them: the weights to the model's every parameter at 2 B, a concurrency to the three
+memory figures it is sized from.
+
 ## What is conservative, and why
 
 Under-sizing KV is what OOMs a deployment, so every unknown **layer kind** errs high, and says so
@@ -444,9 +502,10 @@ the gate holds below its ground truth and why):
 
 `scripts/kv_corpus.py --gate` holds every figure the branch moves in the unsafe direction against
 origin/main to a ground truth (`tests/fixtures/kv_gate/allowlist.json`; *The gate* below), and
-over the whole corpus none is below it. The readers' figures that stay below the model's own
-count without having moved below origin/main's -- each the same or higher than origin/main --
-are these, stated rather than hidden:
+over the whole corpus none is below it but by modules its entry names as no config key's (the
+serving weights of two checkpoints, below). The readers' figures that stay below the model's own
+count -- each the same or higher than origin/main, or held by such a named allowance -- are
+these, stated rather than hidden:
 
 * **The GenZ graphs' weights hold matrices only.** No operator carries a norm or bias vector, nor a
   few small matrices (T5's relative-position bias, Mllama's 8 extra embedding rows): the graphs
@@ -466,6 +525,19 @@ are these, stated rather than hidden:
 * **DeepSeek Sparse Attention's indexer key cache** (V3.2: `index_head_dim` 128 a token a layer,
   stored at 8 bits beside the 576-element MLA latent) is in no reader's KV, on origin/main as
   here; its weights are in the GenZ graph (`attention.mla_indexer_ops`).
+* **The serving path's weights of a model whose checkpoint holds modules no config key describes**
+  (round 14). The weights are the count of what the config states, so a module the modelling code
+  builds at a width written in the code, or a codec the config names no geometry for, is not in
+  them. The gate holds each such figure to the whole checkpoint less exactly those modules, named
+  with their source in its allowlist entry (`unstated`, from `truths.json`), and fails it below
+  that: Voxtral-Mini-4B-Realtime, 4,424,886,272 of 4,429,679,360 parameters -- the 26 layers'
+  `VoxtralRealtimeTextAdaRmsNorm` (5,111,808: Linear(3,072, 32) and back, the 32 in
+  modeling_voxtral_realtime.py); higgs-audio-v3-tts-4b, 4,022,473,216 of its checkpoint's
+  4,654,850,537 -- an acoustic codec and codebook tables (`tied.embedding.modality_embeddings`,
+  222,413,801; its `audio_encoder_config` says `encoder_type: discrete` with no geometry), a second
+  stored copy of the token table (388,956,160, beside `tie_word_embeddings: true`) and 8 codebook
+  heads (21,012,480). Both sit above origin/main's reading on the HF loader's path and below it on
+  the converter's, where origin/main fell back to a generic 7B (13.2 GB).
 * **A neural codec or a speech encoder** (a TTS model's speech tokenizer, Mimi, w2v-BERT) states
   a stack's geometry but no token vocabulary: it is not a language model, which every reader
   sizes, and the corpus names it (`_not_language_models`) without measuring it. Read as one, the
@@ -509,13 +581,31 @@ entry fails -- never 0, which would accept any figure. The decoder's layer list 
 blocks, never of output heads (MusicGen's `lm_heads`). Each GenZ graph is held to the weights it
 graphs: the prefill and chunked graphs to the language model's matrices (both hold the input
 embedding), the decode graph to them less every table a step gathers one row from (the token
-embedding, a learned position table, codebook embeddings).
+embedding, a learned position table, codebook embeddings). A per-token figure with no stated
+context (GenZ's and the converter's `get_kv_size`, the serving model's and the prefix cache's
+bytes a token, the facts') is held to the K + V a token adds on every layer that caches it --
+full, and windowed while the token is inside the window -- and the KV planner's rate at a stated
+length (`kvgeo_N[0]`) to what the N-th token adds (the full layers, and the windowed layers whose
+window still holds it). Counting the full layers alone gave a stack whose every layer is windowed
+a per-token truth of 0, which accepted any figure (round 13: Voxtral-Mini-4B-Realtime's 26
+layers of 2,048, the LFM2.5-Audio detokenizers' 3 of 512). The serving path's weights
+(`serving_weight_bytes`, `conv_serving_weight_bytes`) are held to every parameter of the model at
+2 B, and its concurrency (`cluster_b_eff_4096`, `disagg_b_eff_4096`) by the weights, the KV a token
+and the fixed bytes a request it is sized from.
 
-The gate needs no transformers, torch or gguf: the figures read the shipped class defaults
-(above), the allowlist's truths are committed, and where the `gguf` package is absent the GGUF
-rows -- whose reader cannot run there at all -- are left out and
-`test_the_gguf_fixtures_are_read_through_the_gguf_reader` skips. It passes with transformers 5.12,
-4.50 and none. `python scripts/kv_corpus.py --gate main.json branch.json --allowlist
+The gate needs no transformers or torch: the figures read the shipped class defaults (above) and
+the allowlist's truths are committed. Two readers have third-party dependencies of their own
+(`kv_corpus.READER_DEPENDENCIES`): the GGUF reader needs `gguf`, and BudSimulator's converter
+imports BudSimulator's database package, which needs `requests`, `lxml` and `json_repair`. Where
+one of those is not installed, that reader cannot run at all: its figures are reported as not
+measured here, by module and figure count, and `test_the_gguf_fixtures_are_read_through_the_gguf_reader`
+skips without `gguf`. A reader that cannot import any other module fails the gate --
+transformers and torch above all, so a reader that came to depend on one fails where it is absent
+instead of passing as "not measured" (round 13 accepted any module outside the repository). The
+gate passes, every figure measured, with transformers 5.12, with 4.50, and with neither
+transformers nor torch installed (with `gguf`, `requests`, `lxml` and `json_repair`); a venv that
+also lacks those passes with the GGUF reader's and the converter's figures reported as not
+measured. `python scripts/kv_corpus.py --gate main.json branch.json --allowlist
 tests/fixtures/kv_gate/allowlist.json` runs the same check over the machine's HF cache, model
 folders and GGUFs too. A figure that moves again, or a new drop, fails until its entry is
 re-measured (`scripts/kv_truth.py --allowlist-from`).

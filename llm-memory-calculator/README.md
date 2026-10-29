@@ -280,7 +280,14 @@ The calculator provides detailed breakdown:
   and why: LAYER_KINDS.md, "What errs low, measured"). The config-class defaults the readers take
   for a key a config leaves out ship with the package (`config_class_defaults.json`, from
   transformers 5.12), so the figures, and the gate, do not depend on whether or which
-  transformers is installed.
+  transformers is installed: a reader that cannot import transformers or torch fails the gate,
+  and only the GGUF reader (`gguf`) and BudSimulator's converter (`requests`, `lxml`,
+  `json_repair`) may be reported as not measured where their own dependencies are absent. The
+  serving simulator's weights (a `ServingSimulator` run's weight load, the cluster's and
+  disaggregation's `B_eff`) are the model's own parameter count -- the FRD-027 facts' count of the
+  config the GenZ model was read from, every stack, tower, adapter and expert -- and a decoder
+  spelled the GPT-2 way (`n_layer` / `n_embd` / `n_head`, flat or nested) is read under the names
+  its class aliases them to.
 - **Activation Memory**: Intermediate activations during forward pass
 - **State Memory**: the fixed per-sequence state of recurrent layers (Gated DeltaNet, Mamba,
   KDA, linear attention, short conv, RWKV, xLSTM, RG-LRU) -- constant in sequence length, the

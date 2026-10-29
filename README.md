@@ -302,15 +302,24 @@ The weights are read the same way, and from the same readers: an MoE layer's sha
 its cache, an attention output gate, a gated FFN from the config's activation or its class's
 default, an encoder at its own geometry (a hierarchical tower stage by stage, a conformer's
 convolution module, a tower's patch and position tables) and an adapter stack (BLIP-2's
-Q-Former). A gate holds every figure that moves below origin/main's -- or a capacity above it, or
+Q-Former). The serving simulator holds the whole model on the device: its weight load and the
+cluster's and disaggregation's concurrency (`B_eff`) take the model's own parameter count -- the
+FRD-027 facts' count of the config the GenZ model was read from, encoder, cross-attention, vision
+and audio towers, adapters and every expert -- not the decoder's fields alone, which had held
+Whisper large-v3 at 1.81 of its 3.09 GB and admitted more requests than a device holds. A nested
+or flat decoder spelled the GPT-2 way (`n_layer` / `n_embd` / `n_head`) is read under the names
+its class aliases them to. A gate holds every figure that moves below origin/main's -- or a capacity above it, or
 a figure only the branch reports, or one it no longer reports -- to a ground truth (transformers'
 own model for the config, a checkpoint's tensors, or the cited arithmetic):
 `llm-memory-calculator/tests/test_kv_gate.py` over every config the repository ships (the GGUF
-reader included, on metadata-only GGUF fixtures), with or without transformers installed (the
-config-class defaults ship with the package), and `scripts/kv_corpus.py --gate` over a machine's
+reader included, on metadata-only GGUF fixtures) -- no reader needs transformers or torch (the
+config-class defaults ship with the package), and a reader that cannot import either fails; the
+GGUF reader needs `gguf` and the converter BudSimulator's `requests`, `lxml` and `json_repair`, and
+where those are absent their figures are reported as not measured -- and `scripts/kv_corpus.py --gate` over a machine's
 HF cache and model folders; the figures that
-stay below their truth without having moved, and why, are listed in LAYER_KINDS.md ("What errs
-low, measured").
+stay below their truth without having moved, and the serving weights of the two checkpoints that
+hold modules no config key describes (each such module named, sized and sourced in its gate
+entry), are listed in LAYER_KINDS.md ("What errs low, measured").
 
 ---
 
