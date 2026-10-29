@@ -270,11 +270,39 @@ def measure_config(name, cfg, genz_data):
         row["report_total_gb"] = _gb(rep.total_memory_bytes / 1e9)
     except Exception as e:
         row["report_error"] = f"{type(e).__name__}: {e}"
+    row.update(measure_lora_and_batch(cfg))
     row.update(measure_genz(cfg, genz_data))
     row.update(measure_engine_and_facts(cfg))
     row.update(measure_converter(cfg))
     row.update(measure_readers(cfg))
     return row
+
+
+def measure_lora_and_batch(cfg):
+    """The calculator's LoRA figures -- the adapter buffers (``calculate_lora_adapter_memory``) and
+    the CPU prefill scratch (``calculate_lora_prefill_scratch``) for 4 adapters of rank 16 at 4k
+    tokens, bf16 -- and the batch ``utils.estimate_max_batch_size`` fits on an 80 GB device at
+    4,096 tokens."""
+    import copy
+
+    out = {}
+    try:
+        from llm_memory_calculator import calculate_memory
+
+        rep = calculate_memory(copy.deepcopy(cfg), batch_size=1, seq_length=4096, precision="bf16",
+                               max_loras=4, max_lora_rank=16)
+        out["lora_adapter_gb"] = _gb(rep.lora_adapter_memory_bytes / 1e9)
+        out["lora_scratch_gb"] = _gb(getattr(rep, "lora_prefill_scratch_bytes", 0.0) / 1e9)
+    except Exception as e:
+        out["lora_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    try:
+        from llm_memory_calculator import estimate_max_batch_size
+
+        out["maxbatch_80gb_4096"] = int(estimate_max_batch_size(copy.deepcopy(cfg), 80,
+                                                                seq_length=4096, precision="bf16"))
+    except Exception as e:
+        out["maxbatch_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    return out
 
 
 #: The tree whose BudSimulator converter is measured (``--repo-root``).
@@ -423,7 +451,52 @@ def measure_readers(cfg):
             out["slice_error"] = f"{type(e).__name__}: {str(e)[:160]}"
     except Exception as e:
         out["vllm_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    out.update(measure_kv_planner(cfg))
     out.update(measure_training(cfg))
+    return out
+
+
+def measure_kv_planner(cfg):
+    """The KV tier planner (``kv.plan_kv_tiers``, behind ``plan_kv`` and budsim): vLLM on a
+    dedicated 80 GiB CUDA device with 15.3 GiB of weights, 2 GiB of KV demand and 1 GiB of other
+    memory a rank, 16 clients of 8,000 + 2,000 tokens, a node with 1,000 GiB of free host memory
+    and pinned offload: the GPU KV it sizes, its CPU KV, the host and shared memory its T1 asks
+    for, the GPU pool, the working set in GiB and in tokens (its bytes a token are the KV
+    geometry's), and the tiers it plans."""
+    import contextlib
+    import copy
+    import io
+
+    out = {}
+    try:
+        from llm_memory_calculator.kv import plan_kv_tiers
+        from llm_memory_calculator.kv.workload import KVWorkload
+
+        node = {"pinned_offload_ok": True, "vgpu": False, "pinned_copy_gbps": 50.0, "pcie_gen": 5}
+        with contextlib.redirect_stdout(io.StringIO()):
+            p = plan_kv_tiers(
+                model_config=copy.deepcopy(cfg), engine="vllm",
+                engine_kv_features=["kv_events", "cache_salt", "cpu_offload_shm"],
+                device_type="cuda", hardware_mode="dedicated", device_memory_gib=80.0,
+                weight_gib_per_rank=15.3, kv_demand_gib_per_rank=2.0, other_device_gib_per_rank=1.0,
+                workload=KVWorkload.from_deployment(input_tokens=8000, output_tokens=2000,
+                                                    concurrency=16),
+                node=node, host_free_gib=1000.0, device_tflops=989.0)
+        out["kvplan_gpu_kv_gib"] = p.gpu_kv_gib
+        out["kvplan_cpu_kv_gib"] = p.cpu_kv_gib
+        out["kvplan_host_gib"] = p.host_memory_gib
+        out["kvplan_shm_gib"] = p.shm_gib
+        out["kvplan_pool_gib"] = p.gpu_pool_gib
+        out["kvplan_ws_gib"] = p.working_set_gib
+        out["kvplan_tiers"] = "+".join(t["tier"] for t in p.tiers) or "-"
+        # the working set's tokens, as the plan states them ("working set: N tokens (...)")
+        for line in getattr(p, "decisions", None) or []:
+            m = re.search(r"working set: (\d+) tokens", str(line))
+            if m:
+                out["kvplan_ws_tokens"] = int(m.group(1))
+                break
+    except Exception as e:
+        out["kvplan_error"] = f"{type(e).__name__}: {str(e)[:160]}"
     return out
 
 
@@ -482,6 +555,130 @@ def measure_training(cfg):
         out["traingenz_params"] = int(total)
     except Exception as e:
         out["traingenz_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    out.update(measure_training_estimators(cfg))
+    return out
+
+
+#: The quick estimates of origin/main's cluster optimizer, inline (a tree before
+#: ``ClusterOptimizer._quick_memory_estimate_gb`` / ``_min_memory_per_gpu_gb`` held them in
+#: ``_can_potentially_satisfy_constraints`` and ``_filter_gpu_types_for_model``).
+def _copt_inline(cfg, max_gpus):
+    from llm_memory_calculator.genz.Models.get_language_model import get_configs
+
+    mc = get_configs(cfg)
+    hidden = getattr(mc, 'hidden_size', 4096) or 4096
+    layers = getattr(mc, 'num_decoder_layers', 32) or 32
+    vocab = getattr(mc, 'vocab_size', 32000) or 32000
+    intermediate = getattr(mc, 'intermediate_size', None) or (hidden * 4)
+    total = layers * (4 * hidden * hidden + 3 * hidden * intermediate) + 2 * vocab * hidden
+    # full fine-tuning, bf16, AdamW, batch 1, 2,048 tokens, one GPU, gradient checkpointing
+    gb = (2 * total / 1e9 + 4 * total / 1e9 + 8 * total / 1e9
+          + 1 * 2048 * hidden * layers * 2 * 4 / 1e9 * 0.3) * 1.15
+    return total, gb, 2 * total / max_gpus / 1e9
+
+
+def measure_training_estimators(cfg):
+    """The training estimators that size a model before any simulation (full fine-tuning, AdamW,
+    bf16, one 2,048-token sequence): GenZ's training parallelization (``_estimate_memory_per_gpu``
+    on one GPU, and the configurations ``get_training_parallelization_options`` admits on eight
+    80 GB GPUs), the cluster requirements (``_estimate_model_params``, and
+    ``predict_cluster_requirements``' per-GPU breakdown and minimum cluster memory), the
+    comprehensive config builder (``_estimate_model_size``), the cluster optimizer's quick check
+    and GPU-type filter (eight GPUs), the advanced training calculator (full and LoRA: weights and
+    total), the time estimator's parameters and the KV planner's active parameters."""
+    import contextlib
+    import copy
+    import io
+
+    out = {}
+
+    def run(key, f):
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                out[key] = f()
+        except Exception as e:
+            out[key.split("[")[0] + "_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+
+    def tpar():
+        from llm_memory_calculator.genz.LLM_training import training_parallelization as tp
+        from llm_memory_calculator.genz.Models.get_language_model import get_configs
+
+        return round(float(tp._estimate_memory_per_gpu(
+            get_configs(copy.deepcopy(cfg)), tp.TrainingParallelismConfig(), 1, 2048, "full",
+            "adamw", "bf16")), 6)
+
+    def tpar_options():
+        from llm_memory_calculator.genz.LLM_training import training_parallelization as tp
+
+        return len(tp.get_training_parallelization_options(
+            copy.deepcopy(cfg), total_gpus=8, gpu_memory_gb=80, batch_size=1, seq_length=2048,
+            method="full", optimizer="adamw", bits="bf16"))
+
+    def creq_params():
+        from llm_memory_calculator.training.cluster_requirements import _estimate_model_params
+
+        return int(_estimate_model_params(copy.deepcopy(cfg))["total_params"])
+
+    def creq():
+        from llm_memory_calculator.training.cluster_requirements import (
+            predict_cluster_requirements,
+        )
+
+        r = predict_cluster_requirements(training_type="sft", model=copy.deepcopy(cfg),
+                                         method="full", optimizer="adamw", dtype="bf16",
+                                         batch_size=1, seq_length=2048)
+        return [round(float(r.memory_breakdown.total_per_gpu_gb), 6),
+                round(float(r.min_total_memory_gb), 6)]
+
+    def ccb():
+        from llm_memory_calculator.training.comprehensive_config_builder import (
+            _estimate_model_size,
+        )
+
+        return round(float(_estimate_model_size(copy.deepcopy(cfg))), 9)
+
+    def copt():
+        from llm_memory_calculator.genz.LLM_training.training_parallelization import (
+            TrainingParallelismConfig,
+        )
+        from llm_memory_calculator.training.cluster_optimizer import ClusterOptimizer
+        from llm_memory_calculator.training.cluster_optimizer_types import TrainingJobSpec
+
+        if not hasattr(ClusterOptimizer, "_quick_memory_estimate_gb"):
+            total, gb, low = _copt_inline(copy.deepcopy(cfg), 8)
+            return [int(total), round(gb, 6), round(low, 6)]
+        job = TrainingJobSpec(model=copy.deepcopy(cfg), batch_size=1, avg_sequence_length=2048)
+        total, gb = ClusterOptimizer._quick_memory_estimate_gb(job, TrainingParallelismConfig())
+        return [int(total), round(float(gb), 6),
+                round(float(ClusterOptimizer._min_memory_per_gpu_gb(job, 8)), 6)]
+
+    def adv(method):
+        from llm_memory_calculator.training.advanced_calculator import AdvancedTrainingCalculator
+
+        t = AdvancedTrainingCalculator().calculate_advanced_training_memory(
+            copy.deepcopy(cfg), method=method, batch_size=1, seq_length=2048)
+        return [round(float(t.weight_memory_gb), 6), round(float(t.total_memory_gb), 6)]
+
+    def time_params():
+        from llm_memory_calculator.training.time_estimator import TrainingTimeEstimator
+
+        return int(TrainingTimeEstimator()._get_total_params(copy.deepcopy(cfg)))
+
+    def active():
+        from llm_memory_calculator.kv.cost import active_parameters
+
+        return int(active_parameters(copy.deepcopy(cfg)))
+
+    run("tpar_mem_gb", tpar)
+    run("tpar_options_8x80", tpar_options)
+    run("creq_params", creq_params)
+    run("creq_gb", creq)
+    run("ccb_params_b", ccb)
+    run("copt_quick", copt)
+    run("advtrain_full", lambda: adv("full"))
+    run("advtrain_lora", lambda: adv("lora"))
+    run("time_params", time_params)
+    run("kvcost_active_params", active)
     return out
 
 
@@ -506,7 +703,10 @@ def synthetic_configs(fixtures_root):
     s["chatglm3"] = dict(model_type="chatglm", num_layers=28, hidden_size=4096,
                          num_attention_heads=32, multi_query_attention=True,
                          multi_query_group_num=2, kv_channels=128, ffn_hidden_size=13696,
-                         padded_vocab_size=65024, seq_length=8192)
+                         padded_vocab_size=65024, seq_length=8192,
+                         # as THUDM/chatglm3-6b's hub config states it (round 16): its
+                         # output_layer is its own table
+                         tie_word_embeddings=False)
     s["falcon-40b"] = dict(model_type="falcon", hidden_size=8192, num_attention_heads=128,
                            num_hidden_layers=60, num_kv_heads=8, new_decoder_architecture=True,
                            vocab_size=65024)
@@ -1060,13 +1260,23 @@ import re  # noqa: E402
 #: Capacity figures: higher admits more requests into the same memory.
 CAPACITY_FIGURES = re.compile(
     r"^(vllm_limits\[[012]\]|vllm_running_\d+|serving_requests_\w+|sim_max_running"
-    r"|(cluster|disagg)_b_eff_\d+)$")
+    r"|(cluster|disagg)_b_eff_\d+|tpar_options_\w+|maxbatch_\w+)$")
 #: Neither memory nor capacity: kinds and layer counts, latencies (`runtime_*[0]`), vLLM's KV
-#: group counts, the KV planner's layer counts and block size, flags, GGUF bookkeeping.
+#: group counts, the KV planner's layer counts and block size, flags, GGUF bookkeeping, the KV
+#: tier planner's working-set tokens (a workload estimate) and its GPU pool (the device less the
+#: harness's fixed weights and other memory: it says only whether the planner planned).
 NOT_AN_AMOUNT = re.compile(
     r"^(count|genz_layer_kinds\..*|genz_ffn_kinds\..*|kv_(full|sliding|free|cross)_layers"
     r"|facts_layers\[\d+\]|conv_layers\[\d+\]|runtime_\w+\[0\]|vllm_limits\[[34]\]"
-    r"|kvgeo_\d+\[[124]\]|gguf_.*)$")
+    r"|kvgeo_\d+\[[124]\]|gguf_.*|kvplan_ws_tokens|kvplan_pool_gib)$")
+
+
+#: Memory figures a plan derives from other figures rather than sizes itself: the KV tier
+#: planner's GPU and CPU KV and the host and shared memory its T1 asks for are sized toward its
+#: working set and its KV geometry, and a tier it no longer judges worth its copies (recompute
+#: is cheaper) asks for none. A move of one is held, like a capacity, by the memory figures it
+#: is derived from (``held_by``), each held to its own truth.
+DERIVED_FIGURES = re.compile(r"^kvplan_(host|shm|gpu_kv|cpu_kv)_gib$")
 
 
 def _leaves(key, value):
@@ -1249,7 +1459,7 @@ def gate(main_rows, branch_rows, allowlist, names=None):
                 or not _close(e.get("branch"), y):
             failures.append(f"{where}: the allowlist says {e.get('main')} -> {e.get('branch')}")
             continue
-        if kind == "memory":
+        if kind == "memory" and not (DERIVED_FIGURES.match(path) and e.get("held_by")):
             truth = e.get("truth")
             if not isinstance(truth, (int, float)):
                 failures.append(f"{where}: no ground truth")
@@ -1261,6 +1471,8 @@ def gate(main_rows, branch_rows, allowlist, names=None):
             held = e.get("held_by") or []
             if not held:
                 failures.append(f"{where}: a capacity rise names no memory figure it follows")
+            elif kind == "memory" and change != "moved":
+                failures.append(f"{where}: a derived figure is held by its inputs only when it moves")
             for reader in held:
                 h = entries.get((name, reader))
                 if h is None or not isinstance(h.get("truth"), (int, float)):

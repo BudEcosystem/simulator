@@ -62,6 +62,43 @@ def model_parameter_count(model_config) -> int:
     return _decoder_parameter_count(model_config)
 
 
+def held_to_the_model(model_config, fields_total: int) -> int:
+    """A parameter count a caller built from a ModelConfig's decoder fields, held to at least the
+    model's own (``model_parameter_count``).
+
+    The decoder fields are an encoder-decoder's decoder and a multimodal model's language model
+    (``get_configs`` reads each model's real decoder geometry), so a count of them leaves out the
+    encoder, the cross-attention, the towers and adapters: Whisper large-v3 is 1,543.5M
+    parameters, its decoder fields 971.8M. Every estimator that sizes weights, gradients or
+    optimizer state from those fields (GenZ's training modelling and parallelization, the
+    training cluster requirements, ranker, optimizer and config builder) holds its count here.
+    Where the fields' count is the larger (a formula that reads a GQA decoder as four full
+    attention matrices) it stands, so no figure is lowered. A ModelConfig built by hand (GenZ's
+    catalogue) has no config to count and keeps the fields' count, as does one the facts cannot
+    read."""
+    fields_total = int(fields_total)
+    if not isinstance(getattr(model_config, "source_config", None), dict):
+        return fields_total
+    try:
+        counted = int(model_parameter_count(model_config))
+    except Exception:  # noqa: BLE001 - a config the counter cannot read keeps the fields' count
+        return fields_total
+    return max(fields_total, counted)
+
+
+def config_parameters_held_to_the_model(model, fields_total: int) -> int:
+    """``held_to_the_model`` for a caller holding a model id, a HuggingFace config dict or a
+    ModelConfig: read through ``get_configs`` (a dict that is no model config it can read keeps
+    the fields' count)."""
+    try:
+        from ..Models import get_configs
+
+        model_config = get_configs(model)
+    except Exception:  # noqa: BLE001
+        return int(fields_total)
+    return held_to_the_model(model_config, fields_total)
+
+
 def _decoder_parameter_count(model_config) -> int:
     """A ModelConfig's parameters from its own fields, for one with no config to count (GenZ's
     built-in dictionary, a hand-built one): per attention layer Q / O at the heads and K / V at

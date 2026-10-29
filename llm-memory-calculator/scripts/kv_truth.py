@@ -322,6 +322,20 @@ def truth_profile(cfg_dict):
         out["kv"] = kv
         out["kv_layers_found"] = layers is not None
         if layers is not None:
+            # (in + out) over every linear map of the decoder layers, routed experts left out:
+            # what vLLM allocates LoRA A / B buffers over ("all linear layers support LoRA") --
+            # a floor, since vLLM also wraps the experts and a merged module's every slice
+            out["routed_experts"] = any("experts" in path.split(".") for layer in layers
+                                        for path, _ in layer.named_modules())
+            out["lora_widest_out"] = int(max((
+                int(m.out_features) for layer in layers for path, m in layer.named_modules()
+                if isinstance(m, torch.nn.Linear) and "experts" not in path.split(".")),
+                default=0))
+            out["lora_linear_features"] = int(sum(
+                int(m.in_features) + int(m.out_features)
+                for layer in layers for path, m in layer.named_modules()
+                if isinstance(m, torch.nn.Linear) and "experts" not in path.split(".")))
+        if layers is not None:
             # what a sequence holds whatever its length: each layer's recurrent state, and the
             # K / V each encoder token adds to the decoder's cross-attention caches
             out["state"] = [_layer_state(layer) for layer in layers]
@@ -480,8 +494,10 @@ def _fixed_bytes(profile, cross):
 STATE_WITH_CROSS = r"^(serving_state_bytes|conv_state_bytes|vllm_limits\[5\])$"
 
 
-def figure_truth(profile, reader):
-    """``(truth, source)`` for one corpus figure, or ``(None, why)``."""
+def figure_truth(profile, reader, row=None):
+    """``(truth, source)`` for one corpus figure, or ``(None, why)``. ``row`` is the branch's corpus
+    row, for a figure whose workload the reader sizes itself (the KV planner's working-set
+    tokens)."""
     import re
 
     if not profile or profile.get("error"):
@@ -562,6 +578,51 @@ def figure_truth(profile, reader):
          " on top)"),
         (r"^report_weight_gb$", lambda: _scaled(None if params is None else 2 * params, GB),
          "the model's weights (GB)"),
+        # the training estimators that size a model before any simulation (full fine-tuning,
+        # bf16, AdamW): weights 2 B, fp32 gradients 4 B, AdamW's two fp32 moments 8 B a parameter
+        (r"^(creq_params|copt_quick\[0\]|time_params)$", lambda: params,
+         "the model's parameters"),
+        (r"^ccb_params_b$", lambda: _scaled(params, 1e9), "the model's parameters (billions)"),
+        # the KV planner's recompute cost: every parameter runs for a token of a model without
+        # routed experts (an MoE model's active share is not read off the module tree)
+        (r"^kvcost_active_params$", lambda: None if p.get("routed_experts") else params,
+         "the parameters a token runs through (a model without routed experts: all of them)"),
+        (r"^tpar_mem_gb$", lambda: None if params is None else 14 * 1.1 * params / 1e9,
+         "bf16 weights, fp32 gradients and AdamW's two fp32 moments (14 B a parameter), with the"
+         " estimator's own 10% overhead, before activations (GB)"),
+        (r"^(creq_gb\[[01]\]|copt_quick\[1\])$",
+         lambda: None if params is None else 14 * params / 1e9,
+         "bf16 weights, fp32 gradients and AdamW's two fp32 moments (14 B a parameter, GB;"
+         " activations and overhead on top)"),
+        (r"^copt_quick\[2\]$", lambda: None if params is None else 2 * params / 8 / 1e9,
+         "the bf16 weights over the 8 GPUs (GB)"),
+        # AdvancedTrainingCalculator: full fine-tuning holds bf16 weights and an fp32 master copy
+        # (6 B), LoRA the frozen bf16 weights (2 B); the totals are above them
+        (r"^advtrain_full\[0\]$", lambda: None if params is None else 6 * params / 1e9,
+         "bf16 weights and their fp32 master copy (6 B a parameter, GB)"),
+        (r"^advtrain_full\[1\]$", lambda: None if params is None else 18 * params / 1e9,
+         "weights, master copy, gradients and AdamW state (18 B a parameter, GB)"),
+        (r"^advtrain_lora\[[01]\]$", lambda: None if params is None else 2 * params / 1e9,
+         "the frozen bf16 weights (2 B a parameter, GB; adapters and activations on top)"),
+        # vLLM's LoRA buffers: 4 adapters x rank 16 x (in + out) x 2 B over every linear map
+        (r"^lora_adapter_gb$", lambda: None if p.get("lora_linear_features") is None
+         else 2 * 4 * 16 * p["lora_linear_features"] / 1e9,
+         "4 adapters x rank 16 x 2 B over (in + out) of every linear map of the decoder layers"
+         " (routed experts left out: vLLM wraps those too)"),
+        # vLLM's CPU LoRA path copies the stacked B weights once per token (lora/ops/torch_ops:
+        # lora_b_weights[lora_indices_tensor]): at least one (tokens, out, rank) copy of the
+        # widest wrapped map, 4,096 tokens at rank 16, 2 B
+        (r"^lora_scratch_gb$", lambda: None if not p.get("lora_widest_out")
+         else 4096 * 16 * p["lora_widest_out"] * 2 / 1e9,
+         "one per-token copy of the widest LoRA-wrapped map's B buffer: 4,096 tokens x rank 16 x"
+         " its out features x 2 B (vLLM's CPU torch_ops; GB)"),
+        # the KV planner's working set: its own tokens (the plan's workload estimate, from the
+        # branch row) at the K+V bytes a token adds at the workload's 8,000-token prompts
+        (r"^kvplan_ws_gib$", lambda: None if row is None or row.get("kvplan_ws_tokens") is None
+         or kv_elements(p, at=8000) is None
+         else row["kvplan_ws_tokens"] * 2 * kv_elements(p, at=8000) / 2 ** 30,
+         "the plan's working-set tokens at the K+V bytes a token adds at an 8,000-token context"
+         " (GiB)"),
         (r"^report_total_gb$", lambda: None if params is None or _kv_bytes(p, 4096) is None
          else (2 * params + _kv_bytes(p, 4096)) / GB, "weights and a 4k sequence's KV (GB)"),
         (r"^eng_\w+_(\d+)_total_mb$", lambda: None if params is None
@@ -589,6 +650,12 @@ GRAPH_SLACK = 5e-5
 #: The memory figures a capacity figure is sized from, per capacity figure.
 HELD_BY = {
     "vllm": ["facts_weight_bytes", "facts_kv_bytes_per_token", "facts_kv_bytes_4096"],
+    # the training parallelization's options are sized from its per-GPU estimate
+    "tpar_options": ["tpar_mem_gb"],
+    # estimate_max_batch_size: the calculator's report at 4,096 tokens, a sequence at a time
+    "maxbatch": ["report_weight_gb", "report_kv_gb", "report_state_gb"],
+    # the KV tier planner's tiers, sized toward its working set in the geometry's bytes a token
+    "kvplan_derived": ["kvplan_ws_gib", "kvgeo_4096[0]"],
     "serving_requests": ["serving_bytes_per_token"],
     # B_eff = (device - weights) // (KV a token x context + a request's fixed bytes)
     "b_eff": ["serving_weight_bytes", "serving_bytes_per_token", "serving_state_bytes"],
@@ -596,6 +663,13 @@ HELD_BY = {
 
 
 def _held_by(reader):
+    import kv_corpus
+
+    if kv_corpus.DERIVED_FIGURES.match(reader):
+        return HELD_BY["kvplan_derived"]
+    for key in ("tpar_options", "maxbatch"):
+        if reader.startswith(key):
+            return HELD_BY[key]
     if reader.startswith("serving_requests"):
         return HELD_BY["serving_requests"]
     if re.match(r"^(cluster|disagg)_b_eff_\d+$", reader):
@@ -643,7 +717,7 @@ def allowlist_from(main_rows, branch_rows, configs, manual, causes):
             err = kv_corpus._error_of(branch.get(name, {}), reader) or ""
             e["error"] = re.split(r"\d", err, maxsplit=1)[0][:80]
             if kind == "memory":
-                e["truth"], e["source"] = figure_truth(profile(name), reader)
+                e["truth"], e["source"] = figure_truth(profile(name), reader, branch.get(name))
             if not _cause(causes, name, reader):
                 e["cause"] = f"the branch's reader raises: {err[:200]}"
                 if isinstance(e.get("truth"), (int, float)):
@@ -655,8 +729,15 @@ def allowlist_from(main_rows, branch_rows, configs, manual, causes):
             errs = sorted(k for k, v in main.get(name, {}).items() if k.endswith("error") and v)
             e["cause"] = ("origin/main gave no figure" + (" (its readers raised: " + ", ".join(
                 errs) + ")" if errs else "") + "; the branch's is held to its ground truth")
-        if kind == "memory":
-            e["truth"], e["source"] = figure_truth(profile(name), reader)
+        if kind == "memory" and change == "moved" and kv_corpus.DERIVED_FIGURES.match(reader):
+            e["held_by"] = _held_by(reader)
+            if not _cause(causes, name, reader):
+                e["cause"] = ("a tier the KV planner derives from " + ", ".join(e["held_by"])
+                              + " -- each held to its ground truth (its own entry) -- toward its"
+                              " working set; a tier it no longer judges worth its copies asks for"
+                              " none")
+        elif kind == "memory":
+            e["truth"], e["source"] = figure_truth(profile(name), reader, branch.get(name))
             unstated = profile(name).get("unstated") or {}
             if unstated and re.match(unstated.get("readers", "$^"), reader):
                 # modules the checkpoint holds that no config key describes: the figure may sit
@@ -678,7 +759,7 @@ def allowlist_from(main_rows, branch_rows, configs, manual, causes):
             if (name, held) in entries:
                 continue
             fig = kv_corpus._figure(branch_rows, name, held)
-            truth, source = figure_truth(profile(name), held)
+            truth, source = figure_truth(profile(name), held, branch.get(name))
             entries[(name, held)] = {"config": name, "reader": held,
                                      "main": kv_corpus._figure(main_rows, name, held),
                                      "branch": fig, "kind": "memory", "truth": truth,

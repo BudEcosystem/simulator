@@ -3779,29 +3779,14 @@ def training_parameter_counts(model_config) -> Tuple[int, int]:
 
 
 def _held_to_the_model(model_config, total_params: int, active_params: int) -> Tuple[int, int]:
-    """``(total, active)``: the decoder fields' count, held to at least the model's own.
+    """``(total, active)``: the decoder fields' count, held to at least the model's own
+    (``memory_model.held_to_the_model``: an encoder-decoder's encoder and cross-attention, every
+    tower and adapter). The stacks the fields do not hold are added to the active count as well
+    (every token passes through them)."""
+    from ..serving.memory_model import held_to_the_model
 
-    A ModelConfig read from a model config carries it (``source_config``), and the serving
-    path's count of it (``memory_model.model_parameter_count``: the FRD-027 facts -- an
-    encoder-decoder's encoder and cross-attention, every tower and adapter) is the model the
-    device trains. The decoder fields alone are an encoder-decoder's decoder, a multimodal model's
-    language model: counted from them, Whisper large-v3 was 971.8M of its 1,543.5M parameters,
-    and the weights, gradients and optimizer state were sized below the model. Where the fields'
-    count is the larger (a GQA decoder, read as four full attention matrices) it stands, so no
-    figure is lowered; the stacks they do not hold are added to the active count as well (every
-    token passes through them). A ModelConfig built by hand (GenZ's catalogue, a dict) has no
-    config to count and keeps the fields' count."""
-    if not isinstance(getattr(model_config, "source_config", None), dict):
-        return total_params, active_params
-    try:
-        from ..serving.memory_model import model_parameter_count
-
-        counted = int(model_parameter_count(model_config))
-    except Exception:  # noqa: BLE001 - a config the counter cannot read keeps the fields' count
-        return total_params, active_params
-    if counted <= total_params:
-        return total_params, active_params
-    return counted, active_params + (counted - total_params)
+    held = held_to_the_model(model_config, total_params)
+    return held, active_params + (held - int(total_params))
 
 
 def _calculate_total_params(

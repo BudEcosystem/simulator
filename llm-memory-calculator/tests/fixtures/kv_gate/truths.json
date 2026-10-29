@@ -874,6 +874,78 @@
    "base": "transformers",
    "encoder_tokens": 1500,
    "encoder_tokens_source": "the audio encoder's max_source_positions: a 30 s window, 3,000 mel frames halved by its stride-2 convolution"
+  },
+  "db:Qwen/Qwen-14B": {
+   "kv": [
+    [
+     "full",
+     null,
+     10240,
+     40
+    ]
+   ],
+   "lm_params": 14167290880,
+   "params": 14167290880,
+   "source": "Qwen-14B arithmetic (the hub's modeling_qwen.py): per layer c_attn 5,120 x 15,360 with bias, c_proj 5,120 x 5,120, w1 / w2 5,120 x 13,696 and the MLP c_proj 13,696 x 5,120, two norms (315,253,760); 40 layers, a 152,064 x 5,120 embedding and an untied lm_head, a final norm: 14,167,290,880 (the published 14.2B). KV: 40 heads x 128 x 2 a layer"
+  },
+  "db:THUDM/glm-4-9b-chat": {
+   "kv": [
+    [
+     "full",
+     null,
+     512,
+     40
+    ]
+   ],
+   "lm_params": 9399951360,
+   "params": 9399951360,
+   "source": "GLM-4-9B-chat arithmetic (the hub's modeling_chatglm.py): per layer a fused QKV 4,096 x (4,096 + 2 x 2 x 128) with bias, dense 4,096 x 4,096, SwiGLU 4,096 x 2 x 13,696 and 13,696 x 4,096, two norms (203,960,832); 40 layers, a 151,552 x 4,096 embedding and output layer, a final norm: 9,399,951,360 (the published 9.4B). KV: multi_query_group_num 2 x kv_channels 128 x 2 a layer"
+  },
+  "gguf:gpt-oss-20b-MXFP4.gguf": {
+   "input_embedding": 579133440,
+   "kv": [
+    [
+     "sliding",
+     128,
+     1024,
+     12
+    ],
+    [
+     "full",
+     null,
+     1024,
+     12
+    ]
+   ],
+   "lm_matrix_params": 20914421760,
+   "lm_params": 20914757184,
+   "params": 20914757184,
+   "quantized": true,
+   "routed_experts": true,
+   "source": "transformers 5.12 GptOssForCausalLM for openai/gpt-oss-20b's own config (the corpus row config:models--openai--gpt-oss-20b, the model this MXFP4 GGUF quantizes): 20,914,757,184 parameters; KV: 24 layers alternating sliding_attention (window 128) and full_attention, 8 KV heads x 64 x 2 (K and V)"
+  },
+  "gguf:gpt-oss-20b-MXFP4.metadata.gguf": {
+   "input_embedding": 579133440,
+   "kv": [
+    [
+     "sliding",
+     128,
+     1024,
+     12
+    ],
+    [
+     "full",
+     null,
+     1024,
+     12
+    ]
+   ],
+   "lm_matrix_params": 20914421760,
+   "lm_params": 20914757184,
+   "params": 20914757184,
+   "quantized": true,
+   "routed_experts": true,
+   "source": "transformers 5.12 GptOssForCausalLM for openai/gpt-oss-20b's own config (the corpus row config:models--openai--gpt-oss-20b, the model this MXFP4 GGUF quantizes): 20,914,757,184 parameters; KV: 24 layers alternating sliding_attention (window 128) and full_attention, 8 KV heads x 64 x 2 (K and V)"
   }
  }
 }

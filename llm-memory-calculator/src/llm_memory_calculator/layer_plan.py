@@ -2145,6 +2145,19 @@ def _with_class_geometry(config: Any, class_type: Optional[str], auto: bool = Fa
             for k in role:
                 if k in geometry and k not in derived:
                     add[k] = geometry[k]
+    # ChatGLM states its KV heads as `multi_query_group_num` beside `multi_query_attention`; a
+    # stored `num_key_value_heads: true` (prepopulated.db's glm-4-9b-chat) is a flag, not a count,
+    # and read as one head it halved every reader's KV
+    kv_heads, groups = config.get("num_key_value_heads"), _pos_int(config.get("multi_query_group_num"))
+    if (kv_heads is None or isinstance(kv_heads, bool)) and config.get("multi_query_attention") \
+            and groups:
+        add["num_key_value_heads"] = groups
+    # a table padded past the vocabulary (ChatGLM's `padded_vocab_size`, beside which that db row
+    # also stores a default `vocab_size: 32000`) holds the padded rows
+    padded = _pos_int(config.get("padded_vocab_size"))
+    vocab = config.get("vocab_size")
+    if padded and (not _pos_int(vocab) or padded > int(vocab)):
+        add["vocab_size"] = padded
     return {**config, **add} if add else config
 
 

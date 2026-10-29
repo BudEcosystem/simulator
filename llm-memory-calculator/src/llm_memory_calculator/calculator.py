@@ -22,6 +22,7 @@ from .layer_plan import (
     layer_kinds,
     resolve_layer_plan,
 )
+from .mixer_params import recurrent_mixer_linears
 from .state_memory import calculate_recurrent_state_bytes
 from .activation_memory import calculate_activation_bytes
 
@@ -1685,20 +1686,35 @@ class ModelMemoryCalculator:
 
         # Extract model dimensions
         hidden_size = text_config.get("hidden_size", text_config.get("d_model", 768))
+        # a stated null (GPT-Neo's `intermediate_size`) is the class's 4 x hidden, not a width
         intermediate_size = text_config.get(
-            "intermediate_size", text_config.get("ffn_dim", hidden_size * 4)
-        )
+            "intermediate_size", text_config.get("ffn_dim")
+        ) or hidden_size * 4
         num_layers = text_config.get(
             "num_hidden_layers", text_config.get("n_layers", 12)
         )
 
-        # Count only attention layers for hybrid models
-        if self.model_type == "hybrid":
+        # The token mixer of every layer holds LoRA buffers: vLLM wraps every linear layer ("In
+        # vLLM, all linear layers support LoRA", lora/utils.py get_supported_lora_modules) -- an
+        # attention layer's Q / K / V / O, and a recurrent or linear-attention layer's own maps
+        # (Mamba's in_proj / conv / x_proj / dt_proj / out_proj, Gated DeltaNet's in_proj_qkvz /
+        # in_proj_ba / out_proj, ...: ``mixer_params.recurrent_mixer_linears``). Where the layer
+        # plan places the kinds, the attention layers are the plan's and each recurrent layer adds
+        # its mechanism's maps; counted from the attention layers alone, a hybrid's recurrent
+        # layers held no adapter (Jamba 0.24 GB, where vLLM's floor is 0.31).
+        plan = resolve_layer_plan(config)
+        if plan is not None:
+            num_layers = len(plan["attn"])  # the depth the plan places, every spelling read
+            num_attention_layers = int(plan["num_attention_param_layers"])
+            mixer_linears = recurrent_mixer_linears(text_config, plan, hidden_size)
+        elif self.model_type == "hybrid":
             num_attention_layers = self._count_attention_layers(
                 text_config, num_layers, own_kv_only=False
             )
+            mixer_linears = []
         else:
             num_attention_layers = num_layers
+            mixer_linears = []
 
         max_loras = lora_config.max_loras
         max_lora_rank = lora_config.max_lora_rank
@@ -1738,6 +1754,15 @@ class ModelMemoryCalculator:
                     total_elements += (
                         lora_a_elements + lora_b_elements
                     ) * num_attention_layers
+
+                # the recurrent / linear-attention layers' own maps
+                for input_dim, output_dim in mixer_linears:
+                    lora_a_elements = max_loras * 1 * max_lora_rank * input_dim
+                    lora_b_elements = max_loras * 1 * output_dim * max_lora_rank
+                    if lora_config.fully_sharded_loras:
+                        lora_a_elements = lora_a_elements / tensor_parallel
+                    lora_b_elements = lora_b_elements / tensor_parallel
+                    total_elements += lora_a_elements + lora_b_elements
 
             # FFN modules: up, down, gate projections
             if any(
@@ -1922,12 +1947,20 @@ class ModelMemoryCalculator:
         if not head_dim and heads and hidden:
             head_dim = hidden // heads
         kv_heads = int(core.get("num_key_value_heads", heads) or 0)
+        # a recurrent / linear-attention layer's maps are wrapped too: Mamba-2's in_proj
+        # (2 x d_inner + 2 x groups x state + heads), Gated DeltaNet's in_proj_qkv, ...
+        mixer = max((out for _, out in recurrent_mixer_linears(
+            core, resolve_layer_plan(core), hidden)), default=0)
         return max(
             int(core.get("intermediate_size", 0) or 0),
-            int(core.get("moe_intermediate_size", 0) or 0),
+            # a per-layer list (Hunyuan-A13B) is as wide as its widest entry
+            max([int(w or 0) for w in core.get("moe_intermediate_size")], default=0)
+            if isinstance(core.get("moe_intermediate_size"), (list, tuple))
+            else int(core.get("moe_intermediate_size", 0) or 0),
             heads * head_dim,
             2 * kv_heads * head_dim,
             hidden,
+            int(mixer),
         )
 
     def calculate_lora_prefill_scratch(

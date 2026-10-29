@@ -109,6 +109,9 @@ def test_every_allowlist_entry_names_its_figures_truth_and_cause(allowlist):
         if e.get("change") == "lost":
             if not e.get("error"):
                 bad.append(f"{where}: a lost figure names no error")
+        elif e.get("kind") == "memory" and kv_corpus.DERIVED_FIGURES.match(e["reader"]) \
+                and e.get("held_by"):
+            pass  # a tier the planner derives: held by its inputs (gate() checks each)
         elif e.get("kind") == "memory":
             if not isinstance(e.get("truth"), (int, float)) or not e.get("source"):
                 bad.append(f"{where}: no ground truth or source")
@@ -214,3 +217,21 @@ def test_an_unstated_module_is_named_and_bounded():
         main, branch, {"entries": [dict(entry, unstated=5)]}))
     assert any("names no source" in f for f in kv_corpus.gate(
         main, branch, {"entries": [dict(entry, unstated_source="")]}))
+
+
+def test_a_derived_figure_is_held_by_its_inputs():
+    """The KV tier planner's T1 host memory is derived from its working set: a drop passes when
+    the entry names the figures it follows and each is held to its truth, and fails when one is
+    below its truth or the entry names none (round 16)."""
+    main = [{"name": "m", "kvplan_host_gib": 168.75, "kvplan_ws_gib": 57.8}]
+    branch = [{"name": "m", "kvplan_host_gib": 0.0, "kvplan_ws_gib": 14.46}]
+    assert len(kv_corpus.gate(main, branch, {})) == 2
+    ws = {"config": "m", "reader": "kvplan_ws_gib", "main": 57.8, "branch": 14.46, "truth": 14.4,
+          "source": "s", "cause": "c"}
+    host = {"config": "m", "reader": "kvplan_host_gib", "main": 168.75, "branch": 0.0,
+            "kind": "memory", "held_by": ["kvplan_ws_gib"], "cause": "c"}
+    assert kv_corpus.gate(main, branch, {"entries": [ws, host]}) == []
+    assert any("below its ground truth" in f for f in kv_corpus.gate(
+        main, branch, {"entries": [dict(ws, truth=20.0), host]}))
+    assert any("no ground truth" in f for f in kv_corpus.gate(
+        main, branch, {"entries": [ws, dict(host, held_by=None)]}))

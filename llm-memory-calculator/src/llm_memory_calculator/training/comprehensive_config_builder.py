@@ -52,13 +52,19 @@ from .llamafactory_config_builder import (
 try:
     from ..genz.LLM_training.training_modeling import training_modeling
     from ..genz.Models import get_configs
+    from ..genz.serving.memory_model import (
+        config_parameters_held_to_the_model,
+        held_to_the_model,
+    )
     HAS_GENZ = True
 except ImportError:
     HAS_GENZ = False
 
 
 def _estimate_model_size(model: Union[str, Dict[str, Any]]) -> float:
-    """Estimate model size in billions of parameters."""
+    """Estimate model size in billions of parameters: the decoder fields' count, held to the
+    model's own (``memory_model.held_to_the_model``: an encoder-decoder's encoder and
+    cross-attention, a multimodal model's towers)."""
     if isinstance(model, dict):
         # Direct config - estimate from architecture
         hidden = model.get('hidden_size', 4096)
@@ -67,6 +73,8 @@ def _estimate_model_size(model: Union[str, Dict[str, Any]]) -> float:
         intermediate = model.get('intermediate_size', hidden * 4)
         params_per_layer = 4 * hidden * hidden + 3 * hidden * intermediate
         total = layers * params_per_layer + 2 * vocab * hidden
+        if HAS_GENZ:
+            total = config_parameters_held_to_the_model(model, total)
         return total / 1e9
 
     # Try GenZ
@@ -78,7 +86,7 @@ def _estimate_model_size(model: Union[str, Dict[str, Any]]) -> float:
             vocab = getattr(config, 'vocab_size', 32000) or 32000
             intermediate = getattr(config, 'intermediate_size', None) or (hidden * 4)
             params_per_layer = 4 * hidden * hidden + 3 * hidden * intermediate
-            total = layers * params_per_layer + 2 * vocab * hidden
+            total = held_to_the_model(config, layers * params_per_layer + 2 * vocab * hidden)
             return total / 1e9
         except Exception:
             pass

@@ -108,6 +108,22 @@ def _get_gpu_memory(gpu_type: str) -> float:
     return 80.0
 
 
+def _estimated_model_parameters(model) -> Tuple[int, int, int]:
+    """``(parameters, hidden, decoder layers)`` the quick estimates size a model from: the decoder
+    fields' rough count, held to the model's own (``memory_model.held_to_the_model``: an
+    encoder-decoder's encoder and cross-attention, a multimodal model's towers)."""
+    from ..genz.serving.memory_model import held_to_the_model
+
+    model_config = get_configs(model)
+    hidden = getattr(model_config, 'hidden_size', 4096) or 4096
+    layers = getattr(model_config, 'num_decoder_layers', 32) or 32
+    vocab = getattr(model_config, 'vocab_size', 32000) or 32000
+    intermediate = getattr(model_config, 'intermediate_size', None) or (hidden * 4)
+    params_per_layer = 4 * hidden * hidden + 3 * hidden * intermediate
+    total_params = held_to_the_model(model_config, layers * params_per_layer + 2 * vocab * hidden)
+    return total_params, hidden, layers
+
+
 def _get_system_name(gpu_type: str) -> str:
     """Map GPU type to GenZ system name."""
     normalized = gpu_type.lower().replace("-", "_").replace(" ", "_")
@@ -756,6 +772,77 @@ class ClusterOptimizer:
             enable_best_practices=True,
         )
 
+    @staticmethod
+    def _quick_memory_estimate_gb(
+        job_spec: TrainingJobSpec,
+        parallelism_config: TrainingParallelismConfig,
+    ) -> Tuple[int, float]:
+        """``(parameters, GB per GPU)``: the quick check's estimate before a full simulation --
+        weights, gradients, optimizer state and activations with a 15% overhead, from
+        ``_estimated_model_parameters``."""
+        total_params, hidden, layers = _estimated_model_parameters(job_spec.model)
+
+        # Memory per GPU estimate (simplified)
+        precision_bytes = 2  # BF16 default
+        if job_spec.precision in ('fp32', 'f32'):
+            precision_bytes = 4
+        elif job_spec.precision in ('int8', 'int4', 'nf4'):
+            precision_bytes = 1
+
+        # Weight memory (divided by TP)
+        weight_memory_gb = (total_params * precision_bytes) / parallelism_config.tensor_parallel / 1e9
+
+        # For LoRA/QLoRA, weights are frozen in lower precision
+        if job_spec.method in ('qlora', 'gptq'):
+            weight_memory_gb = (total_params * 0.5) / parallelism_config.tensor_parallel / 1e9
+        elif job_spec.method in ('lora', 'dora', 'pissa'):
+            # LoRA has small additional overhead
+            weight_memory_gb = (total_params * precision_bytes) / parallelism_config.tensor_parallel / 1e9
+
+        # Gradient memory (FP32, only for trainable params)
+        trainable_ratio = 1.0 if job_spec.method == 'full' else 0.01  # ~1% for LoRA
+        gradient_memory_gb = (total_params * trainable_ratio * 4) / 1e9
+
+        # ZeRO-2+ shards gradients
+        if parallelism_config.zero_stage >= 2:
+            gradient_memory_gb /= parallelism_config.data_parallel
+
+        # ZeRO-3 shards weights
+        if parallelism_config.zero_stage >= 3:
+            weight_memory_gb /= parallelism_config.data_parallel
+
+        # Optimizer memory (8 bytes for AdamW per trainable param)
+        opt_bytes = 8 if job_spec.optimizer in ('adamw', 'adam', 'lamb') else 4
+        if job_spec.optimizer in ('adamw_8bit', 'paged_adamw_8bit', 'adam_8bit'):
+            opt_bytes = 2
+        optimizer_memory_gb = (total_params * trainable_ratio * opt_bytes) / 1e9
+
+        # ZeRO-1+ shards optimizer
+        if parallelism_config.zero_stage >= 1:
+            optimizer_memory_gb /= parallelism_config.data_parallel
+
+        # Activation memory (very rough estimate)
+        batch = job_spec.batch_size or 4
+        seq = job_spec.avg_sequence_length
+        activation_memory_gb = (batch * seq * hidden * layers * precision_bytes * 4) / 1e9
+
+        # Gradient checkpointing reduces activations
+        if parallelism_config.gradient_checkpointing:
+            activation_memory_gb *= 0.3  # ~70% reduction
+
+        # Divide by TP
+        activation_memory_gb /= parallelism_config.tensor_parallel
+
+        # Total estimate
+        total_estimate_gb = (
+            weight_memory_gb +
+            gradient_memory_gb +
+            optimizer_memory_gb +
+            activation_memory_gb
+        ) * 1.15  # 15% overhead
+
+        return total_params, total_estimate_gb
+
     def _can_potentially_satisfy_constraints(
         self,
         job_spec: TrainingJobSpec,
@@ -775,77 +862,8 @@ class ClusterOptimizer:
 
         # Quick memory estimate (simplified model)
         try:
-            from ..genz.Models import get_configs
-            model_config = get_configs(job_spec.model)
-
-            # Estimate model parameters
-            hidden = getattr(model_config, 'hidden_size', 4096) or 4096
-            layers = getattr(model_config, 'num_decoder_layers', 32) or 32
-            vocab = getattr(model_config, 'vocab_size', 32000) or 32000
-            intermediate = getattr(model_config, 'intermediate_size', None) or (hidden * 4)
-
-            # Rough parameter estimate
-            params_per_layer = 4 * hidden * hidden + 3 * hidden * intermediate
-            total_params = layers * params_per_layer + 2 * vocab * hidden
-
-            # Memory per GPU estimate (simplified)
-            precision_bytes = 2  # BF16 default
-            if job_spec.precision in ('fp32', 'f32'):
-                precision_bytes = 4
-            elif job_spec.precision in ('int8', 'int4', 'nf4'):
-                precision_bytes = 1
-
-            # Weight memory (divided by TP)
-            weight_memory_gb = (total_params * precision_bytes) / parallelism_config.tensor_parallel / 1e9
-
-            # For LoRA/QLoRA, weights are frozen in lower precision
-            if job_spec.method in ('qlora', 'gptq'):
-                weight_memory_gb = (total_params * 0.5) / parallelism_config.tensor_parallel / 1e9
-            elif job_spec.method in ('lora', 'dora', 'pissa'):
-                # LoRA has small additional overhead
-                weight_memory_gb = (total_params * precision_bytes) / parallelism_config.tensor_parallel / 1e9
-
-            # Gradient memory (FP32, only for trainable params)
-            trainable_ratio = 1.0 if job_spec.method == 'full' else 0.01  # ~1% for LoRA
-            gradient_memory_gb = (total_params * trainable_ratio * 4) / 1e9
-
-            # ZeRO-2+ shards gradients
-            if parallelism_config.zero_stage >= 2:
-                gradient_memory_gb /= parallelism_config.data_parallel
-
-            # ZeRO-3 shards weights
-            if parallelism_config.zero_stage >= 3:
-                weight_memory_gb /= parallelism_config.data_parallel
-
-            # Optimizer memory (8 bytes for AdamW per trainable param)
-            opt_bytes = 8 if job_spec.optimizer in ('adamw', 'adam', 'lamb') else 4
-            if job_spec.optimizer in ('adamw_8bit', 'paged_adamw_8bit', 'adam_8bit'):
-                opt_bytes = 2
-            optimizer_memory_gb = (total_params * trainable_ratio * opt_bytes) / 1e9
-
-            # ZeRO-1+ shards optimizer
-            if parallelism_config.zero_stage >= 1:
-                optimizer_memory_gb /= parallelism_config.data_parallel
-
-            # Activation memory (very rough estimate)
-            batch = job_spec.batch_size or 4
-            seq = job_spec.avg_sequence_length
-            activation_memory_gb = (batch * seq * hidden * layers * precision_bytes * 4) / 1e9
-
-            # Gradient checkpointing reduces activations
-            if parallelism_config.gradient_checkpointing:
-                activation_memory_gb *= 0.3  # ~70% reduction
-
-            # Divide by TP
-            activation_memory_gb /= parallelism_config.tensor_parallel
-
-            # Total estimate
-            total_estimate_gb = (
-                weight_memory_gb +
-                gradient_memory_gb +
-                optimizer_memory_gb +
-                activation_memory_gb
-            ) * 1.15  # 15% overhead
+            total_params, total_estimate_gb = self._quick_memory_estimate_gb(
+                job_spec, parallelism_config)
 
             # Check memory constraint
             if total_estimate_gb > gpu_memory * 0.95:
@@ -876,6 +894,17 @@ class ClusterOptimizer:
 
         return True, None
 
+    @staticmethod
+    def _min_memory_per_gpu_gb(job_spec: TrainingJobSpec, max_gpus: int) -> float:
+        """The weights each GPU holds at the most parallelism (``_filter_gpu_types_for_model``),
+        from ``_estimated_model_parameters``."""
+        total_params, _, _ = _estimated_model_parameters(job_spec.model)
+        if job_spec.method in ('qlora', 'gptq'):
+            bytes_per_param = 0.5  # 4-bit
+        else:
+            bytes_per_param = 2  # BF16
+        return (total_params * bytes_per_param) / max_gpus / 1e9
+
     def _filter_gpu_types_for_model(
         self,
         job_spec: TrainingJobSpec,
@@ -890,25 +919,7 @@ class ClusterOptimizer:
         filtered = []
 
         try:
-            from ..genz.Models import get_configs
-            model_config = get_configs(job_spec.model)
-
-            # Estimate total parameters
-            hidden = getattr(model_config, 'hidden_size', 4096) or 4096
-            layers = getattr(model_config, 'num_decoder_layers', 32) or 32
-            vocab = getattr(model_config, 'vocab_size', 32000) or 32000
-            intermediate = getattr(model_config, 'intermediate_size', None) or (hidden * 4)
-
-            params_per_layer = 4 * hidden * hidden + 3 * hidden * intermediate
-            total_params = layers * params_per_layer + 2 * vocab * hidden
-
-            # Minimum memory needed per GPU (with maximum parallelism)
-            if job_spec.method in ('qlora', 'gptq'):
-                bytes_per_param = 0.5  # 4-bit
-            else:
-                bytes_per_param = 2  # BF16
-
-            min_memory_per_gpu = (total_params * bytes_per_param) / max_gpus / 1e9
+            min_memory_per_gpu = self._min_memory_per_gpu_gb(job_spec, max_gpus)
 
             for gpu_type in gpu_types:
                 gpu_memory = _get_gpu_memory(gpu_type)

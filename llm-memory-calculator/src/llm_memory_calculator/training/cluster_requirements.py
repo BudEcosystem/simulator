@@ -49,6 +49,7 @@ try:
     from ..genz.LLM_training.training_modeling import training_modeling
     from ..genz.LLM_training.training_parallelization import get_training_parallelization_options
     from ..genz.Models import get_configs
+    from ..genz.serving.memory_model import config_parameters_held_to_the_model
     HAS_GENZ = True
 except ImportError:
     HAS_GENZ = False
@@ -147,6 +148,10 @@ def _estimate_model_params(model: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
         )
 
     total_params = layers * params_per_layer + 2 * vocab * hidden  # embedding + lm_head
+    # held to the model's own count: an encoder-decoder's encoder and cross-attention, a
+    # multimodal model's towers (the decoder fields above are its decoder alone)
+    if HAS_GENZ:
+        total_params = config_parameters_held_to_the_model(model, total_params)
 
     return {
         'hidden_size': hidden,

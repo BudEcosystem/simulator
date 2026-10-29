@@ -14,7 +14,7 @@ inferred from the obvious config keys -- Nemotron-H's d_inner is
 ``expand * hidden_size``.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .mechanism_dims import first as _first, mamba_dims as _mamba_dims
 from .layer_plan import (
@@ -30,6 +30,32 @@ from .layer_plan import (
 )
 
 
+#: A mechanism's linear maps, ``[(in_features, out_features), ...]`` for one layer: every
+#: projection, and the depthwise convolution where an engine holds it as one (vLLM builds every
+#: Mamba-1 / Mamba-2 / short-conv / KDA convolution as a ``ColumnParallelLinear`` of kernel ->
+#: channels, so it is a LoRA-wrapped linear there). ``*_params`` is these maps' weights plus the
+#: vectors no linear holds (biases, decays, norms), so a parameter count and a LoRA buffer count
+#: read the same shapes.
+
+
+def _weights(linears) -> int:
+    return sum(i * o for i, o in linears)
+
+
+def gdn_linears(config: Dict[str, Any], hidden: int):
+    """Gated DeltaNet's maps: in_proj_qkv, in_proj_z, in_proj_a, in_proj_b, the conv (kernel ->
+    q|k|v channels) and out_proj (Qwen3.5's split spelling; Qwen3-Next fuses qkv|z and a|b, the
+    same shapes side by side)."""
+    nk = int(_first(config, "linear_num_key_heads", default=16))
+    nv = int(_first(config, "linear_num_value_heads", default=32))
+    kd = int(_first(config, "linear_key_head_dim", default=128))
+    vd = int(_first(config, "linear_value_head_dim", default=128))
+    k = int(_first(config, "linear_conv_kernel_dim", default=4))
+    qkv = 2 * nk * kd + nv * vd
+    v_dim = nv * vd
+    return [(hidden, qkv), (hidden, v_dim), (hidden, nv), (hidden, nv), (k, qkv), (v_dim, hidden)]
+
+
 def gdn_params(config: Dict[str, Any], hidden: int) -> int:
     """Gated DeltaNet (Qwen3-Next, Qwen3.5/3.6), one layer.
 
@@ -42,22 +68,27 @@ def gdn_params(config: Dict[str, Any], hidden: int) -> int:
 
     10240 = 2*16*128 + 48*128, i.e. q and k are key-width and v is value-width.
     """
-    nk = int(_first(config, "linear_num_key_heads", default=16))
     nv = int(_first(config, "linear_num_value_heads", default=32))
-    kd = int(_first(config, "linear_key_head_dim", default=128))
     vd = int(_first(config, "linear_value_head_dim", default=128))
-    k = int(_first(config, "linear_conv_kernel_dim", default=4))
-    qkv = 2 * nk * kd + nv * vd
-    v_dim = nv * vd
-    return (
-        hidden * qkv        # fused q|k|v projection
-        + hidden * v_dim    # in_proj_z (output gate)
-        + 2 * hidden * nv   # in_proj_a, in_proj_b (per-head decay/beta)
-        + qkv * k           # depthwise conv
-        + 2 * nv            # A_log, dt_bias
-        + vd                # head-wise output norm
-        + v_dim * hidden    # out_proj
-    )
+    return _weights(gdn_linears(config, hidden)) + 2 * nv + vd  # A_log, dt_bias; head-wise norm
+
+
+def _kda_dims(config: Dict[str, Any]):
+    lac = config.get("linear_attn_config") or {}
+    nh = int(_first(lac, "num_heads", default=32))
+    hd = int(_first(lac, "head_dim", default=128))
+    k = int(_first(lac, "short_conv_kernel_size", default=4))
+    return nh, hd, k
+
+
+def kda_linears(config: Dict[str, Any], hidden: int):
+    """Kimi Delta Attention's maps: q / k / v / o, the three short convs, the low-rank f and g
+    gates (through head_dim) and the per-head beta."""
+    nh, hd, k = _kda_dims(config)
+    inner = nh * hd
+    rank = hd  # f_a/g_a project to head_dim, per the shipped [128, 2304]
+    return ([(hidden, inner)] * 3 + [(inner, hidden)] + [(k, inner)] * 3
+            + [(hidden, rank), (rank, inner)] * 2 + [(hidden, nh)])
 
 
 def kda_params(config: Dict[str, Any], hidden: int) -> int:
@@ -74,21 +105,16 @@ def kda_params(config: Dict[str, Any], hidden: int) -> int:
     The f/g gates are low-rank, factored through head_dim -- counting them dense
     would add ~2 x hidden x n_heads*head_dim per layer that does not exist.
     """
-    lac = config.get("linear_attn_config") or {}
-    nh = int(_first(lac, "num_heads", default=32))
-    hd = int(_first(lac, "head_dim", default=128))
-    k = int(_first(lac, "short_conv_kernel_size", default=4))
-    inner = nh * hd
-    rank = hd  # f_a/g_a project to head_dim, per the shipped [128, 2304]
-    return (
-        4 * hidden * inner          # q, k, v, o
-        + 3 * inner * k             # per-projection depthwise convs
-        + 2 * (hidden * rank + rank * inner)  # f and g low-rank gates
-        + hidden * nh               # b_proj: the per-head beta (left out, 73,728 a layer short)
-        + nh                        # A_log
-        + inner                     # dt_bias
-        + hd                        # o_norm
-    )
+    nh, hd, _ = _kda_dims(config)
+    return _weights(kda_linears(config, hidden)) + nh + nh * hd + hd  # A_log, dt_bias, o_norm
+
+
+def mamba2_linears(config: Dict[str, Any], hidden: int):
+    """Mamba-2's maps: in_proj (x, z, B, C, dt), the conv (kernel -> x|B|C channels), out_proj."""
+    d = _mamba_dims(config, hidden)
+    conv_dim = d["d_inner"] + 2 * d["n_groups"] * d["d_state"]
+    return [(hidden, 2 * d["d_inner"] + 2 * d["n_groups"] * d["d_state"] + d["n_heads"]),
+            (d["d_conv"], conv_dim), (d["d_inner"], hidden)]
 
 
 def mamba2_params(config: Dict[str, Any], hidden: int) -> int:
@@ -107,12 +133,19 @@ def mamba2_params(config: Dict[str, Any], hidden: int) -> int:
     d = _mamba_dims(config, hidden)
     conv_dim = d["d_inner"] + 2 * d["n_groups"] * d["d_state"]
     return (
-        hidden * (2 * d["d_inner"] + 2 * d["n_groups"] * d["d_state"] + d["n_heads"])
-        + conv_dim * d["d_conv"] + conv_dim  # conv weight + bias
+        _weights(mamba2_linears(config, hidden))
+        + conv_dim                           # conv bias
         + 3 * d["n_heads"]                   # A_log, D, dt_bias
         + d["d_inner"]                       # gated norm
-        + d["d_inner"] * hidden              # out_proj
     )
+
+
+def mamba1_linears(config: Dict[str, Any], hidden: int):
+    """Mamba-1's maps: in_proj (x and z), the conv, x_proj (dt, B, C), dt_proj, out_proj."""
+    d = _mamba_dims(config, hidden)
+    return [(hidden, 2 * d["d_inner"]), (d["d_conv"], d["d_inner"]),
+            (d["d_inner"], d["dt_rank"] + 2 * d["d_state"]), (d["dt_rank"], d["d_inner"]),
+            (d["d_inner"], hidden)]
 
 
 def mamba1_params(config: Dict[str, Any], hidden: int) -> int:
@@ -123,14 +156,18 @@ def mamba1_params(config: Dict[str, Any], hidden: int) -> int:
     """
     d = _mamba_dims(config, hidden)
     return (
-        hidden * 2 * d["d_inner"]                       # in_proj (x and z)
-        + d["d_inner"] * d["d_conv"] + d["d_inner"]     # conv weight + bias
-        + d["d_inner"] * (d["dt_rank"] + 2 * d["d_state"])  # x_proj
-        + d["dt_rank"] * d["d_inner"] + d["d_inner"]    # dt_proj + bias
-        + d["d_inner"] * d["d_state"]                   # A_log
-        + d["d_inner"]                                  # D
-        + d["d_inner"] * hidden                         # out_proj
+        _weights(mamba1_linears(config, hidden))
+        + d["d_inner"]                  # conv bias
+        + d["d_inner"]                  # dt_proj bias
+        + d["d_inner"] * d["d_state"]   # A_log
+        + d["d_inner"]                  # D
     )
+
+
+def shortconv_linears(config: Dict[str, Any], hidden: int):
+    """LFM2's short-convolution maps: in_proj (B, C, x), the conv, out_proj."""
+    L = int(_first(config, "conv_L_cache", default=3) or 3)
+    return [(hidden, 3 * hidden), (L, hidden), (hidden, hidden)]
 
 
 def shortconv_params(config: Dict[str, Any], hidden: int) -> int:
@@ -140,8 +177,15 @@ def shortconv_params(config: Dict[str, Any], hidden: int) -> int:
 
         conv.in_proj [6144, 2048]   conv.conv [2048, 1, 3]   conv.out_proj [2048, 2048]
     """
-    L = int(_first(config, "conv_L_cache", default=3) or 3)
-    return 3 * hidden * hidden + hidden * L + hidden * hidden
+    return _weights(shortconv_linears(config, hidden))
+
+
+def lightning_linears(config: Dict[str, Any], hidden: int):
+    """MiniMax lightning attention's maps: the fused qkv_proj, the output gate, out_proj."""
+    nh = int(_first(config, "num_attention_heads", default=32))
+    hd = int(_first(config, "head_dim", default=max(1, hidden // nh)))
+    inner = nh * hd
+    return [(hidden, 3 * inner), (hidden, inner), (inner, hidden)]
 
 
 def lightning_params(config: Dict[str, Any], hidden: int) -> int:
@@ -150,10 +194,13 @@ def lightning_params(config: Dict[str, Any], hidden: int) -> int:
     Same q/k/v/o projection set as softmax attention plus an output gate; the
     difference is in how the scores are computed, not in the weight shapes.
     """
-    nh = int(_first(config, "num_attention_heads", default=32))
-    hd = int(_first(config, "head_dim", default=max(1, hidden // nh)))
-    inner = nh * hd
-    return 4 * hidden * inner + hidden * inner  # q,k,v,o + output gate
+    return _weights(lightning_linears(config, hidden))  # q,k,v,o + output gate
+
+
+def rwkv_linears(config: Dict[str, Any], hidden: int):
+    """RWKV time-mix maps: key, value, receptance (hidden -> attention_hidden_size), output."""
+    att = int(_first(config, "attention_hidden_size", default=hidden) or hidden)
+    return [(hidden, att)] * 3 + [(att, hidden)]
 
 
 def rwkv_params(config: Dict[str, Any], hidden: int) -> int:
@@ -164,17 +211,31 @@ def rwkv_params(config: Dict[str, Any], hidden: int) -> int:
     time_mix interpolations one hidden-wide vector each.
     """
     att = int(_first(config, "attention_hidden_size", default=hidden) or hidden)
-    return 4 * hidden * att + 2 * att + 3 * hidden
+    return _weights(rwkv_linears(config, hidden)) + 2 * att + 3 * hidden
+
+
+def mlstm_linears(config: Dict[str, Any], hidden: int):
+    """xLSTM mLSTM maps: q, k (hidden -> qk_dim), v and the output gate (hidden -> v_dim), the
+    input and forget gates (hidden -> num_heads each), the output projection."""
+    nh = int(_first(config, "num_heads", default=8))
+    qk = -(-int(round(hidden * float(_first(config, "qk_dim_factor", default=0.5)))) // 64) * 64
+    v = -(-int(round(hidden * float(_first(config, "v_dim_factor", default=1.0)))) // 64) * 64
+    return [(hidden, qk)] * 2 + [(hidden, v)] * 2 + [(hidden, nh)] * 2 + [(v, hidden)]
 
 
 def mlstm_params(config: Dict[str, Any], hidden: int) -> int:
     """xLSTM mLSTM layer: q, k (hidden -> qk_dim), v and the output gate
     (hidden -> v_dim), input/forget gates (hidden -> num_heads each) and the
     output projection (v_dim -> hidden)."""
-    nh = int(_first(config, "num_heads", default=8))
-    qk = -(-int(round(hidden * float(_first(config, "qk_dim_factor", default=0.5)))) // 64) * 64
-    v = -(-int(round(hidden * float(_first(config, "v_dim_factor", default=1.0)))) // 64) * 64
-    return hidden * (2 * qk + 2 * v) + 2 * hidden * nh + v * hidden
+    return _weights(mlstm_linears(config, hidden))
+
+
+def rglru_linears(config: Dict[str, Any], hidden: int):
+    """RecurrentGemma recurrent block's maps: linear_x, linear_y, linear_out and the conv (the
+    RG-LRU's block-diagonal gates are parameters, not linear modules)."""
+    width = int(_first(config, "lru_width", default=hidden) or hidden)
+    k = int(_first(config, "conv1d_width", default=4))
+    return [(hidden, width), (hidden, width), (width, hidden), (k, width)]
 
 
 def rglru_params(config: Dict[str, Any], hidden: int) -> int:
@@ -182,9 +243,8 @@ def rglru_params(config: Dict[str, Any], hidden: int) -> int:
     and linear_out back, the depthwise conv, and the RG-LRU's block-diagonal
     input and recurrence gates plus its recurrence parameter."""
     width = int(_first(config, "lru_width", default=hidden) or hidden)
-    k = int(_first(config, "conv1d_width", default=4))
     nh = int(_first(config, "num_attention_heads", default=1) or 1)
-    return 3 * hidden * width + width * k + 2 * width * width // max(nh, 1) + width
+    return _weights(rglru_linears(config, hidden)) + 2 * width * width // max(nh, 1) + width
 
 
 _DISPATCH = {
@@ -198,6 +258,34 @@ _DISPATCH = {
     MECH_MLSTM: mlstm_params,
     MECH_RGLRU: rglru_params,
 }
+
+
+_LINEARS = {
+    MECH_GDN: gdn_linears,
+    MECH_KDA: kda_linears,
+    MECH_MAMBA2: mamba2_linears,
+    MECH_MAMBA1: mamba1_linears,
+    MECH_SHORTCONV: shortconv_linears,
+    MECH_LIGHTNING: lightning_linears,
+    MECH_RWKV: rwkv_linears,
+    MECH_MLSTM: mlstm_linears,
+    MECH_RGLRU: rglru_linears,
+}
+
+
+def recurrent_mixer_linears(
+    config: Dict[str, Any], plan: Optional[Dict[str, Any]], hidden: int
+) -> List[Tuple[int, int]]:
+    """Every linear map of every recurrent layer in the plan, ``[(in, out), ...]``: what an engine
+    that wraps every linear layer with LoRA (vLLM: "all linear layers support LoRA") allocates
+    adapter buffers for on the layers that hold no attention."""
+    if not plan or not plan.get("num_recurrent_layers"):
+        return []
+    out: List[Tuple[int, int]] = []
+    for mech in plan["recurrent"]:
+        if mech:
+            out.extend(_LINEARS[mech](config, hidden))
+    return out
 
 
 def recurrent_mixer_params(
