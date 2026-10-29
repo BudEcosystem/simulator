@@ -316,10 +316,15 @@ Q-Former and a staged DaViT tower counted at their own geometry. The training re
 too: the parameter counter behind the training API counts every encoder-decoder with its encoder and
 cross-attention and a language model with its towers, and GenZ's `training_modeling` holds its decoder-field
 count to at least the model's own -- as do the training parallelization (what fits on a GPU), the cluster
-requirements, the config builder and the cluster optimizer's quick checks (`memory_model.held_to_the_model`).
+requirements, the config builder, the cluster optimizer's quick checks and the training optimizer
+(`optimize_training`, `compare_training_strategies`, `get_minimum_hardware_for_model`, through
+`analyze_model_config`, which now reads a nested decoder and routed experts under every spelling:
+DeepSeek-V3 had been 38.6B of its 671B) (`memory_model.held_to_the_model`).
 GenZ's `training_modeling` charges an encoder-decoder's encoder layers their LoRA adapters and activations
-as the parallelization estimate does (`memory_model.trained_layers`). LoRA adapter buffers are counted on
-every layer's linear maps, a hybrid's recurrent and linear-attention layers among them, as vLLM wraps every
+as the parallelization estimate does (`memory_model.trained_layers`), each layer at its own width (an encoder's,
+and a decoder layer's widest attention or mixer maps). LoRA adapter buffers are counted on
+every layer's linear maps, a hybrid's recurrent and linear-attention layers among them (whether the plan or the
+config class places them), with a gated FFN read by family as the weight counters read it, as vLLM wraps every
 linear layer -- in the calculator and in the FRD-027 vLLM planner's reservation, which is A and B over the
 (in + out) of every linear map the model's layers hold (`ModelFacts.lora_linear_features`). A gate holds every figure that moves below origin/main's -- or a capacity above it, or
 a figure only the branch reports, or one it no longer reports -- to a ground truth (transformers'
@@ -327,9 +332,11 @@ own model for the config, a checkpoint's tensors, or the cited arithmetic):
 `llm-memory-calculator/tests/test_kv_gate.py` over every config the repository ships (the GGUF
 reader included, on metadata-only GGUF fixtures) -- no reader needs transformers or torch (the
 config-class defaults ship with the package, with the layout a class gives a windowed config that
-states none and a head width a class derives; only a type newer than transformers 5.12, or a class
-layout no shipped rule reproduces, asks the installed release, and without it is charged full KV on
-every layer), and a reader that cannot import either fails; the
+states none -- applied only where the config leaves the keys the class builds that layout from
+out, or states them at values the rule was checked at -- and a head width a class derives; only a
+type newer than transformers 5.12, a class layout no shipped rule reproduces, or a layout key stated
+at another value asks the installed release, and without it is charged full KV on every windowed
+layer), and a reader that cannot import either fails; the
 GGUF reader needs `gguf` and the converter BudSimulator's `requests`, `lxml` and `json_repair`, and
 where those are absent their figures are reported as not measured -- and `scripts/kv_corpus.py --gate` over a machine's
 HF cache and model folders; the figures that

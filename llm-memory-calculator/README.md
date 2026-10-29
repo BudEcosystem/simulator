@@ -281,10 +281,14 @@ The calculator provides detailed breakdown:
   for a key a config leaves out ship with the package (`config_class_defaults.json`, from
   transformers 5.12), with the layout a class gives a windowed config that states none (Gemma 2's
   hub config: sliding and full alternating) and a head width a class derives (Zamba's), so the
-  figures, and the gate, do not depend on whether or which transformers is installed; only a
-  model type newer than 5.12, or a class layout no shipped rule reproduces (Qwen2-MoE, Gemma 4),
-  asks the installed transformers, and without it is charged full KV on every layer, an
-  over-estimate. A reader that cannot import transformers or torch fails the gate,
+  figures, and the gate, do not depend on whether or which transformers is installed. A shipped
+  layout rule describes its class at the class's defaults and records every other key the class
+  builds the layout from (AFMoE's `global_attn_every_n_layers`, Llama 4's and SmolLM3's
+  `no_rope_layers`, LFM2's `full_attn_idxs`, ...), and is applied only where the config leaves
+  those keys out or states a value the rule was checked at; a model type newer than 5.12, a class
+  layout no shipped rule reproduces (Qwen2-MoE), or a config that states such a key at another
+  value asks the installed transformers, and without it is charged full KV on every windowed
+  layer, an over-estimate. A reader that cannot import transformers or torch fails the gate,
   and only the GGUF reader (`gguf`) and BudSimulator's converter (`requests`, `lxml`,
   `json_repair`) may be reported as not measured where their own dependencies are absent. The
   serving simulator's weights (a `ServingSimulator` run's weight load, the cluster's and
@@ -299,15 +303,24 @@ The calculator provides detailed breakdown:
   memory calculator and API) and GenZ's `training_modeling` -- count the whole model: an
   encoder-decoder with its encoder and cross-attention, a language model with its towers; so do
   GenZ's training parallelization, the cluster requirements, the comprehensive config builder and
-  the cluster optimizer's quick checks, each holding its decoder-field count to the model's own
+  the cluster optimizer's quick checks, and the training optimizer (`optimize_training`,
+  `compare_training_strategies`, `get_minimum_hardware_for_model`, sized by
+  `analyze_model_config`, which reads a nested decoder and routed experts under every spelling --
+  DeepSeek-V3 had been 38.6B of its 671B), each holding its decoder-field count to the model's own
   (`genz.serving.memory_model.held_to_the_model`). The harness measures them (`counter_params`,
+  `amc_params`, `topt_params`, `minhw_*`,
   `trainmem_*`, `traingenz_params`, `tpar_*`, `creq_*`, `ccb_*`, `copt_quick`, `advtrain_*`,
   `time_params`, and `tmodel_*`: training_modeling's per-GPU total, weights and activations, which
   count an encoder-decoder's encoder layers in their LoRA adapters and activations,
   `memory_model.trained_layers`), the LoRA buffers and scratch, the max batch and the KV tier
   planner, and the gate holds them. LoRA adapter buffers (`max_loras`) cover every layer's linear
   maps, a hybrid's recurrent and linear-attention layers among them
-  (`mixer_params.recurrent_mixer_linears`), as vLLM wraps every linear layer; the FRD-027 vLLM
+  (`mixer_params.recurrent_mixer_linears`, over the layers `layer_plan.placed_mixers` places,
+  a layout read from the config class among them), with a gated FFN's three maps read as the
+  weight counters read them (`stack_params.ffn_is_gated`), as vLLM wraps every linear layer;
+  GenZ's `training_modeling` sizes an encoder's activations at the encoder's own width and a
+  decoder layer's at least its widest attention or mixer maps (`memory_model.activation_shape`);
+  the FRD-027 vLLM
   planner's reservation (`lora.max_adapters`) is A and B over the (in + out) of every linear map
   the model's layers hold (`ModelFacts.lora_linear_features`: attention, cross-attention and mixer
   maps, the FFN's, every expert's and router's, an encoder-decoder's encoder), measured as

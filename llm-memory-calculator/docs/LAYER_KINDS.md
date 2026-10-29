@@ -431,28 +431,68 @@ switches before it is written:
 * **The layout of a windowed config that states none** (`layouts`, read by
   `layer_plan.class_layout_names` for `stated_layer_types`): `none` -- the class derives no
   per-layer list, so the window is on every layer unless the config's `max_window_layers` says
-  otherwise (Mistral; 576 classes) --, `period` -- layer i is `names[i % len(names)]` (Gemma 2's
-  sliding, full; Gemma 3's five sliding and a full; Cohere 2's, OLMo 3's; 41 classes) --, or
-  `max_window_layers` -- the window from that layer on, the class's own default where the config
-  states none (Qwen2 and Qwen3: 28; 6 classes). A class with a `use_sliding_window` switch records
+  otherwise (Mistral; 576 classes) --, `period` -- layer i is `names[i % len(names)]`, the last
+  layer another kind where the class forces it (Gemma 2's sliding, full; Gemma 3's five sliding
+  and a full; Gemma 4's and DiffusionGemma's with the last layer full; Cohere 2's, OLMo 3's; 41
+  classes) --, or `max_window_layers` -- the window from that layer on, the class's own default
+  where the config states none (Qwen2 and Qwen3: 28; dots1: 62; Qwen2-VL and Qwen2.5-VL's text
+  model: 80; 9 classes). Each rule is checked at depths from 5 to 130 layers: checked only to 48,
+  dots1's and Qwen2-VL's default `max_window_layers` never showed and their rule read "every layer
+  full", so a config that switched the window on with `max_window_layers: 8` was charged every
+  layer full where the class windows 16 of 24 (round 18), and Gemma 4's forced last layer never
+  differed from its period, so it shipped no rule. A class with a `use_sliding_window` switch records
   its default (`switch`): a config that leaves the switch to a class whose default is off builds
   every layer full, whatever window it states (the synthetic Qwen2 that leaves its depth to the
   class, Qwen2-Audio's `text_config`). Read from the installed class alone, the Gemma 2 hub config
   (a 4,096 window, no layout) had all 42 layers full without transformers or with 4.50, and the
   branch's own planner test failed outside a 5.12 environment. A class whose layout no rule
   reproduces is left to the installed transformers: Qwen2-MoE (a period and `max_window_layers`
-  together), Gemma 4 and DiffusionGemma (whose last layer follows a key the rule does not read),
-  DeepSeek-V4, Zamba, Nemotron-H; with none installed such a config is charged full KV on every
-  layer.
+  together), DeepSeek-V4, Zamba, Nemotron-H; with none installed such a config is charged full KV
+  on every layer.
+
+  **A rule describes the class at its defaults, so it records every other key the class builds
+  the layout from** (`depends`, round 18). The writer builds each class again at other values of
+  every `__init__` parameter, every key its default build states, and every key found to matter
+  for any class or read by the readers as a layout key (a class may read one from its keyword
+  arguments alone: Cohere2Config's `sliding_window_pattern`), at 24 and 96 layers with the switch
+  on and off; a key whose value changes the class's list is recorded with the values the rule was
+  checked at -- the class's default, the value it stores when the key is left out, a small value
+  that gives the same list at every depth from 12 to 130, or the period of a per-layer list the
+  class derives (Llama 4's and SmolLM3's `no_rope_layers`: one in four layers without RoPE, as a
+  hub config written by `save_pretrained` states it). 15 rules record one: AFMoE's
+  `global_attn_every_n_layers`, Llama 4's and SmolLM3's `no_rope_layers` and
+  `no_rope_layer_interval`, EXAONE 4's, EXAONE-MoE's, Cohere 2's, Gemma 3's and T5Gemma 2's
+  `sliding_window_pattern`, LFM2's `full_attn_idxs`, Jamba's `attn_layer_period` /
+  `attn_layer_offset`, Bamba's `attn_layer_indices`, ModernBERT's `global_attn_every_n_layers`.
+  `layer_plan.layout_rule_applies` applies a rule only to a config that leaves each of its keys
+  out or states one of those values; any other value is the class's to answer -- the installed
+  transformers is asked with the whole config (its reduced retry keeps the rule's keys), and
+  without it every windowed layer is charged full, an over-estimate. Before this, a config that
+  stated another value got the class's default layout: AFMoE with `global_attn_every_n_layers: 2`
+  had 8 full layers of 32 where AfmoeConfig builds 16 -- below origin/main (whose GenZ read the key
+  itself) and below the class, with or without transformers installed --, an EXAONE 4 string
+  pattern (`"LLLG"`, on which the 5.12 class raises) a fixed period instead of every layer full,
+  LFM2's `full_attn_idxs` every layer full attention where the class builds convolutions, and a
+  SmolLM3 with the window switched on and every layer rotary 27 full layers of the class's 36. The
+  harness carries each shape (`afmoe-global-every-2` / `-4`, `llama4-no-rope-interval-2`,
+  `llama4-no-rope-layers-half`, `smollm3-window-all-rope`, `smollm3-window-interval-8`,
+  `exaone4-string-pattern`, `lfm2-full-attn-idxs`, `dots1-window-from-layer-8`,
+  `qwen2-vl-window-from-layer-8`), so the gate sees them. Llama 4 states a chunk
+  (`attention_chunk_size`), not a window: a Llama 4 config without `layer_types` does not reach
+  the lookup, and its chunked layers are charged full, as before.
 * **A head width the class derives from its width under another name** (`head_dims`: ZambaConfig
   and Zamba2Config's `attention_head_dim = 2 x hidden_size / heads`, their attention reading the
   hidden state concatenated with the embeddings), read by `layer_plan.attention_head_dim` for a
   config that states neither the width nor its name: without transformers such a Zamba config had
   been sized at hidden / heads, half its KV.
 
-Over every corpus config that reaches the layout lookup (a window and no layout), the shipped rule
-gives transformers 5.12's own list (`tests/test_lora_reservation_training_memory_and_class_layouts.py`
-checks every rule against the 5.12 classes at depths and windows the writer did not use).
+Over every corpus config that reaches the layout lookup (a window and no layout), the layout read
+is transformers 5.12's own list: from the shipped rule where the config states its keys at values
+the rule was checked at, from the class otherwise
+(`tests/test_lora_reservation_training_memory_and_class_layouts.py` checks every rule against the
+5.12 classes at depths and windows the writer did not use, and
+`tests/test_layout_dependencies_and_training_optimizer.py` re-probes every rule's keys and checks
+each accepted value at depths the writer did not use).
 
 The towers and adapters this reaches are read at their own geometry, by the config's keys:
 
@@ -548,12 +588,36 @@ counted an encoder-decoder as its decoder alone:
   dense `intermediate_size`; the experts are now counted at their own width
   (`moe_intermediate_size`): SmallThinker-21BA3B's 64 experts of 768 had counted 283.5B of its
   21.5B, and training_modeling put 4.7 TB on one GPU (still held to the model's own count).
+  Held to the tighter activation truth of round 18 (below), its activations were found under it
+  where a layer is wider than its decoder fields say: an encoder-decoder's encoder layers were
+  sized at the decoder's width (Pix2Struct's 1,536-wide image encoder beside a 1,024-wide decoder:
+  0.191 GB against the 0.246 a layer-checkpointed step holds at least), and a layer's attention at
+  4 x hidden (Qwen3.5's Gated DeltaNet layer projects 12,352 a token from a 2,560-wide stream:
+  0.453 against 0.462). The activations now size each layer as the model builds it
+  (`memory_model.activation_shape`): the encoder's layers at the encoder's own width and FFN
+  (`layer_plan.encoder_view`), and a decoder layer's attention or mixer outputs at least its
+  widest layer's (`ModelFacts.mixer_live_width`, from the same maps the weights and the LoRA
+  buffers are counted from); 4 x hidden stays the least, so no decoder-only figure is lowered
+  (Pix2Struct 0.247, Qwen3.5 0.495; an encoder narrower than its decoder now holds its own
+  width: Dia-1.6B 0.352 -> 0.302, origin/main 0.252).
   Brought down to the model's own count, the count showed what the facts' count left out: the gate
   that scales a shared expert's output (Linear(h, 1) a MoE layer, which Qwen2-MoE, Qwen3-Next and
   Qwen3.5-MoE build and no key states; counted for every shared expert, a family that builds none
   over-counted by h a layer) and Q / K / V biases a class builds by default (Qwen2MoeConfig's
   `qkv_bias`): Qwen1.5-MoE-A2.7B's facts 14,315,589,024 -> 14,315,834,784 against transformers'
   14,315,784,192, Qwen3-Next-80B 79,674,317,568 -> 79,674,415,872 (79,674,391,296).
+* The training optimizer (round 18): `training.optimize_training`, `compare_training_strategies`
+  and `get_minimum_hardware_for_model`, given a config dict, size the model with
+  `analyze_model_config`, which read `hidden_size`, `intermediate_size`, `num_hidden_layers`,
+  `num_experts` / `num_local_experts` and `vocab_size` at the top level: DeepSeek-V3 (256 experts
+  under `n_routed_experts`, 2,048 wide under `moe_intermediate_size`) was 38.6B of its 671B, on
+  origin/main too, and a multimodal model's `text_config` a 4,096-wide 32-layer default. It now
+  reads the decoder where the model keeps it (`layer_plan.decoder_view`), the routed experts, their
+  width and the shared experts under every spelling (`routed_expert_count`,
+  `routed_expert_width`, `shared_expert_width`), and holds its count to the model's own with the
+  same helper as every other estimator (`memory_model.config_parameters_held_to_the_model`):
+  DeepSeek-V3 702.1B (its rough count, every layer's experts at their width, above the model's
+  671.0B), 38.6B active (8 routed experts and the shared one a token).
 
 `scripts/kv_corpus.py` measures them for every row (`counter_params`, `trainmem_weight_gb`,
 `trainmem_total_gb` -- full fine-tuning, AdamW, bf16, one 2,048-token sequence -- and
@@ -562,13 +626,24 @@ counted an encoder-decoder as its decoder alone:
 `copt_quick` -- parameters, the quick check's GB a GPU, the filter's weights a GPU on eight --,
 `advtrain_full` / `advtrain_lora` -- weights and total --, `time_params` and the KV planner's
 `kvcost_active_params`; and since round 17 `tmodel_full` / `tmodel_lora` -- training_modeling's
-per-GPU total, weights and activations, one A100-80GB --), and the gate holds them: the counts to every parameter, the trainer's
+per-GPU total, weights and activations, one A100-80GB --; and since round 18 `amc_params`,
+`topt_params` -- `analyze_model_config`'s count and the plan `optimize_training` returns for
+1e8 tokens on up to 64 GPUs -- and `minhw_lora_gb` / `minhw_full_gb` --
+`get_minimum_hardware_for_model`'s minimum memory), and the gate holds them: the counts to every parameter, the trainer's
 weights to 6 B a parameter (bf16 and its fp32 master copy) and its total to 18 B (with fp32
 gradients and AdamW's two moments; activations on top), the estimators' per-GPU and cluster
 memory to 14 B a parameter (bf16 weights, fp32 gradients, AdamW's moments; the parallelization
 estimate with its own 10 % overhead; training_modeling's total under full fine-tuning), LoRA
-training's frozen weights to 2 B (training_modeling's weights to 2 B under both methods), the
-activations to one layer-boundary checkpoint a decoder layer (2,048 tokens x its width x 2 B), and
+training's frozen weights to 2 B (training_modeling's weights to 2 B under both methods; the
+minimum hardware's LoRA memory to 2 B and its full fine-tuning memory to 14 B), the activations to
+what a layer-checkpointed step of 2,048 tokens holds at least (round 18; it had been one checkpoint
+a decoder layer, 3-30x below the figures, which could not tell a correct width from an
+under-count): one input a layer of every stack the step runs through -- an encoder-decoder's
+encoder too, at its own length where it reads an image or audio (its position table: ViT's 197,
+Whisper's 1,500) -- and one layer's live tensors during its recompute, the outputs of its
+self-attention and FFN maps other than those that return a wider input to the residual stream
+(Q, K, V, O, a gated FFN's gate and up; routed experts and cross-attention left out), 2 B each:
+t5-small 0.0419 GB against training_modeling's 0.0504, whisper-large-v3 0.333 against 0.399; and
 the options a cluster admits by the estimate they are sized from.
 
 ## LoRA buffers
@@ -583,7 +658,15 @@ KDA's projections, convs and low-rank gates, a short conv's, lightning attention
 layer plan places the kinds, the `attn` target is the plan's attention layers (Q / K / V / O
 each) and every recurrent layer adds its mechanism's maps (`mixer_params.recurrent_mixer_linears`;
 each mechanism's `*_linears` is the one statement of its shapes, and its `*_params` is those
-maps' weights plus the vectors no map holds). Counted from the attention layers alone, a hybrid
+maps' weights plus the vectors no map holds); where the plan reads no layout but the layer kinds
+place recurrent layers -- from the config's names or its class's layout (`layer_plan.placed_mixers`,
+round 18: LFM2 with a window and `full_attn_idxs`, whose class builds 18 of 24 layers as short
+convolutions) -- those are read the same way, where they had held neither attention nor mixer
+buffers (0.0755 GB, below origin/main's 0.088 and vLLM's 0.109 floor; now 0.140). The FFN is
+gated (gate, up and down) as the weight counters read it (`stack_params.ffn_is_gated`: the
+config's statement, its family's modelling, its activation's name), where it had been read from
+the activation's name alone: LFM2 states none and builds w1 / w3 / w2 (LFM2-2.6B 0.156 GB
+against vLLM's 0.196 floor; now 0.205). Counted from the attention layers alone, a hybrid
 held no adapter on its recurrent layers: Jamba 0.243 GB (origin/main 0.294, which took half the
 layers for attention), now 0.451 against vLLM's floor of 0.313 (4 adapters, rank 16, bf16). The
 CPU prefill scratch is sized from the widest wrapped slice, which can now be a mixer's (Jamba's
@@ -591,7 +674,9 @@ in_proj, 16,384 wide, over its 14,336-wide FFN). A stated null FFN width (GPT-Ne
 4 x hidden, and a per-layer list of expert widths (Hunyuan-A13B) its widest entry; both had
 raised. The harness measures the adapters and the scratch (`lora_adapter_gb`, `lora_scratch_gb`)
 and the gate holds the adapters to the floor `kv_truth` reads off transformers' modules: rank x
-adapters x 2 B over (in + out) of every `nn.Linear` of the decoder layers, routed experts left out.
+adapters x 2 B over (in + out) of every linear map of the decoder layers -- `nn.Linear`, and
+transformers' GPT-2 `Conv1D`, whose weight is stored (in, out) and whose decoder had a truth of 0
+before round 18 -- routed experts left out.
 
 The FRD-027 vLLM planner reserves the same slots in the weights whenever `lora.max_adapters` is
 set (`engine.vllm._lora_bytes`; the legacy `Lora` runtime module sets it for every record that
@@ -831,9 +916,10 @@ these, stated rather than hidden:
 * **The calculator's LoRA buffers** (`lora_adapter_gb`, round 16), on origin/main as here: a MoE
   layer's routed experts are counted as one FFN (vLLM 0.21 wraps `FusedMoE` too, per expert), a
   merged module's A buffer once (vLLM stacks one per slice), and an attention map at the hidden
-  width where the heads are wider (Gemma 3 27B: 0.768 GB against a 0.908 GB floor), and an FFN
-  whose config names no gated activation is counted with two maps (LFM2-2.6B: 0.156 GB against
-  0.196; origin/main 0.115). Every hybrid's figure now sits above origin/main's.
+  width where the heads are wider (Gemma 3 27B: 0.768 GB against a 0.908 GB floor). (An FFN whose
+  config names no gated activation had been counted with two maps -- LFM2-2.6B 0.156 GB against
+  0.196 -- until round 18, which reads the gating as the weight counters do: 0.205.) Every hybrid's
+  figure now sits above origin/main's.
 * **A neural codec or a speech encoder** (a TTS model's speech tokenizer, Mimi, w2v-BERT) states
   a stack's geometry but no token vocabulary: it is not a language model, which every reader
   sizes, and the corpus names it (`_not_language_models`) without measuring it. Read as one, the
