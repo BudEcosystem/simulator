@@ -68,6 +68,7 @@ def kda_params(config: Dict[str, Any], hidden: int) -> int:
         q_proj/k_proj/v_proj [4096, 2304]   o_proj [2304, 4096]
         q_conv1d/k_conv1d/v_conv1d [4096, 1, 4]
         f_a_proj/g_a_proj [128, 2304]       f_b_proj/g_b_proj [4096, 128]
+        b_proj [32, 2304]   (the per-head beta)
         A_log [1,1,32,1]  dt_bias [4096]    o_norm [128]
 
     The f/g gates are low-rank, factored through head_dim -- counting them dense
@@ -83,6 +84,7 @@ def kda_params(config: Dict[str, Any], hidden: int) -> int:
         4 * hidden * inner          # q, k, v, o
         + 3 * inner * k             # per-projection depthwise convs
         + 2 * (hidden * rank + rank * inner)  # f and g low-rank gates
+        + hidden * nh               # b_proj: the per-head beta (left out, 73,728 a layer short)
         + nh                        # A_log
         + inner                     # dt_bias
         + hd                        # o_norm

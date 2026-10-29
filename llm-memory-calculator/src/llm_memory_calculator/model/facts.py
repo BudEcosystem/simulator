@@ -37,7 +37,7 @@ from ..layer_plan import (
     layer_kinds,
     resolve_layer_plan,
 )
-from ..stack_params import adapter_params, encoder_params
+from ..stack_params import adapter_params, encoder_params, stack_params, tower_embedding_params, tower_view
 from ..state_memory import _per_layer_bytes  # noqa: PLC2701 - the one per-mechanism state formula
 from .classes import arch_class, size_bucket
 from .recognise import recognised as _recognised
@@ -135,6 +135,8 @@ class LayerCounts:
     sliding_window: Optional[int] = None
     mechanisms: Tuple[str, ...] = ()
     mla: bool = False
+    # each recurrent layer's mechanism, in layer order (the layer table's), for its weights
+    recurrent_mechanisms: Tuple[str, ...] = ()
 
     @property
     def total(self) -> int:
@@ -565,6 +567,7 @@ def _layer_counts(config: Mapping[str, Any], text: Mapping[str, Any], n_layers: 
             sliding_window=window,
             mechanisms=mechs,
             mla=mla,
+            recurrent_mechanisms=tuple(r for r in kinds["recurrent"] if r),
         )
     return LayerCounts(full=n_layers, sliding=0, recurrent=0, sliding_window=None, mla=mla)
 
@@ -607,16 +610,41 @@ def _gdn_params(text: Mapping[str, Any], h: int) -> Tuple[int, int, Tuple[int, i
     return large, small, (nk, nv, kd, vd)
 
 
+def _recurrent_params(mech: str, text: Mapping[str, Any], h: int) -> Tuple[int, int]:
+    """One recurrent layer's (projections, small parameters): its mechanism's one count
+    (``mixer_params``: Mamba-1, Mamba-2, Kimi Delta Attention, lightning attention, short
+    convolution, RWKV, mLSTM, RG-LRU), split for the weight roles -- a Mamba layer's in / out (and
+    Mamba-1's x / dt) projections are its large matrices, its convolution, decay and norm vectors
+    small; another mechanism's whole count is large. Every non-GDN layer had been counted with
+    one Mamba-2 formula whatever its mechanism: Kimi-Linear's 20 KDA layers left its facts
+    137,675,680 parameters below its checkpoint's 49,122,681,728."""
+    from ..mechanism_dims import mamba_dims
+    from ..mixer_params import _DISPATCH
+
+    if mech == "mamba2" or mech not in _DISPATCH:
+        return _mamba_params(text, h)
+    total = int(_DISPATCH[mech](dict(text), h))
+    if mech == "mamba1":
+        d = mamba_dims(dict(text), h)
+        large = (h * 2 * d["d_inner"] + d["d_inner"] * (d["dt_rank"] + 2 * d["d_state"])
+                 + d["dt_rank"] * d["d_inner"] + d["d_inner"] * h)
+        return large, total - large
+    return total, 0
+
+
 def _mamba_params(text: Mapping[str, Any], h: int) -> Tuple[int, int]:
-    expand = int(_get(text, "mamba_expand", "expand", default=2))
-    d_inner = int(_get(text, "mamba_d_inner", "intermediate_size_mamba", default=expand * h))
-    d_state = int(_get(text, "mamba_d_state", "state_size", "ssm_state_size", default=128))
-    groups = int(_get(text, "mamba_n_groups", "n_groups", default=1))
-    heads = int(_get(text, "mamba_num_heads", "mamba_n_heads", default=max(d_inner // 64, 1)))
-    in_proj = h * (2 * d_inner + 2 * groups * d_state + heads)
-    out_proj = d_inner * h
-    small = (d_inner + 2 * groups * d_state) * 4 + 3 * heads + d_inner
-    return in_proj + out_proj, small
+    """One Mamba-2 layer's (projections, small parameters), from the one count of its mixer
+    (``mixer_params.mamba2_params``: dims from ``mechanism_dims.mamba_dims``) -- its depthwise
+    convolution's bias and its stated kernel among the small ones. Counted here apart, with a
+    kernel of 4 and no conv bias, Mamba-Codestral's facts sat 393,216 parameters below
+    transformers' (64 layers x (10,240 bias - a 4,096 norm the formula had added))."""
+    from ..mechanism_dims import mamba_dims
+    from ..mixer_params import mamba2_params
+
+    d = mamba_dims(dict(text), h)
+    d_inner, groups, d_state, heads = d["d_inner"], d["n_groups"], d["d_state"], d["n_heads"]
+    large = h * (2 * d_inner + 2 * groups * d_state + heads) + d_inner * h
+    return large, int(mamba2_params(dict(text), h)) - large
 
 
 def _ffn_params(
@@ -714,6 +742,43 @@ def _vision_params(config: Mapping[str, Any]) -> int:
         merged = vh * merge * merge
         merger = merged * merged + merged + merged * out_h + out_h + 2 * vh
     return int(depth * block + channels * temporal * patch * patch * vh + vh + pos * vh + merger)
+
+
+#: An audio encoder beside a decoder-only language model, by the key its config sits under
+#: (transformers 5.12: Qwen2-Audio's, Voxtral's and Voxtral-Realtime's `audio_config`; a hub
+#: model's `audio_encoder_config`). Its blocks are read at their own geometry
+#: (``stack_params.tower_view``), as an encoder-decoder's encoder is.
+AUDIO_TOWER_KEYS = ("audio_config", "audio_encoder_config")
+#: The frames an audio projector concatenates into one language-model position, by spelling
+#: (Voxtral's `downsample_factor`, MOSS-Transcribe's `audio_merge_size`), or the projector's
+#: stated input width (`adaptor_input_dim`).
+_AUDIO_MERGE_KEYS = ("downsample_factor", "audio_merge_size")
+
+
+def _audio_tower_params(config: Mapping[str, Any]) -> int:
+    """The audio encoder a decoder-only language model holds beside it, and the projector to the
+    language model: its blocks (``stack_params``), its convolutional front end and frame
+    positions (``tower_embedding_params``), and the projector from the tower's width times the
+    frames it merges (else its stated input width) to the language model's, then the language
+    model's width to itself -- two matrices, as Voxtral's (`linear_1`, act, `linear_2`) and
+    MOSS-Transcribe's `vq_adaptor` build it; Qwen2-Audio's single projection is over-counted by
+    the second. No config states the projector's depth, and one matrix left MOSS-Transcribe 1.05M
+    below its checkpoint. 0 for a config with no such tower, or a tower that states no stack (a
+    discrete audio tokenizer)."""
+    total = 0
+    out_h = int(_get(_text(config), "hidden_size", "d_model", default=0) or 0)
+    for key in AUDIO_TOWER_KEYS:
+        view = tower_view(config.get(key))
+        blocks = stack_params(view)
+        if not blocks:
+            continue
+        total += blocks + tower_embedding_params(view)
+        if out_h:
+            vh = int(view["hidden_size"])
+            merge = int(_get(config, *_AUDIO_MERGE_KEYS, default=1) or 1)
+            proj_in = int(_get(config, "adaptor_input_dim", default=vh * merge) or vh * merge)
+            total += proj_in * out_h + out_h + out_h * out_h + out_h
+    return int(total)
 
 
 def _state_table(
@@ -814,10 +879,14 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     if layers.recurrent:
         if "gdn" in layers.mechanisms or "linear_num_value_heads" in text:
             large, small, gdn_dims = _gdn_params(text, h)
+            roles["attention"] += layers.recurrent * large
+            roles["mixer_small"] += layers.recurrent * small
         else:
-            large, small = _mamba_params(text, h)
-        roles["attention"] += layers.recurrent * large
-        roles["mixer_small"] += layers.recurrent * small
+            # every other recurrent layer by its own mechanism's count
+            for mech in layers.recurrent_mechanisms or ("mamba2",) * layers.recurrent:
+                large, small = _recurrent_params(mech, text, h)
+                roles["attention"] += large
+                roles["mixer_small"] += small
     sinks = str(text.get("model_type")) == "gpt_oss" or bool(text.get("attention_sinks"))
     if sinks:
         roles["mixer_small"] += n_attn_layers * nh
@@ -855,6 +924,10 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
     # the tower, and an adapter stack between it and the language model (BLIP-2's Q-Former and
     # its projection: stack_params.adapter_params)
     vision = _vision_params(config) + (adapter_params(whole) if isinstance(whole, dict) else 0)
+    # an audio encoder beside a decoder-only language model (an encoder-decoder's encoder is
+    # counted with its stacks, above)
+    if stacks is None:
+        vision += _audio_tower_params(config)
     native, qc = _native_format(config)
     native_rb = _native_role_bytes(native, qc, {**roles, **mtp_roles})
 

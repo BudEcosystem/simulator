@@ -29,15 +29,53 @@ class MemoryTierConfig:
     latency_ns: float = 0.0
 
 
-def estimate_weight_bytes(model_config, precision: str = "bf16", tensor_parallel: int = 1) -> int:
-    """Single-source model weight size in bytes (GQA-aware), sharded by tensor_parallel.
+def _precision_bytes(precision: str) -> int:
+    return 2 if precision in ("bf16", "fp16") else (1 if precision in ("int8", "fp8") else 4)
 
-    Mirrors ``ServingSimulator._estimate_weight_bytes`` so the cluster/disagg ``B_eff`` budget
-    (weights + KV share the device tier) uses the SAME weight figure as the simulator — no
-    second source of truth and no magic constant. Parameter count:
-      attn = (Q+O full-head) + (K+V kv-head) per layer; ffn = 3*hidden*intermediate per layer;
-      embed = vocab*hidden. Bytes/param from precision (bf16/fp16=2, int8/fp8=1, else 4).
+
+def model_parameter_count(model_config) -> int:
+    """The parameters a serving device holds for ``model_config``.
+
+    A ModelConfig read from a model config (the HF loader's, BudSimulator's converter's) carries
+    it (``source_config``), and its parameters are the FRD-027 facts' count of it -- every stack
+    (an encoder-decoder's encoder and cross-attention), every tower and adapter beside the
+    language model, every routed expert -- the count the vLLM planner reserves before it sizes the
+    KV. A ModelConfig built by hand (GenZ's built-in dictionary), or one the facts cannot read, is
+    counted from its own fields (``_decoder_parameter_count``).
+
+    The decoder fields alone are not the model: an encoder-decoder's ModelConfig holds its
+    DECODER's depth and width, a multimodal model's its language model's, so counting them
+    charged Whisper large-v3 1.81 GB of its 3.09 GB and Qwen3.5-4B 7.48 GB of 9.08, and the
+    cluster admitted more requests than the device holds.
     """
+    source = getattr(model_config, "source_config", None)
+    if isinstance(source, dict):
+        try:
+            from llm_memory_calculator.model.facts import ModelFacts
+
+            facts = ModelFacts.from_config(source)
+            params = int(facts.params_total + facts.vision_params)
+            if params > 0:
+                return params
+        except Exception:  # noqa: BLE001 - a config the facts cannot read is counted below
+            pass
+    return _decoder_parameter_count(model_config)
+
+
+def _decoder_parameter_count(model_config) -> int:
+    """A ModelConfig's parameters from its own fields, for one with no config to count (GenZ's
+    built-in dictionary, a hand-built one): per attention layer Q / O at the heads and K / V at
+    the KV heads; per Mamba layer (``layer_type``: "Mamba") its mixer (``mixer_params.mamba1_params``
+    over the ``mamba_*`` fields: in / out projections, convolution, x / dt projections, A and D);
+    a gated FFN on every layer of a stack that has attention layers -- on the layers it places
+    experts ("MoE"), every routed expert at ``moe_intermediate_size``, its shared experts and the
+    router -- and none in a stack of Mamba layers alone; the token embedding and an LM head (a
+    ModelConfig states no tying: an upper bound for a tied model) and two norms a layer. An object
+    with the decoder fields alone (no layer placement) is a dense attention stack.
+
+    Counted as attention layers, GenZ's built-in Mamba models weighed the wrong mixer (Falcon-Mamba
+    7B: 4.5B parameters, where its checkpoint holds 7.27B), and an MoE layer one expert (Mixtral
+    8x7B: 7.1B of 46.7B)."""
     hidden = getattr(model_config, "hidden_size", 4096)
     layers = getattr(model_config, "num_decoder_layers", 32)
     intermediate = getattr(model_config, "intermediate_size", 11008)
@@ -48,18 +86,60 @@ def estimate_weight_bytes(model_config, precision: str = "bf16", tensor_parallel
         head_dim = hidden // n_heads
     num_kv_heads = getattr(model_config, "num_key_value_heads", n_heads)
 
+    layer_type = getattr(model_config, "layer_type", None)
+    placed = isinstance(layer_type, list) and bool(layer_type)
+    reps = layers / len(layer_type) if placed else 0
+
+    def count(test):
+        return int(round(sum(reps for lt in layer_type if test(lt)))) if placed else 0
+
+    mamba_layers = count(lambda lt: lt[0] == "Mamba") if getattr(model_config, "is_mamba", False) else 0
+    attn_layers = layers - mamba_layers
     attn_params = (
         2 * hidden * n_heads * head_dim +        # Q and O projections (full heads)
         2 * hidden * num_kv_heads * head_dim     # K and V projections (kv heads)
-    ) * layers
-    ffn_params = 3 * hidden * intermediate * layers
-    embed_params = vocab * hidden
-    total_params = attn_params + ffn_params + embed_params
+    ) * attn_layers
+    mixer_params = 0
+    if mamba_layers:
+        from llm_memory_calculator.mixer_params import mamba1_params
 
-    precision_bytes = 2 if precision in ("bf16", "fp16") else (
-        1 if precision in ("int8", "fp8") else 4
-    )
-    return total_params * precision_bytes // max(tensor_parallel, 1)
+        dims = {"expand": getattr(model_config, "mamba_expand", 2) or 2,
+                "state_size": getattr(model_config, "mamba_d_state", 16) or 16,
+                "conv_kernel": getattr(model_config, "mamba_d_conv", 4) or 4,
+                "time_step_rank": getattr(model_config, "mamba_dt_rank", None)}
+        mixer_params = mamba1_params(dims, hidden) * mamba_layers
+    experts = int(getattr(model_config, "num_experts", 1) or 1)
+    moe_layers = count(lambda lt: len(lt) > 1 and lt[1] == "MoE") if experts > 1 else 0
+    ffn_layers = layers if attn_layers else 0
+    dense_ffn = 3 * hidden * intermediate
+    moe_ffn = 0
+    if moe_layers and ffn_layers:
+        expert_width = getattr(model_config, "moe_intermediate_size", None) or intermediate
+        shared = int(getattr(model_config, "n_shared_experts", 0) or 0)
+        shared_width = getattr(model_config, "shared_expert_intermediate_size", None) or intermediate
+        moe_ffn = (experts * 3 * hidden * expert_width + shared * 3 * hidden * shared_width
+                   + hidden * experts)  # the router
+    else:
+        moe_layers = 0
+    ffn_params = dense_ffn * (ffn_layers - moe_layers) + moe_ffn * moe_layers
+    if not placed:
+        # the decoder fields alone: the formula callers built on (one embedding, no head, no norms)
+        return int(attn_params + ffn_params + vocab * hidden)
+    embed_params = 2 * vocab * hidden
+    norms = (2 * layers + 1) * hidden
+    return int(attn_params + mixer_params + ffn_params + embed_params + norms)
+
+
+def estimate_weight_bytes(model_config, precision: str = "bf16", tensor_parallel: int = 1) -> int:
+    """The model's weight bytes on one device: ``model_parameter_count`` at the serving precision
+    (bf16 / fp16 2 B, int8 / fp8 1 B, else 4 B), sharded by ``tensor_parallel``.
+
+    The one figure for the weights a serving simulation loads into the device tier
+    (``ServingSimulator._estimate_weight_bytes``) and that the cluster and disaggregation ``B_eff``
+    take off the device before they size the KV.
+    """
+    total_params = model_parameter_count(model_config)
+    return total_params * _precision_bytes(precision) // max(tensor_parallel, 1)
 
 
 class MemoryModel:

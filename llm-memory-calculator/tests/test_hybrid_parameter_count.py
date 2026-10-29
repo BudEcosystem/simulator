@@ -99,6 +99,7 @@ def test_kda_gates_are_low_rank_not_dense():
         4 * hidden * inner            # q, k, v, o [4096, 2304] x3 + [2304, 4096]
         + 3 * inner * k               # q/k/v_conv1d [4096, 1, 4]
         + 2 * (hidden * hd + hd * inner)  # f_a/f_b and g_a/g_b
+        + hidden * nh                 # b_proj [32, 2304], the per-head beta (the checkpoint's)
         + nh + inner + hd             # A_log, dt_bias [4096], o_norm [128]
     )
     assert kda_params(c, hidden) == expected

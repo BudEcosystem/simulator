@@ -1,5 +1,15 @@
 [
  {
+  "config": ".",
+  "reader": "^(serving_weight_bytes|conv_serving_weight_bytes)$",
+  "cause": "the serving path's weights are the model's own parameter count -- the FRD-027 facts' count of the config the GenZ model was read from (an encoder-decoder's encoder and cross-attention, vision and audio towers, adapters, every expert) -- where origin/main counted the GenZ ModelConfig's decoder fields (a generic 7B default where its loader or converter could not read the config); the ground truth is the whole model"
+ },
+ {
+  "config": ".",
+  "reader": "^(cluster|disagg)_b_eff_\\d+$",
+  "cause": "B_eff = (device - weights) // (KV a token x context + a request's fixed bytes): the concurrency follows the weights, KV and fixed bytes it is sized from, each held to its ground truth (origin/main's weights were a generic 7B default, or the decoder fields alone)"
+ },
+ {
   "config": "deepseek|DeepSeek|v2-lite-mla",
   "reader": "kv|bytes_per_token|disagg|runtime_\\w+\\[2\\]",
   "cause": "MLA caches one latent per token per layer (kv_lora_rank + qk_rope_head_dim = 576), not per-head K and V; origin/main charged 128 heads' K and V"

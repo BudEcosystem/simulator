@@ -166,3 +166,49 @@ def test_a_layer_the_class_builds_as_a_mixer_where_the_cache_expects_attention_h
     assert prof["kv"][1][2] is None
     assert prof["kv"][3][2] == 2 * 8 * 32
     assert kv_truth.kv_elements(prof) is None
+
+
+#: Every layer windowed (Voxtral-Mini-4B-Realtime's 26 layers of 2 x 8 x 128 at a window of
+#: 8,192; LFM2.5-Audio's detokenizer, 3 layers of 512 at 30): a token adds K + V on every layer
+#: until its window fills.
+ALL_WINDOWED = {"kv": [["sliding", 8192, 2048, 26]], "params": 1}
+
+
+@pytest.mark.parametrize("reader,expected", [
+    # a rate with no stated context: what a token adds while it is inside every window
+    ("conv_kv_size", 26 * 2048),
+    ("genz_kv_size", 26 * 2048),
+    ("serving_bytes_per_token", 2 * 26 * 2048),
+    ("prefix_kv_bytes_per_token", 2 * 26 * 2048),
+    ("facts_kv_bytes_per_token", 2 * 26 * 2048),
+    # the KV planner's marginal rate at a stated length: the 4,096th token is inside the window,
+    # the 32,768th adds nothing
+    ("kvgeo_4096[0]", 2 * 26 * 2048),
+    ("kvgeo_32768[0]", 0),
+])
+def test_a_per_token_truth_counts_the_windowed_layers_a_token_fills(reader, expected):
+    """Counting the full-attention layers alone, a stack whose every layer is windowed had a
+    per-token truth of 0, which accepts any figure (round 13: Voxtral-Realtime's and the
+    LFM2.5-Audio detokenizers' entries had no teeth)."""
+    truth, _ = kv_truth.figure_truth(ALL_WINDOWED, reader)
+    assert truth == expected
+
+
+def test_a_per_token_truth_of_a_mixed_stack_counts_every_attending_layer():
+    prof = {"kv": [["full", None, 1024, 10], ["sliding", 1024, 1024, 50], ["none", None, 0, 2]]}
+    assert kv_truth.figure_truth(prof, "genz_kv_size")[0] == 60 * 1024
+    assert kv_truth.figure_truth(prof, "kvgeo_4096[0]")[0] == 2 * 10 * 1024
+    assert kv_truth.figure_truth(prof, "kvgeo_1024[0]")[0] == 2 * 60 * 1024
+
+
+@pytest.mark.parametrize("reader", ["serving_weight_bytes", "conv_serving_weight_bytes"])
+def test_the_serving_weights_are_held_to_the_whole_model(reader):
+    truth, source = kv_truth.figure_truth({"params": 1000, "lm_matrix_params": 600}, reader)
+    assert truth == 2 * 1000 and "weights" in source
+
+
+def test_the_serving_concurrency_is_held_by_its_memory_figures():
+    for reader in ("cluster_b_eff_4096", "disagg_b_eff_4096"):
+        assert kv_corpus.figure_kind(reader) == "capacity"
+        assert set(kv_truth._held_by(reader)) == {
+            "serving_weight_bytes", "serving_bytes_per_token", "serving_state_bytes"}

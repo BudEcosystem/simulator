@@ -68,7 +68,9 @@ falcon_mamba_7b_config = ModelConfig(model='tiiuae/falcon-mamba-7b',
     hidden_size=4096, num_attention_heads=1,
     num_key_value_heads=1, num_ffi = 0,
     intermediate_size=0, num_decoder_layers=64,
-    max_model_len=131072, vocab_size=50280, hidden_act="silu",
+    # the hub config's vocabulary (65,024: the checkpoint's embedding and its untied head are
+    # 65,024 x 4,096; 50,280 is state-spaces/mamba's)
+    max_model_len=131072, vocab_size=65024, hidden_act="silu",
     mamba_d_state = 16, mamba_dt_rank = 256, mamba_expand = 2, mamba_d_conv=4,
     model_quality=QualityMetricsCollection([MMLU(accuracy=62.03), Hellaswag(accuracy=80.82), IFEval(accuracy=33.36, shots=0), GPQA(accuracy=8.05, shots=0), GSM8K(accuracy=52.54)]),
 )

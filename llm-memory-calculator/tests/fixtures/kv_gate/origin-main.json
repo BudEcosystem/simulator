@@ -1,17 +1,20 @@
 {
-"about": "origin/main (c17ef891) measured by scripts/kv_corpus.py over the committed corpus: prepopulated.db's rows with a config, every fixture under tests/fixtures (the GGUF reader on tests/fixtures/gguf's metadata-only GGUFs), the built-in synthetic shapes and GenZ's built-in models. The baseline tests/test_kv_gate.py holds the branch's figures against.",
+"about": "origin/main (c17ef891) measured by scripts/kv_corpus.py over the committed corpus: prepopulated.db's rows with a config, every fixture under tests/fixtures (the GGUF reader on tests/fixtures/gguf's metadata-only GGUFs), the built-in synthetic shapes and GenZ's built-in models. The baseline tests/test_kv_gate.py holds the branch's figures against. Round 14 added, measured with the same harness on the same tree, the serving path's weights and the concurrency they leave: `serving_weight_bytes` (a ServingSimulator's weight load), `cluster_b_eff_4096` / `disagg_b_eff_4096` and the converter's `conv_serving_weight_bytes`.",
 "origin_main": "c17ef891da9300a2b80630a5a0671025d768728c",
 "rows": [
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 409600,
 "conv_layers": [
 0,
 40
 ],
 "conv_prefill_weights_mb": 43070.0,
+"conv_serving_weight_bytes": 43605032960,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 524288000,
 "eng_None_32768_kv_mb": 26843.5456,
 "eng_None_32768_params": 16972032000,
@@ -101,6 +104,7 @@ null
 "serving_bytes_per_token": 819200,
 "serving_requests_8gib_1k": 10,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 43605032960,
 "sim_max_running": 33,
 "slice_mib_16x4352": [
 81582,
@@ -121,14 +125,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 104,
 "conv_kv_size": 49152,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 1181.5,
+"conv_serving_weight_bytes": 927727616,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 104,
 "disagg_transfer_bytes_640": 62914560,
 "eng_None_32768_kv_mb": 3221.225472,
 "eng_None_32768_params": 463964160,
@@ -218,6 +225,7 @@ null
 "serving_bytes_per_token": 98304,
 "serving_requests_8gib_1k": 85,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 927727616,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 13056,
@@ -238,13 +246,16 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 163840,
 "conv_layers": [
 0,
 80
 ],
 "conv_prefill_weights_mb": 212112.0,
+"conv_serving_weight_bytes": 219924135936,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 209715200,
 "eng_None_32768_kv_mb": 10737.41824,
 "eng_None_32768_params": 111210414080,
@@ -322,6 +333,7 @@ null
 "serving_bytes_per_token": 327680,
 "serving_requests_8gib_1k": 25,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 219924135936,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -342,14 +354,17 @@ false
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 4,
 "conv_kv_size": 409600,
 "conv_layers": [
 0,
 40
 ],
 "conv_prefill_weights_mb": 27020.0,
+"conv_serving_weight_bytes": 26775388160,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 4,
 "disagg_transfer_bytes_640": 524288000,
 "eng_None_32768_kv_mb": 26843.5456,
 "eng_None_32768_params": 14167091200,
@@ -439,6 +454,7 @@ null
 "serving_bytes_per_token": 819200,
 "serving_requests_8gib_1k": 10,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 26775388160,
 "sim_max_running": 54,
 "slice_mib_16x4352": [
 81582,
@@ -459,14 +475,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 49,
 "conv_kv_size": 98304,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 3503.0,
+"conv_serving_weight_bytes": 3050831872,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 49,
 "disagg_transfer_bytes_640": 125829120,
 "eng_None_32768_kv_mb": 6442.450944,
 "eng_None_32768_params": 1836781568,
@@ -556,6 +575,7 @@ null
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 3050831872,
 "sim_max_running": 344,
 "slice_mib_16x4352": [
 23808,
@@ -576,14 +596,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 0,
 64
 ],
 "conv_prefill_weights_mb": 62010.0,
+"conv_serving_weight_bytes": 63465062400,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
 "eng_None_32768_kv_mb": 8589.934592,
 "eng_None_32768_params": 32512419840,
@@ -673,6 +696,7 @@ null
 "serving_bytes_per_token": 262144,
 "serving_requests_8gib_1k": 32,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 63465062400,
 "sim_max_running": 36,
 "slice_mib_16x4352": [
 81582,
@@ -693,14 +717,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 21,
 "conv_kv_size": 204800,
 "conv_layers": [
 0,
 40
 ],
 "conv_prefill_weights_mb": 7533.75,
+"conv_serving_weight_bytes": 7121797120,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 21,
 "disagg_transfer_bytes_640": 262144000,
 "eng_None_32768_kv_mb": 13421.7728,
 "eng_None_32768_params": 3950269440,
@@ -790,6 +817,7 @@ null
 "serving_bytes_per_token": 409600,
 "serving_requests_8gib_1k": 20,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 7121797120,
 "sim_max_running": 157,
 "slice_mib_16x4352": [
 45056,
@@ -810,14 +838,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 1310720,
 "conv_layers": [
 0,
 80
 ],
 "conv_prefill_weights_mb": 137872.0,
+"conv_serving_weight_bytes": 142077853696,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1677721600,
 "eng_None_32768_kv_mb": 85899.34592,
 "eng_None_32768_params": 72287272960,
@@ -907,6 +938,7 @@ null
 "serving_bytes_per_token": 2621440,
 "serving_requests_8gib_1k": 3,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 142077853696,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -927,14 +959,17 @@ false
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 14726.0,
+"conv_serving_weight_bytes": 14196670464,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 17179.869184,
 "eng_None_32768_params": 7721197568,
@@ -1024,6 +1059,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 14196670464,
 "sim_max_running": 109,
 "slice_mib_16x4352": [
 62208,
@@ -1044,14 +1080,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 49,
 "conv_kv_size": 98304,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 25720.625,
+"conv_serving_weight_bytes": 3088580608,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 49,
 "disagg_transfer_bytes_640": 125829120,
 "eng_None_32768_kv_mb": 6442.450944,
 "eng_None_32768_params": 13796380672,
@@ -1141,6 +1180,7 @@ null
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 3088580608,
 "sim_max_running": 228,
 "slice_mib_16x4352": [
 49408,
@@ -1161,14 +1201,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 1310720,
 "conv_layers": [
 0,
 80
 ],
 "conv_prefill_weights_mb": 230032.0,
+"conv_serving_weight_bytes": 238714617856,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1677721600,
 "eng_None_32768_kv_mb": 85899.34592,
 "eng_None_32768_params": 88393400320,
@@ -1258,6 +1301,7 @@ null
 "serving_bytes_per_token": 2621440,
 "serving_requests_8gib_1k": 3,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 238714617856,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -1278,14 +1322,17 @@ false
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 9,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 22982.0,
+"conv_serving_weight_bytes": 22853713920,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 9,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 17179.869184,
 "eng_None_32768_params": 9164038144,
@@ -1375,6 +1422,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 22853713920,
 "sim_max_running": 91,
 "slice_mib_16x4352": [
 73216,
@@ -1395,14 +1443,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 47,
 "conv_kv_size": 98304,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 5051.0,
+"conv_serving_weight_bytes": 4674027520,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 47,
 "disagg_transfer_bytes_640": 125829120,
 "eng_None_32768_kv_mb": 6442.450944,
 "eng_None_32768_params": 2107314176,
@@ -1492,6 +1543,7 @@ null
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 4674027520,
 "sim_max_running": 333,
 "slice_mib_16x4352": [
 26880,
@@ -1512,14 +1564,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 833,
 "conv_kv_size": 6144,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 1201.8125,
+"conv_serving_weight_bytes": 987922432,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 833,
 "disagg_transfer_bytes_640": 7864320,
 "eng_None_32768_kv_mb": 402.653184,
 "eng_None_32768_params": 494049024,
@@ -1609,6 +1664,7 @@ null
 "serving_bytes_per_token": 12288,
 "serving_requests_8gib_1k": 682,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 987922432,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 6144,
@@ -1629,14 +1685,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 18,
 "conv_kv_size": 98304,
 "conv_layers": [
 0,
 48
 ],
 "conv_prefill_weights_mb": 28170.0,
+"conv_serving_weight_bytes": 27981250560,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 18,
 "disagg_transfer_bytes_640": 125829120,
 "eng_None_32768_kv_mb": 6442.450944,
 "eng_None_32768_params": 14770186240,
@@ -1726,6 +1785,7 @@ null
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 27981250560,
 "sim_max_running": 220,
 "slice_mib_16x4352": [
 50688,
@@ -1746,14 +1806,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 339,
 "conv_kv_size": 14336,
 "conv_layers": [
 0,
 28
 ],
 "conv_prefill_weights_mb": 3389.25,
+"conv_serving_weight_bytes": 3087138816,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 339,
 "disagg_transfer_bytes_640": 18350080,
 "eng_None_32768_kv_mb": 939.524096,
 "eng_None_32768_params": 1543744512,
@@ -1843,6 +1906,7 @@ null
 "serving_bytes_per_token": 28672,
 "serving_requests_8gib_1k": 292,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 3087138816,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 9728,
@@ -1863,14 +1927,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 0,
 64
 ],
 "conv_prefill_weights_mb": 62490.0,
+"conv_serving_weight_bytes": 63968378880,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
 "eng_None_32768_kv_mb": 8589.934592,
 "eng_None_32768_params": 32764078080,
@@ -1960,6 +2027,7 @@ null
 "serving_bytes_per_token": 262144,
 "serving_requests_8gib_1k": 32,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 63968378880,
 "sim_max_running": 34,
 "slice_mib_16x4352": [
 81582,
@@ -1980,14 +2048,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 243,
 "conv_kv_size": 18432,
 "conv_layers": [
 0,
 36
 ],
 "conv_prefill_weights_mb": 6479.0,
+"conv_serving_weight_bytes": 6171394048,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 243,
 "disagg_transfer_bytes_640": 23592960,
 "eng_None_32768_kv_mb": 1207.959552,
 "eng_None_32768_params": 3085996032,
@@ -2077,6 +2148,7 @@ null
 "serving_bytes_per_token": 36864,
 "serving_requests_8gib_1k": 227,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 6171394048,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 13568,
@@ -2097,14 +2169,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 163840,
 "conv_layers": [
 0,
 80
 ],
 "conv_prefill_weights_mb": 138672.0,
+"conv_serving_weight_bytes": 142916714496,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 209715200,
 "eng_None_32768_kv_mb": 10737.41824,
 "eng_None_32768_params": 72706703360,
@@ -2194,6 +2269,7 @@ null
 "serving_bytes_per_token": 327680,
 "serving_requests_8gib_1k": 25,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 142916714496,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -2214,14 +2290,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 122,
 "conv_kv_size": 28672,
 "conv_layers": [
 0,
 28
 ],
 "conv_prefill_weights_mb": 14525.0,
+"conv_serving_weight_bytes": 14140571648,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 122,
 "disagg_transfer_bytes_640": 36700160,
 "eng_None_32768_kv_mb": 1879.048192,
 "eng_None_32768_params": 7615691776,
@@ -2311,6 +2390,7 @@ null
 "serving_bytes_per_token": 57344,
 "serving_requests_8gib_1k": 146,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 14140571648,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 24576,
@@ -2331,14 +2411,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 103,
 "conv_kv_size": 49152,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 1744.570312,
+"conv_serving_weight_bytes": 1317310464,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 103,
 "disagg_transfer_bytes_640": 62914560,
 "eng_None_32768_kv_mb": 3221.225472,
 "eng_None_32768_params": 558618624,
@@ -2428,6 +2511,7 @@ null
 "serving_bytes_per_token": 98304,
 "serving_requests_8gib_1k": 85,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 1317310464,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 15360,
@@ -2448,13 +2532,16 @@ true
 },
 {
 "attention_type": "mla",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 874496,
 "conv_layers": [
 0,
 61
 ],
 "conv_prefill_weights_mb": 73563.0,
+"conv_serving_weight_bytes": 75283038208,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1119354880,
 "eng_None_32768_kv_mb": 2302.672896,
 "eng_None_32768_params": 667980916736,
@@ -2532,6 +2619,7 @@ null
 "serving_bytes_per_token": 1748992,
 "serving_requests_8gib_1k": 4,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 75283038208,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -2552,14 +2640,17 @@ false
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 40,
 "conv_kv_size": 114688,
 "conv_layers": [
 0,
 28
 ],
 "conv_prefill_weights_mb": 5287.0,
+"conv_serving_weight_bytes": 5124390912,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 40,
 "disagg_transfer_bytes_640": 146800640,
 "eng_None_32768_kv_mb": 7516.192768,
 "eng_None_32768_params": 16375844864,
@@ -2649,6 +2740,7 @@ null
 "serving_bytes_per_token": 229376,
 "serving_requests_8gib_1k": 36,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 5124390912,
 "sim_max_running": 175,
 "slice_mib_16x4352": [
 58112,
@@ -2669,14 +2761,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 8,
 "conv_kv_size": 290816,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 21291.125,
+"conv_serving_weight_bytes": 21734424576,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 8,
 "disagg_transfer_bytes_640": 372244480,
 "eng_None_32768_kv_mb": 19058.917376,
 "eng_None_32768_params": 8224867200,
@@ -2766,6 +2861,7 @@ null
 "serving_bytes_per_token": 581632,
 "serving_requests_8gib_1k": 14,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 21734424576,
 "sim_max_running": 87,
 "slice_mib_16x4352": [
 73984,
@@ -2786,14 +2882,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 4,
 "conv_kv_size": 524288,
 "conv_layers": [
 0,
 64
 ],
 "conv_prefill_weights_mb": 115960.0,
+"conv_serving_weight_bytes": 22007513088,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 4,
 "disagg_transfer_bytes_640": 671088640,
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 54451511296,
@@ -2883,6 +2982,7 @@ null
 "serving_bytes_per_token": 1048576,
 "serving_requests_8gib_1k": 8,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 22007513088,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -2903,14 +3003,17 @@ false
 },
 {
 "attention_type": "mqa",
+"cluster_b_eff_4096": 283,
 "conv_kv_size": 10240,
 "conv_layers": [
 0,
 40
 ],
 "conv_prefill_weights_mb": 18500.0,
+"conv_serving_weight_bytes": 19136512000,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 283,
 "disagg_transfer_bytes_640": 13107200,
 "eng_None_32768_kv_mb": 671.08864,
 "eng_None_32768_params": 7015636992,
@@ -3000,6 +3103,7 @@ null
 "serving_bytes_per_token": 20480,
 "serving_requests_8gib_1k": 409,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 19136512000,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 25856,
@@ -3020,14 +3124,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 282,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 282,
 "disagg_transfer_bytes_640": 23592960,
 "eng_None_32768_kv_mb": 1207.959552,
 "eng_None_32768_params": 123532032,
@@ -3117,6 +3224,7 @@ null
 "serving_bytes_per_token": 36864,
 "serving_requests_8gib_1k": 227,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 273377280,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 8960,
@@ -3137,13 +3245,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "TypeError: 'NoneType' object is not iterable",
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 1720216064,
@@ -3210,6 +3321,7 @@ null
 "runtime_decode_error": "TypeError: 'NoneType' object is not iterable",
 "runtime_prefill_error": "TypeError: 'NoneType' object is not iterable",
 "serving_error": "TypeError: 'NoneType' object is not iterable",
+"serving_weight_bytes_error": "TypeError: 'NoneType' object is not iterable",
 "sim_max_running": 322,
 "slice_mib_16x4352": [
 29952,
@@ -3230,14 +3342,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 104,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 104,
 "disagg_transfer_bytes_640": 62914560,
 "eng_None_32768_kv_mb": 701.80864,
 "eng_None_32768_params": 808394240,
@@ -3327,6 +3442,7 @@ null
 "serving_bytes_per_token": 98304,
 "serving_requests_8gib_1k": 85,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 809500672,
 "sim_max_running": 72,
 "slice_mib_16x4352": [
 81582,
@@ -3347,13 +3463,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo",
 "eng_None_32768_kv_mb": 701.80864,
 "eng_None_32768_params": 874782720,
@@ -3420,6 +3539,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo",
 "sim_max_running": 72,
 "slice_mib_16x4352": [
 81582,
@@ -3440,13 +3560,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'initializer_factor', 'initializer_range', 'i",
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 123532032,
@@ -3513,6 +3636,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'initializer_factor', 'initializer_range', 'i",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'initializer_factor', 'initializer_range', 'i",
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 8960,
@@ -3533,13 +3657,16 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "TypeError: 'NoneType' object is not iterable",
 "eng_None_32768_kv_mb": 5368.70912,
 "eng_None_32768_params": 123532032,
@@ -3606,6 +3733,7 @@ null
 "runtime_decode_error": "TypeError: 'NoneType' object is not iterable",
 "runtime_prefill_error": "TypeError: 'NoneType' object is not iterable",
 "serving_error": "TypeError: 'NoneType' object is not iterable",
+"serving_weight_bytes_error": "TypeError: 'NoneType' object is not iterable",
 "sim_max_running": 315,
 "slice_mib_16x4352": [
 38912,
@@ -3626,13 +3754,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo",
 "eng_None_32768_kv_mb": 701.80864,
 "eng_None_32768_params": 874782720,
@@ -3699,6 +3830,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo",
 "sim_max_running": 72,
 "slice_mib_16x4352": [
 81582,
@@ -3719,13 +3851,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token_id', 'dtype', 'eos_token_id', 'id2label",
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 123532032,
@@ -3792,6 +3927,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token_id', 'dtype', 'eos_token_id', 'id2label",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token_id', 'dtype', 'eos_token_id', 'id2label",
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 9216,
@@ -3812,13 +3948,16 @@ true
 },
 {
 "attention_type": "mla",
+"cluster_b_eff_4096": 41,
 "conv_kv_size": 110592,
 "conv_layers": [
 0,
 27
 ],
 "conv_prefill_weights_mb": 5126.75,
+"conv_serving_weight_bytes": 4956356608,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 41,
 "disagg_transfer_bytes_640": 141557760,
 "eng_None_32768_kv_mb": 1019.215872,
 "eng_None_32768_params": 15725195264,
@@ -3898,6 +4037,7 @@ null
 "serving_bytes_per_token": 221184,
 "serving_requests_8gib_1k": 37,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 4956356608,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 40448,
@@ -3918,13 +4058,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 98304,
 "conv_layers": [
 12,
 12
 ],
 "conv_prefill_weights_mb": 5417.390625,
+"conv_serving_weight_bytes": 5268774912,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'attention_dropout', 'bos_token_id', 'chun",
 "eng_None_32768_kv_mb": 1758.068736,
 "eng_None_32768_params": 409981952,
@@ -3991,6 +4134,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'attention_dropout', 'bos_token_id', 'chun",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'attention_dropout', 'bos_token_id', 'chun",
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 10240,
@@ -4011,14 +4155,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 269,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 269,
 "disagg_transfer_bytes_640": 23592960,
 "eng_None_32768_kv_mb": 701.80864,
 "eng_None_32768_params": 808394240,
@@ -4108,6 +4255,7 @@ null
 "serving_bytes_per_token": 36864,
 "serving_requests_8gib_1k": 227,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 2193637376,
 "sim_max_running": 72,
 "slice_mib_16x4352": [
 81582,
@@ -4128,14 +4276,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 317,
 "conv_kv_size": 8192,
 "conv_layers": [
 4,
 4
 ],
 "conv_prefill_weights_mb": 192.0,
+"conv_serving_weight_bytes": 167772160,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 317,
 "disagg_transfer_bytes_640": 20971520,
 "eng_None_32768_kv_mb": 1122.893824,
 "eng_None_32768_params": 576643072,
@@ -4225,6 +4376,7 @@ null
 "serving_bytes_per_token": 32768,
 "serving_requests_8gib_1k": 256,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 301989888,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 8704,
@@ -4245,14 +4397,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 786,
 "conv_kv_size": 3328,
 "conv_layers": [
 4,
 4
 ],
 "conv_prefill_weights_mb": 73.125,
+"conv_serving_weight_bytes": 49414144,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 786,
 "disagg_transfer_bytes_640": 8519680,
 "eng_None_32768_kv_mb": 456.175616,
 "eng_None_32768_params": 103577344,
@@ -4342,6 +4497,7 @@ null
 "serving_bytes_per_token": 13312,
 "serving_requests_8gib_1k": 630,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 71565312,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 6656,
@@ -4362,13 +4518,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 32768,
 "conv_layers": [
 32,
 4
 ],
 "conv_prefill_weights_mb": 2354.40625,
+"conv_serving_weight_bytes": 2043887616,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout',",
 "eng_None_32768_kv_mb": 947.56864,
 "eng_None_32768_params": 808394240,
@@ -4435,6 +4594,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout',",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout',",
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 22272,
@@ -4455,13 +4615,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6678.0,
+"conv_serving_weight_bytes": 6739197952,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout', 'd_ff', 'd_kv', 'd_model', 'dense_act_",
 "eng_None_32768_kv_mb": 1118.69952,
 "eng_None_32768_params": 1911775232,
@@ -4528,6 +4691,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout', 'd_ff', 'd_kv', 'd_model', 'dense_act_",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout', 'd_ff', 'd_kv', 'd_model', 'dense_act_",
 "sim_max_running": 331,
 "slice_mib_16x4352": [
 27904,
@@ -4548,13 +4712,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 0,
 32
 ],
+"conv_serving_weight_bytes_error": "TypeError: unsupported operand type(s) for *: 'int' and 'NoneType'",
 "conv_state_bytes": 0,
 "conv_weights_error": "TypeError: unsupported operand type(s) for /: 'NoneType' and 'int'",
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', 'attention_types', 'bos_token_id', 'embe",
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 706906112,
@@ -4621,6 +4788,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', ",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', ",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', 'attention_types', 'bos_token_id', 'embe",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', 'attention_types', 'bos_token_id', 'embe",
 "sim_max_running": 342,
 "slice_mib_16x4352": [
 25088,
@@ -4641,14 +4809,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 151,
 "conv_kv_size": 30720,
 "conv_layers": [
 0,
 30
 ],
 "conv_prefill_weights_mb": 4892.0,
+"conv_serving_weight_bytes": 4861198336,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 151,
 "disagg_transfer_bytes_640": 39321600,
 "eng_None_32768_kv_mb": 536.870912,
 "eng_None_32768_params": 2569396224,
@@ -4738,6 +4909,7 @@ null
 "serving_bytes_per_token": 61440,
 "serving_requests_8gib_1k": 136,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 4861198336,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 12288,
@@ -4758,13 +4930,16 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 33,
 "conv_kv_size": 126976,
 "conv_layers": [
 0,
 62
 ],
 "conv_prefill_weights_mb": 436189.5,
+"conv_serving_weight_bytes": 8445493248,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 33,
 "disagg_transfer_bytes_640": 162529280,
 "eng_None_32768_kv_mb": 8321.499136,
 "eng_None_32768_params": 229304285184,
@@ -4842,6 +5017,7 @@ null
 "serving_bytes_per_token": 253952,
 "serving_requests_8gib_1k": 33,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 8445493248,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -4862,13 +5038,16 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 163840,
 "conv_layers": [
 0,
 80
 ],
 "conv_prefill_weights_mb": 851439.0,
+"conv_serving_weight_bytes": 47756869632,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 209715200,
 "eng_None_32768_kv_mb": 1342.17728,
 "eng_None_32768_params": 457319264256,
@@ -4946,6 +5125,7 @@ null
 "serving_bytes_per_token": 327680,
 "serving_requests_8gib_1k": 25,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 47756869632,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -4966,14 +5146,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 71,
 "conv_kv_size": 53248,
 "conv_layers": [
 0,
 52
 ],
 "conv_prefill_weights_mb": 11948.75,
+"conv_serving_weight_bytes": 11751260160,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 71,
 "disagg_transfer_bytes_640": 68157440,
 "eng_None_32768_kv_mb": 3489.660928,
 "eng_None_32768_params": 21506831360,
@@ -5063,6 +5246,7 @@ null
 "serving_bytes_per_token": 106496,
 "serving_requests_8gib_1k": 78,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 11751260160,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 26368,
@@ -5083,14 +5267,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 93,
 "conv_kv_size": 49152,
 "conv_layers": [
 0,
 48
 ],
 "conv_prefill_weights_mb": 150467.0,
+"conv_serving_weight_bytes": 5454168064,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 93,
 "disagg_transfer_bytes_640": 62914560,
 "eng_None_32768_kv_mb": 805.306368,
 "eng_None_32768_params": 79733992192,
@@ -5180,6 +5367,7 @@ null
 "serving_bytes_per_token": 98304,
 "serving_requests_8gib_1k": 85,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 5454168064,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -5200,14 +5388,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 66,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 66,
 "disagg_transfer_bytes_640": 83886080,
 "eng_None_32768_kv_mb": 1073.741824,
 "eng_None_32768_params": 4945124864,
@@ -5297,6 +5488,7 @@ null
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 7478968320,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 20480,
@@ -5317,14 +5509,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
 "eng_None_32768_kv_mb": 2147.483648,
 "eng_None_32768_params": 27919350016,
@@ -5414,6 +5609,7 @@ null
 "serving_bytes_per_token": 262144,
 "serving_requests_8gib_1k": 32,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 46163558400,
 "sim_max_running": 75,
 "slice_mib_16x4352": [
 81582,
@@ -5434,14 +5630,17 @@ false
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 276480,
 "conv_layers": [
 0,
 54
 ],
 "conv_prefill_weights_mb": 11112.5,
+"conv_serving_weight_bytes": 11488460800,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 353894400,
 "eng_None_32768_kv_mb": 3019.89888,
 "eng_None_32768_params": 2446020000,
@@ -5531,6 +5730,7 @@ null
 "serving_bytes_per_token": 552960,
 "serving_requests_8gib_1k": 15,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 11488460800,
 "sim_max_running": 376,
 "slice_mib_16x4352": [
 16896,
@@ -5551,13 +5751,16 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 53,
 "conv_kv_size": 65536,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 175620.0,
+"conv_serving_weight_bytes": 14495514624,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 53,
 "disagg_transfer_bytes_640": 83886080,
 "eng_None_32768_kv_mb": 536.870912,
 "eng_None_32768_params": 52912758784,
@@ -5638,6 +5841,7 @@ null
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 14495514624,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -5658,13 +5862,16 @@ false
 },
 {
 "attention_type": "mla",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 874496,
 "conv_layers": [
 0,
 61
 ],
 "conv_prefill_weights_mb": 73563.0,
+"conv_serving_weight_bytes": 75283038208,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1119354880,
 "eng_None_32768_kv_mb": 2302.672896,
 "eng_None_32768_params": 667980916736,
@@ -5742,6 +5949,7 @@ null
 "serving_bytes_per_token": 1748992,
 "serving_requests_8gib_1k": 4,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 75283038208,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -5762,14 +5970,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 52,
 "conv_kv_size": 65536,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 15316.0,
+"conv_serving_weight_bytes": 15009316864,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 52,
 "disagg_transfer_bytes_640": 83886080,
 "eng_None_32768_kv_mb": 402.653184,
 "eng_None_32768_params": 9780501632,
@@ -5859,6 +6070,7 @@ null
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 15009316864,
 "sim_max_running": 369,
 "slice_mib_16x4352": [
 30464,
@@ -5879,14 +6091,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 56,
 "conv_kv_size": 81920,
 "conv_layers": [
 0,
 40
 ],
 "conv_prefill_weights_mb": 56630.5,
+"conv_serving_weight_bytes": 4932501504,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 56,
 "disagg_transfer_bytes_640": 104857600,
 "eng_None_32768_kv_mb": 536.870912,
 "eng_None_32768_params": 31452695040,
@@ -5976,6 +6191,7 @@ null
 "serving_bytes_per_token": 163840,
 "serving_requests_8gib_1k": 51,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 4932501504,
 "sim_max_running": 68,
 "slice_mib_16x4352": [
 81582,
@@ -5996,14 +6212,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 119,
 "conv_kv_size": 32768,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 201432.0,
+"conv_serving_weight_bytes": 10951327744,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 119,
 "disagg_transfer_bytes_640": 41943040,
 "eng_None_32768_kv_mb": 2147.483648,
 "eng_None_32768_params": 102499885056,
@@ -6089,6 +6308,7 @@ null
 "serving_bytes_per_token": 65536,
 "serving_requests_8gib_1k": 128,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 10951327744,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -6109,14 +6329,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 83,
 "conv_kv_size": 57344,
 "conv_layers": [
 0,
 28
 ],
 "conv_prefill_weights_mb": 3860.0,
+"conv_serving_weight_bytes": 3785359360,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 83,
 "disagg_transfer_bytes_640": 73400320,
 "eng_None_32768_kv_mb": 3758.096384,
 "eng_None_32768_params": 2023868416,
@@ -6206,6 +6429,7 @@ null
 "serving_bytes_per_token": 114688,
 "serving_requests_8gib_1k": 73,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 3785359360,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 17664,
@@ -6226,14 +6450,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 53,
 "conv_kv_size": 81920,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 7953.75,
+"conv_serving_weight_bytes": 7315783680,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 53,
 "disagg_transfer_bytes_640": 104857600,
 "eng_None_32768_kv_mb": 83.88608,
 "eng_None_32768_params": 4329313280,
@@ -6323,6 +6550,7 @@ true
 "serving_bytes_per_token": 163840,
 "serving_requests_8gib_1k": 51,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 7315783680,
 "sim_max_running": 389,
 "slice_mib_16x4352": [
 24832,
@@ -6343,14 +6571,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 11,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 64
 ],
 "conv_prefill_weights_mb": 25856.0,
+"conv_serving_weight_bytes": 17448304640,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 11,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 7286194176,
@@ -6440,6 +6671,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 17448304640,
 "sim_max_running": 72,
 "slice_mib_16x4352": [
 81582,
@@ -6460,13 +6692,16 @@ false
 },
 {
 "attention_type": "mla",
+"cluster_b_eff_4096": 36,
 "conv_kv_size": 124416,
 "conv_layers": [
 0,
 27
 ],
 "conv_prefill_weights_mb": 95875.875,
+"conv_serving_weight_bytes": 5341446144,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 36,
 "disagg_transfer_bytes_640": 159252480,
 "eng_None_32768_kv_mb": 264.241152,
 "eng_None_32768_params": 48819169920,
@@ -6546,6 +6781,7 @@ null
 "serving_bytes_per_token": 248832,
 "serving_requests_8gib_1k": 33,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 5341446144,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -6566,14 +6802,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 242,
 "conv_kv_size": 20480,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 2182.818604,
+"conv_serving_weight_bytes": 2186448000,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 242,
 "disagg_transfer_bytes_640": 26214400,
 "eng_None_32768_kv_mb": 1342.17728,
 "eng_None_32768_params": 1611064000,
@@ -6663,6 +6902,7 @@ false
 "serving_bytes_per_token": 40960,
 "serving_requests_8gib_1k": 204,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 2186448000,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 11520,
@@ -6683,14 +6923,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 12,
 "conv_kv_size": 114688,
 "conv_layers": [
 0,
 56
 ],
 "conv_prefill_weights_mb": 30629.375,
+"conv_serving_weight_bytes": 30942822400,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 12,
 "disagg_transfer_bytes_640": 146800640,
 "eng_None_32768_kv_mb": 536.870912,
 "eng_None_32768_params": 9476187008,
@@ -6780,6 +7023,7 @@ null
 "serving_bytes_per_token": 229376,
 "serving_requests_8gib_1k": 36,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 30942822400,
 "sim_max_running": 315,
 "slice_mib_16x4352": [
 33536,
@@ -6800,14 +7044,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 11,
 "conv_kv_size": 106496,
 "conv_layers": [
 0,
 52
 ],
 "conv_prefill_weights_mb": 32416.0,
+"conv_serving_weight_bytes": 32916897792,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 11,
 "disagg_transfer_bytes_640": 136314880,
 "eng_None_32768_kv_mb": 536.870912,
 "eng_None_32768_params": 8135050240,
@@ -6897,6 +7144,7 @@ null
 "serving_bytes_per_token": 212992,
 "serving_requests_8gib_1k": 39,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 32916897792,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 32512,
@@ -6917,14 +7165,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 126,
 "conv_kv_size": 36864,
 "conv_layers": [
 0,
 36
 ],
 "conv_prefill_weights_mb": 222757.03125,
+"conv_serving_weight_bytes": 4860887040,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 126,
 "disagg_transfer_bytes_640": 47185920,
 "eng_None_32768_kv_mb": 2415.919104,
 "eng_None_32768_params": 117368392320,
@@ -7015,6 +7266,7 @@ true
 "serving_bytes_per_token": 73728,
 "serving_requests_8gib_1k": 113,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 4860887040,
 "sim_max_running": 250,
 "slice_mib_16x4352": [
 76032,
@@ -7035,14 +7287,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 12,
 "conv_kv_size": 327680,
 "conv_layers": [
 0,
 64
 ],
 "conv_prefill_weights_mb": 10311.015625,
+"conv_serving_weight_bytes": 8646041600,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 12,
 "disagg_transfer_bytes_640": 419430400,
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 2768839680,
@@ -7132,6 +7387,7 @@ null
 "serving_bytes_per_token": 655360,
 "serving_requests_8gib_1k": 12,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 8646041600,
 "sim_max_running": 96,
 "slice_mib_16x4352": [
 62208,
@@ -7152,13 +7408,16 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 68,
 "conv_kv_size": 65536,
 "conv_layers": [
 0,
 32
 ],
+"conv_serving_weight_bytes": 6150217728,
 "conv_state_bytes": 0,
 "conv_weights_error": "TypeError: unsupported operand type(s) for /: 'list' and 'int'",
+"disagg_b_eff_4096": 68,
 "disagg_transfer_bytes_640": 83886080,
 "eng_None_32768_kv_mb": 4294.967296,
 "eng_None_32768_params": 78379909120,
@@ -7224,19 +7483,23 @@ true
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 6150217728,
 "state_gb": 0.0,
 "vllm_error": "TypeError: int() argument must be a string, a bytes-like object or a real number, not 'list'"
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 73728,
 "conv_layers": [
 0,
 72
 ],
 "conv_prefill_weights_mb": 54780.0,
+"conv_serving_weight_bytes": 54767124480,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 94371840,
 "eng_None_32768_kv_mb": 4831.838208,
 "eng_None_32768_params": 33643258624,
@@ -7326,6 +7589,7 @@ null
 "serving_bytes_per_token": 147456,
 "serving_requests_8gib_1k": 56,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 54767124480,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -7346,14 +7610,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 325058560,
 "eng_None_32768_kv_mb": 16642.998272,
 "eng_None_32768_params": 27425866752,
@@ -7443,6 +7710,7 @@ null
 "serving_bytes_per_token": 507904,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 54015983616,
 "sim_max_running": 32,
 "slice_mib_16x4352": [
 81582,
@@ -7463,14 +7731,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 88,
 "conv_kv_size": 57344,
 "conv_layers": [
 0,
 28
 ],
 "conv_prefill_weights_mb": 1433.5,
+"conv_serving_weight_bytes": 1191968768,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 88,
 "disagg_transfer_bytes_640": 73400320,
 "eng_None_32768_kv_mb": 3758.096384,
 "eng_None_32768_params": 596101120,
@@ -7560,6 +7831,7 @@ null
 "serving_bytes_per_token": 114688,
 "serving_requests_8gib_1k": 73,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 1191968768,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 14592,
@@ -7580,14 +7852,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 195,
 "conv_kv_size": 24576,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 39878.4375,
+"conv_serving_weight_bytes": 3626680320,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 195,
 "disagg_transfer_bytes_640": 31457280,
 "eng_None_32768_kv_mb": 1610.612736,
 "eng_None_32768_params": 21487201920,
@@ -7678,6 +7953,7 @@ true
 "serving_bytes_per_token": 49152,
 "serving_requests_8gib_1k": 170,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 3626680320,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 20736,
@@ -7698,13 +7974,16 @@ true
 },
 {
 "attention_type": "mla",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 874496,
 "conv_layers": [
 0,
 61
 ],
 "conv_prefill_weights_mb": 73563.0,
+"conv_serving_weight_bytes": 75283038208,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1119354880,
 "eng_None_32768_kv_mb": 2302.672896,
 "eng_None_32768_params": 667980916736,
@@ -7782,6 +8061,7 @@ null
 "serving_bytes_per_token": 1748992,
 "serving_requests_8gib_1k": 4,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 75283038208,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -7802,14 +8082,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 4940,
 "conv_kv_size": 1024,
 "conv_layers": [
 0,
 1
 ],
 "conv_prefill_weights_mb": 2544.609375,
+"conv_serving_weight_bytes": 1509949440,
 "conv_state_bytes": 0,
 "decode_fit_refused": false,
+"disagg_b_eff_4096": 4940,
 "disagg_transfer_bytes_640": 1310720,
 "eng_None_32768_kv_mb": 67.108864,
 "eng_None_32768_params": 1132470720,
@@ -7899,6 +8182,7 @@ null
 "serving_bytes_per_token": 2048,
 "serving_requests_8gib_1k": 4096,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 1509949440,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 7168,
@@ -7919,14 +8203,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 4933,
 "conv_kv_size": 1024,
 "conv_layers": [
 0,
 1
 ],
 "conv_prefill_weights_mb": 2597.34375,
+"conv_serving_weight_bytes": 1565245440,
 "conv_state_bytes": 0,
 "decode_fit_refused": false,
+"disagg_b_eff_4096": 4933,
 "disagg_transfer_bytes_640": 1310720,
 "eng_None_32768_kv_mb": 67.108864,
 "eng_None_32768_params": 1160118720,
@@ -8016,6 +8303,7 @@ null
 "serving_bytes_per_token": 2048,
 "serving_requests_8gib_1k": 4096,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 1565245440,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 7168,
@@ -8036,14 +8324,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 2462,
 "conv_kv_size": 2048,
 "conv_layers": [
 0,
 1
 ],
 "conv_prefill_weights_mb": 2742.0,
+"conv_serving_weight_bytes": 1630535680,
 "conv_state_bytes": 0,
 "decode_fit_refused": false,
+"disagg_b_eff_4096": 2462,
 "disagg_transfer_bytes_640": 2621440,
 "eng_None_32768_kv_mb": 134.217728,
 "eng_None_32768_params": 1605382144,
@@ -8133,6 +8424,7 @@ null
 "serving_bytes_per_token": 4096,
 "serving_requests_8gib_1k": 2048,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 1630535680,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 7424,
@@ -8153,14 +8445,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 2462,
 "conv_kv_size": 2048,
 "conv_layers": [
 0,
 1
 ],
 "conv_prefill_weights_mb": 2742.0,
+"conv_serving_weight_bytes": 1630535680,
 "conv_state_bytes": 0,
 "decode_fit_refused": false,
+"disagg_b_eff_4096": 2462,
 "disagg_transfer_bytes_640": 2621440,
 "eng_None_32768_kv_mb": 134.217728,
 "eng_None_32768_params": 1605382144,
@@ -8250,6 +8545,7 @@ null
 "serving_bytes_per_token": 4096,
 "serving_requests_8gib_1k": 2048,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 1630535680,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 7424,
@@ -8270,14 +8566,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 2462,
 "conv_kv_size": 2048,
 "conv_layers": [
 0,
 1
 ],
 "conv_prefill_weights_mb": 2742.0,
+"conv_serving_weight_bytes": 1630535680,
 "conv_state_bytes": 0,
 "decode_fit_refused": false,
+"disagg_b_eff_4096": 2462,
 "disagg_transfer_bytes_640": 2621440,
 "eng_None_32768_kv_mb": 134.217728,
 "eng_None_32768_params": 1605382144,
@@ -8367,6 +8666,7 @@ null
 "serving_bytes_per_token": 4096,
 "serving_requests_8gib_1k": 2048,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 1630535680,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 7424,
@@ -8387,14 +8687,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 195,
 "conv_kv_size": 24576,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 39878.4375,
+"conv_serving_weight_bytes": 3626680320,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 195,
 "disagg_transfer_bytes_640": 31457280,
 "eng_None_32768_kv_mb": 1610.612736,
 "eng_None_32768_params": 21487201920,
@@ -8485,6 +8788,7 @@ true
 "serving_bytes_per_token": 49152,
 "serving_requests_8gib_1k": 170,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 3626680320,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 49152,
@@ -8505,14 +8809,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 195,
 "conv_kv_size": 24576,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 39878.4375,
+"conv_serving_weight_bytes": 3626680320,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 195,
 "disagg_transfer_bytes_640": 31457280,
 "eng_None_32768_kv_mb": 1610.612736,
 "eng_None_32768_params": 21487201920,
@@ -8603,6 +8910,7 @@ true
 "serving_bytes_per_token": 49152,
 "serving_requests_8gib_1k": 170,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 3626680320,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 20736,
@@ -8623,14 +8931,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 52,
 "conv_kv_size": 65536,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 15316.0,
+"conv_serving_weight_bytes": 15009316864,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 52,
 "disagg_transfer_bytes_640": 83886080,
 "eng_None_32768_kv_mb": 4294.967296,
 "eng_None_32768_params": 8030261248,
@@ -8720,6 +9031,7 @@ null
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 15009316864,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 31488,
@@ -8740,14 +9052,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 49,
 "conv_kv_size": 98304,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 25720.625,
+"conv_serving_weight_bytes": 3088580608,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 49,
 "disagg_transfer_bytes_640": 125829120,
 "eng_None_32768_kv_mb": 6442.450944,
 "eng_None_32768_params": 13796380672,
@@ -8837,6 +9152,7 @@ null
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 3088580608,
 "sim_max_running": 228,
 "slice_mib_16x4352": [
 49408,
@@ -8857,14 +9173,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 91,
 "conv_kv_size": 49152,
 "conv_layers": [
 0,
 48
 ],
 "conv_prefill_weights_mb": 58235.0,
+"conv_serving_weight_bytes": 6058147840,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 91,
 "disagg_transfer_bytes_640": 62914560,
 "eng_None_32768_kv_mb": 3221.225472,
 "eng_None_32768_params": 30843473920,
@@ -8954,6 +9273,7 @@ null
 "serving_bytes_per_token": 98304,
 "serving_requests_8gib_1k": 85,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 6058147840,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 43264,
@@ -8974,14 +9294,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 46,
 "conv_kv_size": 73728,
 "conv_layers": [
 0,
 36
 ],
 "conv_prefill_weights_mb": 15622.0,
+"conv_serving_weight_bytes": 15136194560,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 46,
 "disagg_transfer_bytes_640": 94371840,
 "eng_None_32768_kv_mb": 4831.838208,
 "eng_None_32768_params": 8191025152,
@@ -9071,6 +9394,7 @@ null
 "serving_bytes_per_token": 147456,
 "serving_requests_8gib_1k": 56,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 15136194560,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 25088,
@@ -9091,14 +9415,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 46,
 "conv_kv_size": 73728,
 "conv_layers": [
 0,
 36
 ],
 "conv_prefill_weights_mb": 15622.0,
+"conv_serving_weight_bytes": 15136194560,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 46,
 "disagg_transfer_bytes_640": 94371840,
 "eng_None_32768_kv_mb": 4831.838208,
 "eng_None_32768_params": 8191025152,
@@ -9188,6 +9515,7 @@ null
 "serving_bytes_per_token": 147456,
 "serving_requests_8gib_1k": 56,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 15136194560,
 "sim_max_running": 376,
 "slice_mib_16x4352": [
 33024,
@@ -9208,14 +9536,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
 "eng_None_32768_kv_mb": 2147.483648,
 "eng_None_32768_params": 27919350016,
@@ -9305,6 +9636,7 @@ null
 "serving_bytes_per_token": 262144,
 "serving_requests_8gib_1k": 32,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 46163558400,
 "sim_max_running": 169,
 "slice_mib_16x4352": [
 52736,
@@ -9325,14 +9657,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
 "eng_None_32768_kv_mb": 2147.483648,
 "eng_None_32768_params": 27919350016,
@@ -9422,6 +9757,7 @@ null
 "serving_bytes_per_token": 262144,
 "serving_requests_8gib_1k": 32,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 46163558400,
 "sim_max_running": 213,
 "slice_mib_16x4352": [
 79616,
@@ -9442,14 +9778,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
 "eng_None_32768_kv_mb": 2147.483648,
 "eng_None_32768_params": 27919350016,
@@ -9539,6 +9878,7 @@ null
 "serving_bytes_per_token": 262144,
 "serving_requests_8gib_1k": 32,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 46163558400,
 "sim_max_running": 75,
 "slice_mib_16x4352": [
 81582,
@@ -9559,14 +9899,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 78,
 "conv_kv_size": 57344,
 "conv_layers": [
 0,
 28
 ],
 "conv_prefill_weights_mb": 6126.0,
+"conv_serving_weight_bytes": 6030360576,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 78,
 "disagg_transfer_bytes_640": 73400320,
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 2411550720,
@@ -9656,6 +9999,7 @@ null
 "serving_bytes_per_token": 114688,
 "serving_requests_8gib_1k": 73,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 6030360576,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 21504,
@@ -9676,14 +10020,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 262144,
 "conv_layers": [
 32,
 32
 ],
 "conv_prefill_weights_mb": 13162.40625,
+"conv_serving_weight_bytes": 13376897024,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 5860.22912,
 "eng_None_32768_params": 1542504960,
@@ -9773,6 +10120,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 13376897024,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 65536,
@@ -9793,14 +10141,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 833,
 "conv_kv_size": 6144,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 1201.8125,
+"conv_serving_weight_bytes": 987922432,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 833,
 "disagg_transfer_bytes_640": 7864320,
 "eng_None_32768_kv_mb": 402.653184,
 "eng_None_32768_params": 494049024,
@@ -9890,6 +10241,7 @@ null
 "serving_bytes_per_token": 12288,
 "serving_requests_8gib_1k": 682,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 987922432,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 6144,
@@ -9910,14 +10262,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
 "eng_None_32768_kv_mb": 2147.483648,
 "eng_None_32768_params": 27919350016,
@@ -10007,6 +10362,7 @@ null
 "serving_bytes_per_token": 262144,
 "serving_requests_8gib_1k": 32,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 46163558400,
 "sim_max_running": 75,
 "slice_mib_16x4352": [
 81582,
@@ -10027,14 +10383,17 @@ false
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 13137.265625,
+"conv_serving_weight_bytes": 13363716096,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 1207.959552,
 "eng_None_32768_params": 123570432,
@@ -10124,6 +10483,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 13363716096,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 7424,
@@ -10144,14 +10504,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 13140.0,
+"conv_serving_weight_bytes": 13365149696,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 6647455744,
@@ -10241,6 +10604,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 13365149696,
 "sim_max_running": 103,
 "slice_mib_16x4352": [
 66304,
@@ -10261,14 +10625,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 6442.450944,
 "eng_None_32768_params": 2357735424,
@@ -10358,6 +10725,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 13214154752,
 "sim_max_running": 125,
 "slice_mib_16x4352": [
 57088,
@@ -10378,14 +10746,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 983040,
 "conv_layers": [
 0,
 60
 ],
 "conv_prefill_weights_mb": 63712.0,
+"conv_serving_weight_bytes": 65741520896,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1258291200,
 "eng_None_32768_kv_mb": 4026.53184,
 "eng_None_32768_params": 41303293952,
@@ -10475,6 +10846,7 @@ null
 "serving_bytes_per_token": 1966080,
 "serving_requests_8gib_1k": 4,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 65741520896,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -10495,14 +10867,17 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 52,
 "conv_kv_size": 65536,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 15316.0,
+"conv_serving_weight_bytes": 15009316864,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 52,
 "disagg_transfer_bytes_640": 83886080,
 "eng_None_32768_kv_mb": 4294.967296,
 "eng_None_32768_params": 7538479104,
@@ -10592,6 +10967,7 @@ null
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 15009316864,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 31488,
@@ -10612,14 +10988,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 53,
 "conv_kv_size": 65536,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 13812.0,
+"conv_serving_weight_bytes": 14220787712,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 53,
 "disagg_transfer_bytes_640": 83886080,
 "eng_None_32768_kv_mb": 536.870912,
 "eng_None_32768_params": 7144214528,
@@ -10709,6 +11088,7 @@ true
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 14220787712,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 29696,
@@ -10729,14 +11109,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 17,
 "conv_kv_size": 172032,
 "conv_layers": [
 0,
 42
 ],
 "conv_prefill_weights_mb": 19376.0,
+"conv_serving_weight_bytes": 18482200576,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 17,
 "disagg_transfer_bytes_640": 220200960,
 "eng_None_32768_kv_mb": 1409.286144,
 "eng_None_32768_params": 9271069696,
@@ -10826,6 +11209,7 @@ null
 "serving_bytes_per_token": 344064,
 "serving_requests_8gib_1k": 24,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 18482200576,
 "sim_max_running": 151,
 "slice_mib_16x4352": [
 52992,
@@ -10846,14 +11230,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1261,
 "conv_kv_size": 4096,
 "conv_layers": [
 0,
 4
 ],
 "conv_prefill_weights_mb": 714.0,
+"conv_serving_weight_bytes": 617611264,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1261,
 "disagg_transfer_bytes_640": 5242880,
 "eng_None_32768_kv_mb": 134.217728,
 "eng_None_32768_params": 241733632,
@@ -10943,6 +11330,7 @@ null
 "serving_bytes_per_token": 8192,
 "serving_requests_8gib_1k": 1024,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 617611264,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 6912,
@@ -10963,14 +11351,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 28,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 28,
 "disagg_transfer_bytes_640": 125829120,
 "eng_None_32768_kv_mb": 6442.450944,
 "eng_None_32768_params": 151881984,
@@ -11060,6 +11451,7 @@ null
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 20188364800,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -11080,13 +11472,16 @@ false
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 28,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 28,
 "disagg_transfer_bytes_640": 125829120,
 "eng_None_32768_kv_mb": 6442.450944,
 "eng_None_32768_params": 151881984,
@@ -11164,6 +11559,7 @@ null
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 20188364800,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -11184,14 +11580,17 @@ false
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 49,
 "conv_kv_size": 98304,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 3464.789062,
+"conv_serving_weight_bytes": 3427160064,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 49,
 "disagg_transfer_bytes_640": 125829120,
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 1309554688,
@@ -11281,6 +11680,7 @@ null
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 3427160064,
 "sim_max_running": 342,
 "slice_mib_16x4352": [
 25088,
@@ -11301,14 +11701,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 13138.0,
+"conv_serving_weight_bytes": 13364101120,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 6646931456,
@@ -11398,6 +11801,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 13364101120,
 "sim_max_running": 103,
 "slice_mib_16x4352": [
 66304,
@@ -11418,13 +11822,16 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 65536,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 20736.0,
+"conv_serving_weight_bytes": 20669530112,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'auto_map', 'bos_token_id', 'chunk_size', '",
 "eng_None_32768_kv_mb": 805.306368,
 "eng_None_32768_params": 2183850336,
@@ -11491,6 +11898,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'auto_map', 'bos_token_id', 'chunk_size', '",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'auto_map', 'bos_token_id', 'chunk_size', '",
 "sim_max_running": 384,
 "slice_mib_16x4352": [
 37376,
@@ -11511,13 +11919,16 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at the top level and in nested blocks. Refu",
 "eng_None_32768_kv_mb": 1610.612736,
 "eng_None_32768_params": 123570432,
@@ -11584,6 +11995,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at ",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at ",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at the top level and in nested blocks. Refu",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at the top level and in nested blocks. Refu",
 "sim_max_running": 384,
 "slice_mib_16x4352": [
 37376,
@@ -11604,13 +12016,16 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddings', 'transformers_version', 'video_tok",
 "eng_None_32768_kv_mb": 1073.741824,
 "eng_None_32768_params": 2622843904,
@@ -11677,6 +12092,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddings', 'transformers_version', 'video_tok",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddings', 'transformers_version', 'video_tok",
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 23808,
@@ -11697,14 +12113,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6678.0,
+"conv_serving_weight_bytes": 6739197952,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 274.432,
 "eng_None_32768_params": 135813120,
@@ -11794,6 +12213,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 13215203328,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 6656,
@@ -11814,14 +12234,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6678.0,
+"conv_serving_weight_bytes": 6739197952,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 559.34976,
 "eng_None_32768_params": 497725440,
@@ -11911,6 +12334,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 13215203328,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 15104,
@@ -11931,14 +12355,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 16260.0,
+"conv_serving_weight_bytes": 15000928256,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 153052160,
@@ -12028,6 +12455,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 15000928256,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 7424,
@@ -12048,14 +12476,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 262144,
 "conv_layers": [
 32,
 32
 ],
 "conv_prefill_weights_mb": 13162.40625,
+"conv_serving_weight_bytes": 13376897024,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 5860.22912,
 "eng_None_32768_params": 1542504960,
@@ -12145,6 +12576,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 13376897024,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 22272,
@@ -12165,14 +12597,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 13259.828125,
+"conv_serving_weight_bytes": 13427974144,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 439.517184,
 "eng_None_32768_params": 75785728,
@@ -12262,6 +12697,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 13427974144,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 6656,
@@ -12282,14 +12718,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 75,
 "conv_kv_size": 32768,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 1279.226562,
+"conv_serving_weight_bytes": 1278857216,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 75,
 "disagg_transfer_bytes_640": 83886080,
 "eng_None_32768_kv_mb": 559.34976,
 "eng_None_32768_params": 506632192,
@@ -12379,6 +12818,7 @@ null
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 2495205376,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 18432,
@@ -12399,13 +12839,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 12,
 "conv_kv_size": 196608,
 "conv_layers": [
 24,
 24
 ],
 "conv_prefill_weights_mb": 799675.21875,
+"conv_serving_weight_bytes": 11812847616,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 12,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 7032.274944,
 "eng_None_32768_params": 3360894976,
@@ -12483,6 +12926,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 15050850304,
 "sim_error": "RuntimeError: the KV pool cannot hold one request at the step's budget",
 "slice_mib_16x4352": [
 81582,
@@ -12503,13 +12947,16 @@ false
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev",
 "eng_None_32768_kv_mb": 701.80864,
 "eng_None_32768_params": 808394240,
@@ -12576,6 +13023,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev",
 "sim_max_running": 72,
 "slice_mib_16x4352": [
 81582,
@@ -12596,13 +13044,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev",
 "eng_None_32768_kv_mb": 701.80864,
 "eng_None_32768_params": 808394240,
@@ -12669,6 +13120,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev",
 "sim_max_running": 72,
 "slice_mib_16x4352": [
 81582,
@@ -12689,14 +13141,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 304,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 304,
 "disagg_transfer_bytes_640": 20971520,
 "eng_None_32768_kv_mb": 701.80864,
 "eng_None_32768_params": 808394240,
@@ -12786,6 +13241,7 @@ null
 "serving_bytes_per_token": 32768,
 "serving_requests_8gib_1k": 256,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 2077229056,
 "sim_max_running": 72,
 "slice_mib_16x4352": [
 81582,
@@ -12806,14 +13262,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 104,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 104,
 "disagg_transfer_bytes_640": 62914560,
 "eng_None_32768_kv_mb": 701.80864,
 "eng_None_32768_params": 808394240,
@@ -12903,6 +13362,7 @@ null
 "serving_bytes_per_token": 98304,
 "serving_requests_8gib_1k": 85,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 809500672,
 "sim_max_running": 72,
 "slice_mib_16x4352": [
 81582,
@@ -12923,14 +13383,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 282,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 282,
 "disagg_transfer_bytes_640": 23592960,
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 1663986176,
@@ -13020,6 +13483,7 @@ null
 "serving_bytes_per_token": 36864,
 "serving_requests_8gib_1k": 227,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 275644416,
 "sim_max_running": 322,
 "slice_mib_16x4352": [
 30208,
@@ -13040,14 +13504,17 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 282,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 282,
 "disagg_transfer_bytes_640": 23592960,
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 1663986176,
@@ -13137,6 +13604,7 @@ null
 "serving_bytes_per_token": 36864,
 "serving_requests_8gib_1k": 227,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 275644416,
 "sim_max_running": 322,
 "slice_mib_16x4352": [
 30208,
@@ -13157,13 +13625,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t",
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 290113024,
@@ -13230,6 +13701,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t",
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 10496,
@@ -13250,14 +13722,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 13,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "eng_None_32768_kv_mb": 17671.389184,
 "eng_None_32768_params": 6316174080,
@@ -13347,6 +13822,7 @@ null
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 14230224896,
 "sim_max_running": 108,
 "slice_mib_16x4352": [
 62208,
@@ -13367,14 +13843,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 52,
 "conv_kv_size": 65536,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 15316.0,
+"conv_serving_weight_bytes": 15009316864,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 52,
 "disagg_transfer_bytes_640": 83886080,
 "eng_None_32768_kv_mb": 4294.967296,
 "eng_None_32768_params": 7538479104,
@@ -13464,6 +13943,7 @@ null
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 15009316864,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 31488,
@@ -13484,14 +13964,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 61,
 "conv_kv_size": 69632,
 "conv_layers": [
 0,
 34
 ],
 "conv_prefill_weights_mb": 8680.0,
+"conv_serving_weight_bytes": 7759462400,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 61,
 "disagg_transfer_bytes_640": 89128960,
 "eng_None_32768_kv_mb": 4563.402752,
 "eng_None_32768_params": 2988794880,
@@ -13581,6 +14064,7 @@ null
 "serving_bytes_per_token": 139264,
 "serving_requests_8gib_1k": 60,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 7759462400,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 24832,
@@ -13601,14 +14085,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 61,
 "conv_kv_size": 69632,
 "conv_layers": [
 0,
 34
 ],
 "conv_prefill_weights_mb": 8680.0,
+"conv_serving_weight_bytes": 7759462400,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 61,
 "disagg_transfer_bytes_640": 89128960,
 "eng_None_32768_kv_mb": 4563.402752,
 "eng_None_32768_params": 2988794880,
@@ -13698,6 +14185,7 @@ null
 "serving_bytes_per_token": 139264,
 "serving_requests_8gib_1k": 60,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 7759462400,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 24832,
@@ -13718,13 +14206,16 @@ true
 },
 {
 "attention_type": "mla",
+"cluster_b_eff_4096": 41,
 "conv_kv_size": 110592,
 "conv_layers": [
 0,
 27
 ],
 "conv_prefill_weights_mb": 5126.75,
+"conv_serving_weight_bytes": 4956356608,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 41,
 "disagg_transfer_bytes_640": 141557760,
 "eng_None_32768_kv_mb": 1019.215872,
 "eng_None_32768_params": 15725195264,
@@ -13804,6 +14295,7 @@ null
 "serving_bytes_per_token": 221184,
 "serving_requests_8gib_1k": 37,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 4956356608,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 40448,
@@ -13824,14 +14316,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 495,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 495,
 "disagg_transfer_bytes_640": 13107200,
 "eng_None_32768_kv_mb": 671.08864,
 "eng_None_32768_params": 1137317376,
@@ -13921,6 +14416,7 @@ null
 "serving_bytes_per_token": 20480,
 "serving_requests_8gib_1k": 409,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 1347420160,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 8704,
@@ -13941,14 +14437,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 495,
 "conv_kv_size": 262144,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 12852.0,
+"conv_serving_weight_bytes": 13214154752,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 495,
 "disagg_transfer_bytes_640": 13107200,
 "eng_None_32768_kv_mb": 671.08864,
 "eng_None_32768_params": 1136487936,
@@ -14038,6 +14537,7 @@ null
 "serving_bytes_per_token": 20480,
 "serving_requests_8gib_1k": 409,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 1347420160,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 8704,
@@ -14058,13 +14558,16 @@ true
 },
 {
 "attention_type": null,
+"cluster_b_eff_4096": 1,
 "conv_kv_size": 131072,
 "conv_layers": [
 16,
 16
 ],
 "conv_prefill_weights_mb": 6676.0,
+"conv_serving_weight_bytes": 6738149376,
 "conv_state_bytes": 0,
+"disagg_b_eff_4096": 1,
 "disagg_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t",
 "eng_None_32768_kv_mb": 0.0,
 "eng_None_32768_params": 713446400,
@@ -14131,6 +14634,7 @@ null
 "runtime_decode_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
 "runtime_prefill_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
 "serving_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t",
+"serving_weight_bytes_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t",
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 14080,
@@ -14151,14 +14655,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 196,
 "conv_kv_size": 24576,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 4148.0,
+"conv_serving_weight_bytes": 3332374528,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 196,
 "disagg_transfer_bytes_640": 31457280,
 "eng_None_32768_kv_mb": 1610.612736,
 "eng_None_32768_params": 1901268992,
@@ -14260,6 +14767,7 @@ null
 "serving_bytes_per_token": 49152,
 "serving_requests_8gib_1k": 170,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 3332374528,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 14080,
@@ -14280,14 +14788,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 251,
 "conv_kv_size": 20480,
 "conv_layers": [
 0,
 32
 ],
 "conv_prefill_weights_mb": 780.46875,
+"conv_serving_weight_bytes": 723763200,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 251,
 "disagg_transfer_bytes_640": 26214400,
 "eng_None_32768_kv_mb": 1342.17728,
 "eng_None_32768_params": 369808320,
@@ -14389,6 +14900,7 @@ null
 "serving_bytes_per_token": 40960,
 "serving_requests_8gib_1k": 204,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 723763200,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 8192,
@@ -14409,14 +14921,17 @@ true
 },
 {
 "attention_type": "gqa",
+"cluster_b_eff_4096": 195,
 "conv_kv_size": 24576,
 "conv_layers": [
 0,
 24
 ],
 "conv_prefill_weights_mb": 4563.28125,
+"conv_serving_weight_bytes": 3626680320,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 195,
 "disagg_transfer_bytes_640": 31457280,
 "eng_None_32768_kv_mb": 1610.612736,
 "eng_None_32768_params": 1992044160,
@@ -14518,6 +15033,7 @@ null
 "serving_bytes_per_token": 49152,
 "serving_requests_8gib_1k": 170,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 3626680320,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 14336,
@@ -14538,14 +15054,17 @@ true
 },
 {
 "attention_type": "mha",
+"cluster_b_eff_4096": 282,
 "conv_kv_size": 18432,
 "conv_layers": [
 0,
 12
 ],
 "conv_prefill_weights_mb": 305.419922,
+"conv_serving_weight_bytes": 273374208,
 "conv_state_bytes": 0,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 282,
 "disagg_transfer_bytes_640": 23592960,
 "eng_None_32768_kv_mb": 1207.959552,
 "eng_None_32768_params": 109986816,
@@ -14646,6 +15165,7 @@ null
 "serving_bytes_per_token": 36864,
 "serving_requests_8gib_1k": 227,
 "serving_state_bytes": 0,
+"serving_weight_bytes": 273374208,
 "sim_max_running": 400,
 "slice_mib_16x4352": [
 8704,
@@ -14665,7 +15185,9 @@ true
 "vllm_running_8192": 239
 },
 {
+"cluster_b_eff_4096": 53,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 53,
 "disagg_transfer_bytes_640": 83886080,
 "genz_chunked_kv_mb": 576.0,
 "genz_decode_kv_mb": 512.0,
@@ -14697,9 +15219,12 @@ true
 ],
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 14220787712
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 503316480,
 "genz_chunked_kv_mb": 3456.0,
 "genz_decode_kv_mb": 3072.0,
@@ -14719,9 +15244,12 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 17610.5390625 GB, KV Cache:0.375. \n System:{'Flops': 400, 'Memory_size': 200, 'Memory_B",
 "serving_bytes_per_token": 786432,
 "serving_requests_8gib_1k": 10,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 702862589952
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 2013265920,
 "genz_chunked_kv_mb": 13824.0,
 "genz_decode_kv_mb": 12288.0,
@@ -14741,10 +15269,13 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 8254.875 GB, KV Cache:1.5. \n System:{'Flops': 400, 'Memory_size': 200, 'Memory_BW': 200",
 "serving_bytes_per_token": 3145728,
 "serving_requests_8gib_1k": 2,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 8838438715392
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 524288000,
 "genz_chunked_kv_mb": 3600.0,
 "genz_decode_kv_mb": 3200.0,
@@ -14776,10 +15307,13 @@ true
 ],
 "serving_bytes_per_token": 819200,
 "serving_requests_8gib_1k": 10,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 43605032960
 },
 {
+"cluster_b_eff_4096": 47,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 47,
 "disagg_transfer_bytes_640": 125829120,
 "genz_chunked_kv_mb": 864.0,
 "genz_decode_kv_mb": 768.0,
@@ -14811,10 +15345,13 @@ true
 ],
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 4674027520
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1677721600,
 "genz_chunked_kv_mb": 11520.0,
 "genz_decode_kv_mb": 10240.0,
@@ -14846,10 +15383,13 @@ true
 ],
 "serving_bytes_per_token": 2621440,
 "serving_requests_8gib_1k": 3,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 238714617856
 },
 {
+"cluster_b_eff_4096": 9,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 9,
 "disagg_transfer_bytes_640": 335544320,
 "genz_chunked_kv_mb": 2304.0,
 "genz_decode_kv_mb": 2048.0,
@@ -14881,10 +15421,13 @@ true
 ],
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 22853713920
 },
 {
+"cluster_b_eff_4096": 104,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 104,
 "disagg_transfer_bytes_640": 62914560,
 "genz_chunked_kv_mb": 432.0,
 "genz_decode_kv_mb": 384.0,
@@ -14916,10 +15459,13 @@ true
 ],
 "serving_bytes_per_token": 98304,
 "serving_requests_8gib_1k": 85,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 927727616
 },
 {
+"cluster_b_eff_4096": 49,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 49,
 "disagg_transfer_bytes_640": 125829120,
 "genz_chunked_kv_mb": 864.0,
 "genz_decode_kv_mb": 768.0,
@@ -14951,9 +15497,12 @@ true
 ],
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 3050831872
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1677721600,
 "genz_chunked_kv_mb": 11520.0,
 "genz_decode_kv_mb": 10240.0,
@@ -14973,10 +15522,13 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 224.640625 GB, KV Cache:1.25. \n System:{'Flops': 400, 'Memory_size': 200, 'Memory_BW': ",
 "serving_bytes_per_token": 2621440,
 "serving_requests_8gib_1k": 3,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 238714617856
 },
 {
+"cluster_b_eff_4096": 4,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 4,
 "disagg_transfer_bytes_640": 524288000,
 "genz_chunked_kv_mb": 3600.0,
 "genz_decode_kv_mb": 3200.0,
@@ -15008,10 +15560,13 @@ true
 ],
 "serving_bytes_per_token": 819200,
 "serving_requests_8gib_1k": 10,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 26775388160
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 104857600,
 "genz_chunked_kv_mb": 720.0,
 "genz_decode_kv_mb": 640.0,
@@ -15043,10 +15598,13 @@ true
 ],
 "serving_bytes_per_token": 163840,
 "serving_requests_8gib_1k": 51,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 62961745920
 },
 {
+"cluster_b_eff_4096": 21,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 21,
 "disagg_transfer_bytes_640": 262144000,
 "genz_chunked_kv_mb": 1800.0,
 "genz_decode_kv_mb": 1600.0,
@@ -15078,10 +15636,13 @@ true
 ],
 "serving_bytes_per_token": 409600,
 "serving_requests_8gib_1k": 20,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 7121797120
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1677721600,
 "genz_chunked_kv_mb": 11520.0,
 "genz_decode_kv_mb": 10240.0,
@@ -15113,10 +15674,13 @@ true
 ],
 "serving_bytes_per_token": 2621440,
 "serving_requests_8gib_1k": 3,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 142077853696
 },
 {
+"cluster_b_eff_4096": 13,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "genz_chunked_kv_mb": 2304.0,
 "genz_decode_kv_mb": 2048.0,
@@ -15148,10 +15712,13 @@ true
 ],
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 14196670464
 },
 {
+"cluster_b_eff_4096": 28,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 28,
 "disagg_transfer_bytes_640": 209715200,
 "genz_chunked_kv_mb": 1440.0,
 "genz_decode_kv_mb": 1280.0,
@@ -15183,10 +15750,13 @@ true
 ],
 "serving_bytes_per_token": 327680,
 "serving_requests_8gib_1k": 25,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 4732747776
 },
 {
+"cluster_b_eff_4096": 833,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 833,
 "disagg_transfer_bytes_640": 7864320,
 "genz_chunked_kv_mb": 54.0,
 "genz_decode_kv_mb": 48.0,
@@ -15218,10 +15788,13 @@ true
 ],
 "serving_bytes_per_token": 12288,
 "serving_requests_8gib_1k": 682,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 987922432
 },
 {
+"cluster_b_eff_4096": 339,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 339,
 "disagg_transfer_bytes_640": 18350080,
 "genz_chunked_kv_mb": 126.0,
 "genz_decode_kv_mb": 112.0,
@@ -15253,10 +15826,13 @@ true
 ],
 "serving_bytes_per_token": 28672,
 "serving_requests_8gib_1k": 292,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 3087138816
 },
 {
+"cluster_b_eff_4096": 18,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 18,
 "disagg_transfer_bytes_640": 125829120,
 "genz_chunked_kv_mb": 864.0,
 "genz_decode_kv_mb": 768.0,
@@ -15288,10 +15864,13 @@ true
 ],
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 27981250560
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
 "genz_chunked_kv_mb": 1152.0,
 "genz_decode_kv_mb": 1024.0,
@@ -15323,10 +15902,13 @@ true
 ],
 "serving_bytes_per_token": 262144,
 "serving_requests_8gib_1k": 32,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 63968378880
 },
 {
+"cluster_b_eff_4096": 243,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 243,
 "disagg_transfer_bytes_640": 23592960,
 "genz_chunked_kv_mb": 162.0,
 "genz_decode_kv_mb": 144.0,
@@ -15358,10 +15940,13 @@ true
 ],
 "serving_bytes_per_token": 36864,
 "serving_requests_8gib_1k": 227,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 6171394048
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 209715200,
 "genz_chunked_kv_mb": 1440.0,
 "genz_decode_kv_mb": 1280.0,
@@ -15393,10 +15978,13 @@ true
 ],
 "serving_bytes_per_token": 327680,
 "serving_requests_8gib_1k": 25,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 142916714496
 },
 {
+"cluster_b_eff_4096": 122,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 122,
 "disagg_transfer_bytes_640": 36700160,
 "genz_chunked_kv_mb": 252.0,
 "genz_decode_kv_mb": 224.0,
@@ -15428,10 +16016,13 @@ true
 ],
 "serving_bytes_per_token": 57344,
 "serving_requests_8gib_1k": 146,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 14140571648
 },
 {
+"cluster_b_eff_4096": 151,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 151,
 "disagg_transfer_bytes_640": 26214400,
 "genz_chunked_kv_mb": 180.0,
 "genz_decode_kv_mb": 160.0,
@@ -15463,9 +16054,12 @@ true
 ],
 "serving_bytes_per_token": 40960,
 "serving_requests_8gib_1k": 204,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 17557356544
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 188743680,
 "genz_chunked_kv_mb": 1296.0,
 "genz_error": "ValueError: More than 1 unique layers not supported. Work in progress",
@@ -15484,9 +16078,12 @@ true
 "runtime_prefill_error": "ValueError: More than 1 unique layers not supported. Work in progress",
 "serving_bytes_per_token": 294912,
 "serving_requests_8gib_1k": 28,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 109790101504
 },
 {
+"cluster_b_eff_4096": 53,
+"disagg_b_eff_4096": 53,
 "disagg_transfer_bytes_640": 83886080,
 "genz_chunked_kv_mb": 576.0,
 "genz_error": "ValueError: More than 1 unique layers not supported. Work in progress",
@@ -15509,9 +16106,12 @@ true
 "runtime_prefill_error": "ValueError: More than 1 unique layers not supported. Work in progress",
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 14495514624
 },
 {
+"cluster_b_eff_4096": 53,
+"disagg_b_eff_4096": 53,
 "disagg_transfer_bytes_640": 83886080,
 "genz_chunked_kv_mb": 576.0,
 "genz_error": "ValueError: More than 1 unique layers not supported. Work in progress",
@@ -15534,9 +16134,12 @@ true
 "runtime_prefill_error": "ValueError: More than 1 unique layers not supported. Work in progress",
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 14495514624
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 2569011200,
 "genz_chunked_kv_mb": 17640.0,
 "genz_decode_kv_mb": 15680.0,
@@ -15556,10 +16159,13 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 334.9609375 GB, KV Cache:1.9140625. \n System:{'Flops': 400, 'Memory_size': 200, 'Memory",
 "serving_bytes_per_token": 4014080,
 "serving_requests_8gib_1k": 2,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 467560038400
 },
 {
+"cluster_b_eff_4096": 12,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 12,
 "disagg_transfer_bytes_640": 314572800,
 "genz_chunked_kv_mb": 2160.0,
 "genz_decode_kv_mb": 1920.0,
@@ -15591,9 +16197,12 @@ true
 ],
 "serving_bytes_per_token": 491520,
 "serving_requests_8gib_1k": 17,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 18161336320
 },
 {
+"cluster_b_eff_4096": 28,
+"disagg_b_eff_4096": 28,
 "disagg_transfer_bytes_640": 104857600,
 "genz_chunked_kv_mb": 720.0,
 "genz_decode_kv_mb": 640.0,
@@ -15613,9 +16222,12 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 245.11669921875 GB, KV Cache:0.078125. \n System:{'Flops': 400, 'Memory_size': 200, 'Mem",
 "serving_bytes_per_token": 163840,
 "serving_requests_8gib_1k": 51,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 24134025216
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 786432000,
 "genz_chunked_kv_mb": 5400.0,
 "genz_decode_kv_mb": 150.0,
@@ -15635,9 +16247,12 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 440.596923828125 GB, KV Cache:0.018310546875. \n System:{'Flops': 400, 'Memory_size': 20",
 "serving_bytes_per_token": 1228800,
 "serving_requests_8gib_1k": 6,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 36280729600
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 17489920,
 "genz_chunked_kv_mb": 120.09375,
 "genz_decode_kv_mb": 152.5,
@@ -15657,10 +16272,13 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 1305.9197998046875 GB, KV Cache:0.01861572265625. \n System:{'Flops': 400, 'Memory_size'",
 "serving_bytes_per_token": 27328,
 "serving_requests_8gib_1k": 306,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 62942150656
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 249036800,
 "genz_chunked_kv_mb": 1710.0,
 "genz_decode_kv_mb": 1520.0,
@@ -15692,10 +16310,13 @@ true
 ],
 "serving_bytes_per_token": 389120,
 "serving_requests_8gib_1k": 21,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 133169152000
 },
 {
+"cluster_b_eff_4096": 325,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 325,
 "disagg_transfer_bytes_640": 18350080,
 "genz_chunked_kv_mb": 126.0,
 "genz_decode_kv_mb": 112.0,
@@ -15727,10 +16348,13 @@ true
 ],
 "serving_bytes_per_token": 28672,
 "serving_requests_8gib_1k": 292,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 4713349120
 },
 {
+"cluster_b_eff_4096": 49,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 49,
 "disagg_transfer_bytes_640": 125829120,
 "genz_chunked_kv_mb": 864.0,
 "genz_decode_kv_mb": 768.0,
@@ -15762,10 +16386,13 @@ true
 ],
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 3427139584
 },
 {
+"cluster_b_eff_4096": 2,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 2,
 "disagg_transfer_bytes_640": 524288000,
 "genz_chunked_kv_mb": 3600.0,
 "genz_decode_kv_mb": 3200.0,
@@ -15797,10 +16424,13 @@ true
 ],
 "serving_bytes_per_token": 819200,
 "serving_requests_8gib_1k": 10,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 34300988160
 },
 {
+"cluster_b_eff_4096": 104,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 104,
 "disagg_transfer_bytes_640": 62914560,
 "genz_chunked_kv_mb": 432.0,
 "genz_decode_kv_mb": 384.0,
@@ -15832,10 +16462,13 @@ true
 ],
 "serving_bytes_per_token": 98304,
 "serving_requests_8gib_1k": 85,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 908263424
 },
 {
+"cluster_b_eff_4096": 282,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 282,
 "disagg_transfer_bytes_640": 23592960,
 "genz_chunked_kv_mb": 162.0,
 "genz_decode_kv_mb": 144.0,
@@ -15867,9 +16500,12 @@ true
 ],
 "serving_bytes_per_token": 36864,
 "serving_requests_8gib_1k": 227,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 303710208
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 3019898880,
 "genz_chunked_kv_mb": 20736.0,
 "genz_decode_kv_mb": 18432.0,
@@ -15889,10 +16525,13 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 326.30126953125 GB, KV Cache:2.25. \n System:{'Flops': 400, 'Memory_size': 200, 'Memory_",
 "serving_bytes_per_token": 4718592,
 "serving_requests_8gib_1k": 1,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 465091952640
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 880803840,
 "genz_chunked_kv_mb": 6048.0,
 "genz_decode_kv_mb": 5376.0,
@@ -15924,10 +16563,13 @@ true
 ],
 "serving_bytes_per_token": 1376256,
 "serving_requests_8gib_1k": 6,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 79640723456
 },
 {
+"cluster_b_eff_4096": 11,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 11,
 "disagg_transfer_bytes_640": 335544320,
 "genz_chunked_kv_mb": 2304.0,
 "genz_decode_kv_mb": 2048.0,
@@ -15959,10 +16601,13 @@ true
 ],
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 17591697408
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1509949440,
 "genz_chunked_kv_mb": 10368.0,
 "genz_decode_kv_mb": 9216.0,
@@ -15994,10 +16639,13 @@ true
 ],
 "serving_bytes_per_token": 2359296,
 "serving_requests_8gib_1k": 3,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 174872788992
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 241172480,
 "genz_chunked_kv_mb": 1656.0,
 "genz_decode_kv_mb": 1472.0,
@@ -16029,10 +16677,13 @@ true
 ],
 "serving_bytes_per_token": 376832,
 "serving_requests_8gib_1k": 22,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 54452551680
 },
 {
+"cluster_b_eff_4096": 86,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 86,
 "disagg_transfer_bytes_640": 68157440,
 "genz_chunked_kv_mb": 468.0,
 "genz_decode_kv_mb": 416.0,
@@ -16064,10 +16715,13 @@ true
 ],
 "serving_bytes_per_token": 106496,
 "serving_requests_8gib_1k": 78,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 5228199936
 },
 {
+"cluster_b_eff_4096": 17,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 17,
 "disagg_transfer_bytes_640": 220200960,
 "genz_chunked_kv_mb": 1512.0,
 "genz_decode_kv_mb": 1344.0,
@@ -16099,10 +16753,13 @@ true
 ],
 "serving_bytes_per_token": 344064,
 "serving_requests_8gib_1k": 24,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 18482200576
 },
 {
+"cluster_b_eff_4096": 502,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 502,
 "disagg_transfer_bytes_640": 11796480,
 "genz_chunked_kv_mb": 81.0,
 "genz_decode_kv_mb": 72.0,
@@ -16134,10 +16791,13 @@ true
 ],
 "serving_bytes_per_token": 18432,
 "serving_requests_8gib_1k": 455,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 5012193280
 },
 {
+"cluster_b_eff_4096": 86,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 86,
 "disagg_transfer_bytes_640": 68157440,
 "genz_chunked_kv_mb": 468.0,
 "genz_decode_kv_mb": 416.0,
@@ -16170,10 +16830,13 @@ true
 ],
 "serving_bytes_per_token": 106496,
 "serving_requests_8gib_1k": 78,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 5256511488
 },
 {
+"cluster_b_eff_4096": 375,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 375,
 "disagg_transfer_bytes_640": 17039360,
 "genz_chunked_kv_mb": 117.0,
 "genz_decode_kv_mb": 104.0,
@@ -16205,10 +16868,13 @@ true
 ],
 "serving_bytes_per_token": 26624,
 "serving_requests_8gib_1k": 315,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 1999503360
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 325058560,
 "genz_chunked_kv_mb": 2232.0,
 "genz_decode_kv_mb": 760.0,
@@ -16241,10 +16907,13 @@ true
 ],
 "serving_bytes_per_token": 507904,
 "serving_requests_8gib_1k": 16,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 54015295488
 },
 {
+"cluster_b_eff_4096": 98,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 98,
 "disagg_transfer_bytes_640": 55705600,
 "genz_chunked_kv_mb": 382.5,
 "genz_decode_kv_mb": 130.0,
@@ -16277,10 +16946,13 @@ true
 ],
 "serving_bytes_per_token": 87040,
 "serving_requests_8gib_1k": 96,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 7804026880
 },
 {
+"cluster_b_eff_4096": 13,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 293601280,
 "genz_chunked_kv_mb": 2016.0,
 "genz_decode_kv_mb": 1792.0,
@@ -16312,9 +16984,12 @@ true
 ],
 "serving_bytes_per_token": 458752,
 "serving_requests_8gib_1k": 18,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 17075011584
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 5567938560,
 "genz_chunked_kv_mb": 38232.0,
 "genz_decode_kv_mb": 33984.0,
@@ -16334,10 +17009,13 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 898.259765625 GB, KV Cache:4.1484375. \n System:{'Flops': 400, 'Memory_size': 200, 'Memo",
 "serving_bytes_per_token": 8699904,
 "serving_requests_8gib_1k": 0,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 1284032692224
 },
 {
+"cluster_b_eff_4096": 53,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 53,
 "disagg_transfer_bytes_640": 83886080,
 "genz_chunked_kv_mb": 576.0,
 "genz_decode_kv_mb": 512.0,
@@ -16369,10 +17047,13 @@ true
 ],
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 14220787712
 },
 {
+"cluster_b_eff_4096": 280,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 280,
 "disagg_transfer_bytes_640": 23592960,
 "genz_chunked_kv_mb": 162.0,
 "genz_decode_kv_mb": 144.0,
@@ -16404,10 +17085,13 @@ true
 ],
 "serving_bytes_per_token": 36864,
 "serving_requests_8gib_1k": 227,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 610495488
 },
 {
+"cluster_b_eff_4096": 103,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 103,
 "disagg_transfer_bytes_640": 62914560,
 "genz_chunked_kv_mb": 432.0,
 "genz_decode_kv_mb": 384.0,
@@ -16439,10 +17123,13 @@ true
 ],
 "serving_bytes_per_token": 98304,
 "serving_requests_8gib_1k": 85,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 1317310464
 },
 {
+"cluster_b_eff_4096": 565,
 "decode_fit_refused": false,
+"disagg_b_eff_4096": 565,
 "disagg_transfer_bytes_640": 11796480,
 "genz_chunked_kv_mb": 81.0,
 "genz_decode_kv_mb": 72.0,
@@ -16474,10 +17161,13 @@ true
 ],
 "serving_bytes_per_token": 18432,
 "serving_requests_8gib_1k": 455,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 248651520
 },
 {
+"cluster_b_eff_4096": 5,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 5,
 "disagg_transfer_bytes_640": 524288000,
 "genz_chunked_kv_mb": 3600.0,
 "genz_decode_kv_mb": 3200.0,
@@ -16509,10 +17199,13 @@ true
 ],
 "serving_bytes_per_token": 819200,
 "serving_requests_8gib_1k": 10,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 25703219200
 },
 {
+"cluster_b_eff_4096": 13,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 335544320,
 "genz_chunked_kv_mb": 2304.0,
 "genz_decode_kv_mb": 2048.0,
@@ -16544,10 +17237,13 @@ true
 ],
 "serving_bytes_per_token": 524288,
 "serving_requests_8gib_1k": 16,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 13214154752
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 209715200,
 "genz_chunked_kv_mb": 1440.0,
 "genz_decode_kv_mb": 1280.0,
@@ -16579,10 +17275,13 @@ true
 ],
 "serving_bytes_per_token": 327680,
 "serving_requests_8gib_1k": 25,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 139003428864
 },
 {
+"cluster_b_eff_4096": 301,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 301,
 "disagg_transfer_bytes_640": 20971520,
 "genz_chunked_kv_mb": 144.0,
 "genz_decode_kv_mb": 128.0,
@@ -16614,10 +17313,13 @@ true
 ],
 "serving_bytes_per_token": 32768,
 "serving_requests_8gib_1k": 256,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 2471493632
 },
 {
+"cluster_b_eff_4096": 77,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 77,
 "disagg_transfer_bytes_640": 73400320,
 "genz_chunked_kv_mb": 504.0,
 "genz_decode_kv_mb": 448.0,
@@ -16649,9 +17351,12 @@ true
 ],
 "serving_bytes_per_token": 114688,
 "serving_requests_8gib_1k": 73,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 6425149440
 },
 {
+"cluster_b_eff_4096": 13,
+"disagg_b_eff_4096": 13,
 "disagg_transfer_bytes_640": 125829120,
 "genz_chunked_kv_mb": 864.0,
 "genz_decode_kv_mb": 768.0,
@@ -16671,10 +17376,13 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 1449.537353515625 GB, KV Cache:0.09375. \n System:{'Flops': 400, 'Memory_size': 200, 'Me",
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 32267960320
 },
 {
+"cluster_b_eff_4096": 28,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 28,
 "disagg_transfer_bytes_640": 125829120,
 "genz_chunked_kv_mb": 864.0,
 "genz_decode_kv_mb": 768.0,
@@ -16702,10 +17410,13 @@ true
 ],
 "serving_bytes_per_token": 196608,
 "serving_requests_8gib_1k": 42,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 20188364800
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 1022361600,
 "genz_chunked_kv_mb": 7020.0,
 "genz_decode_kv_mb": 6240.0,
@@ -16737,9 +17448,12 @@ true
 ],
 "serving_bytes_per_token": 1597440,
 "serving_requests_8gib_1k": 5,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 64630292480
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 330301440,
 "genz_chunked_kv_mb": 2268.0,
 "genz_decode_kv_mb": 2016.0,
@@ -16759,10 +17473,13 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 755.953125 GB, KV Cache:0.24609375. \n System:{'Flops': 400, 'Memory_size': 200, 'Memory",
 "serving_bytes_per_token": 516096,
 "serving_requests_8gib_1k": 16,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 807495794688
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 209715200,
 "genz_chunked_kv_mb": 1440.0,
 "genz_decode_kv_mb": 1280.0,
@@ -16794,10 +17511,13 @@ true
 ],
 "serving_bytes_per_token": 327680,
 "serving_requests_8gib_1k": 25,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 137426370560
 },
 {
+"cluster_b_eff_4096": 52,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 52,
 "disagg_transfer_bytes_640": 83886080,
 "genz_chunked_kv_mb": 576.0,
 "genz_decode_kv_mb": 512.0,
@@ -16829,10 +17549,13 @@ true
 ],
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 15009316864
 },
 {
+"cluster_b_eff_4096": 18,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 18,
 "disagg_transfer_bytes_640": 131072000,
 "genz_chunked_kv_mb": 900.0,
 "genz_decode_kv_mb": 800.0,
@@ -16864,10 +17587,13 @@ true
 ],
 "serving_bytes_per_token": 204800,
 "serving_requests_8gib_1k": 40,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 27591311360
 },
 {
+"cluster_b_eff_4096": 22,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 22,
 "disagg_transfer_bytes_640": 251658240,
 "genz_chunked_kv_mb": 1728.0,
 "genz_decode_kv_mb": 1536.0,
@@ -16899,10 +17625,13 @@ true
 ],
 "serving_bytes_per_token": 393216,
 "serving_requests_8gib_1k": 21,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 7444758528
 },
 {
+"cluster_b_eff_4096": 52,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 52,
 "disagg_transfer_bytes_640": 83886080,
 "genz_chunked_kv_mb": 576.0,
 "genz_decode_kv_mb": 512.0,
@@ -16934,10 +17663,13 @@ true
 ],
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 14780727296
 },
 {
+"cluster_b_eff_4096": 65,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 65,
 "disagg_transfer_bytes_640": 83886080,
 "genz_chunked_kv_mb": 576.0,
 "genz_decode_kv_mb": 512.0,
@@ -16969,10 +17701,13 @@ true
 ],
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 7980187648
 },
 {
+"cluster_b_eff_4096": 46,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 46,
 "disagg_transfer_bytes_640": 94371840,
 "genz_chunked_kv_mb": 648.0,
 "genz_decode_kv_mb": 576.0,
@@ -17004,10 +17739,13 @@ true
 ],
 "serving_bytes_per_token": 147456,
 "serving_requests_8gib_1k": 56,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 14965276672
 },
 {
+"cluster_b_eff_4096": 53,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 53,
 "disagg_transfer_bytes_640": 83886080,
 "genz_chunked_kv_mb": 576.0,
 "genz_decode_kv_mb": 512.0,
@@ -17039,9 +17777,12 @@ true
 ],
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 14220787712
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 230686720,
 "genz_chunked_kv_mb": 1584.0,
 "genz_decode_kv_mb": 1408.0,
@@ -17061,10 +17802,13 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 228.375 GB, KV Cache:0.171875. \n System:{'Flops': 400, 'Memory_size': 200, 'Memory_BW':",
 "serving_bytes_per_token": 360448,
 "serving_requests_8gib_1k": 23,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 244410482688
 },
 {
+"cluster_b_eff_4096": 22,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 22,
 "disagg_transfer_bytes_640": 131072000,
 "genz_chunked_kv_mb": 900.0,
 "genz_decode_kv_mb": 800.0,
@@ -17096,10 +17840,13 @@ true
 ],
 "serving_bytes_per_token": 204800,
 "serving_requests_8gib_1k": 40,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 24201134080
 },
 {
+"cluster_b_eff_4096": 1,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 146800640,
 "genz_chunked_kv_mb": 1008.0,
 "genz_decode_kv_mb": 896.0,
@@ -17131,9 +17878,12 @@ true
 ],
 "serving_bytes_per_token": 229376,
 "serving_requests_8gib_1k": 36,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 44090523648
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 146800640,
 "genz_chunked_kv_mb": 1008.0,
 "genz_decode_kv_mb": 896.0,
@@ -17153,10 +17903,13 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 261.942626953125 GB, KV Cache:0.109375. \n System:{'Flops': 400, 'Memory_size': 200, 'Me",
 "serving_bytes_per_token": 229376,
 "serving_requests_8gib_1k": 36,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 44090523648
 },
 {
+"cluster_b_eff_4096": 53,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 53,
 "disagg_transfer_bytes_640": 83886080,
 "genz_chunked_kv_mb": 576.0,
 "genz_decode_kv_mb": 512.0,
@@ -17188,9 +17941,12 @@ true
 ],
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 14220787712
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 209715200,
 "genz_chunked_kv_mb": 1440.0,
 "genz_decode_kv_mb": 742.0,
@@ -17216,10 +17972,13 @@ true
 "runtime_prefill_error": "ValueError: Layer Name:Attn Linear not found in the breakdown function",
 "serving_bytes_per_token": 327680,
 "serving_requests_8gib_1k": 25,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 139003428864
 },
 {
+"cluster_b_eff_4096": 40,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 40,
 "disagg_transfer_bytes_640": 104857600,
 "genz_chunked_kv_mb": 720.0,
 "genz_decode_kv_mb": 640.0,
@@ -17251,10 +18010,13 @@ true
 ],
 "serving_bytes_per_token": 163840,
 "serving_requests_8gib_1k": 51,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 15753805824
 },
 {
+"cluster_b_eff_4096": 9,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 9,
 "disagg_transfer_bytes_640": 83886080,
 "genz_chunked_kv_mb": 576.0,
 "genz_decode_kv_mb": 512.0,
@@ -17286,9 +18048,12 @@ true
 ],
 "serving_bytes_per_token": 131072,
 "serving_requests_8gib_1k": 64,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 37773901824
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 377487360,
 "genz_chunked_kv_mb": 2592.0,
 "genz_decode_kv_mb": 2304.0,
@@ -17308,9 +18073,12 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 635.203125 GB, KV Cache:0.28125. \n System:{'Flops': 400, 'Memory_size': 200, 'Memory_BW",
 "serving_bytes_per_token": 589824,
 "serving_requests_8gib_1k": 14,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 933526241280
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 3523215360,
 "genz_chunked_kv_mb": 24192.0,
 "genz_decode_kv_mb": 21504.0,
@@ -17330,10 +18098,13 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 3643.42822265625 GB, KV Cache:2.625. \n System:{'Flops': 400, 'Memory_size': 200, 'Memor",
 "serving_bytes_per_token": 5505024,
 "serving_requests_8gib_1k": 1,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 476278161408
 },
 {
+"cluster_b_eff_4096": 282,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 282,
 "disagg_transfer_bytes_640": 23592960,
 "genz_chunked_kv_mb": 162.0,
 "genz_decode_kv_mb": 144.0,
@@ -17365,10 +18136,13 @@ true
 ],
 "serving_bytes_per_token": 36864,
 "serving_requests_8gib_1k": 227,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 303687168
 },
 {
+"cluster_b_eff_4096": 141,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 141,
 "disagg_transfer_bytes_640": 47185920,
 "genz_chunked_kv_mb": 324.0,
 "genz_decode_kv_mb": 1.40625,
@@ -17400,10 +18174,13 @@ true
 ],
 "serving_bytes_per_token": 73728,
 "serving_requests_8gib_1k": 113,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 360345600
 },
 {
+"cluster_b_eff_4096": 12,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 12,
 "disagg_transfer_bytes_640": 419430400,
 "genz_chunked_kv_mb": 2880.0,
 "genz_decode_kv_mb": 12.5,
@@ -17435,10 +18212,13 @@ true
 ],
 "serving_bytes_per_token": 655360,
 "serving_requests_8gib_1k": 12,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 8646041600
 },
 {
+"cluster_b_eff_4096": 8,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 8,
 "disagg_transfer_bytes_640": 372244480,
 "genz_chunked_kv_mb": 2556.0,
 "genz_decode_kv_mb": 2272.0,
@@ -17470,10 +18250,13 @@ true
 ],
 "serving_bytes_per_token": 581632,
 "serving_requests_8gib_1k": 14,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 21734424576
 },
 {
+"cluster_b_eff_4096": 7,
 "decode_fit_refused": true,
+"disagg_b_eff_4096": 7,
 "disagg_transfer_bytes_640": 671088640,
 "genz_chunked_kv_mb": 4608.0,
 "genz_decode_kv_mb": 20.0,
@@ -17505,9 +18288,12 @@ true
 ],
 "serving_bytes_per_token": 1048576,
 "serving_requests_8gib_1k": 8,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 9001828352
 },
 {
+"cluster_b_eff_4096": 1,
+"disagg_b_eff_4096": 1,
 "disagg_transfer_bytes_640": 167772160,
 "genz_chunked_kv_mb": 1152.0,
 "genz_decode_kv_mb": 1024.0,
@@ -17527,7 +18313,8 @@ true
 "runtime_prefill_error": "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 589.505859375 GB, KV Cache:0.125. \n System:{'Flops': 400, 'Memory_size': 200, 'Memory_B",
 "serving_bytes_per_token": 262144,
 "serving_requests_8gib_1k": 32,
-"serving_state_bytes": 0
+"serving_state_bytes": 0,
+"serving_weight_bytes": 128849018880
 },
 {
 "count": 63,

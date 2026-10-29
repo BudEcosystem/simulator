@@ -44,7 +44,7 @@ def tower_view(block: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """A tower's or stack's block (a `vision_config`, an `audio_config`) under the names
     ``stack_params`` reads: its width, depth, heads, head width (`d_kv`) and FFN width under
     any of their spellings, and its stages when it is hierarchical. None for anything else."""
-    from .layer_plan import ATTENTION_HEAD_KEYS, _block_depth, _first, encoder_stages
+    from .layer_plan import ATTENTION_HEAD_KEYS, ENCODER_HEAD_KEYS, _block_depth, _first, encoder_stages
 
     if not isinstance(block, dict):
         return None
@@ -53,7 +53,10 @@ def tower_view(block: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if width:
         view["hidden_size"] = width
     view["num_hidden_layers"] = _block_depth(block)
-    heads = _pos_int(_first(block, *ATTENTION_HEAD_KEYS)) or _pos_int(block.get("num_heads"))
+    # a Whisper-shaped audio tower (Qwen2-Audio's, MOSS-Transcribe's `audio_config`) states its
+    # heads as an encoder's
+    heads = (_pos_int(_first(block, *ATTENTION_HEAD_KEYS)) or _pos_int(block.get("num_heads"))
+             or _pos_int(_first(block, *ENCODER_HEAD_KEYS)))
     if heads:
         view["num_attention_heads"] = heads
     ffn = _pos_int(_first(block, *_FFN_WIDTH_KEYS))

@@ -17,9 +17,10 @@ for the config, the checkpoint's tensors, or the config arithmetic the entry cit
 capacity, the memory figures it is sized from are each held to theirs. A figure the branch
 reports and origin/main did not is held the same way; a figure origin/main reported and the
 branch does not fails unless its entry names the error the branch now records for it. A figure
-whose reader cannot import a third-party module in this environment (`gguf`, `lxml`) is not
-measured here, and the test says so; it needs neither transformers nor torch (the config-class
-defaults ship with the package). The same check runs over
+whose reader cannot import a third-party module it is declared to need
+(``kv_corpus.READER_DEPENDENCIES``: the GGUF reader's `gguf`, the converter's `requests`, `lxml`,
+`json_repair`) is not measured here, and the test says so; any other missing module fails -- no
+reader needs transformers or torch (the config-class defaults ship with the package). The same check runs over
 the machine's HF cache and model folders with ``kv_corpus.py --gate``
 (docs/proofs/kv-layer-kinds-corpus-diff.md).
 """
@@ -84,9 +85,10 @@ def test_the_gguf_fixtures_are_read_through_the_gguf_reader(baseline, branch_row
 
 
 def test_no_unsafe_move_outside_the_allowlist(baseline, branch_rows, allowlist):
-    """Every figure is held; a figure whose reader cannot import a third-party module here (the
-    GGUF reader's `gguf`, the converter's `lxml`) is not measured in this environment, and says
-    so -- a reader that raises anything else fails."""
+    """Every figure is held; a figure whose reader cannot import a third-party module it is
+    declared to need (the GGUF reader's `gguf`, the converter's `requests` / `lxml` /
+    `json_repair`) is not measured in this environment, and says so -- a reader that raises
+    anything else fails."""
     names = [r["name"] for r in baseline]
     skipped = kv_corpus.unavailable_readers(baseline, branch_rows, names)
     if skipped:
@@ -110,8 +112,11 @@ def test_every_allowlist_entry_names_its_figures_truth_and_cause(allowlist):
         elif e.get("kind") == "memory":
             if not isinstance(e.get("truth"), (int, float)) or not e.get("source"):
                 bad.append(f"{where}: no ground truth or source")
-            elif e["branch"] < e["truth"] * (1 - float(e.get("vectors", 0.0))):
+            elif e["branch"] < e["truth"] * (1 - float(e.get("vectors", 0.0))) - float(
+                    e.get("unstated", 0)):
                 bad.append(f"{where}: {e['branch']} below its ground truth {e['truth']}")
+            elif e.get("unstated") and not e.get("unstated_source"):
+                bad.append(f"{where}: an unstated allowance names no source")
         elif not e.get("held_by"):
             bad.append(f"{where}: a capacity entry names no memory figure it follows")
     assert not bad, "\n".join(bad[:60])
@@ -170,3 +175,42 @@ def test_a_reader_whose_dependency_is_not_installed_is_not_measured_but_a_crash_
     crash = [{"name": "m", "conv_error": "TypeError: unsupported operand"}]
     assert len(kv_corpus.gate(main, own, {})) == 2
     assert len(kv_corpus.gate(main, crash, {})) == 2
+
+
+def test_only_a_reader_s_declared_dependency_may_be_missing():
+    """A reader may lack only the third-party modules it is declared to need
+    (``kv_corpus.READER_DEPENDENCIES``: the GGUF reader's `gguf`, the converter's `requests`,
+    `lxml`, `json_repair`). Any other missing module fails -- transformers and torch above all:
+    no reader needs them, so a reader that came to depend on one must fail where it is absent,
+    not pass as "not measured" (round 13 accepted any module outside the repository)."""
+    main = [{"name": "m", "conv_kv_size": 10, "kv_gb@4096": 1.0, "facts_weight_bytes": 100}]
+    for module in ("transformers", "torch", "gguf"):
+        conv = [{"name": "m", "conv_error": f"ModuleNotFoundError: No module named '{module}'",
+                 "kv_gb@4096": 1.0, "facts_weight_bytes": 100}]
+        assert len(kv_corpus.gate(main, conv, {})) == 1, module
+    calc = [{"name": "m", "conv_kv_size": 10, "kv_gb@4096": 1.0,
+             "facts_error": "ModuleNotFoundError: No module named 'transformers'"}]
+    assert len(kv_corpus.gate(main, calc, {})) == 1
+    assert kv_corpus.unavailable_readers(main, calc) == {}
+    gguf_main = [{"name": "gguf:x", "kv_gb@4096": 1.0, "conv_kv_size": 10}]
+    no_gguf = [{"name": "gguf:x", "gguf_error": "ModuleNotFoundError: No module named 'gguf'"}]
+    assert kv_corpus.gate(gguf_main, no_gguf, {}) == []
+    assert kv_corpus.unavailable_readers(gguf_main, no_gguf) == {"gguf": 2}
+    no_torch = [{"name": "gguf:x", "gguf_error": "ModuleNotFoundError: No module named 'torch'"}]
+    assert len(kv_corpus.gate(gguf_main, no_torch, {})) == 2
+
+
+def test_an_unstated_module_is_named_and_bounded():
+    """A figure may sit below its truth only by the modules the entry names as unstated -- the
+    checkpoint holds them and no config key describes them -- with their source; below that, or
+    with no source, it fails."""
+    main = [{"name": "m", "conv_serving_weight_bytes": 200}]
+    branch = [{"name": "m", "conv_serving_weight_bytes": 150}]
+    entry = {"config": "m", "reader": "conv_serving_weight_bytes", "main": 200, "branch": 150,
+             "truth": 160, "source": "s", "cause": "c", "unstated": 10,
+             "unstated_source": "a module no config key describes"}
+    assert kv_corpus.gate(main, branch, {"entries": [entry]}) == []
+    assert any("below its ground truth" in f for f in kv_corpus.gate(
+        main, branch, {"entries": [dict(entry, unstated=5)]}))
+    assert any("names no source" in f for f in kv_corpus.gate(
+        main, branch, {"entries": [dict(entry, unstated_source="")]}))

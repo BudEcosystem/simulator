@@ -150,9 +150,14 @@ class ModelConfig():
         # tokens or None) and its encoder stack (layer_plan.encoder_view, for the prefill graph).
         cross_attention: Optional[dict] = None,
         encoder: Optional[dict] = None,
+        # The model config this ModelConfig was read from (the HF loader's, BudSimulator's
+        # converter's), as stated: what the serving path counts the model's weights from
+        # (genz.serving.memory_model.estimate_weight_bytes). None for a ModelConfig built by hand.
+        source_config: Optional[dict] = None,
         **kwargs,
     ):
         self.model = model
+        self.source_config = source_config
         self.vocab_size = vocab_size
         self.max_model_len = max_model_len      ## Maximum length of the model
         self.num_decoder_layers = num_decoder_layers

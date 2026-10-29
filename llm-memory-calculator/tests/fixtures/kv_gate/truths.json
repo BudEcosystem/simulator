@@ -1,5 +1,5 @@
 {
- "about": "Ground truths written by hand for the KV gate's allowlist (scripts/kv_truth.py --manual): rows transformers 5.12 cannot build as their config is written, and what no model build states. 'base: transformers' builds the row's config with 'build_from' / 'build_as' / 'drop_keys' applied, and the other fields replace or add to what that build reads; every other truth is a checkpoint's own tensors (scripts/kv_truth.py --checkpoint REPO reads each safetensors shard's header), a GGUF's tensors, or config arithmetic, its formula in 'source' -- never a model card's rounded total. 'encoder_tokens' (with 'encoder_tokens_source') is a fixed-length encoder's output length, the arithmetic of its tower or its audio window, which a sequence's fixed cross-attention cache is held to; 'state_bytes' a recurrent state written by hand.",
+ "about": "Ground truths written by hand for the KV gate's allowlist (scripts/kv_truth.py --manual): rows transformers 5.12 cannot build as their config is written, and what no model build states. 'base: transformers' builds the row's config with 'build_from' / 'build_as' / 'drop_keys' applied, and the other fields replace or add to what that build reads; every other truth is a checkpoint's own tensors (scripts/kv_truth.py --checkpoint REPO reads each safetensors shard's header), a GGUF's tensors, or config arithmetic, its formula in 'source' -- never a model card's rounded total. 'encoder_tokens' (with 'encoder_tokens_source') is a fixed-length encoder's output length, the arithmetic of its tower or its audio window, which a sequence's fixed cross-attention cache is held to; 'state_bytes' a recurrent state written by hand. 'unstated' names, for the readers its regex matches, the parameters of modules the checkpoint holds that no key of the config describes, with their source: such a reader's figure may sit that many parameters (at 2 B) below the truth, and the allowlist entry carries the amount and the source.",
  "profiles": {
   "synth:blip2-flan-t5-xl": {
    "base": "transformers",
@@ -185,7 +185,9 @@
      45
     ]
    ],
-   "source": "transformers 5.12 Zamba2ForCausalLM built with its shared-block tying lifted (5.12 rejects the tie spec on the meta device), each of the num_mem_blocks=2 shared transformer blocks counted once; KV on the 9 hybrid_layer_ids, 32 KV heads x attention_head_dim 160"
+   "source": "transformers 5.12 Zamba2ForCausalLM built with its shared-block tying lifted (5.12 rejects the tie spec on the meta device), each of the num_mem_blocks=2 shared transformer blocks counted once; KV on the 9 hybrid_layer_ids, 32 KV heads x attention_head_dim 160",
+   "state_bytes": 37089792,
+   "state_bytes_source": "config arithmetic: 54 Mamba-2 mixers (every layer of layers_block_type, the hybrid ones too), each a (mamba_d_conv - 1) x (d_inner + 2 x mamba_ngroups x mamba_d_state) = 3 x 5,248 convolution buffer and an n_mamba_heads x mamba_headdim x mamba_d_state = 80 x 64 x 64 SSM state, d_inner = mamba_expand x hidden_size = 5,120, at 2 B an element: 37,089,792 B"
   },
   "fixture:microsoft_Phi-4-mini-flash-reasoning.json": {
    "params": 3852562944,
@@ -212,7 +214,9 @@
      23
     ]
    ],
-   "source": "the checkpoint's tensors (microsoft/Phi-4-mini-flash-reasoning@1dff8163d28ec880ca2411c474ddc0a927792810: 3,852,562,944 parameters, 3,851,980,800 in matrices, a 512,163,840-element token embedding; each safetensors shard's header read by scripts/kv_truth.py --checkpoint); KV: the hub's modeling_phi4flash.py (SambaY): the self-decoder's 8 attention layers slide (sliding_window=512) beside 8 Mamba layers; one full-attention layer writes the KV the cross-decoder's layers read (none of their own); 20 KV heads x 64 (2560 / 40)"
+   "source": "the checkpoint's tensors (microsoft/Phi-4-mini-flash-reasoning@1dff8163d28ec880ca2411c474ddc0a927792810: 3,852,562,944 parameters, 3,851,980,800 in matrices, a 512,163,840-element token embedding; each safetensors shard's header read by scripts/kv_truth.py --checkpoint); KV: the hub's modeling_phi4flash.py (SambaY): the self-decoder's 8 attention layers slide (sliding_window=512) beside 8 Mamba layers; one full-attention layer writes the KV the cross-decoder's layers read (none of their own); 20 KV heads x 64 (2560 / 40)",
+   "state_bytes": 1556480,
+   "state_bytes_source": "config arithmetic: SambaY's self-decoder (its first 16 layers) alternates Mamba and sliding attention (mb_per_layer 2): 8 Mamba-1 mixers at Phi4FlashConfig's defaults (d_state 16, d_conv 4, expand 2: d_inner 5,120), each a 3 x 5,120 convolution buffer and a 5,120 x 16 SSM state, at 2 B an element: 1,556,480 B (the cross-decoder's GMU layers hold none)"
   },
   "fixture:moonshotai_Kimi-Linear-48B-A3B-Instruct.json": {
    "params": 49122681728,
@@ -331,17 +335,52 @@
   "config:models--OpenMOSS-Team--MOSS-Transcribe-Diarize/snapshots/704aa4a9c304e8520be88901e0d1960158ef5b15/config.json": {
    "base": "transformers",
    "build_from": "text_config",
-   "source": "transformers 5.12, the language model in its text_config (the audio towers are not graphed)"
+   "source": "transformers 5.12, the language model in its text_config (the audio towers are not graphed)",
+   "figures": {
+    "serving_weight_bytes": {
+     "source": "the checkpoint's tensors (OpenMOSS-Team/MOSS-Transcribe-Diarize@704aa4a9c304e8520be88901e0d1960158ef5b15: 908,513,280 parameters, one copy of the weights, read from its safetensors headers by scripts/kv_truth.py --checkpoint) at 2 B: the serving device holds the whole model, its towers beside the language model",
+     "truth": 1817026560
+    },
+    "conv_serving_weight_bytes": {
+     "source": "the checkpoint's tensors (OpenMOSS-Team/MOSS-Transcribe-Diarize@704aa4a9c304e8520be88901e0d1960158ef5b15: 908,513,280 parameters, one copy of the weights, read from its safetensors headers by scripts/kv_truth.py --checkpoint) at 2 B: the serving device holds the whole model, its towers beside the language model",
+     "truth": 1817026560
+    }
+   }
   },
   "config:models--bosonai--higgs-audio-v3-tts-4b/snapshots/239f63fb7b02b1aa085f98d9efae5e35cc5523e8/config.json": {
    "base": "transformers",
    "build_from": "text_config",
-   "source": "transformers 5.12, the language model in its text_config (the audio towers are not graphed)"
+   "source": "transformers 5.12, the language model in its text_config (the audio towers are not graphed)",
+   "unstated": {
+    "params": 632382441,
+    "readers": "^(serving_weight_bytes|conv_serving_weight_bytes)$",
+    "source": "modules of the checkpoint no key of its config describes, so no reader can count them: `tied.embedding.modality_embeddings` (222,413,801: an acoustic codec -- its `audio_encoder_config` says `encoder_type: discrete`, `qwen3_aut_config: null`, `whisper_config: null` -- and its codebook tables), `tied.head.text_head` (388,956,160: a second copy of the 151,936 x 2,560 token table, beside `tie_word_embeddings: true`) and `tied.head.modality_heads` (21,012,480: 8 codebook heads); the readers count the language model the `text_config` states, 4,022,473,216"
+   },
+   "figures": {
+    "serving_weight_bytes": {
+     "source": "the checkpoint's tensors (bosonai/higgs-audio-v3-tts-4b@239f63fb7b02b1aa085f98d9efae5e35cc5523e8: 4,654,850,537 parameters, one copy of the weights, read from its safetensors headers by scripts/kv_truth.py --checkpoint) at 2 B: the serving device holds the whole model, its towers beside the language model",
+     "truth": 9309701074
+    },
+    "conv_serving_weight_bytes": {
+     "source": "the checkpoint's tensors (bosonai/higgs-audio-v3-tts-4b@239f63fb7b02b1aa085f98d9efae5e35cc5523e8: 4,654,850,537 parameters, one copy of the weights, read from its safetensors headers by scripts/kv_truth.py --checkpoint) at 2 B: the serving device holds the whole model, its towers beside the language model",
+     "truth": 9309701074
+    }
+   }
   },
   "config:models--microsoft--VibeVoice-1.5B/snapshots/c00898d257e6b46004e3e2866a47534085fb685a/config.json": {
    "base": "transformers",
    "build_from": "decoder_config",
-   "source": "transformers 5.12, the language model in its decoder_config (the audio towers are not graphed)"
+   "source": "transformers 5.12, the language model in its decoder_config (the audio towers are not graphed)",
+   "figures": {
+    "serving_weight_bytes": {
+     "source": "the checkpoint's tensors (microsoft/VibeVoice-1.5B@c00898d257e6b46004e3e2866a47534085fb685a: 2,704,021,987 parameters, one copy of the weights, read from its safetensors headers by scripts/kv_truth.py --checkpoint) at 2 B: the serving device holds the whole model, its towers beside the language model",
+     "truth": 5408043974
+    },
+    "conv_serving_weight_bytes": {
+     "source": "the checkpoint's tensors (microsoft/VibeVoice-1.5B@c00898d257e6b46004e3e2866a47534085fb685a: 2,704,021,987 parameters, one copy of the weights, read from its safetensors headers by scripts/kv_truth.py --checkpoint) at 2 B: the serving device holds the whole model, its towers beside the language model",
+     "truth": 5408043974
+    }
+   }
   },
   "config:models--Qwen--Qwen3-TTS-12Hz-0.6B-Base/snapshots/5d83992436eae1d760afd27aff78a71d676296fc/speech_tokenizer/config.json": {
    "params": 170557441,
@@ -399,7 +438,9 @@
      "source": "the GGUF's tensor bytes (Q4_K_M)"
     }
    },
-   "source": "the GGUF's own tensors (1,881,825,088 parameters); KV: full_attention_interval 4 -> 6 attention layers of 2 x 2 x 256, Gated DeltaNet elsewhere"
+   "source": "the GGUF's own tensors (1,881,825,088 parameters); KV: full_attention_interval 4 -> 6 attention layers of 2 x 2 x 256, Gated DeltaNet elsewhere",
+   "state_bytes": 10100736,
+   "state_bytes_source": "GGUF arithmetic: full_attention_interval 4 leaves 18 Gated DeltaNet layers, each an ssm.time_step_rank (16 value heads) x 128 x 128 state and a (ssm.conv_kernel 4 - 1) x (2 x 16 x 128 + 16 x 128) convolution buffer, at 2 B an element: 10,100,736 B"
   },
   "gguf:nomic-embed-text-v1.5.Q8_0.gguf": {
    "params": 136727040,
@@ -444,15 +485,18 @@
   },
   "genz:state-spaces/mamba-130m-hf": {
    "kv": [],
-   "source": "Mamba holds no KV cache (a fixed conv and SSM state)"
+   "source": "Mamba holds no KV cache (a fixed conv and SSM state); parameters: the checkpoint's tensors (state-spaces/mamba-130m-hf@1e76775f628fbf1350fbe4dbb3d971ba64af25a1: 129,135,360 parameters)",
+   "params": 129135360
   },
   "genz:state-spaces/mamba-2.8b-hf": {
    "kv": [],
-   "source": "Mamba holds no KV cache"
+   "source": "Mamba holds no KV cache; parameters: transformers 5.12 MambaForCausalLM of the hub config (tests/fixtures/hybrid_configs/state-spaces_mamba-2.8b-hf.json): 2,768,345,600 parameters",
+   "params": 2768345600
   },
   "genz:tiiuae/falcon-mamba-7b": {
    "kv": [],
-   "source": "Falcon-Mamba holds no KV cache"
+   "source": "Falcon-Mamba holds no KV cache; parameters: the checkpoint's tensors (tiiuae/falcon-mamba-7b@080ad94b3619e2c2d0afa59bafdc6113465b7006: 7,272,665,088 parameters)",
+   "params": 7272665088
   },
   "genz:ai21labs/Jamba-v0.1": {
    "kv": [
@@ -587,7 +631,9 @@
      "pad_token_id": null
     }
    },
-   "source": "transformers 5.12 MllamaForConditionalGeneration (one tile, as the synthetic states, with the one aspect ratio a single tile supports; its pad token (128004, beyond the reduced 32000-token vocabulary) unset)"
+   "source": "transformers 5.12 MllamaForConditionalGeneration (one tile, as the synthetic states, with the one aspect ratio a single tile supports; its pad token (128004, beyond the reduced 32000-token vocabulary) unset)",
+   "encoder_tokens": 1025,
+   "encoder_tokens_source": "the vision tower's one tile of (448 / 14)^2 = 1,024 patches and its class token"
   },
   "synth:mllama-own-cross-layers-no-tower-geometry": {
    "base": "transformers",
@@ -624,7 +670,9 @@
      "source": "the source GGUF's tensor bytes (Q4_K_M)"
     }
    },
-   "source": "the source GGUF's own tensors (/home/bud/models: Qwen3.5-2B-Q4_K_M.gguf, of which tests/fixtures/gguf/Qwen3.5-2B-Q4_K_M.metadata.gguf is the metadata, scripts/gguf_metadata_fixture.py); KV: full_attention_interval 4 -> 6 attention layers of 2 x 2 x 256, Gated DeltaNet elsewhere"
+   "source": "the source GGUF's own tensors (/home/bud/models: Qwen3.5-2B-Q4_K_M.gguf, of which tests/fixtures/gguf/Qwen3.5-2B-Q4_K_M.metadata.gguf is the metadata, scripts/gguf_metadata_fixture.py); KV: full_attention_interval 4 -> 6 attention layers of 2 x 2 x 256, Gated DeltaNet elsewhere",
+   "state_bytes": 10100736,
+   "state_bytes_source": "GGUF arithmetic: full_attention_interval 4 leaves 18 Gated DeltaNet layers, each an ssm.time_step_rank (16 value heads) x 128 x 128 state and a (ssm.conv_kernel 4 - 1) x (2 x 16 x 128 + 16 x 128) convolution buffer, at 2 B an element: 10,100,736 B"
   },
   "gguf:nomic-embed-text-v1.5.Q8_0.metadata.gguf": {
    "params": 136727040,
@@ -716,7 +764,10 @@
      5
     ]
    ],
-   "source": "the detokenizer's own checkpoint (audio_detokenizer/model.safetensors in the snapshot: lfm.layers.{2,4,6}.self_attn.k_proj and v_proj 256 x 512 each, so 512 K+V elements a token on each of the 3 sliding_attention layers, windowed at sliding_window 30; the 5 conv layers hold a fixed state). transformers 5.12's Lfm2 reads only full_attention and builds these layers as convolutions, so its model is not this checkpoint"
+   "source": "the detokenizer's own checkpoint (audio_detokenizer/model.safetensors in the snapshot: lfm.layers.{2,4,6}.self_attn.k_proj and v_proj 256 x 512 each, so 512 K+V elements a token on each of the 3 sliding_attention layers, windowed at sliding_window 30; the 5 conv layers hold a fixed state). transformers 5.12's Lfm2 reads only full_attention and builds these layers as convolutions, so its model is not this checkpoint; parameters: the detokenizer checkpoint's tensors (audio_detokenizer/model.safetensors in the snapshot, its header read: 78,532,290)",
+   "params": 78532290,
+   "state_bytes": 15360,
+   "state_bytes_source": "config arithmetic: 5 `conv` layers, each a conv_L_cache (3) x hidden (512) convolution cache, at 2 B an element: 15,360 B"
   },
   "config:models--LiquidAI--LFM2.5-Audio-1.5B/snapshots/c362a0625dfe45aa588dce5f0ada28a7e5707628/audio_detokenizer/config.json": {
    "kv": [
@@ -733,7 +784,64 @@
      5
     ]
    ],
-   "source": "the detokenizer's own checkpoint (audio_detokenizer/model.safetensors in the snapshot: lfm.layers.{2,4,6}.self_attn.k_proj and v_proj 256 x 512 each, so 512 K+V elements a token on each of the 3 sliding_attention layers, windowed at sliding_window 30; the 5 conv layers hold a fixed state). transformers 5.12's Lfm2 reads only full_attention and builds these layers as convolutions, so its model is not this checkpoint"
+   "source": "the detokenizer's own checkpoint (audio_detokenizer/model.safetensors in the snapshot: lfm.layers.{2,4,6}.self_attn.k_proj and v_proj 256 x 512 each, so 512 K+V elements a token on each of the 3 sliding_attention layers, windowed at sliding_window 30; the 5 conv layers hold a fixed state). transformers 5.12's Lfm2 reads only full_attention and builds these layers as convolutions, so its model is not this checkpoint; parameters: the detokenizer checkpoint's tensors (audio_detokenizer/model.safetensors in the snapshot, its header read: 78,532,290)",
+   "params": 78532290,
+   "state_bytes": 15360,
+   "state_bytes_source": "config arithmetic: 5 `conv` layers, each a conv_L_cache (3) x hidden (512) convolution cache, at 2 B an element: 15,360 B"
+  },
+  "config:models--mistralai--Voxtral-Mini-4B-Realtime-2602/snapshots/2769294da9567371363522aac9bbcfdd19447add/config.json": {
+   "base": "transformers",
+   "source": "transformers 5.12 VoxtralRealtimeForConditionalGeneration",
+   "unstated": {
+    "params": 5111808,
+    "readers": "^(serving_weight_bytes|conv_serving_weight_bytes)$",
+    "source": "transformers 5.12 builds 26 x VoxtralRealtimeTextAdaRmsNorm (Linear(3,072, 32) and Linear(32, 3,072): 196,608 each, 5,111,808) at a width of 32 written in modeling_voxtral_realtime.py, in no config key (the checkpoint's `layers.#.ada_rms_norm_t_cond`); every other module is counted, its audio tower, convolutional front end and two-matrix projector among them (4,424,886,272 of 4,429,679,360)"
+   }
+  },
+  "fixture:whisper-large-v3.json": {
+   "base": "transformers",
+   "encoder_tokens": 1500,
+   "encoder_tokens_source": "the audio encoder's max_source_positions: a 30 s window, 3,000 mel frames halved by its stride-2 convolution"
+  },
+  "synth:whisper-large-v3": {
+   "base": "transformers",
+   "encoder_tokens": 1500,
+   "encoder_tokens_source": "the audio encoder's max_source_positions: a 30 s window, 3,000 mel frames halved by its stride-2 convolution"
+  },
+  "config:models--onnx-community--whisper-base/snapshots/1846881b6b3a3024392c1eea3ad983695bc23925/config.json": {
+   "base": "transformers",
+   "encoder_tokens": 1500,
+   "encoder_tokens_source": "the audio encoder's max_source_positions: a 30 s window, 3,000 mel frames halved by its stride-2 convolution"
+  },
+  "config:models--onnx-community--whisper-tiny.en/snapshots/2575352d61be1bf7225cf8f8b268a4678025fc58/config.json": {
+   "base": "transformers",
+   "encoder_tokens": 1500,
+   "encoder_tokens_source": "the audio encoder's max_source_positions: a 30 s window, 3,000 mel frames halved by its stride-2 convolution"
+  },
+  "synth:t5-asym": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "a text encoder over the request's own prompt: no fixed length, so no fixed cross-attention cache (the readers carry it over the sequence in their per-token rate)"
+  },
+  "synth:t5-small": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "a text encoder over the request's own prompt: no fixed length, so no fixed cross-attention cache (the readers carry it over the sequence in their per-token rate)"
+  },
+  "synth:mt5-noflag": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "a text encoder over the request's own prompt: no fixed length, so no fixed cross-attention cache (the readers carry it over the sequence in their per-token rate)"
+  },
+  "synth:marian-noflag": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "a text encoder over the request's own prompt: no fixed length, so no fixed cross-attention cache (the readers carry it over the sequence in their per-token rate)"
+  },
+  "synth:prophetnet": {
+   "base": "transformers",
+   "encoder_tokens": 0,
+   "encoder_tokens_source": "a text encoder over the request's own prompt: no fixed length, so no fixed cross-attention cache (the readers carry it over the sequence in their per-token rate)"
   }
  }
 }

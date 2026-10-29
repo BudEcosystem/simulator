@@ -35,13 +35,15 @@ reserves), KV bytes a token and at 4k, and state bytes; GenZ's per-layer attenti
 its KV elements per token (`get_kv_size`, which the disaggregation KV transfer multiplies by
 2 bytes), its decode and chunked graphs' KV and weights; and the serving `MemoryModel`'s KV
 bytes per token, per-request state, the 1,024-token requests 8 GiB admits, and the
-disaggregation transfer for 512 + 128 tokens, read from `DisaggregationAnalyzer` itself; GenZ's
+disaggregation transfer for 512 + 128 tokens, read from `DisaggregationAnalyzer` itself; the
+weights a `ServingSimulator` run loads into its device tier and the cluster's and
+disaggregation's concurrency they leave on a 40 GB card at 4k (`B_eff`); GenZ's
 runtime modelling (`prefill_moddeling`, `decode_moddeling` -- whose fit check adds the decode
 graph's weights to its KV -- and `chunked_moddeling`, which `estimate_*_performance` wrap), each
 run to completion on a fixed 200 GB device, its latency, weights and KV, or its error, and the
 decode fit check on a device the resident model's weights alone overflow; with ``--repo-root``, BudSimulator's database
 converter (`ModelConverter.hf_to_genz`): its encoder / decoder depths, KV elements per token,
-per-sequence fixed bytes and its graph's weights; and every other reader of the layer kinds: GenZ's prefill graph
+per-sequence fixed bytes, its graph's weights and the serving path's weights; and every other reader of the layer kinds: GenZ's prefill graph
 (weights, KV), the prefix-cache analyser's bytes per token, the KV planner's `KVGeometry`, the
 vLLM planner (`engine/vllm.py`: limits, and the running sequences `predict` gives 1,024 clients
 at 1k and 8k prompts), its profile scheduler (`perf.predict.sim_config` + `perf.sched.simulate`)
@@ -268,6 +270,14 @@ def measure_converter(cfg):
         # path's state is recorded. A request's fixed bytes: the state, and (round 9) an
         # encoder-decoder's cross-attention cache.
         out["conv_state_bytes"] = _fixed_bytes(mc)
+        # the weights the serving path holds for a database model (its ServingSimulator weight
+        # load and its cluster / disaggregation B_eff: genz.serving.memory_model)
+        try:
+            from llm_memory_calculator.genz.serving.memory_model import estimate_weight_bytes
+
+            out["conv_serving_weight_bytes"] = int(estimate_weight_bytes(mc, "bf16", 1))
+        except Exception as e:
+            out["conv_serving_weight_bytes_error"] = f"{type(e).__name__}: {str(e)[:200]}"
         # the weights of the model the converter graphs (its prefill graph)
         try:
             from llm_memory_calculator.genz.Models.get_language_model import (
@@ -703,6 +713,7 @@ def measure_genz(cfg_or_name, genz_data):
         out["serving_requests_8gib_1k"] = (8 * 1024**3 // per_request) if per_request else None
     except Exception as e:
         out["serving_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    out.update(measure_serving_weights(cfg_or_name))
     try:
         # The prefill-to-decode transfer, as DisaggregationAnalyzer computes it (512 + 128 tokens)
         from llm_memory_calculator.genz.Models.get_language_model import get_configs
@@ -715,6 +726,40 @@ def measure_genz(cfg_or_name, genz_data):
     out.update(measure_runtime(cfg_or_name))
     return out
 
+
+def measure_serving_weights(cfg_or_name):
+    """The serving path's weights and the concurrency they leave: what a ServingSimulator run
+    loads into its device tier (`_estimate_weight_bytes`, which every serving reader of the
+    weights calls: genz.serving.memory_model.estimate_weight_bytes) at bf16 on one device, and the
+    cluster's and disaggregation's B_eff on ``B_EFF_DEVICE`` at 4,096 tokens."""
+    out = {}
+    try:
+        from llm_memory_calculator.genz.Models.get_language_model import get_configs
+        from llm_memory_calculator.genz.serving.simulator import ServingSimulator
+
+        mc = get_configs(cfg_or_name)
+        sim = ServingSimulator(model=cfg_or_name, hardware=B_EFF_DEVICE, precision="bf16")
+        out["serving_weight_bytes"] = int(sim._estimate_weight_bytes(mc))
+    except Exception as e:
+        out["serving_weight_bytes_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    for tag, module, cls in (("cluster", "cluster", "ClusterAnalyzer"),
+                             ("disagg", "disaggregation", "DisaggregationAnalyzer")):
+        try:
+            # The concurrency the memory budget pins (B_eff: the device less the weights, over a
+            # request's KV at 4,096 tokens and its fixed bytes), uncapped by the scheduler's batch
+            import importlib
+
+            mod = importlib.import_module(f"llm_memory_calculator.genz.serving.{module}")
+            an = getattr(mod, cls)(model=cfg_or_name, hardware=B_EFF_DEVICE)
+            out[f"{tag}_b_eff_4096"] = int(an._build_b_eff(4096, max_batch_size=10**7))
+        except Exception as e:
+            out[f"{tag}_b_eff_4096_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    return out
+
+
+#: The device the serving path's weights and its cluster / disaggregation concurrency are sized
+#: for: a 40 GB card, which every model under ~20B parameters fits beside some requests.
+B_EFF_DEVICE = "A100_40GB_GPU"
 
 #: The device the runtime modelling runs on: big enough that every model in the corpus fits.
 RUNTIME_SYSTEM = {"Flops": 400, "Memory_size": 200, "Memory_BW": 2000, "ICN": 300,
@@ -915,7 +960,8 @@ import re  # noqa: E402
 
 #: Capacity figures: higher admits more requests into the same memory.
 CAPACITY_FIGURES = re.compile(
-    r"^(vllm_limits\[[012]\]|vllm_running_\d+|serving_requests_\w+|sim_max_running)$")
+    r"^(vllm_limits\[[012]\]|vllm_running_\d+|serving_requests_\w+|sim_max_running"
+    r"|(cluster|disagg)_b_eff_\d+)$")
 #: Neither memory nor capacity: kinds and layer counts, latencies (`runtime_*[0]`), vLLM's KV
 #: group counts, the KV planner's layer counts and block size, flags, GGUF bookkeeping.
 NOT_AN_AMOUNT = re.compile(
@@ -1001,19 +1047,41 @@ def _repo_owned(module):
     return False
 
 
-def unavailable(row, path):
-    """The third-party module a figure's reader could not import in this environment (the GGUF
-    reader's `gguf`, the converter's `lxml`), or None. Such a figure is not measured here -- the
-    reader cannot run at all -- which is not a figure the branch lost; a reader that raises
-    anything else, or cannot import this repository's own code, is."""
-    import re as _re
+#: The third-party modules a reader may lack in an environment, by reader: the GGUF reader
+#: (`bud_component.gguf_to_hf_config`) needs `gguf`; BudSimulator's converter imports BudSimulator's
+#: database package, which needs `requests`, `lxml` and `json_repair` (BudSimulator/requirements.txt).
+#: Where one is not installed that reader cannot run at all, and its figures are reported as not
+#: measured here. A reader that cannot import any other module fails the gate -- transformers and
+#: torch included: no reader needs them (the config-class defaults ship with the package), so a
+#: reader that came to depend on one fails in an environment without it instead of passing as
+#: "not measured".
+READER_DEPENDENCIES = {"gguf": ("gguf",), "conv": ("requests", "lxml", "json_repair")}
 
+
+def _reader_of(row, path):
+    """The reader behind a figure, as ``READER_DEPENDENCIES`` names it: ``gguf`` for every figure
+    of a GGUF row whose file could not be read, else the figure's own prefix (``conv_kv_size`` ->
+    ``conv``)."""
+    if row.get("gguf_error") and not _error_of(row, path):
+        return "gguf"
+    return re.split(r"[\[._]", path)[0]
+
+
+def unavailable(row, path):
+    """The third-party module a figure's reader could not import in this environment, when that
+    reader is declared to need it (``READER_DEPENDENCIES``: the GGUF reader's `gguf`, the
+    converter's `requests` / `lxml` / `json_repair`), or None. Such a figure is not measured here
+    -- the reader cannot run at all -- which is not a figure the branch lost; a reader that
+    raises anything else, or cannot import a module it is not declared to need (this
+    repository's own code, transformers, torch), is."""
     err = _error_of(row, path) or row.get("gguf_error") or ""
-    m = _re.match(r"(ModuleNotFoundError|ImportError): No module named '([\w.]+)'", err)
+    m = re.match(r"(ModuleNotFoundError|ImportError): No module named '([\w.]+)'", err)
     if not m:
         return None
     top = m.group(2).split(".")[0]
-    return None if _repo_owned(top) else top
+    if _repo_owned(top):
+        return None
+    return top if top in READER_DEPENDENCIES.get(_reader_of(row, path), ()) else None
 
 
 def lost_and_new(main_rows, branch_rows, names=None):
@@ -1086,8 +1154,10 @@ def gate(main_rows, branch_rows, allowlist, names=None):
             truth = e.get("truth")
             if not isinstance(truth, (int, float)):
                 failures.append(f"{where}: no ground truth")
-            elif y < truth * (1 - float(e.get("vectors", 0.0))):
+            elif y < truth * (1 - float(e.get("vectors", 0.0))) - float(e.get("unstated", 0)):
                 failures.append(f"{where}: below its ground truth {truth}")
+            elif e.get("unstated") and not e.get("unstated_source"):
+                failures.append(f"{where}: an unstated allowance names no source")
         else:
             held = e.get("held_by") or []
             if not held:

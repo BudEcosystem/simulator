@@ -175,9 +175,42 @@ _PER_LAYER_LIST_KEYS = (
 )
 
 
+#: The decoder-only names a config class aliases to another key (transformers' `attribute_map`):
+#: GPT-2, GPT-J, CodeGen, GPT-BigCode, CTRL and OpenAI-GPT state `n_layer`, `n_embd`, `n_head` and
+#: `n_positions`, BLOOM `n_layer` and `n_head` -- flat, or as an EncoderDecoderModel's or a
+#: VisionEncoderDecoder's nested `decoder` (a ViT-GPT2 captioner). GPT-2's FFN width is `n_inner`
+#: (unset: 4 x `n_embd`). ``with_decoder_names`` puts each under the decoder-only name where the
+#: config does not state that name itself; read under the decoder-only names alone, a nested
+#: GPT-2 decoder had no KV and GenZ, the serving path and the prefix cache raised.
+DECODER_NAME_ALIASES = {
+    "num_hidden_layers": ("n_layer",),
+    "hidden_size": ("n_embd",),
+    "num_attention_heads": ("n_head",),
+    "max_position_embeddings": ("n_positions",),
+    "intermediate_size": ("n_inner",),
+}
+
+
+def with_decoder_names(block: Dict[str, Any]) -> Dict[str, Any]:
+    """``block`` with its geometry also under the decoder-only names (``DECODER_NAME_ALIASES``)
+    where it states it only under an alias; ``block`` itself when it states none that way."""
+    if not isinstance(block, dict):
+        return block
+    add = {}
+    for name, aliases in DECODER_NAME_ALIASES.items():
+        if _first(block, name) is not None:
+            continue
+        for alias in aliases:
+            v = block.get(alias)
+            if isinstance(v, int) and not isinstance(v, bool) and v > 0:
+                add[name] = v
+                break
+    return {**block, **add} if add else block
+
+
 def depth(tc: Dict[str, Any]) -> int:
     """Decoder depth: the stated layer count, else the length of a per-layer list."""
-    n = _first(tc, "num_hidden_layers", "n_layers", "num_layers")
+    n = _first(tc, "num_hidden_layers", "n_layers", "num_layers", "n_layer")
     if n:
         return int(n)
     for key in _PER_LAYER_LIST_KEYS:
@@ -431,7 +464,7 @@ def _lift(config: Dict[str, Any], stacks: Dict[str, int]) -> Dict[str, Any]:
     view = dict(config)
     block = _stack_block(config, NESTED_DECODER_KEYS)
     if block is not None:
-        view.update({k: v for k, v in block.items()
+        view.update({k: v for k, v in with_decoder_names(block).items()
                      if v is not None and k not in _BLOCK_OWN_KEYS})
     if stacks["decoder"]:
         view["num_hidden_layers"] = stacks["decoder"]
@@ -465,12 +498,20 @@ def decoder_view(config: Dict[str, Any]) -> Dict[str, Any]:
     were charged no KV at all). A decoder in its own block (Dia's `decoder_config`,
     EncoderDecoderModel's `decoder`) is lifted over the top level, as a multimodal config's
     `text_config` is. An encoder-decoder nested as a `text_config` (BLIP-2's flan-T5) is viewed
-    in place, so every reader that looks there finds the decoder. Any other config is returned
-    as it is.
+    in place, so every reader that looks there finds the decoder. A decoder spelled the GPT-2 way
+    (`n_layer` / `n_embd` / `n_head`: ``DECODER_NAME_ALIASES``), nested or flat, is also given
+    the decoder-only names. Any other config is returned as it is.
     """
     holder, stacks = _stacks_holder(config)
     if stacks is None:
-        return config
+        # a decoder-only config: its own geometry, under the decoder-only names (GPT-2's)
+        if not isinstance(config, dict):
+            return config
+        tc = config.get("text_config")
+        if isinstance(tc, dict):
+            named = with_decoder_names(tc)
+            return config if named is tc else {**config, "text_config": named}
+        return with_decoder_names(config)
     view = _lift(holder, stacks)
     if holder is config:
         return view

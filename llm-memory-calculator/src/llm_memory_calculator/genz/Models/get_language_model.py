@@ -367,6 +367,9 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
     # block; hoist them so every lookup below sees the real geometry instead of the
     # module defaults. Flat configs pass through untouched. An encoder-decoder's encoder
     # depth is read before, from the config as stated.
+    import copy as _copy
+
+    source_config = _copy.deepcopy(hf_config) if isinstance(hf_config, dict) else None
     enc_dec = encoder_decoder_fields(hf_config)
     num_encoder_layers = enc_dec["num_encoder_layers"]
     from llm_memory_calculator.layer_plan import decoder_streams
@@ -644,6 +647,7 @@ def huggingface_config_to_model_config(hf_config: dict, model_name: str) -> Mode
         encoder=enc_dec["encoder"],
         # Pre-quantized checkpoints store some weight roles below the caller's precision
         weight_precision=resolve_weight_precision(hf_config),
+        source_config=source_config,
     )
 
 _CONFIG_STR_CACHE: dict = {}

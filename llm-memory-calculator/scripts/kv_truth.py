@@ -30,6 +30,7 @@ its source (``tests/fixtures/kv_gate/truths.json``, ``--manual``).
 
 import json
 import logging
+import re
 import warnings
 
 #: K / V projection names, per family (transformers 5.12): separate projections (ProphetNet's
@@ -325,8 +326,17 @@ def checkpoint_profile(repo, revision="main"):
 
     api = json.loads(_hub_get(f"https://huggingface.co/api/models/{repo}/revision/{revision}"))
     sha = api.get("sha") or revision
-    shards = sorted(s["rfilename"] for s in api.get("siblings", [])
-                    if s["rfilename"].endswith(".safetensors"))
+    files = [s["rfilename"] for s in api.get("siblings", [])]
+    shards = sorted(f for f in files if f.endswith(".safetensors"))
+    # One copy of the weights: a repo can ship them twice, in the transformers layout
+    # (`model*.safetensors`, named by its index) and in another (Mistral's `consolidated
+    # .safetensors`), and summing both doubled Voxtral-Mini-4B-Realtime's 4,429,679,360.
+    if "model.safetensors.index.json" in files:
+        index = json.loads(_hub_get(
+            f"https://huggingface.co/{repo}/resolve/{sha}/model.safetensors.index.json"))
+        shards = sorted(set(index.get("weight_map", {}).values())) or shards
+    elif "model.safetensors" in files:
+        shards = ["model.safetensors"]
     def header(shard):
         url = f"https://huggingface.co/{repo}/resolve/{sha}/{shard}"
         n = struct.unpack("<Q", _hub_get(url, {"Range": "bytes=0-7"})[:8])[0]
@@ -354,11 +364,16 @@ def checkpoint_profile(repo, revision="main"):
             "shards": len(shards)}
 
 
-def kv_elements(profile, tokens=None):
-    """K + V elements the self-attention caches hold for ``tokens`` tokens; with no tokens, per
-    token on the layers that grow without bound (the full ones). None when a width is unknown.
-    A layer entry is ``[kind, window, width]``, or ``[kind, window, width, count]`` for ``count``
-    identical layers (a truth written by hand)."""
+def kv_elements(profile, tokens=None, at=None):
+    """K + V elements the self-attention caches hold for ``tokens`` tokens; with no tokens, the
+    elements one token adds: with ``at``, the ``at``-th token of a sequence (every full layer, and
+    every windowed layer whose window still holds it: window >= ``at``); without, a token inside
+    every window (every layer that caches, full or windowed -- what each token adds until the
+    windows fill). None when a width is unknown. A layer entry is ``[kind, window, width]``, or
+    ``[kind, window, width, count]`` for ``count`` identical layers (a truth written by hand).
+
+    Counting the full layers alone made the per-token truth of a stack whose every layer is
+    windowed 0, which accepts any figure (Voxtral-Realtime, LFM2.5-Audio's detokenizers)."""
     if not profile or "kv" not in profile:
         return None
     total = 0
@@ -368,12 +383,15 @@ def kv_elements(profile, tokens=None):
         if width is None:
             return None
         width = width * count
+        if kind == "none":
+            continue
         if tokens is None:
-            total += width if kind == "full" else 0
+            if kind == "full" or at is None or not window or window >= at:
+                total += width
         elif kind == "sliding" and window:
             total += width * min(tokens, window)
         else:
-            total += width * tokens if kind != "none" else 0
+            total += width * tokens
     return total
 
 
@@ -443,13 +461,18 @@ def figure_truth(profile, reader):
         v = p["figures"][reader]
         return v["truth"], v["source"]
     per_token = _kv_bytes(p)
+    at = re.match(r"^kvgeo_(\d+)\[0\]$", reader)
     rules = [
         (r"^(conv_kv_size|genz_kv_size)$", lambda: kv_elements(p), "K+V elements a token adds"
-         " on the full-attention layers"),
-        (r"^(serving_bytes_per_token|prefix_kv_bytes_per_token|kvgeo_\d+\[0\])$",
-         lambda: per_token, "K+V bytes a token adds on the full-attention layers"),
-        (r"^facts_kv_bytes_per_token$", lambda: per_token,
-         "K+V bytes a token adds on the full-attention layers"),
+         " on every layer that caches it (full, and windowed while inside the window)"),
+        (r"^(serving_bytes_per_token|prefix_kv_bytes_per_token|facts_kv_bytes_per_token)$",
+         lambda: per_token, "K+V bytes a token adds on every layer that caches it (full, and"
+         " windowed while inside the window)"),
+        (r"^kvgeo_\d+\[0\]$",
+         lambda: None if kv_elements(p, at=int(at.group(1))) is None
+         else 2 * kv_elements(p, at=int(at.group(1))),
+         "K+V bytes the context's last token adds (the full layers, and the windowed layers whose"
+         " window still holds it)"),
         (r"^facts_kv_bytes_4096$", lambda: _kv_bytes(p, 4096), "a 4k sequence's self-attention KV"),
         (r"^disagg_transfer_bytes_640$", lambda: _kv_bytes(p, 640), "640 tokens' KV"),
         (r"^genz_(decode|prefill|chunked)_kv_mb$", lambda: _scaled(_kv_bytes(p, 4096), MIB),
@@ -475,6 +498,11 @@ def figure_truth(profile, reader):
          " -- the input embedding, a learned position table, codebook embeddings (MiB)"),
         (r"^facts_weight_bytes$", lambda: None if params is None or p.get("quantized")
          else 2 * params, "the model's weights at 2 B"),
+        # the weights the serving path holds on the device (a ServingSimulator's weight load, the
+        # cluster / disaggregation B_eff), at the precision measured (bf16) whatever the checkpoint
+        (r"^(serving_weight_bytes|conv_serving_weight_bytes)$",
+         lambda: None if params is None else 2 * params,
+         "the model's weights at 2 B (every parameter: the device holds the whole model)"),
         (STATE_WITH_CROSS,
          lambda: _fixed_bytes(p, cross=True), "a sequence's fixed bytes: its recurrent state and"
          " the cross-attention cache of a fixed-length encoder (2 B an element)"),
@@ -515,12 +543,16 @@ GRAPH_SLACK = 5e-5
 HELD_BY = {
     "vllm": ["facts_weight_bytes", "facts_kv_bytes_per_token", "facts_kv_bytes_4096"],
     "serving_requests": ["serving_bytes_per_token"],
+    # B_eff = (device - weights) // (KV a token x context + a request's fixed bytes)
+    "b_eff": ["serving_weight_bytes", "serving_bytes_per_token", "serving_state_bytes"],
 }
 
 
 def _held_by(reader):
     if reader.startswith("serving_requests"):
         return HELD_BY["serving_requests"]
+    if re.match(r"^(cluster|disagg)_b_eff_\d+$", reader):
+        return HELD_BY["b_eff"]
     return HELD_BY["vllm"]
 
 
@@ -578,6 +610,12 @@ def allowlist_from(main_rows, branch_rows, configs, manual, causes):
                 errs) + ")" if errs else "") + "; the branch's is held to its ground truth")
         if kind == "memory":
             e["truth"], e["source"] = figure_truth(profile(name), reader)
+            unstated = profile(name).get("unstated") or {}
+            if unstated and re.match(unstated.get("readers", "$^"), reader):
+                # modules the checkpoint holds that no config key describes: the figure may sit
+                # that many parameters (at 2 B) below the truth, named in the entry
+                e["unstated"] = 2 * int(unstated["params"])
+                e["unstated_source"] = unstated["source"]
             if re.match(GRAPH_WEIGHTS, reader):
                 # the truth is the matrices; a few small ones have no GenZ operator (T5's
                 # relative-position bias, Mllama's 8 extra embedding rows)

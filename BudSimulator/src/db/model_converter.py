@@ -64,6 +64,11 @@ class ModelConverter:
         Returns:
             GenZ ModelConfig instance
         """
+        # The config as stated, which the serving path counts the model's weights from
+        # (ModelConfig.source_config); the reading below may rewrite its keys.
+        import copy
+
+        source_config = copy.deepcopy(hf_config)
         # Extract model ID
         model_id = hf_config.get('_source', '').replace('huggingface:', '')
         if not model_id:
@@ -233,6 +238,7 @@ class ModelConverter:
             # An encoder-decoder's cross-attention cache and encoder stack
             cross_attention=enc_dec["cross_attention"],
             encoder=enc_dec["encoder"],
+            source_config=source_config,
         )
         
         return config

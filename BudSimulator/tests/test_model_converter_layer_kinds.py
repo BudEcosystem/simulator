@@ -211,3 +211,27 @@ def test_a_database_model_holds_its_cross_attention_wherever_the_config_puts_it(
     conv, loader = _both(cfg)
     for mc in (conv, loader):
         assert mc.get_kv_size() * 2 * 1024 + mc.get_request_fixed_bytes(2) == truth
+
+
+@pytest.mark.parametrize(
+    "path,params",
+    [
+        # transformers 5.12's parameter count of each config (meta device)
+        ("hybrid_configs/Qwen_Qwen3.5-4B.json", 4_539_265_536),
+        ("encoder_decoder/t5_flan-xl-geometry.json", 2_783_959_040),
+        ("encoder_decoder/nari-labs_Dia-1.6B-0626.json", 1_611_160_576),
+        ("cross_attention/mllama_transformers-5.12-default.json", 10_642_941_475),
+        ("planner/models/whisper-large-v3.json", 1_543_490_560),
+    ],
+)
+def test_a_database_model_loads_the_weights_its_hf_config_loads(path, params):
+    """The serving path's weights (genz.serving.memory_model.estimate_weight_bytes: the
+    ServingSimulator's weight load, the cluster's and disaggregation's B_eff) are the model's own
+    count of the config the ModelConfig was read from, whichever reader read it. Counted from the
+    converter's decoder fields, Qwen3.5-4B was 7.48 GB of its 9.08 and flan-T5-xl 2.45 of 5.57."""
+    from llm_memory_calculator.genz.serving.memory_model import estimate_weight_bytes
+
+    cfg = json.loads((FIXTURES.parent / path).read_text())
+    converted, loaded = _both(cfg)
+    assert estimate_weight_bytes(converted, "bf16", 1) == estimate_weight_bytes(loaded, "bf16", 1)
+    assert estimate_weight_bytes(converted, "bf16", 1) >= 2 * params
