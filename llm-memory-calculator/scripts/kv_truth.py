@@ -641,9 +641,11 @@ def figure_truth(profile, reader, row=None):
     per_token = _kv_bytes(p)
     at = re.match(r"^kvgeo_(\d+)\[0\]$", reader)
     rules = [
-        (r"^(conv_kv_size|genz_kv_size)$", lambda: kv_elements(p), "K+V elements a token adds"
+        (r"^(conv_kv_size|genz_kv_size|hf2mc_kv_size)$", lambda: kv_elements(p),
+         "K+V elements a token adds"
          " on every layer that caches it (full, and windowed while inside the window)"),
-        (r"^(serving_bytes_per_token|prefix_kv_bytes_per_token|facts_kv_bytes_per_token)$",
+        (r"^(serving_bytes_per_token|prefix_kv_bytes_per_token|facts_kv_bytes_per_token|memsys"
+         r"|route_tiers)$",
          lambda: per_token, "K+V bytes a token adds on every layer that caches it (full, and"
          " windowed while inside the window)"),
         (r"^kvgeo_\d+\[0\]$",
@@ -695,17 +697,25 @@ def figure_truth(profile, reader, row=None):
         # TrainingMemoryCalculator, full fine-tuning in bf16 with AdamW: its own accounting -- bf16
         # weights and their fp32 master copy (6 B a parameter), fp32 gradients (4 B), AdamW's two
         # fp32 moments (8 B); the total's activations are above it
-        (r"^trainmem_weight_gb$", lambda: None if params is None else 6 * params / 1e9,
+        (r"^(trainmem_weight_gb|route_train_est\[0\])$",
+         lambda: None if params is None else 6 * params / 1e9,
          "the weights the trainer holds (bf16 and an fp32 master copy: 6 B a parameter, GB)"),
-        (r"^trainmem_total_gb$", lambda: None if params is None else 18 * params / 1e9,
+        (r"^(trainmem_total_gb|trainmem_dict_total_gb|route_train_est\[1\])$",
+         lambda: None if params is None else 18 * params / 1e9,
          "weights, master copy, gradients and AdamW state (18 B a parameter, GB; activations"
          " on top)"),
-        (r"^report_weight_gb$", lambda: _scaled(None if params is None else 2 * params, GB),
+        # calculate_optimizer_memory("adamw") over the calculator's count: AdamW's two fp32
+        # moments (8 B a parameter) and an fp32 master copy (4 B)
+        (r"^optmem_gb$", lambda: None if params is None else 12 * params / 1e9,
+         "AdamW's two fp32 moments and an fp32 master copy (12 B a parameter, GB)"),
+        (r"^(report_weight_gb|loader_sync_weight_gb)$",
+         lambda: _scaled(None if params is None else 2 * params, GB),
          "the model's weights (GB)"),
         # the training estimators that size a model before any simulation (full fine-tuning,
         # bf16, AdamW): weights 2 B, fp32 gradients 4 B, AdamW's two fp32 moments 8 B a parameter
         (r"^(creq_params|copt_quick\[0\]|time_params|amc_params|topt_params"
-         r"|route_add_params|conv_rt_params)$", lambda: params,
+         r"|route_add_params|conv_rt_params|loader_params|loader_sync_params|calcw_params"
+         r"|hfl_params|topt2_params|route_train_est\[2\])$", lambda: params,
          "the model's parameters"),
         # training.distributed.calculate_distributed_memory under ZeRO-3 over eight GPUs: bf16
         # weights, fp32 gradients and AdamW's two fp32 moments (14 B a parameter), each sharded
@@ -723,11 +733,11 @@ def figure_truth(profile, reader, row=None):
         # is never held in fewer than 1 B, and a model whose cache is an MLA latent or that holds
         # a recurrent state keeps its dtype (vLLM's fp8 path covers neither), as windowed layers
         # do where the model has them
-        (r"^(kvfp8_bytes|plan_kv_bytes)\[0\]$",
+        (r"^(kvfp8_bytes|plan_kv_bytes|kvfp8opt_bytes)\[0\]$",
          lambda: 2 if p.get("mla") or any(any(s) for s in p.get("state") or []) else 1,
          "bytes a full layer's KV element can be held in (MLA latents and hybrids keep the"
          " model's dtype)"),
-        (r"^(kvfp8_bytes|plan_kv_bytes)\[1\]$",
+        (r"^(kvfp8_bytes|plan_kv_bytes|kvfp8opt_bytes)\[1\]$",
          lambda: 2 if p.get("mla") or any(any(s) for s in p.get("state") or [])
          or any(e[0] == "sliding" for e in p.get("kv") or []) else 1,
          "bytes a windowed layer's KV element can be held in (they keep the model's dtype)"),
@@ -769,9 +779,9 @@ def figure_truth(profile, reader, row=None):
         # (6 B), LoRA the frozen bf16 weights (2 B); the totals are above them
         (r"^advtrain_full\[0\]$", lambda: None if params is None else 6 * params / 1e9,
          "bf16 weights and their fp32 master copy (6 B a parameter, GB)"),
-        (r"^advtrain_full\[1\]$", lambda: None if params is None else 18 * params / 1e9,
+        (r"^advtrain_full\[[12]\]$", lambda: None if params is None else 18 * params / 1e9,
          "weights, master copy, gradients and AdamW state (18 B a parameter, GB)"),
-        (r"^advtrain_lora\[[01]\]$", lambda: None if params is None else 2 * params / 1e9,
+        (r"^advtrain_lora\[[012]\]$", lambda: None if params is None else 2 * params / 1e9,
          "the frozen bf16 weights (2 B a parameter, GB; adapters and activations on top)"),
         # vLLM's LoRA buffers: 4 adapters x rank 16 x (in + out) x 2 B over every linear map
         (r"^(lora_adapter_gb|vllm_lora_gb)$", lambda: None if p.get("lora_linear_features") is None
@@ -833,16 +843,48 @@ HELD_BY = {
     "route_analyze": ["kv_gb@4096", "kv_gb@32768", "report_weight_gb"],
     # B_eff = (device - weights) // (KV a token x context + a request's fixed bytes)
     "b_eff": ["serving_weight_bytes", "serving_bytes_per_token", "serving_state_bytes"],
+    # bud_component.main --config: the generic engine estimate at 4k it prints
+    "component": ["eng_None_4096_kv_mb", "eng_None_4096_total_mb", "eng_None_4096_params"],
+    # the serving memory model's bytes a token and per request, as DisaggregationAnalyzer.analyze
+    # reads them
+    "serving": ["serving_bytes_per_token", "serving_state_bytes"],
+    # the training routes' fit check, sized from the training estimate
+    "train_route": ["route_train_est[0]", "route_train_est[1]", "route_train_est[2]"],
+    # BudSimulator's model list, filter, popular and details routes list the loader's count
+    "loader": ["loader_params"],
+    # the prefix cache's memory saved: its bytes a token over the tokens the shared prefix holds
+    "prefix": ["prefix_kv_bytes_per_token"],
 }
+
+#: Which held_by set a derived figure follows (the first pattern that matches): a rounded or
+#: re-reported weight follows the calculator's weights, a KV its KV, a state its state, a total
+#: all three.
+_W, _KV, _S = ["report_weight_gb"], ["report_kv_gb"], ["report_state_gb"]
+HELD_BY_PATTERNS = (
+    (r"^route_analyze", HELD_BY["route_analyze"]),
+    (r"^(kvplan|budsimplan)", HELD_BY["kvplan_derived"]),
+    (r"^(api_estmem|api_hfl_analyze|route_compare)\[0\]$|^route_calc\[0\]$", _W),
+    (r"^(api_estmem|api_hfl_analyze|route_compare)\[1\]$|^(route_calc|api_attn_eff)\[1\]$", _KV),
+    (r"^route_calc\[2\]$", _S),
+    (r"^(api_estmem|api_hfl_analyze|route_compare)\[2\]$|^(route_calc\[3\]|api_attn_eff\[0\]"
+     r"|route_usecase\[0\])$", _W + _KV + _S),
+    (r"^route_calc\[4\]$", ["report_params"]),
+    (r"^component", HELD_BY["component"]),
+    (r"^disagg_analyze", HELD_BY["serving"]),
+    (r"^route_train_fit", HELD_BY["train_route"]),
+    (r"^loader_", HELD_BY["loader"]),
+    (r"^(servesim|cluster_scaling_b_eff)", HELD_BY["b_eff"]),
+    (r"^prefixsim", HELD_BY["prefix"]),
+)
 
 
 def _held_by(reader):
     import kv_corpus
 
-    if reader.startswith("route_analyze"):
-        return HELD_BY["route_analyze"]
-    if kv_corpus.DERIVED_FIGURES.match(reader):
-        return HELD_BY["kvplan_derived"]
+    for pattern, held in HELD_BY_PATTERNS:
+        if re.match(pattern, reader) and (kv_corpus.DERIVED_FIGURES.match(reader)
+                                          or kv_corpus.CAPACITY_FIGURES.match(reader)):
+            return held
     for key in ("tpar_options", "maxbatch"):
         if reader.startswith(key):
             return HELD_BY[key]

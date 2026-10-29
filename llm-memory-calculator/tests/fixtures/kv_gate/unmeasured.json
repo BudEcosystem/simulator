@@ -1,34 +1,54 @@
 {
- "about": "The public functions of llm-memory-calculator/src, BudSimulator/src, BudSimulator/apis and bud_component.py that name a model-shape key (kv_corpus.SHAPE_KEYS) but that the corpus harness (scripts/kv_corpus.py) does not run, each with the reason it is not a memory or capacity figure of a model config -- a FLOP or time estimate, a benchmark record, a network-bound route whose figure is measured through another path. tests/test_kv_gate.py fails on any public reader neither run by the harness nor named here, and on an entry here that names no reader, gives no reason, or that the harness does run.",
+ "about": "The public functions of llm-memory-calculator/src, BudSimulator/src, BudSimulator/apis and bud_component.py that read a model-shape key (kv_corpus.SHAPE_KEYS) -- in their own body or through a private helper -- but that the corpus harness (scripts/kv_corpus.py) does not call itself. An entry with a reason is no memory or capacity figure of a model config (a FLOP, time or communication estimate, a benchmark record, a constructor, a database write, a network-bound route, code nothing calls); an entry marked helper returns its figure only to the functions it names in used_by, each measured, excluded or such a helper. tests/test_kv_gate.py fails on any public reader neither called by the harness nor named here, on a helper some unheld function uses or whose used_by is stale, and on an entry that names no public reader, gives no reason, or that the harness calls.",
  "entries": [
   {
-   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/collective_times.py",
-   "function": "estimate_local_activation_rate",
-   "reason": "the share of MoE tokens routed to an expert on the same device (a communication rate for the all-to-all time), from the expert count and expert-parallel degree it is given; a time or communication-rate estimate, not memory or capacity"
+   "file": "BudSimulator/apis/routers/models.py",
+   "function": "submit_model_config",
+   "reason": "the gated-model submission route: it fetches HF Hub metadata, scrapes the model page and calls BudLLM over the network, which the harness does not do. Its one figure is the calculator's parameter count (ModelMemoryCalculator.calculate_model_weights), the same call /models/add/config and the model manager make, both measured (route_add_params, route_manager_params)"
   },
   {
-   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
-   "function": "create_backward_embedding_op",
-   "reason": "builds the backward embedding operator's FLOP and byte row for a training graph from the shape it is given; nothing in the repository calls it, and its bytes are an operator's traffic, not memory held"
+   "file": "BudSimulator/src/db/cli.py",
+   "function": "ModelCLI.list_models",
+   "reason": "the database command line: it prints the rows the database holds, whose parameter count is the one sync_static_models_to_db stores (measured, loader_sync_params)"
   },
   {
-   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
-   "function": "estimate_backward_flops",
-   "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
+   "file": "BudSimulator/src/db/hf_integration.py",
+   "function": "HuggingFaceModelImporter.import_model",
+   "reason": "imports a model from the HuggingFace Hub over the network (its config, card and logo) into the database: network-bound, as the submission route is; the config it stores is read back through the model manager, measured (route_manager_params, the routes)"
   },
   {
-   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
-   "function": "compute_backward_timing_from_forward",
-   "reason": "the backward pass's time from the forward pass's operators; a time or communication-rate estimate, not memory or capacity"
+   "file": "BudSimulator/src/db/model_manager.py",
+   "function": "ModelManager.add_model",
+   "reason": "writes the config and the figures it is handed to the database; it sizes nothing (what the callers hand it is measured where they compute it: loader_sync_params, route_add_params)"
   },
   {
-   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
-   "function": "calculate_flops_per_token_palm_style",
-   "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
+   "file": "BudSimulator/src/db/model_manager.py",
+   "function": "ModelManager.update_model",
+   "reason": "writes the config and the figures it is handed to the database; it sizes nothing"
+  },
+  {
+   "file": "BudSimulator/src/hardware.py",
+   "function": "BudHardware.get_recommendations",
+   "reason": "ranks hardware for a memory figure the caller hands it (required_memory_gb) and a time estimate from the config's num_parameters; nothing in the repository calls it (the use-case route's own recommendations are measured, route_usecase)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/budevolve/evolve/base_algorithms/cpu_batch_scheduler.py",
+   "function": "schedule_batch_cpu",
+   "reason": "groups a queue of requests into one batch for budevolve's CPU scheduling search (the hidden width sizes its L3 check); it returns the batch, no memory or capacity figure of a model config, and nothing in the repository calls it"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/engine/vllm.py",
+   "function": "VLLMEngine.boot_time",
+   "reason": "the engine's start-up time (loading the weights, capturing CUDA graphs); a time estimate, not memory or capacity -- the weights it loads are facts_weight_bytes, measured"
   },
   {
    "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
    "function": "calculate_attention_flops",
+   "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
+   "function": "calculate_embedding_flops",
    "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
   },
   {
@@ -38,12 +58,12 @@
   },
   {
    "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
-   "function": "calculate_layernorm_flops",
+   "function": "calculate_flops_per_token_palm_style",
    "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
   },
   {
    "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
-   "function": "calculate_embedding_flops",
+   "function": "calculate_layernorm_flops",
    "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
   },
   {
@@ -57,6 +77,86 @@
    "reason": "a self-check of the kernel-launch overhead estimate on fixed layer counts; it reports pass / fail on timings, reads no model config"
   },
   {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/default_models.py",
+   "function": "ModelCollection.add_model",
+   "reason": "registers a ModelConfig in the collection under its name; it returns nothing and sizes nothing"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/default_models.py",
+   "function": "ModelConfig.__init__",
+   "reason": "the constructor: it stores the fields it is handed and derives the per-layer placement (layer_type); every figure is read off the object by the readers the harness measures (get_kv_size, get_request_fixed_bytes, the graphs, model_parameter_count through the serving path and the loader)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py",
+   "function": "create_inference_mamba_decode_model",
+   "reason": "nothing in the repository calls it: GenZ graphs a model, its Mamba layers among them, through create_full_prefill_model / create_full_decode_model / create_full_chunked_model, measured (genz_*_weights_mb, genz_*_kv_mb, runtime_*)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py",
+   "function": "create_inference_mamba_prefix_model",
+   "reason": "nothing in the repository calls it: GenZ graphs a model, its Mamba layers among them, through create_full_prefill_model / create_full_decode_model / create_full_chunked_model, measured (genz_*_weights_mb, genz_*_kv_mb, runtime_*)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py",
+   "function": "create_inference_moe_decode_layer",
+   "reason": "nothing in the repository calls it: GenZ graphs a model through create_full_prefill_model / create_full_decode_model / create_full_chunked_model, measured (genz_*_weights_mb, genz_*_kv_mb, runtime_*); it lists one MoE layer's decode operators"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py",
+   "function": "create_inference_moe_prefill_layer",
+   "reason": "nothing in the repository calls it: GenZ graphs a model through create_full_prefill_model / create_full_decode_model / create_full_chunked_model, measured (genz_*_weights_mb, genz_*_kv_mb, runtime_*); it lists one MoE layer's prefill operators"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/collective_times.py",
+   "function": "calculate_zeroplusplus_communication_time",
+   "reason": "ZeRO++'s communication time for a training step, from the parameter count it is given; a time or communication-rate estimate, not memory or capacity"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/collective_times.py",
+   "function": "estimate_local_activation_rate",
+   "reason": "the share of MoE tokens routed to an expert on the same device (a communication rate for the all-to-all time), from the expert count and expert-parallel degree it is given; a time or communication-rate estimate, not memory or capacity"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/features/base.py",
+   "function": "InferenceFeature.run_inference",
+   "reason": "an abstract method (its body is `pass`): a feature that implements it is its own figure path"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
+   "function": "OptimizerUpdate.__init__",
+   "reason": "the optimizer update as a roofline operator (the parameters it is handed, its FLOPs and the bytes it streams a step): an operator's traffic, not memory held -- the optimizer state a model holds is calculate_optimizer_memory's, measured (optmem_gb)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
+   "function": "OptimizerUpdate.get_memory_bytes",
+   "reason": "the bytes the optimizer update operator reads and writes in one step (its roofline traffic), not memory held; the optimizer state is calculate_optimizer_memory's, measured (optmem_gb)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
+   "function": "compute_backward_timing_from_forward",
+   "reason": "the backward pass's time from the forward pass's operators; a time or communication-rate estimate, not memory or capacity"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
+   "function": "create_backward_embedding_op",
+   "reason": "builds the backward embedding operator's FLOP and byte row for a training graph from the shape it is given; nothing in the repository calls it, and its bytes are an operator's traffic, not memory held"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
+   "function": "estimate_backward_flops",
+   "reason": "a FLOP count of a training step or layer, not memory or capacity; it takes the shape as arguments and holds no KV, state or weight figure"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
+   "function": "get_optimizer_model_df",
+   "reason": "the optimizer update's roofline row (FLOPs, bytes streamed, latency, boundedness) for a parameter count it is given; a time and traffic estimate, not memory or capacity"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/perf/profiler.py",
+   "function": "main",
+   "reason": "a command-line entry point that profiles kernels on a live device and writes the records the perf store reads; no figure of a model config"
+  },
+  {
    "file": "llm-memory-calculator/src/llm_memory_calculator/runtime/modules/legacy.py",
    "function": "plan_kv_dtype",
    "reason": "reads no model config: it renders the kv_plan's dtype for an engine that lists kv_fp8, and 'sliding_window' is the vLLM argument value it emits when the plan's skip flag is set. The fp8 KV decision on a model is kv.dtype.kv_fp8_support and the planner's KVDtypeV2, both measured (kvfp8_bytes, plan_kv_bytes)"
@@ -68,13 +168,13 @@
   },
   {
    "file": "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py",
-   "function": "MoEConfig.effective_params_ratio",
-   "reason": "the share of an MoE model's parameters a token runs through (a compute ratio); its memory figure, memory_multiplier, is measured (amc_kv[2])"
+   "function": "MoEConfig.compute_efficiency",
+   "reason": "a fixed router-overhead efficiency factor by expert count, a compute factor, not memory or capacity"
   },
   {
    "file": "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py",
-   "function": "MoEConfig.compute_efficiency",
-   "reason": "a fixed router-overhead efficiency factor by expert count, a compute factor, not memory or capacity"
+   "function": "MoEConfig.effective_params_ratio",
+   "reason": "the share of an MoE model's parameters a token runs through (a compute ratio); its memory figure, memory_multiplier, is measured (amc_kv[2])"
   },
   {
    "file": "llm-memory-calculator/src/llm_memory_calculator/training/scaling_laws.py",
@@ -88,13 +188,23 @@
   },
   {
    "file": "llm-memory-calculator/src/llm_memory_calculator/validation/benchmark_schema.py",
-   "function": "ExtendedBenchmark.to_dict",
+   "function": "ExtendedBenchmark.from_dict",
    "reason": "serializes a published benchmark record; the shape keys are the record's own fields, not a model config the corpus holds"
   },
   {
    "file": "llm-memory-calculator/src/llm_memory_calculator/validation/benchmark_schema.py",
-   "function": "ExtendedBenchmark.from_dict",
+   "function": "ExtendedBenchmark.to_dict",
    "reason": "serializes a published benchmark record; the shape keys are the record's own fields, not a model config the corpus holds"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/validation/benchmark_validator.py",
+   "function": "BenchmarkValidator.validate",
+   "reason": "checks a published benchmark record's plausibility (its MFU, memory and parallelism against its stated hardware); a benchmark record, not a figure of a model config"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/validation/calibration_engine.py",
+   "function": "CalibrationEngine.calibrate_hardware_efficiency",
+   "reason": "fits a hardware efficiency factor to published benchmark records; a calibration of the hardware model, not memory or capacity of a model config"
   },
   {
    "file": "llm-memory-calculator/src/llm_memory_calculator/validation/inference_calibration.py",
@@ -107,9 +217,1691 @@
    "reason": "returns the published multi-model training benchmarks as records; serializes a published benchmark record; the shape keys are the record's own fields, not a model config the corpus holds"
   },
   {
-   "file": "BudSimulator/apis/routers/models.py",
-   "function": "submit_model_config",
-   "reason": "the gated-model submission route: it fetches HF Hub metadata, scrapes the model page and calls BudLLM over the network, which the harness does not do. Its one figure is the calculator's parameter count (ModelMemoryCalculator.calculate_model_weights), the same call /models/add/config and the model manager make, both measured (route_add_params, route_manager_params)"
+   "file": "BudSimulator/src/db/cli.py",
+   "function": "ModelCLI.show_model",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/cli.py:main"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "BudSimulator/src/db/model_converter.py",
+   "function": "ModelConverter.genz_parameter_count",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/model_converter.py:ModelConverter.genz_to_hf"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "BudSimulator/src/db/model_manager.py",
+   "function": "estimate_parameter_count",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/apis/routers/models.py:add_model_from_config",
+    "BudSimulator/apis/routers/models.py:submit_model_config",
+    "BudSimulator/src/db/model_converter.py:ModelConverter.genz_parameter_count",
+    "BudSimulator/src/db/model_manager.py:ModelManager.get_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/activation_memory.py",
+   "function": "calculate_activation_bytes",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_activation_memory"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/calculator.py",
+   "function": "ModelMemoryCalculator.calculate_audio_conv_memory",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_total_memory"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/calculator.py",
+   "function": "ModelMemoryCalculator.calculate_cross_attention_kv_cache",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_total_memory"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/calculator.py",
+   "function": "ModelMemoryCalculator.calculate_decoder_kv_cache",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_total_memory"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/calculator.py",
+   "function": "ModelMemoryCalculator.calculate_decoder_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator._calculate_encoder_decoder_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/calculator.py",
+   "function": "ModelMemoryCalculator.calculate_encoder_kv_cache",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_total_memory"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/calculator.py",
+   "function": "ModelMemoryCalculator.calculate_encoder_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator._calculate_encoder_decoder_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/calculator.py",
+   "function": "ModelMemoryCalculator.calculate_lora_adapter_memory",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_total_memory"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/calculator.py",
+   "function": "ModelMemoryCalculator.calculate_lora_prefill_scratch",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_total_memory"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/calculator.py",
+   "function": "ModelMemoryCalculator.calculate_projector_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator._calculate_encoder_decoder_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/calculator.py",
+   "function": "ModelMemoryCalculator.calculate_sampler_logits",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_total_memory"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/calculator.py",
+   "function": "ModelMemoryCalculator.resolve_kv_layer_plan",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_kv_cache",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_total_memory",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.kv_cache_breakdown"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/config_normalizer.py",
+   "function": "ConfigNormalizer.normalize_config",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/activation_memory.py:calculate_activation_bytes",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_kv_cache",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_model_weights",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.detect_model_type",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.kv_cache_breakdown",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.resolve_kv_layer_plan",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter.count_parameters"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/engine/vllm.py",
+   "function": "VLLMEngine.decode_step_ms",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/engine/vllm.py:VLLMEngine.predict"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/engine/vllm.py",
+   "function": "VLLMEngine.geometry",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/engine/vllm.py:VLLMEngine.limits",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/context.py:PlanContext.offload_share",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/context.py:PlanContext.pool_tokens",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/context.py:PlanContext.tokens_per_replica",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/context.py:PlanContext.write_bytes_per_s",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t1.py:hybrid_offload_blocked",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t1.py:plan_t1",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t2.py:plan_t2",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t3.py:plan_t3",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/validate.py:render"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
+   "function": "calculate_backward_multiplier",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py:training_modeling",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py:compute_backward_timing_from_forward"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
+   "function": "calculate_gqa_backward_overhead",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py:calculate_attention_flops",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py:calculate_backward_multiplier"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py",
+   "function": "compute_operational_intensity",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py:_estimate_training_efficiency"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/validation.py",
+   "function": "validate_communication_model",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/validation.py:run_improvement_validation"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "cross_attention",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "encoder_attention",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:encoder_stack"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "linear_attention_decode",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "linear_attention_prefill",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "mha_flash_attention_chunked",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "mha_flash_attention_decode",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_inference_moe_decode_layer"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "mha_flash_attention_decode_local",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "mha_flash_attention_prefill",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_inference_moe_prefill_layer"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "mha_flash_attention_prefill_local",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "mla_attention_chunked",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "mla_attention_decode",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "mla_attention_prefill",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "mla_indexer_ops",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py:mla_attention_chunked",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py:mla_attention_decode",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py:mla_attention_prefill"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "mla_latent_op",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py:mla_attention_chunked",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py:mla_attention_decode",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py:mla_attention_prefill"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py",
+   "function": "qkv_rows",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py:mha_flash_attention_chunked",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py:mha_flash_attention_decode",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py:mha_flash_attention_decode_local",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py:mha_flash_attention_prefill",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/attention.py:mha_flash_attention_prefill_local"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/default_models.py",
+   "function": "LayerConfig.effective_key",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/default_models.py",
+   "function": "ModelConfig.get_cross_kv_bytes",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/default_models.py:ModelConfig.get_request_fixed_bytes"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/default_models.py",
+   "function": "ModelConfig.get_layer_view",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/default_models.py:ModelConfig._self_kv_size",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/default_models.py",
+   "function": "ModelConfig.get_state_bytes",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/default_models.py:ModelConfig.get_request_fixed_bytes"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/embedding.py",
+   "function": "input_embedding",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/embedding.py",
+   "function": "output_embedding",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/ffn.py",
+   "function": "calculate_activated_experts",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/ffn.py:deepseek_ffn_prefill",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/ffn.py:ffn_decode"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/ffn.py",
+   "function": "deepseek_ffn_prefill",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:get_ffn_implementation"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/ffn.py",
+   "function": "ffn_decode",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_inference_mamba_decode_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_inference_moe_decode_layer"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/ffn.py",
+   "function": "ffn_prefill",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_inference_mamba_prefix_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_inference_moe_prefill_layer",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:encoder_stack",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:get_ffn_implementation"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/ffn.py",
+   "function": "linear_ffn_decode",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/ffn.py",
+   "function": "linear_ffn_prefill",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/ffn.py",
+   "function": "shared_expert_ops",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/ffn.py:deepseek_ffn_prefill",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/ffn.py:ffn_decode",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/ffn.py:ffn_prefill"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py",
+   "function": "encoder_decoder_fields",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/model_converter.py:ModelConverter.hf_to_genz",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:huggingface_config_to_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py",
+   "function": "encoder_stack",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py",
+   "function": "get_ffn_implementation",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py",
+   "function": "graph_layer_kinds",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/model_converter.py:ModelConverter.hf_to_genz",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:huggingface_config_to_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py",
+   "function": "layer_configs_from_hf",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:graph_layer_kinds"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py",
+   "function": "resolve_decoder_config",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/model_converter.py:ModelConverter.hf_to_genz",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:huggingface_config_to_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/mamba.py",
+   "function": "mamba_decode",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_inference_mamba_decode_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/mamba.py",
+   "function": "mamba_prefill",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_inference_mamba_prefix_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/mamba.py",
+   "function": "mamda_ssn_slow",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/mamba.py:mamba_decode",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/mamba.py:mamba_prefill"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/recurrent.py",
+   "function": "recurrent_chunked",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/recurrent.py",
+   "function": "recurrent_decode",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/Models/recurrent.py",
+   "function": "recurrent_prefill",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/collective_times.py",
+   "function": "calculate_zero3_communication_time",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/validation.py:validate_communication_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/collective_times.py",
+   "function": "get_moe_a2a_time_with_alpha",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py:training_modeling"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/serving/cluster.py",
+   "function": "ClusterAnalyzer.optimize_parallelism",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/apis/routers/serving.py:cluster_topology"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/serving/disaggregation.py",
+   "function": "DisaggregationAnalyzer.compare_colocated_vs_disaggregated",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/apis/routers/serving.py:disaggregate",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/pd.py:plan_pd"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/serving/memory_model.py",
+   "function": "activation_shape",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py:_activation_shape",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py:_calculate_activation_memory",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py:_calculate_training_memory"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/serving/memory_model.py",
+   "function": "config_parameters_held_to_the_model",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/training/cluster_requirements.py:_estimate_model_params",
+    "llm-memory-calculator/src/llm_memory_calculator/training/comprehensive_config_builder.py:_estimate_model_size",
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:analyze_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/serving/memory_model.py",
+   "function": "held_to_the_model",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py:_held_to_the_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_parallelization.py:_estimate_memory_per_gpu",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/serving/memory_model.py:config_parameters_held_to_the_model",
+    "llm-memory-calculator/src/llm_memory_calculator/training/cluster_optimizer.py:_estimated_model_parameters",
+    "llm-memory-calculator/src/llm_memory_calculator/training/comprehensive_config_builder.py:_estimate_model_size"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/serving/memory_model.py",
+   "function": "model_parameter_count",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/model_converter.py:ModelConverter.genz_parameter_count",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/serving/memory_model.py:estimate_weight_bytes",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/serving/memory_model.py:held_to_the_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/serving/memory_model.py",
+   "function": "trained_layers",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py:training_modeling",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_parallelization.py:_estimate_memory_per_gpu"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/serving/prefix_cache.py",
+   "function": "RadixCache.__init__",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/serving/prefix_cache.py:PrefixCacheAnalyzer.analyze"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
+   "function": "OptimizerUpdate.get_num_ops",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/cpu/cpu_operator.py:CPUOperatorMixin._calculate_data_volume",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/cpu/isa_model.py:ISASelector._calculate_vector_compute_time",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/cpu/threading_model.py:ThreadingModel._calculate_bandwidth_saturation",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/cpu/threading_model.py:ThreadingModel._get_compute_intensity",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py:TrainingOperator.get_backward_num_ops",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py:TrainingOperator.get_training_num_ops"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
+   "function": "OptimizerUpdate.get_tensors",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/cpu/cpu_operator.py:CPUOperatorMixin._calculate_data_volume",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py:TrainingOperator.get_backward_tensors"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/training_operators.py",
+   "function": "calculate_training_communication_time",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/training_modeling.py:training_modeling"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/genz/weight_precision.py",
+   "function": "resolve_weight_precision",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:huggingface_config_to_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/inference_engines.py",
+   "function": "OnnxRuntimeEngine.activation_bytes",
+   "helper": true,
+   "used_by": [
+    "bud_component.py:main",
+    "llm-memory-calculator/src/llm_memory_calculator/inference_engines.py:estimate_memory_for_engine"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/kv/budsim.py",
+   "function": "deployment_from_budsim",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/kv/budsim.py:plan_node_group"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/kv/calibration.py",
+   "function": "fixtures",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/kv/validate.py:run"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/kv/cost.py",
+   "function": "RecomputeModel.__init__",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/kv/planner.py:_plan"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/kv/cost.py",
+   "function": "is_moe",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t1.py:keep_on_throughput"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/kv/cost.py",
+   "function": "prefill_seconds",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/kv/cost.py:RecomputeModel._estimate",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/cost.py:RecomputeModel.batched_ms"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/kv/dtype.py",
+   "function": "calibrated_kv_scales",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/kv/dtype.py:kv_fp8_support",
+    "llm-memory-calculator/src/llm_memory_calculator/runtime/modules/numerics.py:KVDtypeV2.plan"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/kv/dtype.py",
+   "function": "choose_kv_dtype",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/kv/planner.py:_plan"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/kv/geometry.py",
+   "function": "kv_bytes_per_token_per_rank",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/kv/geometry.py:KVGeometry.from_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/kv/pd.py",
+   "function": "plan_pd",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/kv/planner.py:_plan"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t1.py",
+   "function": "keep_on_throughput",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t1.py:plan_t1",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t2.py:plan_t2"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "attention_head_dim",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/model_converter.py:ModelConverter.hf_to_genz",
+    "llm-memory-calculator/src/llm_memory_calculator/activation_memory.py:_attention_working_width",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator._calculate_kv_cache_gqa",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator._calculate_kv_cache_mha",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator._calculate_kv_cache_mqa",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator._calculate_kv_for_layers",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator._estimate_skip_ratio",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator._lora_largest_slice",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_decoder_kv_cache",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:encoder_decoder_fields",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:huggingface_config_to_model_config",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:_interleaved_cross_cache",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:cross_attention_cache",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_attention_params",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:stack_linear_features",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:stack_params",
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:analyze_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "attention_heads",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/config_normalizer.py:ConfigNormalizer.normalize_config",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_attention_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "attention_input_width",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_attention_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "attention_output_gate",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/model_converter.py:ModelConverter.hf_to_genz",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:_attention_output_gate",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_attention_linears",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_attention_params",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_attention_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "class_layout",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:resolve_layer_plan",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:stated_layer_types"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "composed_text_config",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:_stacks_holder",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_multimodal_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "cross_attention_cache",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_cross_attention_kv_cache",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_total_memory",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.resolve_kv_layer_plan",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:encoder_decoder_fields",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/geometry.py:KVGeometry.from_model",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_text_model_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "cross_kv_width",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.resolve_kv_layer_plan",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/default_models.py:ModelConfig._cross_kv_size_per_token",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:cross_attention_bytes"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "decoder_streams",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/model_converter.py:ModelConverter.hf_to_genz",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:huggingface_config_to_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "decoder_view",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator._plain_encoder_decoder",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_kv_cache",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.kv_cache_breakdown",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.resolve_kv_layer_plan",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:_find_decoder_subconfig",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:resolve_decoder_config",
+    "llm-memory-calculator/src/llm_memory_calculator/inference_engines.py:OnnxRuntimeEngine.activation_bytes",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/geometry.py:KVGeometry.from_model",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_text_model_params",
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:analyze_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "dense_ffn_width",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:layer_configs_from_hf"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "depth",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/model_converter.py:ModelConverter.hf_to_genz",
+    "llm-memory-calculator/src/llm_memory_calculator/config_normalizer.py:ConfigNormalizer.normalize_config",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:_looks_like_decoder",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:huggingface_config_to_model_config",
+    "llm-memory-calculator/src/llm_memory_calculator/inference_engines.py:OnnxRuntimeEngine.activation_bytes",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/geometry.py:KVGeometry.from_model",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:_block_depth",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:_config_class_layer_types",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:_own_stacks",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:class_layout_names",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:composed_text_config",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:layer_kinds",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:layout_rule_applies",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:max_window_layers_layout",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:moe_layers",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:resolve_layer_plan",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:stated_layer_types",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:synthesized_layer_types",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter.count_parameters",
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:analyze_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "encoder_stages",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:_block_depth",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:encoder_view",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:tower_view"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "encoder_view",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:encoder_decoder_fields",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/serving/memory_model.py:activation_shape",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_text_model_params",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:encoder_linear_features",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:encoder_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "layer_kinds",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator._count_attention_layers",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:graph_layer_kinds",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:layer_configs_from_hf",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:attention_heads",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_layer_counts",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_hybrid_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "moe_layers",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:layer_kinds",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._num_moe_layers"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "per_layer_names",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:_config_class_layer_types",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:resolve_layer_plan",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:stated_layer_types"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "resolve_layer_plan",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator._lora_largest_slice",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_lora_adapter_memory",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_state_memory",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.detect_model_type",
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.resolve_kv_layer_plan",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/geometry.py:KVGeometry.from_model",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:_interleaved_cross_cache",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:layer_kinds",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:stated_layer_types",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_transformer_params",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._detect_architecture_type"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "routed_expert_count",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/model_converter.py:ModelConverter.hf_to_genz",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:huggingface_config_to_model_config",
+    "llm-memory-calculator/src/llm_memory_calculator/inference_engines.py:OnnxRuntimeEngine.activation_bytes",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:shared_expert_width",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_ffn_shape",
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:analyze_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "routed_expert_width",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/model_converter.py:ModelConverter.hf_to_genz",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:huggingface_config_to_model_config",
+    "llm-memory-calculator/src/llm_memory_calculator/inference_engines.py:OnnxRuntimeEngine.activation_bytes",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:shared_expert_width",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_ffn_shape",
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:analyze_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "shared_expert_width",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/src/db/model_converter.py:ModelConverter.hf_to_genz",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:huggingface_config_to_model_config",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_ffn_shape",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_moe_params",
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:analyze_model_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "stated_layer_types",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/config_normalizer.py:ConfigNormalizer.normalize_config",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:layer_kinds"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "synthesized_layer_types",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:stated_layer_types"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py",
+   "function": "with_class_geometry",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_lora_adapter_memory",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:_stacks_holder",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:_text_config",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:composed_text_config",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:cross_attention_cache",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:decoder_view",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:encoder_is_tower",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:encoder_view",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:layer_kinds",
+    "llm-memory-calculator/src/llm_memory_calculator/layer_plan.py:resolve_layer_plan",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter.count_parameters",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:adapter_params",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:audio_tower_params",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:resampler_params",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:tower_view",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:vision_tower_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/lora/injection.py",
+   "function": "inject_lora_dynamic",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/lora/injection.py:inject_lora_ops"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/lora/injection.py",
+   "function": "inject_lora_merge",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/lora/injection.py:inject_lora_ops"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/lora/injection.py",
+   "function": "inject_lora_ops",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_chunked_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_decode_model",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:create_full_prefill_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/mechanism_dims.py",
+   "function": "mamba_dims",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:mamba1_linears",
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:mamba1_params",
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:mamba2_linears",
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:mamba2_params",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_mamba_params",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_recurrent_params",
+    "llm-memory-calculator/src/llm_memory_calculator/state_memory.py:recurrent_state_shape"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py",
+   "function": "gdn_linears",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:gdn_params",
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:recurrent_mixer_linears",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_lora_linear_features",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_mixer_live_width"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py",
+   "function": "gdn_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:recurrent_mixer_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py",
+   "function": "kda_linears",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:kda_params",
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:recurrent_mixer_linears"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py",
+   "function": "kda_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:recurrent_mixer_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py",
+   "function": "lightning_linears",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:lightning_params",
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:recurrent_mixer_linears"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py",
+   "function": "mamba1_linears",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:mamba1_params",
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:recurrent_mixer_linears"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py",
+   "function": "mamba1_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/serving/memory_model.py:_decoder_parameter_count",
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:recurrent_mixer_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py",
+   "function": "mamba2_linears",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:mamba2_params",
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:recurrent_mixer_linears",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_recurrent_linears"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py",
+   "function": "mamba2_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:recurrent_mixer_params",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_mamba_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py",
+   "function": "mlstm_linears",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:mlstm_params",
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:recurrent_mixer_linears"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py",
+   "function": "rglru_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/mixer_params.py:recurrent_mixer_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/model/facts.py",
+   "function": "ModelFacts.attention_flops_per_token",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/engine/vllm.py:VLLMEngine._decode_roof_ms",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:ModelFacts.prefill_flops"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/model/facts.py",
+   "function": "ModelFacts.cross_bytes_per_sequence",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:ModelFacts.kv_bytes_for_context"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/model/facts.py",
+   "function": "ModelFacts.state_page_bytes",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/engine/vllm.py:VLLMEngine.geometry"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/model/recognise.py",
+   "function": "recognised",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/model/recognise.py",
+   "function": "unknown_layer_types",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/model/recognise.py:recognised"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/runtime/modules/numerics.py",
+   "function": "KVDtypeV2.plan",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/kv/context.py:PlanContext.accept",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/pd.py:plan_pd",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/predict.py:predict",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t0.py:_plan_slice",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t0.py:plan_t0",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t1.py:_retract",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t1.py:check_write_through",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t1.py:keep_on_throughput",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t1.py:plan_t1",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t1.py:staged_t1_ms",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t2.py:plan_t2",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/tiers/t3.py:plan_t3",
+    "llm-memory-calculator/src/llm_memory_calculator/runtime/compose.py:run_stage",
+    "llm-memory-calculator/src/llm_memory_calculator/runtime/render.py:main"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/runtime/render.py",
+   "function": "build",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/runtime/render.py:main"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/stack_params.py",
+   "function": "adapter_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_multimodal_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/stack_params.py",
+   "function": "audio_tower_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_multimodal_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/stack_params.py",
+   "function": "resampler_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:adapter_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/stack_params.py",
+   "function": "stack_linear_features",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:encoder_linear_features"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/stack_params.py",
+   "function": "stack_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:adapter_params",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:audio_tower_params",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:encoder_params",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:vision_tower_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/stack_params.py",
+   "function": "stage_embedding_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:stack_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/stack_params.py",
+   "function": "tower_embedding_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:encoder_decoder_fields",
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_text_model_params",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:audio_tower_params",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:vision_tower_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/stack_params.py",
+   "function": "tower_view",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:audio_tower_params",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:resampler_params",
+    "llm-memory-calculator/src/llm_memory_calculator/stack_params.py:vision_tower_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/stack_params.py",
+   "function": "vision_tower_params",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/model/facts.py:_build",
+    "llm-memory-calculator/src/llm_memory_calculator/parameter_counter.py:UniversalParameterCounter._calculate_multimodal_params"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/state_memory.py",
+   "function": "calculate_recurrent_state_bytes",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/calculator.py:ModelMemoryCalculator.calculate_state_memory",
+    "llm-memory-calculator/src/llm_memory_calculator/kv/geometry.py:KVGeometry.from_model"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/state_memory.py",
+   "function": "recurrent_state_shape",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/default_models.py:ModelConfig._mamba_state_shape",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:graph_layer_kinds",
+    "llm-memory-calculator/src/llm_memory_calculator/genz/Models/get_language_model.py:layer_configs_from_hf",
+    "llm-memory-calculator/src/llm_memory_calculator/state_memory.py:_per_layer_bytes"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/cluster_optimizer.py",
+   "function": "ClusterOptimizer.design_optimal_cluster",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/training/cluster_optimizer.py:design_optimal_training_cluster"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/cluster_optimizer.py",
+   "function": "ClusterOptimizer.select_top_k_clusters",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/training/cluster_optimizer.py:select_optimal_cluster",
+    "llm-memory-calculator/src/llm_memory_calculator/training/cluster_optimizer_validation.py:validate_memory_constraints",
+    "llm-memory-calculator/src/llm_memory_calculator/training/cluster_optimizer_validation.py:validate_optimization_targets",
+    "llm-memory-calculator/src/llm_memory_calculator/training/cluster_optimizer_validation.py:validate_parallelism_selection",
+    "llm-memory-calculator/src/llm_memory_calculator/training/cluster_optimizer_validation.py:validate_pareto_frontier"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/comprehensive_config_builder.py",
+   "function": "generate_comprehensive_training_config",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/training/cluster_optimizer.py:ClusterOptimizer.generate_comprehensive_config"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py",
+   "function": "ModelCharacteristics.active_parameters",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:ModelCharacteristics.estimate_training_flops_per_token",
+    "llm-memory-calculator/src/llm_memory_calculator/training/training_optimizer.py:TrainingOptimizer.optimize",
+    "llm-memory-calculator/src/llm_memory_calculator/training/training_optimizer.py:calculate_communication_overhead",
+    "llm-memory-calculator/src/llm_memory_calculator/training/training_optimizer.py:calculate_training_throughput"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py",
+   "function": "ModelCharacteristics.get_optimal_parallelism",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/training/training_optimizer.py:TrainingOptimizer._configure_cluster"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py",
+   "function": "create_deepseek_mla_characteristics",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:get_model_characteristics",
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:list_model_characteristics"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py",
+   "function": "create_llama_characteristics",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:get_model_characteristics",
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:list_model_characteristics"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py",
+   "function": "create_moe_characteristics",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:get_model_characteristics",
+    "llm-memory-calculator/src/llm_memory_calculator/training/model_characteristics.py:list_model_characteristics"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/time_estimator.py",
+   "function": "TrainingTimeEstimator.estimate_training_time",
+   "helper": true,
+   "used_by": [
+    "BudSimulator/apis/routers/training.py:estimate_time"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/training_optimizer.py",
+   "function": "calculate_communication_overhead",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/training/training_optimizer.py:TrainingOptimizer._configure_cluster"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/training/training_optimizer.py",
+   "function": "calculate_training_throughput",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/training/training_optimizer.py:TrainingOptimizer._configure_cluster"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/validation/calibration_engine.py",
+   "function": "CalibrationEngine.run_calibration",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/genz/LLM_training/validation.py:run_calibration",
+    "llm-memory-calculator/src/llm_memory_calculator/validation/calibration_engine.py:quick_calibrate"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/validation/collectors/arxiv_collector.py",
+   "function": "ArxivCollector.collect",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/validation/collectors/arxiv_collector.py:ArxivCollector.collect_known_papers"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
+  },
+  {
+   "file": "llm-memory-calculator/src/llm_memory_calculator/validation/collectors/huggingface_collector.py",
+   "function": "HuggingFaceCollector.collect",
+   "helper": true,
+   "used_by": [
+    "llm-memory-calculator/src/llm_memory_calculator/validation/collectors/huggingface_collector.py:HuggingFaceCollector.collect_all_known"
+   ],
+   "reason": "a helper: it returns its figure only to the functions in used_by, each measured by the harness, excluded here as no figure, or a helper held the same way (kv_corpus.helper_faults checks it against the source)"
   }
  ]
 }

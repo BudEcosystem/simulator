@@ -46,10 +46,12 @@ def estimate_parameter_count(config: Dict[str, Any], calculator=None) -> Optiona
     ``/models/add/config``, the gated-config submission, the model loader, the database setup).
 
     The calculator's own count (``ModelMemoryCalculator.calculate_model_weights``: every layer
-    kind, the experts, a gated FFN, tied embeddings) and, where the config states the top-level
-    fields, the API's older estimate (two embeddings, 4h^2 + 2hi + 4h a layer) -- the larger of
-    the two, so no stored count falls below the one the API stored before where the calculator's
-    sits below the checkpoint (Zamba2's shared blocks, an audio LLM's encoder). The callers had
+    kind, the experts, a gated FFN, tied embeddings), the FRD-027 facts' (``ModelFacts``: every
+    stack, tower and adapter, which the calculator's path leaves out of an encoder-decoder or an
+    audio LLM -- Cohere's transcriber 0.58B of 2.07B, DeepSeek-V3 667.98B of 671.03B) and, where
+    the config states the top-level fields, the API's older estimate (two embeddings, 4h^2 + 2hi +
+    4h a layer) -- the largest, so no stored count falls below the one the API stored before where
+    both sit below the checkpoint (Zamba2's shared blocks). The callers had
     asked the calculator for ``_calculate_transformer_params``, which it does not have: the
     AttributeError was caught and no count was stored. None when neither can be read."""
     calculator = calculator or get_calculator()
@@ -59,6 +61,15 @@ def estimate_parameter_count(config: Dict[str, Any], calculator=None) -> Optiona
             counts.append(int(calculator.calculate_model_weights(dict(config), "bf16")[0]))
         except Exception as e:  # noqa: BLE001 - a config the calculator cannot read
             logger.warning(f"The calculator could not count the parameters: {e}")
+    try:
+        # the FRD-027 facts' count (every stack, tower and adapter beside the language model,
+        # every routed expert): the serving path's and the vLLM planner's count of the model
+        from llm_memory_calculator.model.facts import ModelFacts
+
+        facts = ModelFacts.from_config(json.loads(json.dumps(config)))
+        counts.append(int(facts.params_total + facts.vision_params))
+    except Exception as e:  # noqa: BLE001 - a config the facts cannot read
+        logger.debug(f"The facts could not count the parameters: {e}")
     try:
         hidden = int(config["hidden_size"])
         layers = int(config["num_hidden_layers"])

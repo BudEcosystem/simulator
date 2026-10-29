@@ -287,6 +287,7 @@ def measure_config(name, cfg, genz_data):
     row.update(measure_routes(cfg))
     row.update(measure_readers(cfg))
     row.update(measure_figure_paths(cfg))
+    row.update(measure_entry_points(cfg))
     return row
 
 
@@ -401,13 +402,7 @@ def measure_routes(cfg):
         import io
         import logging
 
-        from src.db import connection
-
-        scratch = os.path.join(GENZ_DATA or ".", "routes.db")
-        held = getattr(connection.DatabaseConnection, "_instance", None)
-        if held is None or getattr(held, "db_path", None) != scratch:
-            connection.DatabaseConnection._instance = None  # never the tree's own database
-            connection.DatabaseConnection(scratch)
+        _scratch_db()
         logging.disable(logging.CRITICAL)
         with contextlib.redirect_stdout(io.StringIO()):
             from apis.routers import models as routes
@@ -435,12 +430,17 @@ def measure_routes(cfg):
                 return offline
 
         manager = OneConfig(cfg)
+        counts = {}
         saved = routes.model_manager, routes.hf_loader
         routes.model_manager, routes.hf_loader = manager, NoHub()
         try:
             with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                manager.get_model_config("m")
+                # the model manager's count is the one /models/add/config stores (the same
+                # estimate_parameter_count): checked equal to route_add_params below, which the
+                # gate holds
+                held = manager.get_model_config("m")
+                counts["manager"] = held.get("num_parameters")
                 a = asyncio.run(routes.analyze_model(AnalyzeModelRequest(
                     model_id="m", precision="bf16", batch_size=1, sequence_lengths=list(SEQS))))
                 out["route_analyze"] = [a.analysis[str(q)].kv_cache_gb for q in SEQS] + [
@@ -450,7 +450,17 @@ def measure_routes(cfg):
                     model_id="m", config=json.loads(json.dumps(cfg)))))
                 if added.success and manager.added.get("parameter_count") is not None:
                     out["route_add_params"] = int(manager.added["parameter_count"])
-                asyncio.run(routes.get_model_config("m", None))
+                cfg_back = asyncio.run(routes.get_model_config("m", None))
+                params = getattr(cfg_back, "config", None) or {}
+                if isinstance(params, dict):
+                    counts["config"] = params.get("num_parameters")
+            out.update(_model_routes(routes, manager, counts))
+            stated = {k: v for k, v in counts.items() if v is not None}
+            if "route_add_params" in out and any(int(v) != out["route_add_params"]
+                                                 for v in stated.values()):
+                raise AssertionError(f"the routes' counts disagree: {stated}, /models/add/config "
+                                     f"{out['route_add_params']}")
+            out.update(_usecase_route(manager))
         finally:
             routes.model_manager, routes.hf_loader = saved
             logging.disable(logging.NOTSET)
@@ -680,6 +690,538 @@ def measure_genz_to_hf(model_name):
     return out
 
 
+def _scratch_db():
+    """Point BudSimulator's database connection at the harness's scratch file (never the tree's
+    own prepopulated.db); BudSimulator/ must be on the path."""
+    from src.db import connection
+
+    scratch = os.path.join(GENZ_DATA or ".", "routes.db")
+    held = getattr(connection.DatabaseConnection, "_instance", None)
+    if held is None or getattr(held, "db_path", None) != scratch:
+        connection.DatabaseConnection._instance = None
+        connection.DatabaseConnection(scratch)
+
+
+class _Request:
+    """The one thing BudSimulator's list routes ask of a request: a URL for a logo."""
+
+    def url_for(self, name, **kw):
+        return "https://harness/" + str(kw.get("path", ""))
+
+
+def _model_routes(routes, manager, counts):
+    """``/models/calculate`` and ``/models/compare`` (bf16, one 4,096-token sequence: weights, KV,
+    state, total, parameters) and ``/models/{id}`` (the parameters it reports) over the model
+    manager ``measure_routes`` serves the config from."""
+    import asyncio
+
+    from apis.schemas import CalculateMemoryRequest, CompareModelConfig, CompareModelsRequest
+
+    out = {}
+
+    def calc():
+        r = asyncio.run(routes.calculate_memory(CalculateMemoryRequest(
+            model_id="m", precision="bf16", batch_size=1, seq_length=4096)))
+        b = r.memory_breakdown
+        return [b.weight_memory_gb, b.kv_cache_gb, b.state_memory_gb, r.total_memory_gb,
+                int(r.parameter_count)]
+
+    def compare():
+        r = asyncio.run(routes.compare_models(CompareModelsRequest(models=[CompareModelConfig(
+            model_id="m", precision="bf16", batch_size=1, seq_length=4096)])))
+        c = r.comparisons[0]
+        return [c.memory_breakdown.weight_memory_gb, c.memory_breakdown.kv_cache_gb,
+                c.total_memory_gb]
+
+    _quiet(out, "route_calc", calc)
+    _quiet(out, "route_compare", compare)
+    # /models/{id}'s count is the model manager's (see measure_routes)
+    try:
+        counts["details"] = asyncio.run(routes.get_model_details("m", _Request())).parameter_count
+    except BaseException as e:  # noqa: BLE001 -- an HTTPException too
+        out["route_details_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    return out
+
+
+def _usecase_route(manager):
+    """``/usecases/{id}/recommendations`` for one use case of 4,096 input tokens and the one model
+    the manager serves (bf16, batch 1): the memory it says the model needs."""
+    import asyncio
+
+    out = {}
+    try:
+        from apis.routers import usecases
+    except Exception as e:  # noqa: BLE001
+        return {"route_usecase_error": f"{type(e).__name__}: {str(e)[:160]}"}
+
+    class OneUsecase:
+        def get_usecase(self, unique_id):
+            return {"id": 1, "unique_id": unique_id, "name": "harness", "industry": "harness",
+                    "input_tokens_min": 4096, "input_tokens_max": 4096,
+                    "output_tokens_min": 128, "output_tokens_max": 128, "ttft_min": None,
+                    "ttft_max": None, "e2e_min": None, "e2e_max": None,
+                    "inter_token_min": None, "inter_token_max": None, "batch_size": 1,
+                    "beam_size": 1, "source": "harness", "is_active": True,
+                    "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00"}
+
+    saved = (usecases.usecase_manager, usecases._get_models_by_category, usecases.model_manager)
+    usecases.usecase_manager = OneUsecase()
+    usecases._get_models_by_category = lambda categories: {
+        "harness": [{"model_id": "m", "parameter_count": 0, "model_type": "decoder-only"}]}
+    usecases.model_manager = manager
+    try:
+        def run():
+            r = asyncio.run(usecases.get_usecase_recommendations(
+                "u", usecases.RecommendationRequest(batch_sizes=[1], model_categories=["harness"],
+                                                    precision="bf16", include_pricing=False)))
+            return [r.recommendations[0].recommended_models[0].batch_configurations[0]
+                    .memory_required_gb]
+
+        _quiet(out, "route_usecase", run)
+    finally:
+        (usecases.usecase_manager, usecases._get_models_by_category,
+         usecases.model_manager) = saved
+    return out
+
+
+def _list_routes(loader, manager, model_id, synced):
+    """``/models/list``, ``/models/filter``, ``/models/popular`` and ``/models/{id}`` over the
+    built-in model ``measure_genz_loader`` synced: the parameter count each lists for it
+    (``/models/popular`` prints it to one decimal, ``"6.8B"``)."""
+    import asyncio
+
+    import contextlib
+    import io
+
+    out = {}
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            from apis.routers import models as routes
+    except Exception as e:  # noqa: BLE001 -- the routes need fastapi (READER_DEPENDENCIES)
+        return {"loader_error": f"{type(e).__name__}: {str(e)[:160]}"}
+
+    class NoHub:
+        def __getattr__(self, name):
+            def offline(*a, **k):
+                raise RuntimeError("the harness reads no hub")
+            return offline
+
+    def find(models):
+        return [m for m in models if m.model_id == model_id][0]
+
+    def popular():
+        # listed from the built-in dictionary (a model the database holds too is listed only
+        # with a logo): asked before the sync
+        p = find(asyncio.run(routes.get_popular_models(_Request(), limit=100)).models).parameters
+        scale = {"B": 1e9, "M": 1e6, "K": 1e3}.get(p[-1:], 1)
+        return int(round(float(p.rstrip("BMK")) * scale))
+
+    saved = routes.MODEL_DICT, routes.model_manager, routes.hf_loader
+    routes.MODEL_DICT, routes.model_manager, routes.hf_loader = loader, manager, NoHub()
+    try:
+        if not synced:
+            _quiet(out, "loader_popular_params", popular)
+            return out
+        _quiet(out, "loader_list_params", lambda: int(find(asyncio.run(
+            routes.list_all_models(_Request())).models).parameter_count))
+        _quiet(out, "loader_filter_params", lambda: int(find(asyncio.run(
+            routes.filter_models(_Request())).models).parameter_count))
+        _quiet(out, "loader_details_params", lambda: int(asyncio.run(
+            routes.get_model_details(model_id, _Request())).parameter_count))
+    finally:
+        routes.MODEL_DICT, routes.model_manager, routes.hf_loader = saved
+    return out
+
+
+def measure_genz_loader(model_name):
+    """The parameter count BudSimulator lists and stores for one of GenZ's built-in models
+    (``src.db.model_loader.DynamicModelCollection``): ``get_model_metadata``'s, behind
+    ``/models/list``, and the one ``sync_static_models_to_db`` writes to the database, which
+    ``ModelManager.get_model_config`` hands the calculator as ``num_parameters`` -- with the
+    weights ``calculate_total_memory`` then reports (bf16, GB). The database is the harness's
+    scratch file."""
+    out = {}
+    if not REPO_ROOT:
+        return out
+    bud = os.path.join(REPO_ROOT, "BudSimulator")
+    sys.path.insert(0, bud)
+    try:
+        import contextlib
+        import io
+        import logging
+
+        _scratch_db()
+        logging.disable(logging.CRITICAL)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                from llm_memory_calculator.calculator import ModelMemoryCalculator
+                from llm_memory_calculator.genz.Models.default_models import MODEL_DICT
+                from src.db.model_loader import DynamicModelCollection
+                from src.db.model_manager import ModelManager
+
+                mc = MODEL_DICT.get_model(model_name)
+                manager = ModelManager()
+                # keyed as GenZ's dictionary keys it: by the name and by the model's own id
+                loader = DynamicModelCollection(base_models={model_name: mc, mc.model: mc},
+                                                model_manager=manager, auto_import=False)
+                out["loader_params"] = int(loader.get_model_metadata(model_name)["parameter_count"])
+                out.update(_list_routes(loader, manager, mc.model, synced=False))
+                loader.sync_static_models_to_db()
+                cfg = manager.get_model_config(mc.model)
+                out["loader_sync_params"] = int(cfg["num_parameters"])
+                rep = ModelMemoryCalculator().calculate_total_memory(
+                    dict(cfg), batch_size=1, seq_length=4096, precision="bf16")
+                out["loader_sync_weight_gb"] = _gb(rep.weight_memory_gb)
+            out.update(_list_routes(loader, manager, mc.model, synced=True))
+        finally:
+            logging.disable(logging.NOTSET)
+    except Exception as e:
+        out["loader_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    finally:
+        sys.path.remove(bud)
+    return out
+
+
+def _quiet(out, key, f):
+    """``out[key] = f()``, its stdout swallowed, or ``out[<reader>_error]`` -- the reader being the
+    figure's name before its first ``[`` (``_error_of`` finds it by prefix)."""
+    import contextlib
+    import io
+
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            out[key] = f()
+    except BaseException as e:  # noqa: BLE001 -- an HTTPException too is a figure to diff
+        if isinstance(e, KeyboardInterrupt):
+            raise
+        detail = getattr(e, "detail", None) or str(e)
+        out[key.split("[")[0] + "_error"] = f"{type(e).__name__}: {str(detail)[:160]}"
+
+
+def measure_entry_points(cfg):
+    """The public figure paths the readers above reach only through another function (round 20:
+    the reader inventory counts a function measured only when the harness itself calls it):
+    the calculator's weights (``calculate_model_weights``) and ``utils.estimate_memory`` /
+    ``analyze_attention_efficiency`` at 4k; the HF loader on the config as a local folder
+    (``HuggingFaceConfigLoader.get_model_config``'s parameter count, ``analyze_model``'s report);
+    GenZ's reading of an HF config (``huggingface_config_to_model_config``: its KV elements a
+    token); the optimizer state ``genz.training_operators.calculate_optimizer_memory`` sizes for
+    the calculator's count (AdamW); budsim's fp8 KV option (``kv.budsim.kv_fp8_option``); the
+    training optimizer itself (``TrainingOptimizer.optimize``: its plan's parameters) and
+    ``compare_training_strategies`` (the GPUs each strategy plans); the full KV planner
+    (``kv.plan_kv``, the planner ``measure_kv_planner`` drives, from a deployment and a node
+    group) and budsim's ``plan_node_group`` over it; the serving simulator's run
+    (``ServingSimulator.simulate``: 64 requests on a 40 GB card) and the prefix cache's
+    (``PrefixCacheAnalyzer.analyze``); and the Gaia component's own entry point
+    (``bud_component.main --config``)."""
+    import copy
+
+    out = {}
+
+    def calcw():
+        from llm_memory_calculator.calculator import ModelMemoryCalculator
+
+        return int(ModelMemoryCalculator().calculate_model_weights(copy.deepcopy(cfg), "bf16")[0])
+
+    def estmem():
+        from llm_memory_calculator import estimate_memory
+
+        r = estimate_memory(copy.deepcopy(cfg), batch_size=1, seq_length=4096, precision="bf16")
+        return [_gb(r.weight_memory_gb), _gb(r.kv_cache_gb), _gb(r.total_memory_gb)]
+
+    def attn_eff():
+        from llm_memory_calculator.utils import analyze_attention_efficiency
+
+        r = analyze_attention_efficiency(copy.deepcopy(cfg), seq_lengths=[4096])["results"][4096]
+        return [_gb(r["total_memory_gb"]), _gb(r["kv_cache_gb"])]
+
+    folder = None
+    if GENZ_DATA:
+        folder = os.path.join(GENZ_DATA, "hf_config")
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "config.json"), "w") as f:
+            json.dump(cfg, f)
+
+    def hfl_params():
+        from llm_memory_calculator.huggingface_loader import HuggingFaceConfigLoader
+
+        return int(HuggingFaceConfigLoader().get_model_config(folder)["num_parameters"])
+
+    def hfl_analyze():
+        from llm_memory_calculator.huggingface_loader import HuggingFaceConfigLoader
+
+        r = HuggingFaceConfigLoader().analyze_model(folder, seq_length=4096, precision="bf16")
+        rep = r["memory_report"]
+        return [_gb(rep.weight_memory_gb), _gb(rep.kv_cache_gb), _gb(rep.total_memory_gb)]
+
+    def hf2mc():
+        from llm_memory_calculator.genz.Models.get_language_model import (
+            huggingface_config_to_model_config,
+        )
+
+        return int(huggingface_config_to_model_config(copy.deepcopy(cfg), "m").get_kv_size())
+
+    def optmem():
+        from llm_memory_calculator.genz.training_operators import calculate_optimizer_memory
+
+        return round(float(calculate_optimizer_memory(calcw(), "adamw")["total_gb"]), 6)
+
+    def fp8_option():
+        from llm_memory_calculator.kv import constants
+        from llm_memory_calculator.kv.budsim import kv_fp8_option
+
+        s = kv_fp8_option("vllm", [constants.KV_FP8_FEATURE], copy.deepcopy(cfg))
+        return [1 if s["eligible"] else 2,
+                1 if s["eligible"] and not s["skip_layers_sliding_window"] else 2]
+
+    def topt2():
+        from llm_memory_calculator.training.training_optimizer import (
+            DatasetConfig,
+            TrainingConstraints,
+            TrainingOptimizer,
+        )
+
+        plan = TrainingOptimizer().optimize(copy.deepcopy(cfg),
+                                            DatasetConfig(total_tokens=100_000_000),
+                                            constraints=TrainingConstraints(max_gpus=64))
+        return int(plan.to_dict()["model"]["total_params"])
+
+    def ctrain():
+        from llm_memory_calculator.training.training_optimizer import compare_training_strategies
+
+        rows = compare_training_strategies(copy.deepcopy(cfg), total_tokens=100_000_000,
+                                           max_gpus=8)
+        return [int(r.get("num_gpus") or 0) for r in rows]
+
+    def kvplan2():
+        from llm_memory_calculator.kv import (
+            DeploymentSpec,
+            EngineSpec,
+            InfraSnapshot,
+            NodeGroup,
+            plan_kv,
+        )
+
+        p = plan_kv(_KV_DEPLOY(cfg, DeploymentSpec), EngineSpec.of("vllm", _KV_FEATURES),
+                    NodeGroup(**_KV_GROUP), InfraSnapshot(**_KV_INFRA),
+                    recompute_fn=lambda n: n * 0.03)
+        return [p.gpu_kv_gib, p.cpu_kv_gib, p.host_memory_gib, p.shm_gib, p.working_set_gib]
+
+    def budsim_plan():
+        from llm_memory_calculator.kv.budsim import plan_node_group
+
+        group = dict(_KV_GROUP, engine_type="vllm", kv_features=list(_KV_FEATURES),
+                     target_node_name="n1")
+        row = {"model_name": "m", "input_tokens": 8000, "output_tokens": 2000,
+               "concurrency": 16, "cluster_id": "c1"}
+        p = plan_node_group(group, row, model_config=copy.deepcopy(cfg), cluster_info=[
+            {"id": "c1", "kv_capability": {}, "nodes": [_KV_INFRA["node"]]}])
+        res = p.get("resources") or {}
+        return [p.get("gpu_kv_gib"), p.get("cpu_kv_gib"), res.get("host_memory_gib"),
+                res.get("shm_gib")]
+
+    def simulate():
+        from llm_memory_calculator.genz.serving.simulator import ServingSimulator
+        from llm_memory_calculator.genz.serving.workload import WorkloadConfig
+
+        r = ServingSimulator(model=copy.deepcopy(cfg), hardware=B_EFF_DEVICE,
+                             precision="bf16").simulate(WorkloadConfig(model="m", num_requests=64))
+        return [int(r.total_requests_completed), int(r.total_requests_failed)]
+
+    def prefix():
+        from llm_memory_calculator.genz.Models.get_language_model import get_configs
+        from llm_memory_calculator.genz.serving.prefix_cache import PrefixCacheAnalyzer
+        from llm_memory_calculator.genz.serving.request import Request
+
+        reqs = [Request(request_id=i, model="m", input_tokens=1024, max_output_tokens=128,
+                        arrival_time_ns=i) for i in range(8)]
+        r = PrefixCacheAnalyzer(get_configs(copy.deepcopy(cfg))).analyze(
+            reqs, shared_prefix_tokens=512)
+        return [round(float(r.get("memory_saved_bytes") or 0.0), 3)]
+
+    def component():
+        import contextlib
+        import io
+
+        sys.path.insert(0, REPO_ROOT)
+        try:
+            import bud_component
+
+            argv = sys.argv
+            sys.argv = ["bud_component", "--config", json.dumps(cfg), "--hardware",
+                        "A100_40GB_GPU", "--seq", "4096"]
+            buf = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(buf):
+                    bud_component.main()
+            finally:
+                sys.argv = argv
+            m = json.loads(buf.getvalue().strip().splitlines()[-1])["memory"]
+            return [round(float(m.get(k) or 0.0), 3) for k in _COMPONENT_FIGURES]
+        finally:
+            sys.path.remove(REPO_ROOT)
+
+    _quiet(out, "calcw_params", calcw)
+    _quiet(out, "api_estmem", estmem)
+    _quiet(out, "api_attn_eff", attn_eff)
+    if folder:
+        _quiet(out, "hfl_params", hfl_params)
+        _quiet(out, "api_hfl_analyze", hfl_analyze)
+    _quiet(out, "hf2mc_kv_size", hf2mc)
+    _quiet(out, "optmem_gb", optmem)
+    _quiet(out, "kvfp8opt_bytes", fp8_option)
+    _quiet(out, "topt2_params", topt2)
+    _quiet(out, "ctrain_gpus", ctrain)
+    _quiet(out, "kvplan2", kvplan2)
+    _quiet(out, "budsimplan", budsim_plan)
+    _quiet(out, "servesim", simulate)
+    _quiet(out, "prefixsim", prefix)
+    if REPO_ROOT:
+        _quiet(out, "component", component)
+    if folder:
+        out.update(measure_api_routes(folder, cfg))
+    return out
+
+
+#: The KV planner's inputs for ``kv.plan_kv`` and budsim's ``plan_node_group`` -- the deployment,
+#: node group and node ``measure_kv_planner`` hands ``plan_kv_tiers`` directly.
+_KV_FEATURES = ("kv_events", "cache_salt", "cpu_offload_shm")
+_KV_GROUP = dict(device_type="cuda", weight_memory_gb=16.4, kv_cache_memory_gb=2.0,
+                 activation_memory_gb=1.0, device_total_memory_gb=80.0, device_model_key="H100",
+                 device_generation="hopper", device_tflops=989.0)
+_KV_INFRA = dict(node={"name": "n1", "kv_capabilities": {
+    "pinned_offload_ok": True, "vgpu": False, "pinned_copy_gbps": 50.0, "pcie_gen": 5},
+    "devices": [{"type": "cpu", "available_memory_gb": 1000.0}]}, cluster={"id": "c1"})
+
+
+def _KV_DEPLOY(cfg, spec):
+    import copy
+
+    return spec(model_config=copy.deepcopy(cfg), input_tokens=8000, output_tokens=2000,
+                concurrency=16, model_id="m", e2e_latency_s=20.0)
+
+
+#: The figures ``bud_component.main`` prints that the harness reads (its ``memory`` block: the
+#: generic engine estimate at 4k, fp16 weights and KV).
+_COMPONENT_FIGURES = ("weights_bytes", "kv_cache_bytes", "state_bytes", "total_runtime_bytes",
+                      "parameter_count")
+
+
+def measure_named_entry_points(model_name):
+    """A built-in GenZ model, by name, through the public paths that take a name: the
+    disaggregation analysis (``DisaggregationAnalyzer.analyze``: one prefill and one decode
+    instance, its KV transfer) and the cluster scaling (``ClusterAnalyzer.analyze_scaling``: the
+    concurrency one instance serves at 3,968 + 128 tokens), the memory model GenZ builds from a
+    System (``MemoryModel.from_system``: KV bytes a token and a request's fixed bytes), and
+    BudSimulator's serving and training routes (``/serving/memory/tiers``,
+    ``/training/estimate-training`` / ``recommend-cluster`` / ``check-fit`` / ``estimate-time``),
+    which read the model from GenZ's registry."""
+    out = {}
+
+    def disagg():
+        from llm_memory_calculator.genz.serving.disaggregation import DisaggregationAnalyzer
+
+        r = DisaggregationAnalyzer(model=model_name, hardware=B_EFF_DEVICE).analyze(1, 1)
+        return [round(float(r.get("kv_transfer_bytes") or r.get("kv_transfer_mb") or 0.0), 3)]
+
+    def scaling():
+        from llm_memory_calculator.genz.serving.cluster import ClusterAnalyzer
+
+        an = ClusterAnalyzer(model=model_name, hardware=B_EFF_DEVICE)
+        an.analyze_scaling([1], input_tokens=3968, output_tokens=128)
+        return int(an.last_b_eff)
+
+    def memsys():
+        from llm_memory_calculator.genz.LLM_inference.utils import get_inference_system
+        from llm_memory_calculator.genz.Models.get_language_model import get_configs
+        from llm_memory_calculator.genz.serving.memory_model import MemoryModel
+
+        mm = MemoryModel.from_system(get_configs(model_name),
+                                     get_inference_system(system_name=B_EFF_DEVICE, bits="bf16"))
+        return int(mm.bytes_per_token_kv)
+
+    _quiet(out, "disagg_analyze", disagg)
+    _quiet(out, "cluster_scaling_b_eff", scaling)
+    _quiet(out, "memsys", memsys)
+    out.update(measure_api_routes(model_name, model_name))
+    return out
+
+
+def measure_api_routes(model, cfg_or_name):
+    """BudSimulator's serving and training routes for one model (``model``: a GenZ name, or the
+    local folder ``measure_entry_points`` writes a config to): ``/serving/memory/tiers`` (KV bytes a
+    token and a request's fixed bytes on a 40 GB card), ``/training/estimate-training`` (full
+    fine-tuning, AdamW, bf16, one 2,048-token sequence: weights, total, parameters),
+    ``recommend-cluster`` (the GPUs and memory per GPU of its first recommendation),
+    ``check-fit`` (one A100-80GB: memory per GPU, the GPUs it needs) and ``estimate-time`` (one
+    A100-80GB; a time, not an amount)."""
+    out = {}
+    if not REPO_ROOT:
+        return out
+    bud = os.path.join(REPO_ROOT, "BudSimulator")
+    sys.path.insert(0, bud)
+    try:
+        import asyncio
+        import contextlib
+        import io
+        import logging
+
+        _scratch_db()
+        logging.disable(logging.CRITICAL)
+        with contextlib.redirect_stdout(io.StringIO()):
+            from apis.routers import serving as serving_routes
+            from apis.routers import training as training_routes
+
+        common = dict(model=model, method="full", batch_size=1, seq_length=2048,
+                      precision="bf16", optimizer="adamw", gradient_checkpointing=True)
+
+        def tiers():
+            r = asyncio.run(serving_routes.analyze_memory_tiers(serving_routes.MemoryTierRequest(
+                model=model, hardware=B_EFF_DEVICE)))
+            return int(r.bytes_per_token_kv)
+
+        def estimate():
+            r = asyncio.run(training_routes.estimate_training(
+                training_routes.TrainingEstimateRequest(**common)))
+            return [round(float(r.memory_breakdown.weight_memory_gb), 6),
+                    round(float(r.memory_breakdown.total_memory_gb), 6), int(r.total_params)]
+
+        def recommend():
+            r = asyncio.run(training_routes.recommend_cluster(
+                training_routes.ClusterRecommendRequest(**common)))
+            first = r.recommendations[0] if r.recommendations else None
+            return [int(first.total_gpus) if first else 0,
+                    round(float(first.memory_per_gpu_gb), 6) if first else 0.0]
+
+        def fit():
+            r = asyncio.run(training_routes.check_fit(training_routes.CheckFitRequest(
+                hardware="A100_80GB_GPU", num_gpus=1, **common)))
+            return [round(float(r.memory_per_gpu_gb), 6), int(r.min_gpus_required or 0)]
+
+        def time_():
+            r = asyncio.run(training_routes.estimate_time(training_routes.TimeEstimateRequest(
+                model=model, dataset_tokens=10_000_000, batch_size=1, hardware="A100_80GB_GPU",
+                num_gpus=1, seq_length=2048)))
+            return round(float(r.estimated_hours), 6)
+
+        try:
+            if isinstance(cfg_or_name, str):
+                _quiet(out, "route_tiers", tiers)
+            _quiet(out, "route_train_est", estimate)
+            _quiet(out, "route_train_rec", recommend)
+            _quiet(out, "route_train_fit", fit)
+            _quiet(out, "route_train_time", time_)
+        finally:
+            logging.disable(logging.NOTSET)
+    except Exception as e:
+        out["route_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    finally:
+        sys.path.remove(bud)
+    return out
+
+
 def _fixed_bytes(mc):
     """A GenZ ModelConfig's fixed bytes per request at 2 B, by whatever the tree measured prices."""
     for name in ("get_request_fixed_bytes", "get_state_bytes"):
@@ -857,6 +1399,8 @@ def measure_training(cfg):
                 method="full", optimizer="adamw")
         out["trainmem_weight_gb"] = round(float(t.weight_memory_gb), 6)
         out["trainmem_total_gb"] = round(float(t.total_memory_gb), 6)
+        # the estimate as the training routes hand it on (``TrainingMemoryEstimate.to_dict``)
+        out["trainmem_dict_total_gb"] = round(float(t.to_dict()["total_memory_gb"]), 6)
     except Exception as e:
         out["trainmem_error"] = f"{type(e).__name__}: {str(e)[:160]}"
     try:
@@ -1007,7 +1551,10 @@ def measure_training_estimators(cfg):
 
         t = AdvancedTrainingCalculator().calculate_advanced_training_memory(
             copy.deepcopy(cfg), method=method, batch_size=1, seq_length=2048)
-        return [round(float(t.weight_memory_gb), 6), round(float(t.total_memory_gb), 6)]
+        # and its total as ``AdvancedTrainingEstimate.to_dict`` reports it
+        d = t.to_dict()["memory_breakdown"]
+        return [round(float(t.weight_memory_gb), 6), round(float(t.total_memory_gb), 6),
+                round(float(d.get("total_gb", d.get("total_memory_gb", 0.0))), 6)]
 
     def time_params():
         from llm_memory_calculator.training.time_estimator import TrainingTimeEstimator
@@ -1635,6 +2182,15 @@ def measure_corpus(args):
     warnings.simplefilter("ignore")
     os.makedirs(os.path.join(args.genz_data, "model"), exist_ok=True)
     os.makedirs(os.path.join(args.genz_data, "sparsity"), exist_ok=True)
+    # GenZ's built-in models, named before any row runs: a reader that registers a config under a
+    # name of its own (bud_component.main does, for its perf path) adds no row
+    try:
+        from llm_memory_calculator.genz.Models.default_models import MODEL_DICT
+
+        builtins = sorted(MODEL_DICT.list_models())
+    except Exception:
+        traceback.print_exc()
+        builtins = []
     rows = []
     for name, cfg in collect(args):
         rows.append(measure_config(name, cfg, args.genz_data))
@@ -1652,12 +2208,12 @@ def measure_corpus(args):
             rows.append(measure_grounding_fit(root))
             break
     try:
-        from llm_memory_calculator.genz.Models.default_models import MODEL_DICT
-
-        for model_name in sorted(MODEL_DICT.list_models()):
+        for model_name in builtins:
             row = {"name": "genz:" + model_name}
             row.update(measure_genz(model_name, args.genz_data))
             row.update(measure_genz_to_hf(model_name))
+            row.update(measure_genz_loader(model_name))
+            row.update(measure_named_entry_points(model_name))
             rows.append(row)
     except Exception:
         traceback.print_exc()
@@ -1732,7 +2288,8 @@ import re  # noqa: E402
 #: Capacity figures: higher admits more requests into the same memory.
 CAPACITY_FIGURES = re.compile(
     r"^(vllm_limits\[[012]\]|vllm_running_\d+|serving_requests_\w+|sim_max_running"
-    r"|(cluster|disagg)_b_eff_\d+|tpar_options_\w+|maxbatch_\w+|vllm_limits_lora\[[012]\])$")
+    r"|(cluster|disagg)_b_eff_\d+|tpar_options_\w+|maxbatch_\w+|vllm_limits_lora\[[012]\]"
+    r"|cluster_scaling_b_eff|servesim\[0\]|prefixsim\[0\])$")
 #: Neither memory nor capacity: kinds and layer counts, latencies (`runtime_*[0]`), vLLM's KV
 #: group counts, the KV planner's layer counts and block size, flags, GGUF bookkeeping, the KV
 #: tier planner's working-set tokens (a workload estimate) and its GPU pool (the device less the
@@ -1745,22 +2302,34 @@ CAPACITY_FIGURES = re.compile(
 #: terms, a residual of measured runs -- what a run measured less the weights and KV the facts
 #: account for -- so bytes the facts now count in the weights leave the fitted overhead (the gate
 #: holds those weights on the planner fixtures' own rows; section 12 of the proof lists every
-#: fitted term before and after).
+#: fitted term before and after); the training routes' estimate of time, the GPU each training
+#: strategy plans and the cluster the recommender picks (a choice for time and cost that follows
+#: the training estimate, which is held).
 NOT_AN_AMOUNT = re.compile(
     r"^(count|genz_layer_kinds\..*|genz_ffn_kinds\..*|kv_(full|sliding|free|cross)_layers"
     r"|facts_layers\[\d+\]|conv_layers\[\d+\]|runtime_\w+\[0\]|vllm_limits\[[34]\]"
     r"|kvgeo_\d+\[[124]\]|gguf_.*|onnx_.*|kvplan_ws_tokens|kvplan_pool_gib"
-    r"|genz_(train)?par_options_\d+\[\d\]|amc_config\..*|amc_kv\[[12]\]|fit_memory_gib\..*)$")
+    r"|genz_(train)?par_options_\d+\[\d\]|amc_config\..*|amc_kv\[[12]\]|fit_memory_gib\..*"
+    r"|route_train_time|ctrain_gpus\[\d\]|route_train_rec\[\d\])$")
 
 
 #: Memory figures a plan derives from other figures rather than sizes itself: the KV tier
 #: planner's GPU and CPU KV and the host and shared memory its T1 asks for are sized toward its
 #: working set and its KV geometry, and a tier it no longer judges worth its copies (recompute
 #: is cheaper) asks for none; BudSimulator's `/models/analyze` reports the calculator's KV and
-#: totals rounded (to 0.001 and 0.1 GB) and the bytes a token adds from those rounded figures. A
-#: move of one is held, like a capacity, by the memory figures it is derived from
-#: (``held_by``), each held to its own truth.
-DERIVED_FIGURES = re.compile(r"^(kvplan_(host|shm|gpu_kv|cpu_kv)_gib|route_analyze\[\d\])$")
+#: totals rounded (to 0.001 and 0.1 GB) and the bytes a token adds from those rounded figures; the
+#: public wrappers and routes that re-report the calculator's report (``api_*``, ``route_calc``,
+#: ``route_compare``, ``route_usecase``), the generic engine estimate (``component``), the KV
+#: planner's tiers through ``plan_kv`` and budsim (``kvplan2``, ``budsimplan``), the serving
+#: memory model's KV through the disaggregation analysis, the training routes' fit check, and the
+#: loader's count as the list routes show it. A move of one is held, like a capacity, by the memory
+#: figures it is derived from (``held_by``: ``kv_truth.HELD_BY_PATTERNS``), each held to its own
+#: truth.
+DERIVED_FIGURES = re.compile(
+    r"^(kvplan_(host|shm|gpu_kv|cpu_kv)_gib|route_analyze\[\d\]|kvplan2\[\d\]|budsimplan\[\d\]"
+    r"|api_\w+\[\d\]|component\[\d\]|route_(calc|compare|usecase|train_fit)\[\d\]"
+    r"|disagg_analyze\[\d\]|servesim\[1\]"
+    r"|loader_(list|filter|popular|details)_params)$")
 
 
 def _leaves(key, value):
@@ -1854,7 +2423,8 @@ def _repo_owned(module):
 #: reader that came to depend on one fails in an environment without it instead of passing as
 #: "not measured".
 READER_DEPENDENCIES = {"gguf": ("gguf",), "conv": ("requests", "lxml", "json_repair"),
-                       "route": ("fastapi", "requests", "lxml", "json_repair")}
+                       "route": ("fastapi", "requests", "lxml", "json_repair"),
+                       "loader": ("fastapi", "requests", "lxml", "json_repair")}
 
 
 def _reader_of(row, path):
@@ -2013,13 +2583,39 @@ INVENTORY_ROOTS = ("llm-memory-calculator/src", "BudSimulator/src", "BudSimulato
 
 #: Model-shape keys (config keys and GenZ ModelConfig fields). A function reads one when its body
 #: names it: as a string (``cfg["hidden_size"]``, ``.get("vocab_size")``), an attribute
-#: (``mc.num_decoder_layers``), a keyword or a variable.
+#: (``mc.num_decoder_layers``), a keyword or a variable. The config keys the layer kinds and the
+#: weights are read from (depth, width, heads, the FFN and its experts, the layout keys, the
+#: recurrent mixers' dimensions, MLA's ranks, a nested `text_config`), every ModelConfig field that
+#: sizes a layer, the parameter-count keys a caller may hand on (`num_parameters`,
+#: `parameter_count`, ...), the KV bytes a token adds, and the ModelConfig itself (a function that
+#: takes `model_config` reads the model through whatever it calls).
 SHAPE_KEYS = frozenset((
+    # depth, width, heads and vocabulary
     "num_hidden_layers", "num_layers", "n_layer", "n_layers", "num_decoder_layers",
-    "decoder_layers", "num_key_value_heads", "num_kv_heads", "head_dim", "hidden_size", "d_model",
-    "n_embd", "n_head", "num_attention_heads", "intermediate_size", "ffn_dim",
-    "moe_intermediate_size", "n_routed_experts", "num_experts", "vocab_size", "layer_types",
-    "get_kv_size", "kv_lora_rank", "sliding_window", "text_config"))
+    "decoder_layers", "num_encoder_layers", "encoder_layers", "num_key_value_heads",
+    "num_kv_heads", "n_kv_heads", "multi_query_group_num", "kv_channels", "head_dim",
+    "hidden_size", "hidden_dim", "d_model", "n_embd", "n_head", "n_heads", "num_heads",
+    "num_attention_heads", "vocab_size", "padded_vocab_size",
+    # the FFN and its experts
+    "intermediate_size", "ffn_dim", "ffn_hidden_size", "n_inner", "num_ffi",
+    "moe_intermediate_size", "n_routed_experts", "num_experts", "num_local_experts",
+    "num_experts_per_tok", "expert_top_k", "n_shared_experts", "shared_expert_intermediate_size",
+    "first_k_dense_replace", "moe_layer_freq", "expert_layer_period", "expert_layer_offset",
+    # which layers attend, how far, and what they cache
+    "layer_types", "layer_type", "layers_block_type", "hybrid_override_pattern",
+    "full_attention_interval", "attn_layer_indices", "attn_layer_period", "attn_layer_offset",
+    "mamba_layer_period", "global_attn_every_n_layers", "sliding_window",
+    "sliding_window_pattern", "num_kv_shared_layers", "cross_attention", "layer_configs",
+    "unique_layers", "get_kv_size", "kv_bytes_per_token",
+    # MLA and the recurrent mixers
+    "kv_lora_rank", "q_lora_rank", "qk_rope_head_dim", "qk_nope_head_dim", "v_head_dim",
+    "mamba_d_state", "mamba_d_conv", "mamba_expand", "mamba_dt_rank", "d_state", "d_conv",
+    "state_size", "ssm_state_size", "conv_kernel", "linear_num_key_heads",
+    "linear_num_value_heads", "linear_key_head_dim", "linear_value_head_dim",
+    "linear_conv_kernel_dim", "recurrent_state",
+    # nesting, the model as handed on, and its parameter count
+    "text_config", "source_config", "model_config", "num_parameters", "parameter_count",
+    "total_params", "num_params", "param_count"))
 
 
 def _inventory_files(repo):
@@ -2035,11 +2631,23 @@ def _inventory_files(repo):
                     yield os.path.join(dirpath, f)
 
 
+def _own_nodes(func):
+    """Every node of a function -- its arguments, its body and the closures it defines (a closure
+    runs as part of the function that defines it)."""
+    import ast
+
+    stack = list(ast.iter_child_nodes(func))
+    while stack:
+        n = stack.pop()
+        yield n
+        stack.extend(ast.iter_child_nodes(n))
+
+
 def _keys_named(node):
     import ast
 
     hits = set()
-    for n in ast.walk(node):
+    for n in _own_nodes(node):
         if isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value in SHAPE_KEYS:
             hits.add(n.value)
         elif isinstance(n, ast.Attribute) and n.attr in SHAPE_KEYS:
@@ -2048,17 +2656,42 @@ def _keys_named(node):
             hits.add(n.arg)
         elif isinstance(n, ast.Name) and n.id in SHAPE_KEYS:
             hits.add(n.id)
+        elif isinstance(n, ast.arg) and n.arg in SHAPE_KEYS:
+            hits.add(n.arg)
     return hits
 
 
-def figure_readers(repo):
-    """``[{file, function, line, public, keys}]``: every function and method of the inventory's
-    sources whose body names a model-shape key (``SHAPE_KEYS``). ``function`` is the qualified
-    name Python gives it (``Class.method``); ``public`` when neither it nor a class it sits in
-    starts with an underscore (``__init__`` and ``__call__`` are public)."""
+def _names_used(node):
+    """The names a function's body refers to -- called or handed on: ``(names, attributes,
+    own)``, the bare names it loads (``f(...)``, ``map(f, ...)``, ``Class(...)``), the attributes
+    of any other object (``module.f``, ``obj.method``) and its own (``self.m``, ``cls.m``)."""
     import ast
 
-    out = []
+    names, attrs, own = set(), set(), set()
+    for n in _own_nodes(node):
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load):
+            names.add(n.id)
+        elif isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Load):
+            if isinstance(n.value, ast.Name) and n.value.id in ("self", "cls"):
+                own.add(n.attr)
+            else:
+                attrs.add(n.attr)
+    return names, attrs, own
+
+
+_FUNCTIONS = {}
+
+
+def _functions(repo):
+    """``[{file, function, name, line, public, keys, uses}]``: every function and method of the
+    inventory's sources (``function`` the qualified name Python gives it, ``Class.method``;
+    ``public`` when neither it nor a class it sits in starts with an underscore -- ``__init__`` and
+    ``__call__`` are public), the shape keys its body names and the names it uses."""
+    import ast
+
+    if repo in _FUNCTIONS:
+        return _FUNCTIONS[repo]
+    out = _FUNCTIONS[repo] = []
     for path in _inventory_files(repo):
         try:
             with open(path) as f:
@@ -2066,36 +2699,248 @@ def figure_readers(repo):
         except (SyntaxError, UnicodeDecodeError):
             continue
         rel = os.path.relpath(path, repo)
+        # a module-level table of functions (``_DISPATCH = {kind: f, ...}``): a function that
+        # uses the table's name uses each function in it
+        tables = {}
+        for st in tree.body:
+            if isinstance(st, (ast.Assign, ast.AnnAssign)) and st.value is not None:
+                targets = st.targets if isinstance(st, ast.Assign) else [st.target]
+                held_names = {n.id for n in ast.walk(st.value) if isinstance(n, ast.Name)}
+                for t in targets:
+                    if isinstance(t, ast.Name) and held_names:
+                        tables[t.id] = held_names
 
         def visit(node, prefix, public):
             for ch in ast.iter_child_nodes(node):
                 if isinstance(ch, ast.ClassDef):
                     visit(ch, prefix + ch.name + ".", public and not ch.name.startswith("_"))
                 elif isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    keys = _keys_named(ch)
-                    if keys:
-                        out.append({
-                            "file": rel, "function": prefix + ch.name, "line": ch.lineno,
-                            "public": public and (not ch.name.startswith("_")
-                                                  or ch.name in ("__init__", "__call__")),
-                            "keys": sorted(keys)})
+                    names, attrs, own = _names_used(ch)
+                    for t in list(names):
+                        names |= tables.get(t, set())
+                    out.append({
+                        "file": rel, "function": prefix + ch.name, "name": ch.name,
+                        "cls": prefix[:-1], "line": ch.lineno,
+                        "public": public and (not ch.name.startswith("_")
+                                              or ch.name in ("__init__", "__call__")),
+                        "keys": sorted(_keys_named(ch)), "names": names, "attrs": attrs,
+                        "own": own, "uses": names | attrs | own})
 
+        # what the file imports: ``from pkg.mod import f as g`` -> {"g": ("mod", "f")} (``mod``
+        # may be a package re-exporting ``f``, or ``f`` a submodule), ``import pkg.mod as m`` and
+        # ``from pkg import mod`` -> modules {"m": "mod"}
+        names_in, modules_in = {}, {}
+        for st in ast.walk(tree):
+            if isinstance(st, ast.ImportFrom):
+                mod = (st.module or "").rsplit(".", 1)[-1]
+                for a in st.names:
+                    names_in[a.asname or a.name] = (mod, a.name)
+                    modules_in[a.asname or a.name] = a.name
+            elif isinstance(st, ast.Import):
+                for a in st.names:
+                    modules_in[a.asname or a.name.rsplit(".", 1)[-1]] = a.name.rsplit(".", 1)[-1]
+        start = len(out)
         visit(tree, "", True)
+        for f in out[start:]:
+            f["imports"], f["modules"] = names_in, set(modules_in.values())
     return out
 
 
+def _module_of(file):
+    """A source file's module name and the packages above it: ``.../kv/cost.py`` ->
+    ``("cost", {"kv", "llm_memory_calculator", ...})``."""
+    parts = file[:-3].split(os.sep) if file.endswith(".py") else file.split(os.sep)
+    return parts[-1], set(parts[:-1])
+
+
+def figure_readers(repo):
+    """``[{file, function, line, public, keys, via}]``: every function and method of the
+    inventory's sources that reads a model-shape key (``SHAPE_KEYS``) -- in its own body, or
+    through a private helper it uses, at any depth (``via``: the helpers, when its own body names
+    none). A private name resolves to the private functions of that name in the same file, else
+    to those of any file of the inventory (an imported helper)."""
+    if repo in _READERS:
+        return _READERS[repo]
+    funcs = _functions(repo)
+    private = {}
+    for f in funcs:
+        if not f["public"]:
+            private.setdefault(f["name"], []).append(f)
+
+    def helpers(f):
+        for name in f["uses"]:
+            if not name.startswith("_") or name not in private:
+                continue
+            same = [g for g in private[name] if g["file"] == f["file"]]
+            yield from (same or private[name])
+
+    reads = {id(f): bool(f["keys"]) for f in funcs}
+    via = {id(f): [] for f in funcs}
+    changed = True
+    while changed:
+        changed = False
+        for f in funcs:
+            if reads[id(f)]:
+                continue
+            for g in helpers(f):
+                if reads[id(g)]:
+                    reads[id(f)] = True
+                    via[id(f)] = [f"{g['file']}:{g['function']}"]
+                    changed = True
+                    break
+    _READERS[repo] = [{"file": f["file"], "function": f["function"], "line": f["line"],
+                       "public": f["public"], "keys": f["keys"], "via": via[id(f)]}
+                      for f in funcs if reads[id(f)]]
+    return _READERS[repo]
+
+
+_READERS = {}
+
+
+def _users_of(funcs, f):
+    """The functions of ``funcs`` that use ``f``: a module function by its name (called, handed
+    on, or as ``module.f``); a method by its attribute on any other object (``obj.m``: any
+    receiver) or on its own (``self.m``) from its class or a class that does not define ``m``;
+    a class's ``__init__`` / ``__call__`` by the class's name."""
+    if not f["cls"]:
+        # a module function: by its name in its own file, or where a file imports it (from its
+        # module, or from a package above it that re-exports it), or as ``module.f`` where a
+        # file imports its module
+        mod, packages = _module_of(f["file"])
+        out = []
+        for g in funcs:
+            if g is f:
+                continue
+            if g["file"] == f["file"]:
+                if f["name"] in g["names"] or f["name"] in g["attrs"]:
+                    out.append(g)
+                continue
+            local = [k for k, (m, n) in g["imports"].items() if n == f["name"]
+                     and (m == mod or m in packages or (m == "" and True))]
+            if any(k in g["names"] for k in local) or (
+                    f["name"] in g["attrs"] and (mod in g["modules"] or packages & g["modules"])):
+                out.append(g)
+        return out
+    if f["name"] in ("__init__", "__call__"):
+        cname = f["cls"].rsplit(".", 1)[-1]
+        return [g for g in funcs if cname in g["uses"] and g is not f]
+    # ``self.m`` in a class that defines its own ``m`` is that class's; in any other class (a
+    # subclass, a mixin) it may be this one
+    defines = _defines(funcs)
+    return [g for g in funcs if g is not f and (
+        f["name"] in g["attrs"] or (f["name"] in g["own"] and (
+            g["cls"] == f["cls"] or (g["file"], g["cls"], f["name"]) not in defines)))]
+
+
+def _defines(funcs):
+    key = id(funcs)
+    if _DEFINES.get("key") != key:
+        _DEFINES.clear()
+        _DEFINES["key"] = key
+        _DEFINES["set"] = {(f["file"], f["cls"], f["name"]) for f in funcs if f["cls"]}
+    return _DEFINES["set"]
+
+
+_DEFINES = {}
+
+
+def users(repo, function, file=None):
+    """The functions of the inventory that use ``function`` (a qualified name, of ``file`` when
+    given) as ``_users_of`` reads them: ``[(file, qualified name)]``."""
+    funcs = _functions(repo)
+    out = set()
+    for f in funcs:
+        if f["function"] == function and (file is None or f["file"] == file):
+            out.update((g["file"], g["function"]) for g in _users_of(funcs, f))
+    return sorted(out)
+
+
+def figure_users(repo, file, function):
+    """The functions of the inventory whose body uses a function (``_users_of``), as
+    ``[(file, qualified name)]``."""
+    funcs = _functions(repo)
+    out = set()
+    for f in funcs:
+        if f["function"] == function and f["file"] == file:
+            out.update((g["file"], g["function"]) for g in _users_of(funcs, f))
+    return sorted(out)
+
+
+def held(repo, measured, excluded):
+    """``held(key)``: whether a function's figure reaches only paths the gate holds. A function
+    the harness calls (``measured``) or the list excludes as no memory or capacity figure is
+    held; so is any other function whose every user (``figure_users``) is held -- a helper. A
+    public reader (``figure_readers``) nothing uses is an entry point of its own and is held only
+    when measured or excluded; a private function, or a public one that reads no shape key, that
+    nothing uses hands its result to no figure path. A cycle of functions that only use each
+    other is not held."""
+    memo = {}
+    measured = set(measured)
+    entry = {(r["file"], r["function"]) for r in figure_readers(repo) if r["public"]}
+
+    def go(key, stack=()):
+        if key in measured or key in excluded:
+            return True
+        if key in memo:
+            return memo[key]
+        if key in stack:
+            return False
+        us = figure_users(repo, *key)
+        ok = all(go(u, stack + (key,)) for u in us) and (bool(us) or key not in entry)
+        memo[key] = ok
+        return ok
+
+    return go
+
+
+#: The harness's own source: a function it calls is measured; one entered only from another
+#: function of the repository is a helper of that function.
+HARNESS = os.path.realpath(os.path.abspath(__file__))
+
+
 class ran_code:
-    """Record every function of the repository entered while the block runs:
-    ``{(file relative to the repo, qualified name)}`` in ``.functions``. Python 3.12's
-    ``sys.monitoring`` reports each code object's first start and is then switched off for it,
-    so the harness runs at its own speed; before 3.12, ``sys.setprofile`` (every thread)."""
+    """Record which functions of the repository the harness calls while the block runs:
+    ``.functions`` -- ``{(file relative to the repo, qualified name)}`` -- holds each one the
+    harness's own source (this file) called, the first frame of the repository up its stack
+    (library frames between -- asyncio running a route, a builtin calling back -- are passed
+    over); ``.entered`` every function entered at all. A function entered only from another of
+    the repository's functions returns its figure to that function, not to the gate, so it is not
+    measured: it is a helper, which the exclusion list names with the functions that use it.
+
+    Python 3.12's ``sys.monitoring`` reports each code object's start; a code object is switched
+    off once the harness has called it (or when it is no function of the repository), so the
+    harness runs near its own speed. Before 3.12, ``sys.setprofile`` (every thread)."""
 
     def __init__(self, repo):
         self.repo = os.path.realpath(repo)
         self.codes = set()
+        self.direct = set()
+        self._kind = {}
 
-    def _add(self, code):
-        self.codes.add(code)
+    def _file_kind(self, filename):
+        k = self._kind.get(filename)
+        if k is None:
+            path = os.path.realpath(filename)
+            if path == HARNESS:
+                k = "harness"
+            elif path.startswith(self.repo + os.sep) and os.sep + "site-packages" + os.sep \
+                    not in path and os.sep + ".venv" + os.sep not in path:
+                k = "repo"
+            else:
+                k = "other"
+            self._kind[filename] = k
+        return k
+
+    def _called_by_harness(self, frame):
+        f = frame.f_back
+        while f is not None:
+            k = self._file_kind(f.f_code.co_filename)
+            if k == "harness":
+                return True
+            if k == "repo":
+                return False
+            f = f.f_back
+        return False
 
     def __enter__(self):
         import threading
@@ -2111,15 +2956,22 @@ class ran_code:
             mon.use_tool_id(self._tool, "kv_corpus.ran_code")
 
             def start(code, offset):
+                if self._file_kind(code.co_filename) != "repo":
+                    return mon.DISABLE
                 self.codes.add(code)
-                return mon.DISABLE
+                if self._called_by_harness(sys._getframe(1)):
+                    self.direct.add(code)
+                    return mon.DISABLE
+                return None
 
             mon.register_callback(self._tool, mon.events.PY_START, start)
             mon.set_events(self._tool, mon.events.PY_START)
         else:
             def prof(frame, event, arg):
-                if event == "call":
+                if event == "call" and self._file_kind(frame.f_code.co_filename) == "repo":
                     self.codes.add(frame.f_code)
+                    if self._called_by_harness(frame):
+                        self.direct.add(frame.f_code)
 
             self._prof = prof
             sys.setprofile(prof)
@@ -2140,29 +2992,64 @@ class ran_code:
             threading.setprofile(None)
         return False
 
-    @property
-    def functions(self):
+    def _named(self, codes):
         out = set()
-        for code in self.codes:
+        for code in codes:
             path = os.path.realpath(code.co_filename)
             if path.startswith(self.repo + os.sep):
                 out.add((os.path.relpath(path, self.repo),
                          getattr(code, "co_qualname", code.co_name)))
         return out
 
+    @property
+    def functions(self):
+        """The functions the harness called (measured)."""
+        return self._named(self.direct)
+
+    @property
+    def entered(self):
+        """Every function of the repository entered while the block ran."""
+        return self._named(self.codes)
+
 
 def unmeasured_readers(readers, ran, excluded):
-    """The public readers (``figure_readers``) the harness never entered (``ran``: ``{(file,
+    """The public readers (``figure_readers``) the harness never called (``ran``: ``{(file,
     qualified name)}``) and the exclusion list (``{(file, function): reason}``) does not name."""
     return [r for r in readers if r["public"] and (r["file"], r["function"]) not in ran
             and (r["file"], r["function"]) not in excluded]
 
 
-def load_exclusions(path):
-    """``{(file, function): reason}`` from tests/fixtures/kv_gate/unmeasured.json."""
+def load_exclusions(path, helpers=False):
+    """``{(file, function): reason}`` from tests/fixtures/kv_gate/unmeasured.json; with
+    ``helpers``, ``{(file, function): [its users]}`` for the entries that are helpers."""
     with open(path) as f:
         data = json.load(f)
+    if helpers:
+        return {(e["file"], e["function"]): e.get("used_by", []) for e in data.get("entries", [])
+                if e.get("helper")}
     return {(e["file"], e["function"]): e.get("reason", "") for e in data.get("entries", [])}
+
+
+def helper_faults(repo, ran, exclusions_path):
+    """Each helper entry of the exclusion list (``"helper": true``) is checked against the source:
+    something uses it, every function that does (``figure_users``) is held -- measured by the harness (``ran``), excluded as no figure, or a helper
+    held the same way (``held``) -- and its ``used_by`` names exactly those paths. A helper that a
+    figure path the gate does not hold uses fails, naming that path; so does a stale ``used_by``."""
+    excluded = load_exclusions(exclusions_path)
+    helpers = load_exclusions(exclusions_path, helpers=True)
+    is_held = held(repo, set(ran), {k for k in excluded if k not in helpers})
+    bad = []
+    for key, listed in helpers.items():
+        found = [f"{f}:{fn}" for f, fn in figure_users(repo, *key)]
+        if not found:
+            bad.append(f"{key}: a helper no figure path uses")
+            continue
+        loose = [u for u in found if not is_held(tuple(u.split(":", 1)))]
+        if loose:
+            bad.append(f"{key}: used by figure paths the gate does not hold: {loose}")
+        if sorted(listed) != sorted(found):
+            bad.append(f"{key}: used_by says {sorted(listed)}, the source {sorted(found)}")
+    return bad
 
 
 def inventory(args, exclusions_path):
@@ -2207,7 +3094,7 @@ def main():
         public = [r for r in readers if r["public"]]
         print(json.dumps(missing, indent=1))
         print(f"{len(readers)} readers, {len(public)} public, "
-              f"{sum((r['file'], r['function']) in ran for r in public)} run by the harness, "
+              f"{sum((r['file'], r['function']) in ran for r in public)} called by the harness, "
               f"{len(missing)} neither run nor excluded")
         sys.exit(1 if missing else 0)
     if args.unsafe:

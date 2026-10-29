@@ -2195,15 +2195,25 @@ def class_geometry(model_type: Any) -> Dict[str, Any]:
     """The geometry (``CLASS_GEOMETRY_KEYS``) the model type's config class builds when a config
     states none: from the shipped snapshot (``config_class_defaults.json``'s ``geometry``,
     transformers 5.12's classes), else the installed transformers' class for a model type the
-    snapshot does not hold, else nothing."""
+    snapshot does not know at all, else nothing.
+
+    A model type the snapshot knows (``defaults`` lists every 5.12 config class) but holds no
+    geometry for is a class that builds none at its top level -- Qwen2-VL's and Qwen2.5-VL's
+    5.12 classes keep the language model's in `text_config` -- and gets none, whatever release is
+    installed: transformers 4.50's flat Qwen2VLConfig filled its 72B defaults (80 layers, 8,192
+    wide, 8 KV heads) over a config whose decoder is in `text_config`, and the converter read
+    those instead of the stated decoder."""
     mt = str(model_type or "")
     if not mt:
         return {}
     if mt in _CLASS_GEOMETRY_CACHE:
         return _CLASS_GEOMETRY_CACHE[mt]
-    snap = _class_default_snapshot().get("geometry", {})
+    shipped = _class_default_snapshot()
+    snap = shipped.get("geometry", {})
     if mt in snap:
         value = dict(snap[mt])
+    elif mt in shipped.get("defaults", {}):
+        value = {}
     else:
         value = {}
         try:

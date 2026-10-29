@@ -209,7 +209,10 @@ def _decoder_parameter_count(model_config) -> int:
         return int(attn_params + ffn_params + vocab * hidden)
     embed_params = 2 * vocab * hidden
     norms = (2 * layers + 1) * hidden
-    return int(attn_params + mixer_params + ffn_params + embed_params + norms)
+    # a bias on Q, K and V: a ModelConfig states none, so it is counted (an upper bound, as the
+    # head is) -- GLM-4-9B's and Qwen's checkpoints hold one, 184,320 parameters on GLM-4-9B
+    qkv_bias = (n_heads + 2 * num_kv_heads) * head_dim * attn_layers
+    return int(attn_params + mixer_params + ffn_params + embed_params + norms + qkv_bias)
 
 
 def estimate_weight_bytes(model_config, precision: str = "bf16", tensor_parallel: int = 1) -> int:

@@ -31,6 +31,15 @@ def _count(cfg):
                                                                "bf16")[0]
 
 
+def _facts(cfg):
+    """The FRD-027 facts' count (every stack, tower and adapter): round 20 holds the stored count
+    to it as well."""
+    from llm_memory_calculator.model.facts import ModelFacts
+
+    f = ModelFacts.from_config(json.loads(json.dumps(cfg)))
+    return int(f.params_total + f.vision_params)
+
+
 def _older_estimate(cfg):
     h, n = cfg["hidden_size"], cfg["num_hidden_layers"]
     v, i = cfg.get("vocab_size", 50000), cfg.get("intermediate_size", h * 4)
@@ -61,7 +70,7 @@ def _one_config_manager(cfg):
 def test_the_model_manager_counts_a_user_config_s_parameters(name):
     cfg = _cfg(name)
     got = _one_config_manager(cfg).get_model_config("m").get("num_parameters")
-    assert got == max(_count(cfg), _older_estimate(cfg)) and got > 0
+    assert got == max(_count(cfg), _facts(cfg), _older_estimate(cfg)) and got > 0
 
 
 @pytest.mark.parametrize("name", ["LiquidAI_LFM2-2.6B", "Qwen_Qwen3-Next-80B-A3B-Instruct"])
@@ -76,7 +85,7 @@ def test_add_model_from_config_stores_the_calculator_s_count(name, monkeypatch):
     manager = _one_config_manager(cfg)
     monkeypatch.setattr(routes, "model_manager", manager)
     asyncio.run(routes.add_model_from_config(AddModelFromConfigRequest(model_id="m", config=cfg)))
-    assert manager.added["parameter_count"] == max(_count(cfg), _older_estimate(cfg))
+    assert manager.added["parameter_count"] == max(_count(cfg), _facts(cfg), _older_estimate(cfg))
     assert manager.added["parameter_count"] >= _count(cfg)
 
 
@@ -86,4 +95,4 @@ def test_the_stored_count_never_falls_below_the_older_estimate():
     from src.db.model_manager import estimate_parameter_count
 
     cfg = _cfg("Zyphra_Zamba2-2.7B")
-    assert estimate_parameter_count(cfg) == max(_count(cfg), _older_estimate(cfg)) >= 2_844_404_640
+    assert estimate_parameter_count(cfg) == max(_count(cfg), _facts(cfg), _older_estimate(cfg)) >= 2_844_404_640

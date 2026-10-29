@@ -245,8 +245,15 @@ class HardwareListResponse(BaseModel):
 
 def _genz_config_to_hf_dict(gc) -> Dict[str, Any]:
     """Map a GenZ ModelConfig (registry) to the HF-style config dict the training calculator consumes.
-    GenZ uses `num_decoder_layers` for the layer count; other fields share HF names."""
-    return {
+    GenZ uses `num_decoder_layers` for the layer count; other fields share HF names. The dict states
+    the parameters (``num_parameters``, which the training calculator takes as given): the larger of
+    the counter's count of the dict and the count BudSimulator stores for the built-in model
+    (``ModelConverter.genz_parameter_count``: GenZ's own count of the ModelConfig's fields). The dict
+    alone states no gated FFN for a GeGLU model nor its wide heads: Gemma-7B was 7.24B of 8.54B."""
+    from llm_memory_calculator.parameter_counter import UniversalParameterCounter
+    from src.db.model_converter import ModelConverter
+
+    d = {
         'hidden_size': gc.hidden_size,
         'num_hidden_layers': gc.num_decoder_layers,
         'num_attention_heads': gc.num_attention_heads,
@@ -260,6 +267,13 @@ def _genz_config_to_hf_dict(gc) -> Dict[str, Any]:
         'num_experts_per_tok': getattr(gc, 'expert_top_k', 1) if getattr(gc, 'is_moe', False) else 1,
         'tie_word_embeddings': False,
     }
+    counts = [int(ModelConverter().genz_to_hf(gc).get('num_parameters') or 0)]
+    try:
+        counts.append(int(UniversalParameterCounter().count_parameters(dict(d))))
+    except Exception:  # noqa: BLE001 - the stored count stands alone
+        pass
+    d['num_parameters'] = max(counts)
+    return d
 
 
 def _get_model_config(model_id: str) -> Dict[str, Any]:

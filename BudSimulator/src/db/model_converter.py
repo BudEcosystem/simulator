@@ -265,6 +265,11 @@ class ModelConverter:
             'hidden_act': genz_config.hidden_act,
             'head_dim': genz_config.head_dim,
         }
+        # GenZ states a gated FFN (gate, up, down) as num_ffi = 2, whatever the activation is
+        # called; the HF config says so with `is_gated_act` (layer_plan.GATED_FFN_FLAG_KEYS).
+        # Left out, Gemma's GeGLU (`hidden_act: gelu`) was read as two matrices.
+        if getattr(genz_config, 'num_ffi', 1) == 2:
+            hf_config['is_gated_act'] = True
         
         # Add sliding window if present
         if genz_config.sliding_window:
@@ -312,8 +317,32 @@ class ModelConverter:
             hf_config['model_type'] = 'gpt2'
         else:
             hf_config['model_type'] = 'unknown'
-        
+
+        hf_config['num_parameters'] = self.genz_parameter_count(genz_config, hf_config)
         return hf_config
+
+    @staticmethod
+    def genz_parameter_count(genz_config: ModelConfig, hf_config: Dict[str, Any]) -> int:
+        """The parameters of a GenZ ModelConfig, stated in the HF config made from it: the larger
+        of GenZ's own count of its fields (``genz.serving.memory_model.model_parameter_count``:
+        the heads at ``head_dim``, a gated FFN, every routed and shared expert at its width, the
+        layers it places experts on, the Mamba mixers, an untied head) and the calculator's count
+        of the HF config (``estimate_parameter_count``). The HF config cannot state an MLA rank, a
+        shared expert or a dense leading layer: counted from it alone, the list and the store
+        gave DeepSeek-V2 234.0B (its checkpoint 235.7B), GLM-4-9B 8.4B (9.4B) and Gemma-7B 6.9B
+        (8.5B), and the training routes counted Gemma-7B at 7.2B."""
+        from llm_memory_calculator.genz.serving.memory_model import model_parameter_count
+        from .model_manager import estimate_parameter_count
+
+        counts = []
+        for count in (lambda: model_parameter_count(genz_config),
+                      lambda: estimate_parameter_count(
+                          {k: v for k, v in hf_config.items() if k != 'num_parameters'})):
+            try:
+                counts.append(int(count() or 0))
+            except Exception as e:  # noqa: BLE001 - a config one of them cannot read
+                logger.warning(f"Could not count {genz_config.model}: {e}")
+        return max(counts) if counts else 0
     
     def validate_conversion(self, original: Dict[str, Any], 
                           converted: Any, direction: str = "hf_to_genz") -> Dict[str, Any]:

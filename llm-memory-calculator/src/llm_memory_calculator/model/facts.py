@@ -622,7 +622,17 @@ def _attention_params(
     large = int(sum(i * o for i, o in _attention_linears(text, h, nh, nkv, hd)))
     if _get(text, "kv_lora_rank", default=0):
         q_lora = int(_get(text, "q_lora_rank", default=0) or 0)
-        return large, (q_lora + int(text["kv_lora_rank"]))
+        small = q_lora + int(text["kv_lora_rank"])
+        # DeepSeek Sparse Attention's lightning indexer beside MLA (V3.2: `index_n_heads` x
+        # `index_head_dim`): its query projection from the query latent, its key projection, its
+        # per-head weights and the key's LayerNorm. Left out, V3.2's facts sat 851M (61 layers x
+        # 13.96M) below the checkpoint's 671,877,929,216.
+        n_idx = int(_get(text, "index_n_heads", default=0) or 0)
+        d_idx = int(_get(text, "index_head_dim", default=0) or 0)
+        if n_idx and d_idx:
+            large += (q_lora or h) * n_idx * d_idx + h * d_idx + h * n_idx
+            small += 2 * d_idx
+        return large, small
     gate = 2 if attention_output_gate(dict(text)) else 1
     small = 0
     if attention_bias(dict(text)):

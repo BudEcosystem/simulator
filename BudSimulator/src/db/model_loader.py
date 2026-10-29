@@ -186,32 +186,20 @@ class DynamicModelCollection(ModelCollection):
             return "mha"
     
     def _estimate_parameters(self, config: ModelConfig) -> int:
-        """Accurate parameter count from GenZ config using unified calculation."""
+        """The parameter count listed (``get_model_metadata``) and stored (``sync_static_models_to_db``)
+        for a GenZ ModelConfig: the count the HF config this loader stores for it states
+        (``ModelConverter.genz_parameter_count``: GenZ's own count of the ModelConfig's fields,
+        never below the calculator's count of the HF config)."""
+        if getattr(config, 'num_parameters', None):
+            return int(config.num_parameters)
         try:
-            # Convert GenZ config to HF format for unified calculation
-            hf_config = self.converter.genz_to_hf(config)
-            
-            # Use the same accurate calculation as ModelMemoryCalculator
-            from src.bud_models import ModelMemoryCalculator
-            calculator = ModelMemoryCalculator()
-            
-            # Check if we have direct parameter count
-            if hasattr(config, 'num_parameters') and config.num_parameters:
-                return int(config.num_parameters)
-            
-            # Use the sophisticated calculation method
-            from .model_manager import estimate_parameter_count
+            count = int(self.converter.genz_to_hf(config).get('num_parameters') or 0)
+            if count > 0:
+                return count
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Failed to count {config.model}, falling back to simplified: {e}")
+        return self._fallback_parameter_estimation(config)
 
-            param_count = estimate_parameter_count(hf_config, calculator)
-            if not param_count:
-                raise ValueError("no parameter count for this config")
-            return int(param_count)
-            
-        except Exception as e:
-            logger.warning(f"Failed to use unified calculation for {config.model}, falling back to simplified: {e}")
-            # Fallback to improved simplified calculation
-            return self._fallback_parameter_estimation(config)
-    
     def _fallback_parameter_estimation(self, config: ModelConfig) -> int:
         """Improved fallback parameter estimation for GenZ config."""
         # Embeddings (with tie_word_embeddings consideration)

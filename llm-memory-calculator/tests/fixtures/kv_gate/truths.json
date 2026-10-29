@@ -570,7 +570,8 @@
      60
     ]
    ],
-   "source": "the hub config: MLA on 60 layers, a latent of kv_lora_rank 512 + qk_rope_head_dim 64"
+   "source": "the hub config: MLA on 60 layers, a latent of kv_lora_rank 512 + qk_rope_head_dim 64; parameters: transformers 5.12 DeepseekV2ForCausalLM on the hub config (deepseek-ai/DeepSeek-V2): 235,741,434,880",
+   "params": 235741434880
   },
   "genz:google/gemma-3-27B": {
    "kv": [
@@ -816,7 +817,7 @@
    "source": "transformers 5.12 VoxtralRealtimeForConditionalGeneration",
    "unstated": {
     "params": 5111808,
-    "readers": "^(serving_weight_bytes|conv_serving_weight_bytes|amc_params|topt_params)$",
+    "readers": "^(serving_weight_bytes|conv_serving_weight_bytes|amc_params|topt_params|topt2_params)$",
     "source": "transformers 5.12 builds 26 x VoxtralRealtimeTextAdaRmsNorm (Linear(3,072, 32) and Linear(32, 3,072): 196,608 each, 5,111,808) at a width of 32 written in modeling_voxtral_realtime.py, in no config key (the checkpoint's `layers.#.ada_rms_norm_t_cond`); every other module is counted, its audio tower, convolutional front end and two-matrix projector among them (4,424,886,272 of 4,429,679,360)"
    }
   },
@@ -1006,6 +1007,34 @@
    "state_bytes_source": "DeciLM holds no recurrent state: its no_op and linear blocks keep nothing a sequence carries",
    "lm_matrix_params": 2279604224,
    "input_embedding": 525336576
+  },
+  "genz:deepseek-ai/DeepSeek-V3-Base": {
+   "kv": [
+    [
+     "full",
+     null,
+     576,
+     61
+    ]
+   ],
+   "params": 671026404352,
+   "source": "the hub config (deepseek-ai/DeepSeek-V3-Base): MLA on 61 layers, a latent of kv_lora_rank 512 + qk_rope_head_dim 64; parameters: transformers 5.12 DeepseekV3ForCausalLM on it, 671,026,404,352 (the multi-token-prediction layer the checkpoint adds beside them is not built)"
+  },
+  "genz:deepseek-ai/deepseek-moe-16b-base": {
+   "kv": [
+    [
+     "full",
+     null,
+     4096,
+     28
+    ]
+   ],
+   "params": 16375728128,
+   "source": "config arithmetic on the hub config (deepseek-ai/deepseek-moe-16b-base, model_type deepseek, which transformers 5.12 does not build): 2 x 102,400 x 2,048 embedding and head + 28 x 4 x 2,048^2 attention + one dense layer's 3 x 2,048 x 10,944 FFN + 27 MoE layers x (64 routed and 2 shared experts x 3 x 2,048 x 1,408 + a 64 x 2,048 router) + (2 x 28 + 1) x 2,048 norms = 16,375,728,128; 28 layers of 16 KV heads x 128 (K+V 4,096 elements a token)"
+  },
+  "genz:meta-llama/Llama-4-Maverick-17B-128E": {
+   "params": 400711848960,
+   "source": "transformers 5.12 Llama4ForCausalLM on the hub config's text_config (unsloth/Llama-4-Maverick-17B-128E-Instruct, the gated meta-llama repository's mirror): 400,711,848,960 -- GenZ's model is the language model"
   }
  }
 }

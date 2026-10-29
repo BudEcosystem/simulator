@@ -26,8 +26,11 @@ the machine's HF cache and model folders with ``kv_corpus.py --gate``
 (docs/proofs/kv-layer-kinds-corpus-diff.md).
 
 Which readers that is, is read from the source: every public function that names a model-shape key
-(``kv_corpus.figure_readers``) is entered while the corpus runs (``kv_corpus.ran_code``) or named
-with its reason in tests/fixtures/kv_gate/unmeasured.json, else the inventory test fails.
+or reads one through a private helper (``kv_corpus.figure_readers``) is called by the harness
+itself while the corpus runs (``kv_corpus.ran_code``: a function entered only from another of the
+repository's is not measured) or named in tests/fixtures/kv_gate/unmeasured.json -- with its
+reason, or as a helper with the functions that use it, each held (``kv_corpus.helper_faults``) --
+else the inventory tests fail.
 """
 
 import json
@@ -304,6 +307,19 @@ def test_every_public_figure_path_is_measured_or_excluded_with_its_reason(baseli
         f"{r['file']}:{r['line']} {r['function']} {r['keys']}" for r in missing)
 
 
+def test_every_helper_entry_is_held_by_the_paths_that_use_it(baseline, branch_run):
+    """A helper the exclusion list names (``"helper": true``) is used only by functions the gate
+    holds -- measured by the harness, excluded as no figure, or helpers held the same way -- and its
+    ``used_by`` names exactly the functions of the sources that use it (``kv_corpus.helper_faults``):
+    a new caller of a helper that the harness does not measure fails here."""
+    names = [r["name"] for r in baseline]
+    skipped = kv_corpus.unavailable_readers(baseline, branch_run["rows"], names)
+    if skipped:
+        pytest.skip("a reader's module is not installed here: " + ", ".join(sorted(skipped)))
+    faults = kv_corpus.helper_faults(REPO, branch_run["ran"], UNMEASURED)
+    assert not faults, "\n".join(faults[:40])
+
+
 def test_every_exclusion_names_an_unmeasured_reader_and_why(baseline, branch_run):
     """An entry names a public reader the source holds, gives its reason, and is not run by the
     harness -- a stale entry (the function is gone, renamed, or now measured) fails."""
@@ -317,7 +333,7 @@ def test_every_exclusion_names_an_unmeasured_reader_and_why(baseline, branch_run
             bad.append(f"{key}: no reason")
         elif key in branch_run["ran"] and not kv_corpus.unavailable_readers(
                 baseline, branch_run["rows"], names):
-            bad.append(f"{key}: the harness runs it -- measured, not excluded")
+            bad.append(f"{key}: the harness calls it -- measured, not excluded")
     assert not bad, "\n".join(bad)
 
 
@@ -345,7 +361,8 @@ def test_the_inventory_finds_a_reader_and_fails_an_unmeasured_one(tmp_path):
 
 def test_ran_code_records_the_functions_entered(tmp_path):
     """``ran_code`` names each function of the repository entered inside the block by its file and
-    qualified name, and nothing entered after it."""
+    qualified name (``entered``), and nothing entered after it; only what the harness's own source
+    calls is measured (``functions``)."""
     src = tmp_path / "probe_mod.py"
     src.write_text("class C:\n    def m(self):\n        return 1\n"
                    "def f():\n    return C().m()\ndef g():\n    return 2\n")
@@ -359,5 +376,7 @@ def test_ran_code_records_the_functions_entered(tmp_path):
         mod.g()
     finally:
         sys.path.remove(str(tmp_path))
-    assert {("probe_mod.py", "f"), ("probe_mod.py", "C.m")} <= ran.functions
-    assert ("probe_mod.py", "g") not in ran.functions
+    assert {("probe_mod.py", "f"), ("probe_mod.py", "C.m")} <= ran.entered
+    assert ("probe_mod.py", "g") not in ran.entered
+    # called from this test, not from the harness: entered, not measured
+    assert ("probe_mod.py", "f") not in ran.functions

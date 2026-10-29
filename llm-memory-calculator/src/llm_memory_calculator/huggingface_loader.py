@@ -246,7 +246,21 @@ class HuggingFaceConfigLoader:
         if 'num_parameters' not in config:
             from .parameter_counter import UniversalParameterCounter
             counter = UniversalParameterCounter()
-            config['num_parameters'] = counter.count_parameters(config, respect_weight_tying=respect_weight_tying)
+            counted = counter.count_parameters(config, respect_weight_tying=respect_weight_tying)
+            # never below the FRD-027 facts' count (every stack, tower and adapter, MLA's indexer):
+            # the training routes take this count as given, and the counter alone left out an
+            # encoder-decoder's encoder (Cohere's transcriber 0.58B of 2.07B) and DeepSeek-V3.2's
+            # lightning indexer
+            try:
+                import copy as _copy
+
+                from .model.facts import ModelFacts
+
+                facts = ModelFacts.from_config(_copy.deepcopy(config))
+                counted = max(int(counted), int(facts.params_total + facts.vision_params))
+            except Exception:  # noqa: BLE001 - a config the facts cannot read keeps the counter's
+                pass
+            config['num_parameters'] = counted
 
         return config
     
