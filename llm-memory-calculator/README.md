@@ -293,9 +293,15 @@ The calculator provides detailed breakdown:
   from the shipped snapshot's `geometry`, the class the composite builds the block as), in every
   reader. The training readers -- `UniversalParameterCounter.count_parameters` (the training
   memory calculator and API) and GenZ's `training_modeling` -- count the whole model: an
-  encoder-decoder with its encoder and cross-attention, a language model with its towers; the
-  harness measures them (`counter_params`, `trainmem_*`, `traingenz_params`) and the gate holds
-  them. A class that ties its head whatever the config says (transformers 5.12's T5 family) is
+  encoder-decoder with its encoder and cross-attention, a language model with its towers; so do
+  GenZ's training parallelization, the cluster requirements, the comprehensive config builder and
+  the cluster optimizer's quick checks, each holding its decoder-field count to the model's own
+  (`genz.serving.memory_model.held_to_the_model`). The harness measures them (`counter_params`,
+  `trainmem_*`, `traingenz_params`, `tpar_*`, `creq_*`, `ccb_*`, `copt_quick`, `advtrain_*`,
+  `time_params`), the LoRA buffers and scratch, the max batch and the KV tier planner, and the
+  gate holds them. LoRA adapter buffers (`max_loras`) cover every layer's linear maps, a hybrid's
+  recurrent and linear-attention layers among them (`mixer_params.recurrent_mixer_linears`), as
+  vLLM wraps every linear layer. A class that ties its head whatever the config says (transformers 5.12's T5 family) is
   read untied where the config leaves the flag out, as its checkpoints hold it.
 - **Activation Memory**: Intermediate activations during forward pass
 - **State Memory**: the fixed per-sequence state of recurrent layers (Gated DeltaNet, Mamba,

@@ -315,7 +315,10 @@ its class aliases them to. A block that leaves a role of its geometry to its con
 Q-Former and a staged DaViT tower counted at their own geometry. The training readers count the whole model
 too: the parameter counter behind the training API counts every encoder-decoder with its encoder and
 cross-attention and a language model with its towers, and GenZ's `training_modeling` holds its decoder-field
-count to at least the model's own. A gate holds every figure that moves below origin/main's -- or a capacity above it, or
+count to at least the model's own -- as do the training parallelization (what fits on a GPU), the cluster
+requirements, the config builder and the cluster optimizer's quick checks (`memory_model.held_to_the_model`).
+LoRA adapter buffers are counted on every layer's linear maps, a hybrid's recurrent and linear-attention
+layers among them, as vLLM wraps every linear layer. A gate holds every figure that moves below origin/main's -- or a capacity above it, or
 a figure only the branch reports, or one it no longer reports -- to a ground truth (transformers'
 own model for the config, a checkpoint's tensors, or the cited arithmetic):
 `llm-memory-calculator/tests/test_kv_gate.py` over every config the repository ships (the GGUF

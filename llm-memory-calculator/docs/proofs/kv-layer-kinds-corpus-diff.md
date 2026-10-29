@@ -50,7 +50,12 @@ BLIP-2's tower and Q-Former counted as 0, Qwen2-Audio's language model with 0 KV
 transformers 5.12 --, the training readers -- the parameter counter behind the training API and
 GenZ's `training_modeling` -- counting an encoder-decoder as its decoder alone, a config class
 that ties its head whatever the config says taken as the checkpoint's truth, and the docs'
-statement of what errs low; section 8).
+statement of what errs low; section 8); and the fifteenth review's (the training estimators
+that counted an encoder-decoder's decoder fields -- GenZ's training parallelization, the cluster
+requirements, the config builder, the cluster optimizer's quick checks --, the LoRA buffers of a
+hybrid's recurrent and linear-attention layers, and every public figure path in the harness and
+the gate: the LoRA figures, the max batch, the KV tier planner, the training estimators; and what
+those found, ChatGLM's KV heads and padded vocabulary; section 9).
 
 ## 1. The measured case
 
@@ -284,10 +289,11 @@ PagedAttention"); the 24 `linear_attention` (Gated DeltaNet) layers hold a fixed
 
 | Suite | origin/main `c17ef89` | This branch |
 |---|---|---|
-| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,548 passed, 21 skipped, 1 failed |
+| `llm-memory-calculator/tests` (pytest) | 2,091 passed, 14 skipped, 1 failed | 2,666 passed, 21 skipped, 0 failed |
 | `BudSimulator/tests` (pytest) | 24 passed | 86 passed |
 
-(Round 14 adds the 45 calculator cases and the 5 BudSimulator cases of section 7, and updates one
+(Round 16 adds the 69 calculator cases of section 9 and one gate case; its run, 2,687 collected,
+took 31 min. Round 15 ended at 2,596 passed, 21 skipped, 0 failed / 86. Round 14 adds the 45 calculator cases and the 5 BudSimulator cases of section 7, and updates one
 pinned count to its checkpoint (`test_hybrid_parameter_count.py::test_kda_gates_are_low_rank_not_dense`:
 KDA's `b_proj`); the one failure is the schema test below, which fails on origin/main too. The
 suite ran as `tests --deselect tests/test_kv_gate.py` (2,539 passed, 21 skipped, 1 failed) beside
@@ -1299,19 +1305,134 @@ converter's `lxml` / `json_repair`) are reported as not measured, as `kv_corpus.
 declares. The suite rewrites `BudSimulator/data/prepopulated.db`; it is restored from git after
 every run.
 
+## 9. Round 16: the training estimators, a hybrid's LoRA buffers, and every public figure path
+
+The fifteenth review inventoried every reader of a model's shape (298 functions) and measured the
+public figure paths the harness did not. Each finding, and what was done (red first:
+`tests/test_training_estimators_and_mixer_lora.py`, 69 cases, 52 of which fail on the round-15
+head `28d818e`; the 17 that pass there pin figures the head already held over their floor -- the
+cluster requirements' and config builder's dict path, which reads 4096-wide defaults for most
+encoder-decoders, three hybrids whose LoRA figure was already over vLLM's floor -- and the guards
+that a dense model does not move):
+
+* **The training estimators that counted the decoder fields** (must-fix). GenZ's
+  `_estimate_memory_per_gpu` (behind `get_training_parallelization_options`,
+  `get_best_training_parallelization`, the scale optimizer and the cluster ranker), the cluster
+  requirements' `_estimate_model_params`, the comprehensive config builder's `_estimate_model_size`
+  and the cluster optimizer's quick check and GPU-type filter each counted the `ModelConfig`'s
+  decoder fields. Once `get_configs` read an encoder-decoder's real decoder, each fell from
+  origin/main's over-count to below the model. They now hold their count with one helper,
+  `genz.serving.memory_model.held_to_the_model` (the fields' count, or the model's own where that
+  is larger -- never lowered; `training_parameter_counts` uses it too), and the parallelization
+  estimate counts an encoder-decoder's encoder layers in its LoRA adapters and activations. The
+  cluster optimizer's two quick estimates are methods now (`_quick_memory_estimate_gb`,
+  `_min_memory_per_gpu_gb`, over `_estimated_model_parameters`), so the harness measures them.
+  Parallelization GB a GPU (full fine-tuning, AdamW, bf16, batch 1, 2,048 tokens), origin/main ->
+  round 15 -> now, against 14 B a parameter with the estimator's own 10 % overhead:
+  whisper-large-v3 109.1 -> 16.49 -> 30.03 (23.77); whisper-small 45.8 -> 3.58 -> 5.53 (3.72);
+  mT5-small 134.1 -> 4.49 -> 4.95 (4.62); t5-asym 106.6 -> 4.15 -> 9.00 (7.31); ProphetNet
+  22.2 -> 4.88 -> 8.18 (6.03); NLLB-MoE 134.9 -> 42.3 -> 2,430 (839; the facts count it at 157.7B
+  of its 54.5B, above the model, on origin/main as here). `get_training_parallelization_options`
+  offers no single 20 GB GPU for whisper-large-v3 (round 15 offered TP1 / PP1 / DP1); on eight
+  80 GB GPUs it admits 80 configurations (origin/main 31, at its 4096-wide reading), held by the
+  estimate it is sized from. The cluster requirements' and config builder's counts of ProphetNet
+  263.8M -> 465.3M (391.3M) and NLLB-MoE 10.7B -> 157.7B; the cluster optimizer's quick check of
+  whisper-large-v3 111.8 GB (origin/main) -> 29.5 GB (21.6).
+* **LoRA buffers on a hybrid's recurrent layers** (must-fix). `calculate_lora_adapter_memory`
+  counted the `attn` target on the attention layers alone. vLLM wraps every linear layer, the
+  Mamba / Gated DeltaNet / KDA / short-conv / lightning maps among them (vLLM 0.21:
+  `lora/utils.py get_supported_lora_modules`; its mixers build their convolutions as
+  `ColumnParallelLinear`). Each mechanism's maps are now stated once (`mixer_params.*_linears`;
+  its parameter count is those maps' weights plus its vectors, unchanged for every fixture:
+  2,322 checks), and where the layer plan places the kinds the attention layers are the plan's
+  and every recurrent layer adds its mechanism's maps (`recurrent_mixer_linears`). LoRA GB (4
+  adapters, rank 16, bf16, 4k), origin/main -> round 15 -> now, against vLLM's floor (`kv_truth`:
+  rank x adapters x 2 B over (in + out) of every `nn.Linear` of transformers 5.12's decoder
+  layers, routed experts left out): Jamba-v0.1 0.294 -> 0.243 -> 0.451 (0.313); Bamba-9B-v2
+  0.294 -> 0.239 -> 0.394 (0.360); Qwen3-Next 0.182 -> 0.157 -> 0.318 (0.197); granite-4.0-h-small
+  0.092 -> 0.092 -> 0.283 (0.253); Nemotron-Nano-9B-v2 0.417 -> 0.307 -> 0.494 (0.289); Falcon-H1
+  0.925 -> 1.114 -> 1.378 (1.199); MiniMax-Text-01 0.724 -> 0.535 -> 1.067; Kimi-Linear 0.150 ->
+  0.136 -> 0.273; Zamba2 0.248 -> 0.201 -> 0.362. The CPU prefill scratch is sized from the widest
+  wrapped slice, now a mixer's where it is wider (Jamba 21.0 -> 24.0 GB; Nemotron-Nano 23.0 ->
+  33.2). GPT-Neo (a stated null FFN width) and Hunyuan-A13B (a per-layer list of expert widths)
+  raised on every tree; both are counted (0.113 GB, floor 0.113; 0.222, floor 0.214). What stays
+  below vLLM's allocation, on origin/main as here, is stated in LAYER_KINDS.md ("What errs low"):
+  routed experts, a merged module's per-slice A buffers, attention heads wider than the hidden
+  size, and an FFN whose config names no gated activation.
+* **Every public figure path in the harness** (must-fix). `scripts/kv_corpus.py` now measures the
+  LoRA adapters and scratch (`lora_adapter_gb`, `lora_scratch_gb`), `utils.estimate_max_batch_size`
+  (`maxbatch_80gb_4096`), the KV tier planner (`kvplan_*`: GPU and CPU KV, the host and shared
+  memory T1 asks for, the GPU pool, the working set in GiB and tokens, the tiers), and the training
+  estimators (`tpar_mem_gb`, `tpar_options_8x80`, `creq_params`, `creq_gb`, `ccb_params_b`,
+  `copt_quick`, `advtrain_full`, `advtrain_lora`, `time_params`, `kvcost_active_params`), on both
+  trees. The gate holds them: the counts to every parameter, the estimators' per-GPU and cluster
+  memory to 14 B a parameter (15.4 B with the parallelization estimate's own overhead), the
+  advanced calculator's full weights and total to 6 and 18 B and its LoRA weights to 2 B, the LoRA
+  adapters to vLLM's floor and the scratch to one per-token copy of the widest wrapped map's B
+  buffer, the KV planner's working set to its own tokens at the K + V bytes a token adds at its
+  8,000-token prompts, the options and the max batch (capacities) by the memory figures they are
+  sized from, and the planner's T1 host / shared memory and GPU / CPU KV -- tiers it derives -- by
+  its working set and KV geometry (`kv_corpus.DERIVED_FIGURES`: a tier it no longer judges worth
+  its copies asks for none, as gpt-oss-20b's GGUF and Qwen3.5-2B's do now that their active
+  parameters and KV are read right). The GPU pool is the device less the harness's fixed
+  weights: it says only whether the planner planned, and is not an amount. `kv.pd` decides P/D
+  from the parameter counter and GenZ's disaggregation analysis, both measured.
+
+**What the new readers found.** prepopulated.db's glm-4-9b-chat row stores
+`num_key_value_heads: true` (and a default `vocab_size: 32000`) beside ChatGLM's own
+`multi_query_group_num: 2` and `padded_vocab_size: 151552`; no reader read the ChatGLM spellings,
+so every reader charged it one KV head -- 20,480 B a token, half its 40,960 -- on origin/main as
+on round 15, and ChatGLM3-6B (which states no `num_key_value_heads`) its 32 query heads, 16 x its
+28,672. `layer_plan.with_class_geometry`, which every reader takes, now reads ChatGLM's query
+groups as its KV heads when `multi_query_attention` is set and no count is stated (a boolean is
+no count), and a table padded past the vocabulary as `padded_vocab_size` rows. glm-4-9b-chat's KV
+doubles in every reader (0.084 -> 0.168 GB at 4k); ChatGLM3-6B's falls to its truth (0.805 ->
+0.117 GB), its weights held to its 6,243,584,000 parameters. The synthetic chatglm3 now states
+`tie_word_embeddings: false`, as THUDM/chatglm3-6b's hub config does (its output layer is its own
+table); origin/main's figures for it were re-measured with the same harness. Hand truths in
+`truths.json` for the rows transformers cannot build: Qwen-14B (14,167,290,880) and
+glm-4-9b-chat (9,399,951,360) by their modelling code's arithmetic, gpt-oss-20b's GGUF by
+transformers' build of openai/gpt-oss-20b. Holding the training estimators to the model's own
+count carries the FRD-027 facts' count, which is above the checkpoint where experts sit on every
+other layer (Jamba-v0.1 93.85B of 51.57B, on origin/main as here; LAYER_KINDS.md, "What is
+conservative").
+
+**The gate now.** Over the whole corpus (277 rows; the committed corpus is 231 of them): **1,472
+unsafe moves, 674 new figures and 6 lost figures in 134 configs, every one allowlisted and at or
+above its ground truth, or held by the figures it is derived from; 2,272 entries; 0 failures.**
+The figures the earlier rounds measured are unchanged but for the two ChatGLM rows (glm-4-9b-chat,
+synth:chatglm3).
+
+**The suites** (section 3): `llm-memory-calculator/tests` 2,666 passed, 21 skipped, 0 failed (2,687
+collected, the gate among them; 31 min); `BudSimulator/tests` 86 passed. Added: the 69 cases of
+`tests/test_training_estimators_and_mixer_lora.py` and one gate case
+(`test_a_derived_figure_is_held_by_its_inputs`). One existing assertion changed:
+`tests/test_kv_gate.py::test_every_allowlist_entry_names_its_figures_truth_and_cause` accepts a
+derived planner tier held by its inputs, as the gate does. The gate tests and the new file pass
+without transformers or torch (227 passed, 15 skipped -- the truth builds) and with transformers
+4.50.3 without torch (231 passed, 11 skipped). The suite rewrites
+`BudSimulator/data/prepopulated.db`; it is restored from git after every run.
+
 The full per-config table (before = origin/main, after = this branch) follows. 277 configs measured; 3 unchanged; 274 changed.
 
 ## config:chaos-pressure/gpt-oss-20b/config.json (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 3.01621248 | 20.914757184 |
 | cluster_b_eff_4096 | 195 | 5 |
 | conv_serving_weight_bytes | 3626680320 | 41829514368 |
+| copt_quick | [2551726080, 41.473489, 0.637932] | [20914757184, 337.11829, 5.228689] |
+| creq_gb | [38.17715, 80.0] | [295.259585, 640.0] |
+| creq_params | 2551726080 | 20914757184 |
 | disagg_b_eff_4096 | 195 | 5 |
 | genz_chunked_kv_mb | 216.0 | 123.0 |
 | runtime_chunked | [9.364153, 13110.469, 36.0] | [9.358584, 13110.469, 27.0] |
 | serving_weight_bytes | 3626680320 | 41829514368 |
 | slice_mib_16x4352 | [20736, true] | [20992, true] |
+| time_params | 2551726080 | 21487201920 |
+| tpar_mem_gb | 37.278095 | 325.429334 |
+| tpar_options_8x80 | 104 | 2 |
 | vllm_limits | [155360, 2485760, 155360, 1, 0, 0.0, true] | [155360, 2485760, 155360, 1, 1, 0.0, true] |
 | vllm_running_8192 | 294 | 289 |
 
@@ -1319,12 +1440,18 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [60.464568, 199.533074] | [62.902934, 207.579682] |
+| advtrain_lora | [20.347794, 24.920127] | [21.160583, 25.814195] |
+| ccb_params_b | 8.852078592 | 9.409818352 |
 | cluster_b_eff_4096 | 53 | 129 |
 | conv_kv_size | 262144 | 16384 |
 | conv_prefill_weights_mb | 12852.0 | 17077.6875 |
 | conv_serving_weight_bytes | 13214154752 | 18819636704 |
 | conv_state_bytes | 0 | 51511296 |
+| copt_quick | [9013559296, 145.859187, 2.25339] | [9409818352, 152.238957, 2.352455] |
 | counter_params | 10077427968 | 10483822320 |
+| creq_gb | [126.573345, 192.0] | [134.381702, 192.0] |
+| creq_params | 8852078592 | 9409818352 |
 | disagg_b_eff_4096 | 53 | 129 |
 | disagg_transfer_bytes_640 | 83886080 | 72482816 |
 | eng_None_32768_params | 10077427968 | 10483822320 |
@@ -1347,6 +1474,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
 | genz_prefill_kv_mb | 512.0 | 177.125 |
 | genz_prefill_weights_mb | 15656.0 | 17077.6875 |
+| kvcost_active_params | 10077427968 | 10483822320 |
+| kvplan_ws_gib | 38.27 | 38.25 |
+| kvplan_ws_tokens | 1253731 | 1253277 |
+| lora_adapter_gb | 0.33554432 | 0.373501952 |
+| maxbatch_80gb_4096 | 227 | 223 |
 | prefix_kv_bytes_per_token | 131072 | 32768 |
 | report_params | 10077427968 | 10483822320 |
 | report_total_gb | 20.813691295 | 21.626479999 |
@@ -1358,6 +1490,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 64 | 100 |
 | serving_state_bytes | 0 | 51511296 |
 | serving_weight_bytes | 14382268416 | 18819636704 |
+| time_params | 8999534592 | 10483822320 |
+| tpar_mem_gb | 128.408302 | 146.904336 |
+| tpar_options_8x80 | 24 | 17 |
 | traingenz_params | 9014083584 | 9409818352 |
 | trainmem_total_gb | 199.533074 | 207.579682 |
 | trainmem_weight_gb | 60.464568 | 62.902934 |
@@ -1410,6 +1545,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 5, "MHA-local": 3} | {"MHA-local": 3, "Recurrent": 5} |
 | genz_prefill_kv_mb | 20.087891 | 0.102539 |
 | genz_prefill_weights_mb | 192.0 | 220.514648 |
+| lora_adapter_gb | 0.009437184 | 0.011732864 |
 | prefix_kv_bytes_per_token | 8192 | 3072 |
 | runtime_chunked | [0.186761, 192.0, 6.0] | [0.210063, 220.515, 0.867] |
 | runtime_decode | [1.210186, 128.0, 2.619] | [1.185996, 156.515, 0.158] |
@@ -1418,6 +1554,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 1024 | 2717 |
 | serving_state_bytes | 0 | 15360 |
 | serving_weight_bytes | 161480704 | 231243776 |
+| tpar_mem_gb | 2.320961 | 2.341146 |
 | vllm_limits | [1519413, 24310608, 1519413, 1, 0, 98304.0, true] | [1519549, 24312784, 1519549, 1, 0, 98304.0, true] |
 
 ## config:models--LiquidAI--LFM2.5-Audio-1.5B/snapshots/<rev>/audio_detokenizer/config.json (hybrid)
@@ -1447,6 +1584,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 5, "MHA-local": 3} | {"MHA-local": 3, "Recurrent": 5} |
 | genz_prefill_kv_mb | 20.087891 | 0.102539 |
 | genz_prefill_weights_mb | 192.0 | 220.514648 |
+| lora_adapter_gb | 0.009437184 | 0.011732864 |
 | prefix_kv_bytes_per_token | 8192 | 3072 |
 | runtime_chunked | [0.186761, 192.0, 6.0] | [0.210063, 220.515, 0.867] |
 | runtime_decode | [1.210186, 128.0, 2.619] | [1.185996, 156.515, 0.158] |
@@ -1455,22 +1593,30 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 1024 | 2717 |
 | serving_state_bytes | 0 | 15360 |
 | serving_weight_bytes | 161480704 | 231243776 |
+| tpar_mem_gb | 2.320961 | 2.341146 |
 | vllm_limits | [1519413, 24310608, 1519413, 1, 0, 98304.0, true] | [1519549, 24312784, 1519549, 1, 0, 98304.0, true] |
 
 ## config:models--OpenMOSS-Team--MOSS-Transcribe-Diarize/snapshots/<rev>/config.json (audio-llm)
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741423, 3.684597] | [5.451522, 17.990023] |
+| advtrain_lora | [0.440079, 3.021641] | [2.010112, 4.748677] |
 | cluster_b_eff_4096 | 88 | 87 |
 | conv_kv_size | 262144 | 57344 |
 | conv_layers | [0, 32] | [0, 28] |
 | conv_prefill_weights_mb | 12852.0 | 1433.5 |
 | conv_serving_weight_bytes | 13214154752 | 1817071616 |
+| copt_quick | [692846592, 11.316898, 0.173212] | [908535808, 14.789494, 0.227134] |
 | counter_params | 123570432 | 908587008 |
 | disagg_b_eff_4096 | 88 | 87 |
 | facts_weight_bytes | 1192099840 | 1817071616 |
+| kvcost_active_params | 123570432 | 908587008 |
+| kvplan_ws_gib | 135.12 | 135.02 |
+| kvplan_ws_tokens | 1264980 | 1264089 |
 | serving_weight_bytes | 1191968768 | 1817071616 |
 | slice_mib_16x4352 | [14592, true] | [15104, true] |
+| tpar_mem_gb | 11.382119 | 15.154113 |
 | traingenz_params | 692961280 | 908535808 |
 | trainmem_total_gb | 3.684597 | 17.990023 |
 | trainmem_weight_gb | 0.741423 | 5.451522 |
@@ -1533,11 +1679,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [29.670749, 97.913472] | [31.263123, 103.168307] |
+| advtrain_lora | [10.083188, 13.62906] | [10.613979, 14.212931] |
 | cluster_b_eff_4096 | 66 | 182 |
 | conv_kv_size | 262144 | 16384 |
 | conv_prefill_weights_mb | 12852.0 | 9234.023438 |
 | conv_serving_weight_bytes | 13214154752 | 9078539264 |
 | conv_state_bytes | 0 | 51511296 |
+| copt_quick | [4375183360, 70.903503, 1.093796] | [4539269632, 73.545292, 1.134817] |
 | counter_params | 4945124864 | 5210520576 |
 | disagg_b_eff_4096 | 66 | 182 |
 | disagg_transfer_bytes_640 | 83886080 | 72482816 |
@@ -1561,6 +1710,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
 | genz_prefill_kv_mb | 512.0 | 177.125 |
 | genz_prefill_weights_mb | 8345.0 | 9234.023438 |
+| kvcost_active_params | 4945124864 | 5210520576 |
+| kvplan_ws_tokens | 1259598 | 1259299 |
+| lora_adapter_gb | 0.228589568 | 0.280702976 |
+| maxbatch_80gb_4096 | 274 | 272 |
 | prefix_kv_bytes_per_token | 131072 | 32768 |
 | report_params | 4945124864 | 5210520576 |
 | report_total_gb | 10.422165791 | 10.952957215 |
@@ -1572,6 +1725,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 64 | 100 |
 | serving_state_bytes | 0 | 51511296 |
 | serving_weight_bytes | 7478968320 | 9078539264 |
+| tpar_mem_gb | 64.199393 | 71.565697 |
+| tpar_options_8x80 | 80 | 73 |
 | traingenz_params | 4375511040 | 4539269632 |
 | trainmem_total_gb | 97.913472 | 103.168307 |
 | trainmem_weight_gb | 29.670749 | 31.263123 |
@@ -1580,11 +1735,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [29.670749, 97.913472] | [31.263123, 103.168307] |
+| advtrain_lora | [10.083188, 13.62906] | [10.613979, 14.212931] |
 | cluster_b_eff_4096 | 66 | 182 |
 | conv_kv_size | 262144 | 16384 |
 | conv_prefill_weights_mb | 12852.0 | 9234.023438 |
 | conv_serving_weight_bytes | 13214154752 | 9078539264 |
 | conv_state_bytes | 0 | 51511296 |
+| copt_quick | [4375183360, 70.903503, 1.093796] | [4539269632, 73.545292, 1.134817] |
 | counter_params | 4945124864 | 5210520576 |
 | disagg_b_eff_4096 | 66 | 182 |
 | disagg_transfer_bytes_640 | 83886080 | 72482816 |
@@ -1608,6 +1766,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
 | genz_prefill_kv_mb | 512.0 | 177.125 |
 | genz_prefill_weights_mb | 8345.0 | 9234.023438 |
+| kvcost_active_params | 4945124864 | 5210520576 |
+| kvplan_ws_tokens | 1259598 | 1259299 |
+| lora_adapter_gb | 0.228589568 | 0.280702976 |
+| maxbatch_80gb_4096 | 274 | 272 |
 | prefix_kv_bytes_per_token | 131072 | 32768 |
 | report_params | 4945124864 | 5210520576 |
 | report_total_gb | 10.422165791 | 10.952957215 |
@@ -1619,6 +1781,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 64 | 100 |
 | serving_state_bytes | 0 | 51511296 |
 | serving_weight_bytes | 7478968320 | 9078539264 |
+| tpar_mem_gb | 64.199393 | 71.565697 |
+| tpar_options_8x80 | 80 | 73 |
 | traingenz_params | 4375511040 | 4539269632 |
 | trainmem_total_gb | 97.913472 | 103.168307 |
 | trainmem_weight_gb | 29.670749 | 31.263123 |
@@ -1652,6 +1816,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | cluster_b_eff_4096 | 77 | 76 |
 | conv_prefill_weights_mb | 6879.0 | 17400.0 |
 | conv_serving_weight_bytes | 6425149440 | 7213504512 |
+| copt_quick | [3958898688, 64.224473, 0.989725] | [9474932736, 153.032621, 2.368733] |
 | disagg_b_eff_4096 | 77 | 76 |
 | genz_decode_weights_mb | 6127.5 | 11388.0 |
 | genz_prefill_weights_mb | 6879.0 | 17400.0 |
@@ -1659,12 +1824,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | runtime_decode | [5.227983, 6127.5, 56.438] | [8.442918, 11388.0, 56.438] |
 | runtime_prefill | [14.342742, 6879.0, 56.0] | [33.170805, 17400.0, 56.0] |
 | serving_weight_bytes | 6425149440 | 7213504512 |
+| tpar_mem_gb | 57.65045 | 142.597374 |
+| tpar_options_8x80 | 104 | 24 |
 | traingenz_params | 3959242752 | 9475276800 |
 
 ## config:models--bosonai--higgs-audio-v3-tts-4b/snapshots/<rev>/config.json (unknown)
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.911292, 3.996024] | [24.639191, 81.30933] |
+| advtrain_lora | [0.496702, 3.083926] | [8.406002, 11.784156] |
 | conv_kv_size | 262144 | 73728 |
 | conv_layers | [0, 32] | [0, 36] |
 | conv_prefill_weights_mb | 12852.0 | 8413.75 |
@@ -1678,6 +1847,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_32768_total_mb | 5669.117645 | 13578.417357 |
 | eng_llamacpp_4096_params | 151881984 | 4106531840 |
 | eng_llamacpp_4096_total_mb | 1174.501478 | 9083.80119 |
+| kvcost_active_params | 151881984 | 4106531840 |
+| kvplan_host_gib | 0.0 | 173.0 |
+| kvplan_shm_gib | 0.0 | 173.0 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 173.64 | 173.03 |
+| kvplan_ws_tokens | 1264371 | 1259897 |
+| maxbatch_80gb_4096 | 98 | 87 |
 | report_params | 151881984 | 4106531840 |
 | report_total_gb | 1.34864898 | 9.257948692 |
 | report_weight_gb | 0.303763968 | 8.21306368 |
@@ -1734,6 +1910,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | figure | before | after |
 |---|---|---|
 | conv_serving_weight_bytes | 226541568 | 226629120 |
+| copt_quick | [113295360, 1.876149, 0.028324] | [113314560, 1.876458, 0.028329] |
 | serving_weight_bytes | 226541568 | 226629120 |
 
 ## config:models--fastino--GLiNER2.5-Decide/snapshots/<rev>/encoder_config/config.json (decoder-only)
@@ -1743,6 +1920,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | cluster_b_eff_4096 | 104 | 103 |
 | conv_prefill_weights_mb | 1268.042969 | 1269.042969 |
 | conv_serving_weight_bytes | 1067472896 | 1329739776 |
+| copt_quick | [664819712, 10.842513, 0.166205] | [664869888, 10.843321, 0.166217] |
 | disagg_b_eff_4096 | 104 | 103 |
 | genz_prefill_weights_mb | 1076.042969 | 1077.042969 |
 | runtime_chunked | [1.030875, 1076.043, 72.0] | [1.03177, 1077.043, 72.0] |
@@ -1753,11 +1931,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [29.670749, 97.913472] | [31.263123, 103.168307] |
+| advtrain_lora | [10.083188, 13.62906] | [10.613979, 14.212931] |
 | cluster_b_eff_4096 | 66 | 182 |
 | conv_kv_size | 262144 | 16384 |
 | conv_prefill_weights_mb | 12852.0 | 9234.023438 |
 | conv_serving_weight_bytes | 13214154752 | 9078539264 |
 | conv_state_bytes | 0 | 51511296 |
+| copt_quick | [4375183360, 70.903503, 1.093796] | [4539269632, 73.545292, 1.134817] |
 | counter_params | 4945124864 | 5210520576 |
 | disagg_b_eff_4096 | 66 | 182 |
 | disagg_transfer_bytes_640 | 83886080 | 72482816 |
@@ -1781,6 +1962,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
 | genz_prefill_kv_mb | 512.0 | 177.125 |
 | genz_prefill_weights_mb | 8345.0 | 9234.023438 |
+| kvcost_active_params | 4945124864 | 5210520576 |
+| kvplan_ws_tokens | 1259598 | 1259299 |
+| lora_adapter_gb | 0.228589568 | 0.280702976 |
+| maxbatch_80gb_4096 | 274 | 272 |
 | prefix_kv_bytes_per_token | 131072 | 32768 |
 | report_params | 4945124864 | 5210520576 |
 | report_total_gb | 10.422165791 | 10.952957215 |
@@ -1792,6 +1977,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 64 | 100 |
 | serving_state_bytes | 0 | 51511296 |
 | serving_weight_bytes | 7478968320 | 9078539264 |
+| tpar_mem_gb | 64.199393 | 71.565697 |
+| tpar_options_8x80 | 80 | 73 |
 | traingenz_params | 4375511040 | 4539269632 |
 | trainmem_total_gb | 97.913472 | 103.168307 |
 | trainmem_weight_gb | 29.670749 | 31.263123 |
@@ -1802,38 +1989,52 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 |---|---|---|
 | cluster_b_eff_4096 | 424 | 423 |
 | conv_serving_weight_bytes | 202637312 | 304636928 |
+| copt_quick | [152305664, 2.48685, 0.038076] | [152318464, 2.487056, 0.03808] |
 | disagg_b_eff_4096 | 424 | 423 |
 | serving_weight_bytes | 202637312 | 304636928 |
+| time_params | 152305664 | 152318464 |
 
 ## config:models--microsoft--VibeVoice-1.5B/snapshots/<rev>/config.json (unknown)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 8.852078592 | 8.852344832 |
 | cluster_b_eff_4096 | 339 | 214 |
 | conv_kv_size | 262144 | 14336 |
 | conv_layers | [0, 32] | [0, 28] |
 | conv_prefill_weights_mb | 12852.0 | 3389.25 |
 | conv_serving_weight_bytes | 13214154752 | 17704689664 |
+| copt_quick | [1887043584, 30.624504, 0.471761] | [8852344832, 142.765854, 2.213086] |
+| creq_gb | [126.573345, 192.0] | [126.577073, 192.0] |
+| creq_params | 8852078592 | 8852344832 |
 | disagg_b_eff_4096 | 339 | 214 |
 | serving_weight_bytes | 3087138816 | 17704689664 |
+| tpar_mem_gb | 28.682487 | 137.641025 |
+| tpar_options_8x80 | 96 | 28 |
 | traingenz_params | 1887215616 | 8852344832 |
 
 ## config:models--mistralai--Voxtral-Mini-4B-Realtime-2602/snapshots/<rev>/config.json (audio-llm)
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [9.080986, 29.967252] | [28.966214, 95.588505] |
+| advtrain_lora | [3.171699, 5.392034] | [9.800108, 12.683284] |
 | cluster_b_eff_4096 | 82 | 78 |
 | conv_kv_size | 196608 | 53248 |
 | conv_layers | [0, 32] | [0, 26] |
 | conv_prefill_weights_mb | 8871.0 | 7308.0 |
 | conv_serving_weight_bytes | 9105309696 | 8849772544 |
+| copt_quick | [3995074560, 64.772175, 0.998769] | [4424886272, 71.692144, 1.106222] |
 | counter_params | 1513497600 | 4827702272 |
 | disagg_b_eff_4096 | 82 | 78 |
 | facts_full_attention | true | false |
 | facts_layers | [26, 0, 0, null] | [0, 26, 0, 8192] |
 | facts_weight_bytes | 6858012672 | 8849772544 |
+| kvcost_active_params | 1513497600 | 4827702272 |
 | serving_weight_bytes | 6857687040 | 8849772544 |
 | slice_mib_16x4352 | [21248, true] | [23296, true] |
+| tpar_mem_gb | 58.463242 | 70.745395 |
+| tpar_options_8x80 | 56 | 54 |
 | traingenz_params | 3995394048 | 4424886272 |
 | trainmem_total_gb | 29.967252 | 95.588505 |
 | trainmem_weight_gb | 9.080986 | 28.966214 |
@@ -1845,12 +2046,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741423, 3.684597] | [9.91708, 32.726363] |
+| advtrain_lora | [0.440079, 3.021641] | [3.498631, 6.386048] |
 | cluster_b_eff_4096 | 269 | 131 |
 | conv_kv_size | 131072 | 18432 |
 | conv_layers | [16, 16] | [12, 18] |
 | conv_prefill_weights_mb | 6676.0 | 3072.78125 |
 | conv_serving_weight_bytes | 6738149376 | 3305693184 |
 | conv_state_bytes | 0 | 150994944 |
+| copt_quick | [1212170240, 19.724314, 0.303043] | [1652846592, 26.819203, 0.413212] |
 | counter_params | 123570432 | 1652846592 |
 | disagg_b_eff_4096 | 269 | 131 |
 | disagg_transfer_bytes_640 | 23592960 | 174587904 |
@@ -1879,8 +2083,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 18 |
 | kv_gb@32768 | 0.0 | 1.358954496 |
 | kv_gb@4096 | 0.0 | 0.301989888 |
+| kvcost_active_params | 123570432 | 1652846592 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 18, 0, 0.0, 16, 150994944.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 18, 0, 0.0, 16, 150994944.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 43.38 |
+| kvplan_ws_tokens | null | 1263504 |
+| maxbatch_80gb_4096 | 501 | 150 |
 | report_kv_gb | 0.11460608 | 0.375717888 |
 | report_params | 808394240 | 1763025664 |
 | report_total_gb | 1.856430039 | 4.078566257 |
@@ -1893,6 +2102,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 2193637376 | 3305693184 |
 | sim_max_running | 72 | 376 |
 | slice_mib_16x4352 | [81582, false] | [14848, true] |
+| tpar_mem_gb | 18.217547 | 27.004052 |
 | traingenz_params | 1212317696 | 1652846592 |
 | trainmem_total_gb | 3.684597 | 32.726363 |
 | trainmem_weight_gb | 0.741423 | 9.91708 |
@@ -1904,13 +2114,19 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [1.013133, 3.34334] | [15.882007, 52.410622] |
+| advtrain_lora | [0.34977, 0.633312] | [5.306061, 6.085232] |
+| ccb_params_b | 0.570425344 | 2.647001088 |
 | cluster_b_eff_4096 | 317 | 126 |
 | conv_kv_size | 8192 | 16384 |
 | conv_layers | [4, 4] | [48, 8] |
 | conv_prefill_weights_mb | 192.0 | 2804.317383 |
 | conv_serving_weight_bytes | 167772160 | 5294002176 |
 | conv_state_bytes | 0 | 163840000 |
+| copt_quick | [167772160, 2.747437, 0.041943] | [2647001088, 42.663023, 0.66175] |
 | counter_params | 168855552 | 2647001088 |
+| creq_gb | [10.147016, 16.0] | [39.219077, 80.0] |
+| creq_params | 570425344 | 2647001088 |
 | disagg_b_eff_4096 | 317 | 126 |
 | disagg_transfer_bytes_640 | 20971520 | 184811520 |
 | eng_None_32768_kv_mb | 1122.893824 | 1606.221824 |
@@ -1935,8 +2151,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 8 |
 | kv_gb@32768 | 1.073741824 | 1.237581824 |
 | kv_gb@4096 | 0.134217728 | 0.298057728 |
+| kvcost_active_params | 168855552 | 2647001088 |
 | kvgeo_32768 | [32768.0, 8, 0, 0.0, 16, 0.0] | [32768.0, 8, 0, 0.0, 16, 163840000.0] |
 | kvgeo_4096 | [32768.0, 8, 0, 0.0, 16, 0.0] | [32768.0, 8, 0, 0.0, 16, 163840000.0] |
+| kvplan_ws_gib | 38.61 | 38.53 |
+| kvplan_ws_tokens | 1265115 | 1262304 |
+| maxbatch_80gb_4096 | 318 | 88 |
 | report_kv_gb | 0.183369728 | 0.666697728 |
 | report_params | 576643072 | 580837376 |
 | report_total_gb | 1.459883786 | 2.048726794 |
@@ -1949,6 +2169,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 301989888 | 5294002176 |
 | sim_max_running | 400 | 350 |
 | slice_mib_16x4352 | [8704, true] | [16640, true] |
+| time_params | 167772160 | 2647001088 |
+| tpar_mem_gb | 2.97175 | 41.797293 |
 | traingenz_params | 167804928 | 2647001088 |
 | trainmem_total_gb | 3.34334 | 52.410622 |
 | trainmem_weight_gb | 1.013133 | 15.882007 |
@@ -1960,11 +2182,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.181554, 0.599128] | [0.462926, 1.527655] |
+| advtrain_lora | [0.065417, 0.19543] | [0.159207, 0.2986] |
 | cluster_b_eff_4096 | 786 | 392 |
 | conv_kv_size | 3328 | 13312 |
 | conv_layers | [4, 4] | [8, 8] |
 | conv_prefill_weights_mb | 73.125 | 147.0625 |
 | conv_serving_weight_bytes | 49414144 | 154308544 |
+| copt_quick | [49414144, 0.814379, 0.012354] | [77154272, 1.260995, 0.019289] |
 | counter_params | 30259008 | 77154272 |
 | disagg_b_eff_4096 | 786 | 392 |
 | disagg_transfer_bytes_640 | 8519680 | 17039360 |
@@ -1987,8 +2212,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 8 |
 | kv_gb@32768 | 0.436207616 | 0.872415232 |
 | kv_gb@4096 | 0.054525952 | 0.109051904 |
+| kvcost_active_params | 30259008 | 77154272 |
 | kvgeo_32768 | [13312.0, 8, 0, 0.0, 16, 0.0] | [26624.0, 8, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [13312.0, 8, 0, 0.0, 16, 0.0] | [26624.0, 8, 0, 0.0, 16, 0.0] |
+| kvplan_ws_gib | 15.69 | 31.38 |
+| kvplan_ws_tokens | 1265317 | 1265263 |
+| maxbatch_80gb_4096 | 793 | 460 |
 | prefix_kv_bytes_per_token | 13312 | 26624 |
 | report_kv_gb | 0.074493952 | 0.129019904 |
 | report_total_gb | 0.351430523 | 0.416861665 |
@@ -1999,6 +2228,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 630 | 315 |
 | serving_weight_bytes | 71565312 | 154308544 |
 | slice_mib_16x4352 | [6656, true] | [7936, true] |
+| time_params | 49414144 | 77154272 |
+| tpar_mem_gb | 1.050118 | 1.573423 |
 | traingenz_params | 49427456 | 77154272 |
 | trainmem_total_gb | 0.599128 | 1.527655 |
 | trainmem_weight_gb | 0.181554 | 0.462926 |
@@ -2009,11 +2240,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.0925, 0.305249] | [0.220902, 0.728978] |
+| advtrain_lora | [0.033377, 0.121262] | [0.076178, 0.168343] |
 | cluster_b_eff_4096 | 1515 | 757 |
 | conv_kv_size | 1728 | 6912 |
 | conv_layers | [3, 3] | [6, 6] |
 | conv_prefill_weights_mb | 43.59375 | 70.171875 |
 | conv_serving_weight_bytes | 26836992 | 73634112 |
+| copt_quick | [26836992, 0.441843, 0.006709] | [36817056, 0.602522, 0.009204] |
 | counter_params | 15416640 | 36817056 |
 | disagg_b_eff_4096 | 1515 | 757 |
 | disagg_transfer_bytes_640 | 4423680 | 8847360 |
@@ -2036,8 +2270,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 6 |
 | kv_gb@32768 | 0.226492416 | 0.452984832 |
 | kv_gb@4096 | 0.028311552 | 0.056623104 |
+| kvcost_active_params | 15416640 | 36817056 |
 | kvgeo_32768 | [6912.0, 6, 0, 0.0, 16, 0.0] | [13824.0, 6, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [6912.0, 6, 0, 0.0, 16, 0.0] | [13824.0, 6, 0, 0.0, 16, 0.0] |
+| kvplan_ws_gib | 8.15 | 16.3 |
+| kvplan_ws_tokens | 1265348 | 1265324 |
+| maxbatch_80gb_4096 | 1024 | 886 |
 | prefix_kv_bytes_per_token | 6912 | 13824 |
 | report_kv_gb | 0.038679552 | 0.066991104 |
 | report_total_gb | 0.184591703 | 0.218565565 |
@@ -2048,6 +2286,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 1213 | 606 |
 | serving_weight_bytes | 34799616 | 73634112 |
 | slice_mib_16x4352 | [6144, true] | [6656, true] |
+| time_params | 26836992 | 36817056 |
+| tpar_mem_gb | 0.681569 | 0.924547 |
 | traingenz_params | 26843904 | 36817056 |
 | trainmem_total_gb | 0.305249 | 0.728978 |
 | trainmem_weight_gb | 0.0925 | 0.220902 |
@@ -2057,11 +2297,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.272066, 1.661448] | [0.631004, 2.319502] |
+| advtrain_lora | [0.126864, 1.342005] | [0.246511, 1.473616] |
 | cluster_b_eff_4096 | 99 | 621 |
 | conv_kv_size | 49152 | 6144 |
 | conv_prefill_weights_mb | 3126.390625 | 212.9375 |
 | conv_serving_weight_bytes | 2853380096 | 210334720 |
 | conv_state_bytes | 0 | 18432000 |
+| copt_quick | [1639129088, 26.528894, 0.409782] | [105167360, 1.710559, 0.026292] |
 | counter_params | 45344256 | 105167360 |
 | disagg_b_eff_4096 | 99 | 621 |
 | disagg_transfer_bytes_640 | 62914560 | 26296320 |
@@ -2076,8 +2319,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 6 |
 | kv_gb@32768 | 0.0 | 0.421085184 |
 | kv_gb@4096 | 0.0 | 0.068763648 |
+| kvcost_active_params | 45344256 | 105167360 |
 | kvgeo_32768 | [0.0, 6, 0, 0.0, 16, 0.0] | [12288.0, 6, 0, 0.0, 16, 18432000.0] |
 | kvgeo_4096 | [0.0, 6, 0, 0.0, 16, 0.0] | [12288.0, 6, 0, 0.0, 16, 18432000.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 14.48 |
+| kvplan_ws_tokens | null | 1265262 |
 | prefix_kv_bytes_per_token | 98304 | 12288 |
 | runtime_chunked | [2.405326, 2610.391, 72.0] | [0.170088, 188.938, 44.156] |
 | runtime_decode | [2.475791, 2205.195, 48.375] | [1.311799, 137.851, 76.359] |
@@ -2087,6 +2334,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_state_bytes | 0 | 18432000 |
 | serving_weight_bytes | 2853380096 | 210334720 |
 | slice_mib_16x4352 | [6656, true] | [6912, true] |
+| tpar_mem_gb | 26.648984 | 2.025586 |
 | traingenz_params | 1639227392 | 105167360 |
 | trainmem_total_gb | 1.661448 | 2.319502 |
 | trainmem_weight_gb | 0.272066 | 0.631004 |
@@ -2097,11 +2345,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [4.166339, 13.748917] | [5.405222, 17.837234] |
+| advtrain_lora | [1.581718, 4.277443] | [1.994679, 4.731701] |
 | cluster_b_eff_4096 | 1 | 359 |
 | conv_kv_size | 32768 | 10240 |
 | conv_prefill_weights_mb | 2354.40625 | 2118.325195 |
 | conv_serving_weight_bytes | 2043887616 | 1801740800 |
 | conv_state_bytes | 0 | 30720000 |
+| copt_quick | null | [900870400, 14.532954, 0.225218] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment" | null |
 | counter_params | 694389760 | 900870400 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 359 |
@@ -2126,8 +2378,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 32 | 4 |
 | kv_gb@32768 | 0.0 | 0.70180864 |
 | kv_gb@4096 | 0.0 | 0.11460608 |
+| kvcost_active_params | 694389760 | 900870400 |
 | kvgeo_32768 | [0.0, 32, 0, 0.0, 16, 0.0] | [20480.0, 4, 0, 0.0, 16, 30720000.0] |
 | kvgeo_4096 | [0.0, 32, 0, 0.0, 16, 0.0] | [20480.0, 4, 0, 0.0, 16, 30720000.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 24.12 |
+| kvplan_ws_tokens | null | 1264358 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment" | null |
 | prefix_kv_bytes_per_token | null | 20480 |
 | runtime_chunked | null | [0.44293, 1668.325, 73.594] |
@@ -2143,6 +2399,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | null | 1801740800 |
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
 | slice_mib_16x4352 | [22272, true] | [9472, true] |
+| tpar_mem_gb | null | 15.395937 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment" | null |
+| tpar_options_8x80 | null | 72 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment" | null |
 | traingenz_params | null | 900870400 |
 | trainmem_total_gb | 13.748917 | 17.837234 |
@@ -2155,11 +2415,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.162003, 1.072114] | [0.359048, 1.433363] |
+| advtrain_lora | [0.078118, 0.887567] | [0.1438, 0.959816] |
 | cluster_b_eff_4096 | 152 | 1245 |
 | conv_kv_size | 32768 | 3072 |
 | conv_prefill_weights_mb | 2354.375 | 118.92041 |
 | conv_serving_weight_bytes | 2043871232 | 119682816 |
 | conv_state_bytes | 0 | 9216000 |
+| copt_quick | [1234370560, 19.965976, 0.308593] | [59841408, 0.972129, 0.01496] |
 | counter_params | 27000576 | 59841408 |
 | disagg_b_eff_4096 | 152 | 1245 |
 | disagg_transfer_bytes_640 | 41943040 | 13148160 |
@@ -2174,8 +2437,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 4 |
 | kv_gb@32768 | 0.0 | 0.210542592 |
 | kv_gb@4096 | 0.0 | 0.034381824 |
+| kvcost_active_params | 27000576 | 59841408 |
 | kvgeo_32768 | [0.0, 4, 0, 0.0, 16, 0.0] | [6144.0, 4, 0, 0.0, 16, 9216000.0] |
 | kvgeo_4096 | [0.0, 4, 0, 0.0, 16, 0.0] | [6144.0, 4, 0, 0.0, 16, 9216000.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 7.25 |
+| kvplan_ws_tokens | null | 1265313 |
 | prefix_kv_bytes_per_token | 65536 | 6144 |
 | runtime_chunked | [1.845717, 2010.375, 48.0] | [0.11256, 109.92, 22.078] |
 | runtime_decode | [2.067047, 1605.188, 32.25] | [1.196544, 71.606, 38.18] |
@@ -2185,6 +2452,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_state_bytes | 0 | 9216000 |
 | serving_weight_bytes | 2043871232 | 119682816 |
 | slice_mib_16x4352 | [5888, true] | [6144, true] |
+| tpar_mem_gb | 19.946904 | 1.149938 |
 | traingenz_params | 1234436096 | 59841408 |
 | trainmem_total_gb | 1.072114 | 1.433363 |
 | trainmem_weight_gb | 0.162003 | 0.359048 |
@@ -2194,13 +2462,20 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 3.01621248 | 116.829156672 |
 | cluster_b_eff_4096 | 126 | 1 |
 | conv_serving_weight_bytes | 4860887040 | 233658313344 |
+| copt_quick | [3248455680, 52.886186, 0.812114] | [116829156672, 1881.535472, 29.207289] |
+| creq_gb | [38.17715, 80.0] | [1638.061178, 3072.0] |
+| creq_params | 2551726080 | 116829156672 |
 | disagg_b_eff_4096 | 126 | 1 |
 | genz_chunked_kv_mb | 324.0 | 184.5 |
 | runtime_chunked | [39.655232, 62149.219, 54.0] | [39.646878, 62149.219, 40.5] |
 | serving_weight_bytes | 4860887040 | 233658313344 |
 | sim_max_running | 250 | 220 |
+| time_params | 3248455680 | 117368392320 |
+| tpar_mem_gb | 45.995866 | 1803.179501 |
+| tpar_options_8x80 | 96 | 0 |
 | vllm_limits | [16363, 261808, 16363, 1, 0, 0.0, true] | [16363, 261808, 16363, 1, 1, 0.0, true] |
 | vllm_running_1024 | 204 | 183 |
 
@@ -2208,13 +2483,20 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 3.01621248 | 20.914757184 |
 | cluster_b_eff_4096 | 195 | 5 |
 | conv_serving_weight_bytes | 3626680320 | 41829514368 |
+| copt_quick | [2551726080, 41.473489, 0.637932] | [20914757184, 337.11829, 5.228689] |
+| creq_gb | [38.17715, 80.0] | [295.259585, 640.0] |
+| creq_params | 2551726080 | 20914757184 |
 | disagg_b_eff_4096 | 195 | 5 |
 | genz_chunked_kv_mb | 216.0 | 123.0 |
 | runtime_chunked | [9.364153, 13110.469, 36.0] | [9.358584, 13110.469, 27.0] |
 | serving_weight_bytes | 3626680320 | 41829514368 |
 | slice_mib_16x4352 | [20736, true] | [20992, true] |
+| time_params | 2551726080 | 21487201920 |
+| tpar_mem_gb | 37.278095 | 325.429334 |
+| tpar_options_8x80 | 104 | 2 |
 | vllm_limits | [155360, 2485760, 155360, 1, 0, 0.0, true] | [155360, 2485760, 155360, 1, 1, 0.0, true] |
 | vllm_running_8192 | 294 | 289 |
 
@@ -2222,7 +2504,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 18.3762944 | 22.58149888 |
 | conv_serving_weight_bytes | 43605032960 | 45162997760 |
+| copt_quick | [22581084160, 364.713083, 5.645271] | [22581498880, 364.71976, 5.645375] |
+| creq_gb | [260.073428, 768.0] | [318.946291, 640.0] |
+| creq_params | 18376294400 | 22581498880 |
 | serving_weight_bytes | 43605032960 | 45162997760 |
 
 ## db:Qwen/Qwen-1_8B (decoder-only)
@@ -2231,6 +2517,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 |---|---|---|
 | cluster_b_eff_4096 | 47 | 46 |
 | conv_serving_weight_bytes | 4674027520 | 5296558080 |
+| copt_quick | [2648178688, 42.913508, 0.662045] | [2648279040, 42.915123, 0.66207] |
 | disagg_b_eff_4096 | 47 | 46 |
 | serving_weight_bytes | 4674027520 | 5296558080 |
 
@@ -2238,15 +2525,23 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 49.736056832 | 120.604336128 |
 | conv_serving_weight_bytes | 238714617856 | 241208672256 |
+| copt_quick | [120603017216, 1945.412986, 30.150754] | [120604336128, 1945.434221, 30.151084] |
+| creq_gb | [699.593286, 1128.0] | [1691.749196, 3072.0] |
+| creq_params | 49736056832 | 120604336128 |
 | serving_weight_bytes | 238714617856 | 241208672256 |
 
 ## db:Qwen/Qwen-7B (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 12.049186816 | 12.049453056 |
 | cluster_b_eff_4096 | 9 | 8 |
 | conv_serving_weight_bytes | 22853713920 | 24098906112 |
+| copt_quick | [12049186816, 194.73279, 3.012297] | [12049453056, 194.737076, 3.012363] |
+| creq_gb | [171.332861, 564.0] | [171.336588, 564.0] |
+| creq_params | 12049186816 | 12049453056 |
 | disagg_b_eff_4096 | 9 | 8 |
 | serving_weight_bytes | 22853713920 | 24098906112 |
 
@@ -2263,63 +2558,97 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 |---|---|---|
 | cluster_b_eff_4096 | 49 | 48 |
 | conv_serving_weight_bytes | 3050831872 | 3673362432 |
+| copt_quick | [1836580864, 29.846783, 0.459145] | [1836681216, 29.848398, 0.45917] |
 | disagg_b_eff_4096 | 49 | 48 |
 | serving_weight_bytes | 3050831872 | 3673362432 |
+| time_params | 1836580864 | 1836781568 |
 
 ## db:Qwen/Qwen1.5-110B (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 49.736056832 | 111.209095168 |
 | conv_serving_weight_bytes | 219924135936 | 222418190336 |
+| creq_gb | [646.979936, 1128.0] | [1560.215823, 2256.0] |
+| creq_params | 45977960448 | 111209095168 |
 | serving_weight_bytes | 219924135936 | 222418190336 |
 
 ## db:Qwen/Qwen1.5-14B (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 11.64443648 | 14.16667648 |
 | conv_serving_weight_bytes | 26775388160 | 28333352960 |
+| copt_quick | [14166261760, 229.234442, 3.541565] | [14166676480, 229.241119, 3.541669] |
+| creq_gb | [165.827417, 564.0] | [201.138777, 768.0] |
+| creq_params | 11644436480 | 14166676480 |
 | serving_weight_bytes | 26775388160 | 28333352960 |
+| time_params | 14166261760 | 14167091200 |
 
 ## db:Qwen/Qwen1.5-32B (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 18.3762944 | 32.51175936 |
 | conv_serving_weight_bytes | 63465062400 | 65023518720 |
+| creq_gb | [241.282946, 768.0] | [457.969937, 1536.0] |
+| creq_params | 17034117120 | 32511759360 |
 | serving_weight_bytes | 63465062400 | 65023518720 |
 
 ## db:Qwen/Qwen1.5-4B (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 3.31546624 | 3.95006208 |
 | cluster_b_eff_4096 | 21 | 20 |
 | conv_serving_weight_bytes | 7121797120 | 7900124160 |
+| copt_quick | [3949854720, 64.171475, 0.987464] | [3950062080, 64.174813, 0.987516] |
+| creq_gb | [48.819181, 80.0] | [57.703522, 80.0] |
+| creq_params | 3315466240 | 3950062080 |
 | disagg_b_eff_4096 | 21 | 20 |
 | serving_weight_bytes | 7121797120 | 7900124160 |
+| time_params | 3949854720 | 3950269440 |
 
 ## db:Qwen/Qwen1.5-72B (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 30.408704 | 72.285954048 |
 | conv_serving_weight_bytes | 142077853696 | 144571908096 |
+| copt_quick | [72284635136, 1167.487035, 18.071159] | [72285954048, 1167.508269, 18.071489] |
+| creq_gb | [429.010346, 640.0] | [1015.291847, 1536.0] |
+| creq_params | 30408704000 | 72285954048 |
 | serving_weight_bytes | 142077853696 | 144571908096 |
+| time_params | 72284635136 | 72287272960 |
 
 ## db:Qwen/Qwen1.5-7B (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 7.720665088 | 7.720931328 |
 | cluster_b_eff_4096 | 13 | 12 |
 | conv_serving_weight_bytes | 14196670464 | 15441862656 |
+| copt_quick | [7720665088, 125.04359, 1.930166] | [7720931328, 125.047876, 1.930233] |
+| creq_gb | [110.733556, 141.0] | [110.737284, 141.0] |
+| creq_params | 7720665088 | 7720931328 |
 | disagg_b_eff_4096 | 13 | 12 |
 | serving_weight_bytes | 14196670464 | 15441862656 |
+| time_params | 7720665088 | 7721197568 |
 
 ## db:Qwen/Qwen1.5-MoE-A2.7B (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [82.778284, 273.168337] | [87.761117, 289.611687] |
+| advtrain_lora | [27.653317, 31.281128] | [29.314261, 33.108167] |
+| ccb_params_b | 2.266497024 | 14.315589024 |
 | cluster_b_eff_4096 | 49 | 17 |
 | conv_prefill_weights_mb | 25720.625 | 27304.625 |
 | conv_serving_weight_bytes | 3088580608 | 28631178048 |
+| copt_quick | [1855455232, 30.15066, 0.463864] | [14315589024, 230.758814, 3.578897] |
 | counter_params | 13796380672 | 14626852864 |
+| creq_gb | [34.053081, 80.0] | [202.740369, 768.0] |
+| creq_params | 2266497024 | 14315589024 |
 | disagg_b_eff_4096 | 49 | 17 |
 | eng_None_32768_params | 13796380672 | 14626852864 |
 | eng_None_32768_total_mb | 34377.467494 | 36038.411878 |
@@ -2331,6 +2660,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_4096_total_mb | 28569.195315 | 30230.139699 |
 | genz_decode_weights_mb | 25127.125 | 26711.125 |
 | genz_prefill_weights_mb | 25720.625 | 27304.625 |
+| kvcost_active_params | 2169769984 | 3000242176 |
+| kvplan_ws_gib | 231.17 | 231.0 |
+| kvplan_ws_tokens | 1262473 | 1261534 |
+| maxbatch_80gb_4096 | 45 | 43 |
 | report_params | 13796380672 | 14626852864 |
 | report_total_gb | 28.764482109 | 30.425426493 |
 | report_weight_gb | 27.592761344 | 29.253705728 |
@@ -2338,6 +2671,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | runtime_decode | [6.05469, 25127.125, 96.75] | [7.117747, 26711.125, 96.75] |
 | runtime_prefill | [20.272026, 25720.625, 96.0] | [23.346704, 27304.625, 96.0] |
 | serving_weight_bytes | 3088580608 | 28631178048 |
+| time_params | 1855455232 | 14626852864 |
+| tpar_mem_gb | 29.753541 | 221.636573 |
+| tpar_options_8x80 | 104 | 10 |
 | trainmem_total_gb | 273.168337 | 289.611687 |
 | trainmem_weight_gb | 82.778284 | 87.761117 |
 
@@ -2359,8 +2695,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 11.70735104 | 14.7696896 |
 | cluster_b_eff_4096 | 18 | 16 |
 | conv_serving_weight_bytes | 27981250560 | 29539379200 |
+| creq_gb | [147.917739, 192.0] | [209.580961, 768.0] |
+| creq_params | 10365173760 | 14769689600 |
 | disagg_b_eff_4096 | 18 | 16 |
 | serving_weight_bytes | 27981250560 | 29539379200 |
 
@@ -2368,7 +2707,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 18.50212352 | 32.7634176 |
 | conv_serving_weight_bytes | 63968378880 | 65526835200 |
+| creq_gb | [243.044554, 768.0] | [461.493153, 1536.0] |
+| creq_params | 17159946240 | 32763417600 |
 | serving_weight_bytes | 63968378880 | 65526835200 |
 
 ## db:Qwen/Qwen2.5-3B (decoder-only)
@@ -2382,7 +2724,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 34.334572544 | 72.705384448 |
 | conv_serving_weight_bytes | 142916714496 | 145410768896 |
+| creq_gb | [431.359156, 640.0] | [1021.163872, 1536.0] |
+| creq_params | 30576476160 | 72705384448 |
 | serving_weight_bytes | 142916714496 | 145410768896 |
 
 ## db:Qwen/Qwen2.5-7B (decoder-only)
@@ -2398,37 +2743,79 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
-| cluster_b_eff_4096 | 283 | 280 |
-| conv_serving_weight_bytes | 19136512000 | 19399319552 |
-| counter_params | 7015636992 | 9699991552 |
-| disagg_b_eff_4096 | 283 | 280 |
-| eng_None_32768_params | 7015636992 | 9699991552 |
-| eng_None_32768_total_mb | 15588.199629 | 20956.908749 |
-| eng_None_4096_params | 7015636992 | 9699991552 |
-| eng_None_4096_total_mb | 14558.078566 | 19926.787686 |
-| eng_llamacpp_32768_params | 7015636992 | 9699991552 |
-| eng_llamacpp_32768_total_mb | 15588.199629 | 20956.908749 |
-| eng_llamacpp_4096_params | 7015636992 | 9699991552 |
-| eng_llamacpp_4096_total_mb | 14558.078566 | 19926.787686 |
-| genz_decode_weights_mb | 13130.0 | 18250.0 |
-| genz_prefill_weights_mb | 13380.0 | 18500.0 |
-| report_params | 7015636992 | 9699991552 |
-| report_total_gb | 14.663439483 | 20.032148603 |
-| report_weight_gb | 14.031273984 | 19.399983104 |
-| runtime_chunked | [12.146839, 13380.0, 15.0] | [16.746033, 18500.0, 15.0] |
-| runtime_decode | [9.664202, 13130.0, 10.078] | [12.789541, 18250.0, 10.078] |
-| runtime_prefill | [26.442664, 13380.0, 10.0] | [35.605261, 18500.0, 10.0] |
-| serving_weight_bytes | 19136512000 | 19399319552 |
-| trainmem_total_gb | 138.909612 | 192.059833 |
-| trainmem_weight_gb | 42.093822 | 58.199949 |
+| advtrain_full | [42.093822, 138.909612] | [64.327827, 212.281831] |
+| advtrain_lora | [14.25213, 18.382866] | [21.663465, 26.535335] |
+| cluster_b_eff_4096 | 283 | 128 |
+| conv_kv_size | 10240 | 20480 |
+| conv_prefill_weights_mb | 18500.0 | 20448.0 |
+| conv_serving_weight_bytes | 19136512000 | 21441945600 |
+| copt_quick | [10999562240, 178.019054, 2.749891] | [11978932224, 193.786911, 2.994733] |
+| counter_params | 7015636992 | 10721304576 |
+| creq_gb | [138.595898, 192.0] | [152.898926, 192.0] |
+| creq_params | 9699328000 | 10720972800 |
+| disagg_b_eff_4096 | 283 | 128 |
+| disagg_transfer_bytes_640 | 13107200 | 26214400 |
+| eng_None_32768_kv_mb | 671.08864 | 1342.17728 |
+| eng_None_32768_params | 7015636992 | 10721304576 |
+| eng_None_32768_total_mb | 15588.199629 | 23670.623437 |
+| eng_None_4096_kv_mb | 83.88608 | 167.77216 |
+| eng_None_4096_params | 7015636992 | 10721304576 |
+| eng_None_4096_total_mb | 14558.078566 | 22053.299814 |
+| eng_llamacpp_32768_kv_mb | 671.08864 | 1342.17728 |
+| eng_llamacpp_32768_params | 7015636992 | 10721304576 |
+| eng_llamacpp_32768_total_mb | 15588.199629 | 23670.623437 |
+| eng_llamacpp_4096_kv_mb | 83.88608 | 167.77216 |
+| eng_llamacpp_4096_params | 7015636992 | 10721304576 |
+| eng_llamacpp_4096_total_mb | 14558.078566 | 22053.299814 |
+| facts_kv_bytes_4096 | 83886080 | 167772160 |
+| facts_kv_bytes_per_token | 20480 | 40960 |
+| facts_weight_bytes | 19399319552 | 21441945600 |
+| genz_chunked_kv_mb | 90.0 | 180.0 |
+| genz_decode_kv_mb | 80.0 | 160.0 |
+| genz_decode_weights_mb | 13130.0 | 19264.0 |
+| genz_kv_size | 10240 | 20480 |
+| genz_prefill_kv_mb | 80.0 | 160.0 |
+| genz_prefill_weights_mb | 13380.0 | 20448.0 |
+| kv_gb@32768 | 0.67108864 | 1.34217728 |
+| kv_gb@4096 | 0.08388608 | 0.16777216 |
+| kvcost_active_params | 7015636992 | 10721304576 |
+| kvgeo_32768 | [20480.0, 40, 0, 0.0, 16, 0.0] | [40960.0, 40, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [20480.0, 40, 0, 0.0, 16, 0.0] | [40960.0, 40, 0, 0.0, 16, 0.0] |
+| kvplan_ws_gib | 23.96 | 47.76 |
+| kvplan_ws_tokens | 1255982 | 1251844 |
+| maxbatch_80gb_4096 | 565 | 245 |
+| prefix_kv_bytes_per_token | 20480 | 40960 |
+| report_kv_gb | 0.08388608 | 0.16777216 |
+| report_params | 7015636992 | 10721304576 |
+| report_total_gb | 14.663439483 | 22.175437947 |
+| report_weight_gb | 14.031273984 | 21.442609152 |
+| runtime_chunked | [12.146839, 13380.0, 15.0] | [18.501773, 20448.0, 30.0] |
+| runtime_decode | [9.664202, 13130.0, 10.078] | [13.415532, 19264.0, 20.156] |
+| runtime_prefill | [26.442664, 13380.0, 10.0] | [39.097446, 20448.0, 20.0] |
+| serving_bytes_per_token | 20480 | 40960 |
+| serving_requests_8gib_1k | 409 | 204 |
+| serving_weight_bytes | 19136512000 | 21441945600 |
+| slice_mib_16x4352 | [25856, true] | [29696, true] |
+| tpar_mem_gb | 152.996912 | 168.725132 |
+| tpar_options_8x80 | 15 | 11 |
+| traingenz_params | 11000217600 | 11979587584 |
+| trainmem_total_gb | 138.909612 | 212.281831 |
+| trainmem_weight_gb | 42.093822 | 64.327827 |
+| vllm_limits | [170412, 2726592, 170412, 1, 0, 0.0, true] | [81529, 1304464, 81529, 1, 0, 0.0, true] |
+| vllm_running_1024 | 1024 | 1019 |
+| vllm_running_8192 | 322 | 154 |
 
 ## db:deepseek-ai/DeepSeek-V3-Base (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 21.113602048 | 671.0264192 |
 | conv_kv_size | 874496 | 35136 |
 | conv_prefill_weights_mb | 73563.0 | 1279879.375 |
 | conv_serving_weight_bytes | 75283038208 | 1342052838400 |
+| copt_quick | [38568198144, 623.419526, 9.64205] | [671026419200, 10805.996885, 167.756605] |
+| creq_gb | [298.717858, 640.0] | [9397.497298, 18048.0] |
+| creq_params | 21113602048 | 671026419200 |
 | disagg_transfer_bytes_640 | 1119354880 | 44974080 |
 | genz_chunked_kv_mb | 7686.0 | 308.8125 |
 | genz_decode_kv_mb | 152.5 | 274.5 |
@@ -2443,14 +2830,20 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_bytes_per_token | 1748992 | 70272 |
 | serving_requests_8gib_1k | 4 | 119 |
 | serving_weight_bytes | 75283038208 | 1342052838400 |
+| time_params | 38568198144 | 667980916736 |
+| tpar_mem_gb | 605.788346 | 10345.618016 |
 
 ## db:deepseek-ai/deepseek-moe-16b-base (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 3.107979264 | 16.375729856 |
 | cluster_b_eff_4096 | 40 | 10 |
 | conv_prefill_weights_mb | 5287.0 | 31234.0 |
 | conv_serving_weight_bytes | 5124390912 | 32751459712 |
+| copt_quick | [2771910656, 44.951897, 0.692978] | [16375729856, 263.973386, 4.093932] |
+| creq_gb | [45.833832, 80.0] | [231.582341, 768.0] |
+| creq_params | 3107979264 | 16375729856 |
 | disagg_b_eff_4096 | 40 | 10 |
 | genz_decode_weights_mb | 30871.0 | 30834.0 |
 | genz_ffn_kinds | {"MoE": 28} | {"Dense": 1, "MoE": 27} |
@@ -2459,6 +2852,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | runtime_decode | [8.410507, 30871.0, 112.875] | [8.923105, 30834.0, 112.875] |
 | runtime_prefill | [23.707989, 31271.0, 112.0] | [25.13573, 31234.0, 112.0] |
 | serving_weight_bytes | 5124390912 | 32751459712 |
+| time_params | 2771910656 | 16375844864 |
+| tpar_mem_gb | 44.389964 | 253.885247 |
+| tpar_options_8x80 | 80 | 8 |
 
 ## db:intfloat/multilingual-e5-large-instruct (decoder-only)
 
@@ -2467,6 +2863,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | cluster_b_eff_4096 | 103 | 102 |
 | conv_prefill_weights_mb | 1744.570312 | 1745.574219 |
 | conv_serving_weight_bytes | 1317310464 | 1829414912 |
+| copt_quick | [914657280, 14.864898, 0.228664] | [914707456, 14.865705, 0.228677] |
 | disagg_b_eff_4096 | 103 | 102 |
 | genz_prefill_weights_mb | 1552.570312 | 1553.574219 |
 | runtime_chunked | [1.458098, 1552.57, 72.0] | [1.458996, 1553.574, 72.0] |
@@ -2477,17 +2874,25 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 11.162681344 | 11.162976704 |
 | conv_serving_weight_bytes | 21734424576 | 22325953408 |
+| copt_quick | [11162681344, 180.541085, 2.79067] | [11162976704, 180.545841, 2.790744] |
+| creq_gb | [158.992248, 192.0] | [158.996383, 192.0] |
+| creq_params | 11162681344 | 11162976704 |
 | serving_weight_bytes | 21734424576 | 22325953408 |
 
 ## db:tiiuae/falcon-mamba-7b (state-space)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 5.901385728 | 54.450982912 |
 | cluster_b_eff_4096 | 4 | 1 |
 | conv_kv_size | 524288 | 0 |
 | conv_serving_weight_bytes | 22007513088 | 108901965824 |
 | conv_state_bytes | 0 | 293601280 |
+| copt_quick | [11270094848, 182.930291, 2.817524] | [54450982912, 878.142589, 13.612746] |
+| creq_gb | [85.263645, 141.0] | [764.958006, 1128.0] |
+| creq_params | 5901385728 | 54450982912 |
 | disagg_b_eff_4096 | 4 | 1 |
 | disagg_transfer_bytes_640 | 671088640 | 293601280 |
 | eng_None_32768_state_mb | 0.0 | 293.60128 |
@@ -2500,11 +2905,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_4096_total_mb | 109184.879821 | 109478.481101 |
 | facts_weight_bytes | 104741625856 | 108901965824 |
 | genz_kv_size | 524288 | 0 |
+| lora_adapter_gb | 0.570425344 | 3.59481344 |
+| lora_scratch_gb | 12.018392236 | 192.294275777 |
 | prefix_kv_bytes_per_token | 1048576 | 0 |
 | serving_bytes_per_token | 1048576 | 0 |
 | serving_requests_8gib_1k | 8 | 29 |
 | serving_state_bytes | 0 | 293601280 |
 | serving_weight_bytes | 22007513088 | 108901965824 |
+| time_params | 11270094848 | 54451511296 |
+| tpar_mem_gb | 177.118957 | 842.088485 |
+| tpar_options_8x80 | 11 | 0 |
 | traingenz_params | 11271143424 | 54450982912 |
 
 ## fixture:EleutherAI_gpt-neo-1.3B.json (decoder-only)
@@ -2518,6 +2928,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | conv_serving_weight_bytes | null | 3633131520 |
 | conv_serving_weight_bytes_error | "TypeError: unsupported operand type(s) for *: 'int' and 'NoneType'" | null |
 | conv_weights_error | "TypeError: unsupported operand type(s) for /: 'NoneType' and 'int'" | null |
+| copt_quick | null | [2231701504, 36.208225, 0.557925] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', " | null |
 | counter_params | 706906112 | 1310885888 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 48 |
@@ -2554,8 +2966,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_gb@4096 | 0.0 | 0.805306368 |
 | kv_sliding_layers | 24 | 12 |
 | kv_source | "uniform" | "layer_plan:attention_types" |
+| kvcost_active_params | 706906112 | 1310885888 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [196608.0, 12, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [196608.0, 12, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 231.43 |
+| kvplan_ws_tokens | null | 1263892 |
+| lora_adapter_gb | null | 0.113246208 |
+| lora_error | "TypeError: unsupported operand type(s) for *: 'int' and 'NoneType'" | null |
+| lora_scratch_gb | null | 3.004598059 |
+| maxbatch_80gb_4096 | 1024 | 71 |
 | model_type | "hybrid" | "decoder-only" |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', " | null |
 | prefix_kv_bytes_per_token | null | 196608 |
@@ -2579,6 +2999,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | sim_max_running | 342 | 400 |
 | slice_mib_16x4352 | [25088, true] | [17664, true] |
 | state_gb | 0.00172032 | 0.0 |
+| tpar_mem_gb | null | 36.528152 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', " | null |
+| tpar_options_8x80 | null | 104 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', " | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', " | null |
 | traingenz_params | null | 2231898112 |
 | vllm_limits | [22571, 361136, 22571, 1, 0, 0.0, true] | [45143, 722288, 45143, 1, 1, 0.0, true] |
@@ -2589,10 +3013,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [3.4828, 11.49324] | [51.350974, 169.458213] |
+| advtrain_lora | [1.353871, 4.026812] | [17.309929, 21.578476] |
 | cluster_b_eff_4096 | 1 | 48 |
 | conv_kv_size | 262144 | 65536 |
 | conv_prefill_weights_mb | 12852.0 | 13812.046875 |
 | conv_serving_weight_bytes | 13214154752 | 16848555744 |
+| copt_quick | null | [8424277872, 136.371756, 2.106069] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config" | null |
 | counter_params | 580466688 | 8558495600 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 48 |
@@ -2627,8 +3055,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 32 |
 | kv_gb@32768 | 0.0 | 4.294967296 |
 | kv_gb@4096 | 0.0 | 0.536870912 |
+| kvcost_active_params | 580466688 | 8558495600 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [131072.0, 32, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [131072.0, 32, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 168.75 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 168.75 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 153.29 |
+| kvplan_ws_tokens | null | 1255722 |
+| maxbatch_80gb_4096 | 645 | 72 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config" | null |
 | prefix_kv_bytes_per_token | null | 131072 |
 | report_kv_gb | 0.0 | 0.536870912 |
@@ -2649,6 +3085,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config', 'tie_word_embeddings', 'torch_dtype'," | null |
 | sim_max_running | 104 | 400 |
 | slice_mib_16x4352 | [65536, true] | [32256, true] |
+| tpar_mem_gb | null | 132.723579 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config" | null |
+| tpar_options_8x80 | null | 22 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config" | null |
 | traingenz_params | null | 8424277872 |
 | trainmem_total_gb | 11.49324 | 169.458213 |
@@ -2684,6 +3124,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 30} | {"MHA-global": 8, "Recurrent": 22} |
 | genz_prefill_kv_mb | 240.0 | 64.257812 |
 | genz_prefill_weights_mb | 3632.0 | 5156.257812 |
+| lora_adapter_gb | 0.115081216 | 0.15545984 |
 | prefix_kv_bytes_per_token | 61440 | 16384 |
 | runtime_chunked | [3.342165, 3632.0, 45.0] | [4.692953, 5156.258, 12.516] |
 | runtime_decode | [3.563216, 3376.0, 30.234] | [4.303897, 4900.258, 9.094] |
@@ -2693,6 +3134,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_state_bytes | 0 | 270336 |
 | serving_weight_bytes | 4861198336 | 5406978048 |
 | slice_mib_16x4352 | [12288, true] | [12032, true] |
+| tpar_mem_gb | 42.076429 | 44.208195 |
 | vllm_limits | [263394, 4214304, 263394, 1, 0, 786432.0, true] | [264915, 4238640, 264915, 1, 0, 786432.0, true] |
 | vllm_running_8192 | 496 | 498 |
 
@@ -2700,21 +3142,32 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 2.8901376 | 228.68933632 |
 | cluster_b_eff_4096 | 33 | 1 |
 | conv_serving_weight_bytes | 8445493248 | 457378672640 |
+| copt_quick | [4447272960, 72.677689, 1.111818] | [228689336320, 3682.974909, 57.172334] |
+| creq_gb | [35.89868, 80.0] | [3204.133892, 6144.0] |
+| creq_params | 2386821120 | 228689336320 |
 | disagg_b_eff_4096 | 33 | 1 |
 | facts_weight_bytes | 230023192576 | 230023224320 |
 | serving_weight_bytes | 8445493248 | 457378672640 |
+| time_params | 4447272960 | 229304285184 |
+| tpar_mem_gb | 57.579027 | 3525.912775 |
+| tpar_options_8x80 | 78 | 0 |
 | traingenz_params | 228250853376 | 228689336320 |
 
 ## fixture:MiniMaxAI_MiniMax-Text-01.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 12.726042624 | 456.089084416 |
 | conv_kv_size | 163840 | 20480 |
 | conv_prefill_weights_mb | 851439.0 | 869919.0 |
 | conv_serving_weight_bytes | 47756869632 | 912178168832 |
 | conv_state_bytes | 0 | 293601280 |
+| copt_quick | [28127526912, 455.63149, 7.031882] | [456089084416, 7345.812566, 114.022271] |
+| creq_gb | [151.535955, 192.0] | [6388.213549, 12288.0] |
+| creq_params | 10612113408 | 456089084416 |
 | disagg_transfer_bytes_640 | 209715200 | 319815680 |
 | eng_None_32768_state_mb | 0.0 | 293.60128 |
 | eng_None_32768_total_mb | 917067.869389 | 917361.470669 |
@@ -2737,6 +3190,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 80} | {"MHA-global": 10, "Recurrent": 70} |
 | genz_prefill_kv_mb | 1280.0 | 440.0 |
 | genz_prefill_weights_mb | 851439.0 | 869919.0 |
+| lora_adapter_gb | 0.72351744 | 1.06692608 |
+| lora_scratch_gb | 13.520691266 | 36.055176708 |
 | prefix_kv_bytes_per_token | 327680 | 40960 |
 | runtime_chunked_error | "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 831.4833984375 GB, KV Cache:0.234375. \n System:{'Flops': 400, 'Memory_size': 200, 'Memo" | "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 849.5302734375 GB, KV Cache:0.576171875. \n System:{'Flops': 400, 'Memory_size': 200, 'M" |
 | runtime_decode_error | "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 829.19384765625 GB, KV Cache:0.234375. \n System:{'Flops': 400, 'Memory_size': 200, 'Mem" | "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 847.24072265625 GB, KV Cache:1.123046875. \n System:{'Flops': 400, 'Memory_size': 200, '" |
@@ -2744,6 +3199,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_bytes_per_token | 327680 | 40960 |
 | serving_state_bytes | 0 | 293601280 |
 | serving_weight_bytes | 47756869632 | 912178168832 |
+| time_params | 28127526912 | 457319264256 |
+| tpar_mem_gb | 358.866931 | 7030.830914 |
+| tpar_options_8x80 | 1 | 0 |
 | traingenz_params | 449405386752 | 456089084416 |
 | vllm_limits | [0, 0, 0, 1, 0, 0.0, false] | [0, 0, 0, 1, 0, 293601280.0, false] |
 
@@ -2751,9 +3209,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 4.13335552 | 21.506565888 |
 | cluster_b_eff_4096 | 71 | 1 |
 | conv_prefill_weights_mb | 11948.75 | 41020.0 |
 | conv_serving_weight_bytes | 11751260160 | 43013131776 |
+| copt_quick | [6537216000, 106.001636, 1.634304] | [21506565888, 347.008169, 5.376641] |
+| creq_gb | [55.236466, 80.0] | [303.494576, 640.0] |
+| creq_params | 3773843748 | 21506565888 |
 | disagg_b_eff_4096 | 71 | 1 |
 | facts_full_attention | true | false |
 | facts_layers | [52, 0, 0, null] | [13, 39, 0, 4096] |
@@ -2768,6 +3230,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 11751260160 | 43013131776 |
 | sim_max_running | 400 | 279 |
 | slice_mib_16x4352 | [26368, true] | [58368, true] |
+| time_params | 6230507520 | 21506831360 |
+| tpar_mem_gb | 94.91123 | 334.430729 |
+| tpar_options_8x80 | 33 | 2 |
 | traingenz_params | 6537748480 | 283495505920 |
 | vllm_limits | [36572, 585152, 36572, 1, 0, 0.0, true] | [73290, 1172640, 73290, 1, 3, 0.0, true] |
 | vllm_running_1024 | 457 | 229 |
@@ -2777,8 +3242,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [1.398703, 4.889611] | [50.482741, 166.593046] |
+| advtrain_lora | [0.659172, 3.262644] | [17.020518, 21.260124] |
 | cluster_b_eff_4096 | 1 | 12 |
 | conv_serving_weight_bytes | 14230224896 | 16827047936 |
+| copt_quick | null | [8413523968, 136.198618, 2.103381] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type" | null |
 | counter_params | 233117184 | 8413790208 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 12 |
@@ -2800,8 +3269,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_gb@32768 | 0.0 | 17.179869184 |
 | kv_gb@4096 | 0.0 | 2.147483648 |
 | kv_source | "uniform" | "_layer_metadata" |
+| kvcost_active_params | 233117184 | 8413790208 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [524288.0, 32, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [524288.0, 32, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 500.0 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 500.0 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 613.23 |
+| kvplan_ws_tokens | null | 1255884 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type" | null |
 | prefix_kv_bytes_per_token | null | 524288 |
 | runtime_chunked | null | [13.611333, 14790.0, 384.0] |
@@ -2818,6 +3294,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type', 'text_config', 'transformers_version'" | null |
 | sim_max_running | 108 | 106 |
 | slice_mib_16x4352 | [62208, true] | [63744, true] |
+| tpar_mem_gb | null | 132.378033 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type" | null |
+| tpar_options_8x80 | null | 22 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type" | null |
 | traingenz_params | null | 8413523968 |
 | trainmem_total_gb | 4.889611 | 166.593046 |
@@ -2829,12 +3309,18 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [478.403953, 1578.733045] | [479.913903, 1583.715879] |
+| advtrain_lora | [159.573366, 176.599359] | [160.076683, 177.153007] |
+| ccb_params_b | 2.165833728 | 79.674317568 |
 | cluster_b_eff_4096 | 93 | 1 |
 | conv_kv_size | 49152 | 12288 |
 | conv_prefill_weights_mb | 150467.0 | 151966.390625 |
 | conv_serving_weight_bytes | 5454168064 | 159348635136 |
 | conv_state_bytes | 0 | 77266944 |
+| copt_quick | [2937585664, 47.850791, 0.734396] | [79674317568, 1283.312174, 19.918579] |
 | counter_params | 79733992192 | 79985650432 |
+| creq_gb | [29.35546, 40.0] | [1117.762568, 2256.0] |
+| creq_params | 1930952704 | 79674317568 |
 | disagg_b_eff_4096 | 93 | 1 |
 | disagg_transfer_bytes_640 | 62914560 | 92995584 |
 | eng_None_32768_params | 79733992192 | 79985650432 |
@@ -2857,6 +3343,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 48} | {"MHA-global": 12, "Recurrent": 36} |
 | genz_prefill_kv_mb | 384.0 | 169.6875 |
 | genz_prefill_weights_mb | 150467.0 | 151966.390625 |
+| kvcost_active_params | 3934530304 | 4186188544 |
+| kvplan_ws_gib | 28.86 | 28.85 |
+| kvplan_ws_tokens | 1260701 | 1260417 |
+| lora_adapter_gb | 0.182452224 | 0.318031872 |
+| lora_scratch_gb | 7.511495148 | 12.018392236 |
 | prefix_kv_bytes_per_token | 98304 | 24576 |
 | report_params | 79733992192 | 79985650432 |
 | report_total_gb | 159.8747742 | 160.37809068 |
@@ -2868,6 +3359,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 85 | 83 |
 | serving_state_bytes | 0 | 77266944 |
 | serving_weight_bytes | 5454168064 | 159348635136 |
+| time_params | 2937585664 | 79985650432 |
+| tpar_mem_gb | 41.43393 | 1228.599298 |
+| tpar_options_8x80 | 104 | 0 |
 | trainmem_total_gb | 1578.733045 | 1583.715879 |
 | trainmem_weight_gb | 478.403953 | 479.913903 |
 
@@ -2875,11 +3369,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [29.670749, 97.913472] | [31.263123, 103.168307] |
+| advtrain_lora | [10.083188, 13.62906] | [10.613979, 14.212931] |
 | cluster_b_eff_4096 | 66 | 182 |
 | conv_kv_size | 262144 | 16384 |
 | conv_prefill_weights_mb | 12852.0 | 9234.023438 |
 | conv_serving_weight_bytes | 13214154752 | 9078539264 |
 | conv_state_bytes | 0 | 51511296 |
+| copt_quick | [4375183360, 70.903503, 1.093796] | [4539269632, 73.545292, 1.134817] |
 | counter_params | 4945124864 | 5210520576 |
 | disagg_b_eff_4096 | 66 | 182 |
 | disagg_transfer_bytes_640 | 83886080 | 72482816 |
@@ -2903,6 +3400,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 8, "Recurrent": 24} |
 | genz_prefill_kv_mb | 512.0 | 177.125 |
 | genz_prefill_weights_mb | 8345.0 | 9234.023438 |
+| kvcost_active_params | 4945124864 | 5210520576 |
+| kvplan_ws_tokens | 1259598 | 1259299 |
+| lora_adapter_gb | 0.228589568 | 0.280702976 |
+| maxbatch_80gb_4096 | 274 | 272 |
 | prefix_kv_bytes_per_token | 131072 | 32768 |
 | report_params | 4945124864 | 5210520576 |
 | report_total_gb | 10.422165791 | 10.952957215 |
@@ -2914,6 +3415,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 64 | 100 |
 | serving_state_bytes | 0 | 51511296 |
 | serving_weight_bytes | 7478968320 | 9078539264 |
+| tpar_mem_gb | 64.199393 | 71.565697 |
+| tpar_options_8x80 | 80 | 73 |
 | traingenz_params | 4375511040 | 4539269632 |
 | trainmem_total_gb | 97.913472 | 103.168307 |
 | trainmem_weight_gb | 29.670749 | 31.263123 |
@@ -2922,12 +3425,18 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [167.5161, 552.80313] | [172.227264, 568.349971] |
+| advtrain_lora | [56.031638, 64.172356] | [57.602026, 65.899782] |
+| ccb_params_b | 8.852078592 | 27.361714416 |
 | conv_kv_size | 262144 | 32768 |
 | conv_layers | [0, 32] | [0, 64] |
 | conv_prefill_weights_mb | 12852.0 | 51299.21875 |
 | conv_serving_weight_bytes | 13214154752 | 54723428832 |
 | conv_state_bytes | 0 | 153944064 |
+| copt_quick | [26366443520, 426.351945, 6.591611] | [27361714416, 442.375807, 6.840429] |
 | counter_params | 27919350016 | 28704543984 |
+| creq_gb | [126.573345, 192.0] | [385.708247, 640.0] |
+| creq_params | 8852078592 | 27361714416 |
 | disagg_transfer_bytes_640 | 167772160 | 195887104 |
 | eng_None_32768_params | 27919350016 | 28704543984 |
 | eng_None_32768_state_mb | 0.0 | 153.944064 |
@@ -2949,6 +3458,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 64} | {"MHA-global": 16, "Recurrent": 48} |
 | genz_prefill_kv_mb | 1024.0 | 402.8125 |
 | genz_prefill_weights_mb | 46450.0 | 51299.21875 |
+| kvcost_active_params | 27919350016 | 28704543984 |
+| kvplan_ws_gib | 75.3 | 75.25 |
+| kvplan_ws_tokens | 1233697 | 1232849 |
+| lora_adapter_gb | 0.889192448 | 0.9967616 |
+| maxbatch_80gb_4096 | 29 | 26 |
 | prefix_kv_bytes_per_token | 262144 | 65536 |
 | report_params | 27919350016 | 28704543984 |
 | report_total_gb | 56.938550728 | 58.508938664 |
@@ -2960,6 +3474,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 32 | 38 |
 | serving_state_bytes | 0 | 153944064 |
 | serving_weight_bytes | 46163558400 | 54723428832 |
+| time_params | 8999534592 | 28704543984 |
+| tpar_mem_gb | 366.763337 | 425.135209 |
 | traingenz_params | 26367754240 | 27361714416 |
 | trainmem_total_gb | 552.80313 | 568.349971 |
 | trainmem_weight_gb | 167.5161 | 172.227264 |
@@ -2968,12 +3484,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741192, 3.684174] | [1.506659, 5.087531] |
+| advtrain_lora | [0.440002, 3.021556] | [0.695158, 3.302227] |
 | cluster_b_eff_4096 | 282 | 246 |
 | conv_kv_size | 262144 | 18432 |
 | conv_layers | [0, 32] | [12, 12] |
 | conv_prefill_weights_mb | 12852.0 | 578.148926 |
 | conv_serving_weight_bytes | 13214154752 | 502219776 |
 | conv_state_bytes | 0 | 21270528 |
+| copt_quick | [160131072, 2.630204, 0.040033] | [251109888, 4.094962, 0.062777] |
 | counter_params | 123532032 | 251109888 |
 | disagg_b_eff_4096 | 282 | 246 |
 | disagg_transfer_bytes_640 | 23592960 | 44863488 |
@@ -2999,8 +3518,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 12 |
 | kv_gb@32768 | 1.207959552 | 1.22923008 |
 | kv_gb@4096 | 0.150994944 | 0.172265472 |
+| kvcost_active_params | 123532032 | 251109888 |
 | kvgeo_32768 | [36864.0, 12, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 21270528.0] |
 | kvgeo_4096 | [36864.0, 12, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 21270528.0] |
+| kvplan_ws_tokens | 1265157 | 1265012 |
+| maxbatch_80gb_4096 | 376 | 330 |
 | report_kv_gb | 0.150994944 | 0.172265472 |
 | report_params | 123532032 | 251109888 |
 | report_total_gb | 0.500594012 | 0.781274358 |
@@ -3012,6 +3534,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_state_bytes | 0 | 21270528 |
 | serving_weight_bytes | 273377280 | 502219776 |
 | slice_mib_16x4352 | [8960, true] | [9472, true] |
+| tpar_mem_gb | 3.075599 | 4.628358 |
 | traingenz_params | 160167936 | 251109888 |
 | trainmem_total_gb | 3.684174 | 5.087531 |
 | trainmem_weight_gb | 0.741192 | 1.506659 |
@@ -3022,11 +3545,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [4.923522, 16.247623] | [23.703706, 78.222231] |
+| advtrain_lora | [1.834112, 4.555077] | [8.094173, 11.441145] |
 | cluster_b_eff_4096 | 1 | 21 |
 | conv_kv_size | 262144 | 196608 |
 | conv_layers | [0, 32] | [24, 24] |
 | conv_prefill_weights_mb | 12852.0 | 5435.0 |
 | conv_serving_weight_bytes | 13214154752 | 7899904256 |
+| copt_quick | null | [3949952128, 63.87206, 0.987488] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact" | null |
 | counter_params | 820587008 | 3950617728 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 21 |
@@ -3060,8 +3587,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 24 |
 | kv_gb@32768 | 0.0 | 12.884901888 |
 | kv_gb@4096 | 0.0 | 1.610612736 |
+| kvcost_active_params | 820587008 | 3950617728 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 461.75 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 461.75 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 461.76 |
+| kvplan_ws_tokens | null | 1260904 |
+| maxbatch_80gb_4096 | 1024 | 32 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact" | null |
 | prefix_kv_bytes_per_token | null | 393216 |
 | report_kv_gb | 0.0 | 1.610612736 |
@@ -3082,6 +3617,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_factor', 'initializer_range', 'model_type', " | null |
 | sim_max_running | 331 | 66 |
 | slice_mib_16x4352 | [28160, true] | [45056, true] |
+| tpar_mem_gb | null | 63.477546 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact" | null |
+| tpar_options_8x80 | null | 92 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact" | null |
 | traingenz_params | null | 3949952128 |
 | trainmem_total_gb | 16.247623 | 78.222231 |
@@ -3094,10 +3633,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [16.38833, 54.081491] | [28.298509, 93.38508] |
+| advtrain_lora | [5.655715, 8.75884] | [9.625774, 13.125906] |
 | cluster_b_eff_4096 | 26 | 24 |
 | conv_kv_size | 262144 | 163840 |
 | conv_prefill_weights_mb | 12852.0 | 6891.25 |
 | conv_serving_weight_bytes | 13214154752 | 9432836352 |
+| copt_quick | [3612999680, 58.632346, 0.90325] | [4716418176, 76.397384, 1.179105] |
 | counter_params | 2731388416 | 4716418176 |
 | disagg_b_eff_4096 | 26 | 24 |
 | eng_None_32768_params | 2731388416 | 4716418176 |
@@ -3109,12 +3651,20 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_4096_params | 2731388416 | 4716418176 |
 | eng_llamacpp_4096_total_mb | 7084.307046 | 11054.366566 |
 | facts_weight_bytes | 7226332160 | 9432836352 |
+| kvcost_active_params | 2731388416 | 4716418176 |
+| kvplan_host_gib | 384.75 | 384.25 |
+| kvplan_shm_gib | 384.75 | 384.25 |
+| kvplan_ws_gib | 385.0 | 384.31 |
+| kvplan_ws_tokens | 1261541 | 1259302 |
+| maxbatch_80gb_4096 | 40 | 38 |
 | report_params | 2731388416 | 4716418176 |
 | report_total_gb | 7.408613089 | 11.378672609 |
 | report_weight_gb | 5.462776832 | 9.432836352 |
 | serving_weight_bytes | 6968442880 | 9432836352 |
 | sim_max_running | 196 | 190 |
 | slice_mib_16x4352 | [39168, true] | [41472, true] |
+| tpar_mem_gb | 58.247388 | 75.234986 |
+| tpar_options_8x80 | 80 | 60 |
 | traingenz_params | 3613327360 | 4716418176 |
 | trainmem_total_gb | 54.081491 | 93.38508 |
 | trainmem_weight_gb | 16.38833 | 28.298509 |
@@ -3126,11 +3676,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [4.923522, 16.247623] | [24.184491, 79.808821] |
+| advtrain_lora | [1.834112, 4.555077] | [8.254435, 11.617432] |
 | cluster_b_eff_4096 | 1 | 21 |
 | conv_kv_size | 131072 | 196608 |
 | conv_layers | [16, 16] | [24, 24] |
 | conv_prefill_weights_mb | 6676.0 | 5435.0 |
 | conv_serving_weight_bytes | 6738149376 | 8060165888 |
+| copt_quick | null | [4030082944, 65.162166, 1.007521] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', " | null |
 | counter_params | 820587008 | 4030748544 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 21 |
@@ -3164,8 +3718,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 24 |
 | kv_gb@32768 | 0.0 | 12.884901888 |
 | kv_gb@4096 | 0.0 | 1.610612736 |
+| kvcost_active_params | 820587008 | 4030748544 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 461.5 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 461.5 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 461.73 |
+| kvplan_ws_tokens | null | 1260814 |
+| maxbatch_80gb_4096 | 1024 | 32 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', " | null |
 | prefix_kv_bytes_per_token | null | 393216 |
 | report_kv_gb | 0.0 | 1.610612736 |
@@ -3186,6 +3748,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', 'is_encoder_decoder', 'model_type', 'num" | null |
 | sim_max_running | 331 | 66 |
 | slice_mib_16x4352 | [28160, true] | [45056, true] |
+| tpar_mem_gb | null | 64.711561 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', " | null |
+| tpar_options_8x80 | null | 92 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', " | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', " | null |
 | traingenz_params | null | 4030082944 |
 | trainmem_total_gb | 16.247623 | 79.808821 |
@@ -3198,6 +3764,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [14.67612, 48.431196] | [15.462552, 51.026422] |
+| advtrain_lora | [5.095529, 7.39759] | [5.357673, 7.685949] |
 | cluster_b_eff_4096 | 13 | 44 |
 | conv_kv_size | 276480 | 92160 |
 | conv_prefill_weights_mb | 11112.5 | 6670.771484 |
@@ -3235,8 +3803,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_prefill_weights_mb | 9998.75 | 6670.771484 |
 | kv_gb@32768 | 3.01989888 | 6.03979776 |
 | kv_gb@4096 | 0.37748736 | 0.75497472 |
+| kvcost_active_params | 2446020000 | 2577092000 |
 | kvgeo_32768 | [92160.0, 9, 54, 1342208.0, 144, 0.0] | [184320.0, 9, 54, 1342208.0, 80, 0.0] |
 | kvgeo_4096 | [92160.0, 9, 54, 1342208.0, 144, 0.0] | [184320.0, 9, 54, 1342208.0, 80, 0.0] |
+| kvplan_ws_gib | 108.36 | 216.68 |
+| kvplan_ws_tokens | 1262397 | 1262249 |
+| lora_adapter_gb | 0.24772608 | 0.36148736 |
+| lora_scratch_gb | 15.022990295 | 15.328144785 |
+| maxbatch_80gb_4096 | 123 | 66 |
 | prefix_kv_bytes_per_token | 552960 | 184320 |
 | report_kv_gb | 0.37748736 | 0.75497472 |
 | report_params | 2446020000 | 2577092000 |
@@ -3261,11 +3835,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 8.321499136 | 93.849948672 |
 | cluster_b_eff_4096 | 53 | 1 |
 | conv_kv_size | 65536 | 8192 |
 | conv_prefill_weights_mb | 175620.0 | 100410.0625 |
 | conv_serving_weight_bytes | 14495514624 | 187699897344 |
 | conv_state_bytes | 0 | 16056320 |
+| copt_quick | [8321499136, 134.717018, 2.080375] | [93849948672, 1511.725055, 23.462487] |
+| creq_gb | [107.870944, 141.0] | [1316.543527, 2256.0] |
+| creq_params | 7516192768 | 93849948672 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 53 | 1 |
 | disagg_transfer_bytes_640 | 83886080 | 26542080 |
@@ -3287,6 +3865,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_prefill_error | "ValueError: More than 1 unique layers not supported. Work in progress" | null |
 | genz_prefill_kv_mb | null | 79.3125 |
 | genz_prefill_weights_mb | null | 100410.0625 |
+| lora_adapter_gb | 0.29360128 | 0.45075456 |
+| lora_scratch_gb | 21.032186413 | 24.036784472 |
 | prefix_kv_bytes_per_token | 131072 | 16384 |
 | runtime_chunked | [109.243784, 175620.0, 96.0] | [66.166645, 100410.062, 42.625] |
 | runtime_decode | null | [31.680898, 97850.062, 69.312] |
@@ -3297,16 +3877,23 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 64 | 261 |
 | serving_state_bytes | 0 | 16056320 |
 | serving_weight_bytes | 14495514624 | 187699897344 |
+| time_params | 8321499136 | 52912758784 |
+| tpar_mem_gb | 118.747143 | 1448.278909 |
+| tpar_options_8x80 | 27 | 0 |
 | traingenz_params | 92879192064 | 93849948672 |
 
 ## fixture:bart_transformers-5.12-default.json (encoder-decoder)
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [1.529045, 5.128571] | [2.746405, 9.063136] |
+| advtrain_lora | [0.70262, 3.310436] | [1.108406, 3.756801] |
 | cluster_b_eff_4096 | 1 | 104 |
 | conv_kv_size | 98304 | 49152 |
 | conv_prefill_weights_mb | 5417.390625 | 1062.347656 |
 | conv_serving_weight_bytes | 5268774912 | 908623872 |
+| copt_quick | null | [454311936, 7.38388, 0.113578] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a" | null |
 | counter_params | 254840832 | 457734144 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 104 |
@@ -3337,8 +3924,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 12 |
 | kv_gb@32768 | 0.0 | 3.221225472 |
 | kv_gb@4096 | 0.0 | 0.402653184 |
+| kvcost_active_params | 254840832 | 457734144 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 115.81 |
+| kvplan_ws_tokens | null | 1264861 |
+| maxbatch_80gb_4096 | 168 | 123 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a" | null |
 | prefix_kv_bytes_per_token | null | 98304 |
 | report_kv_gb | 0.348782592 | 0.476381184 |
@@ -3356,6 +3948,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | null | 908623872 |
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'attention_dropout', 'bos_token_id', 'chun" | null |
 | slice_mib_16x4352 | [10240, true] | [14080, true] |
+| tpar_mem_gb | null | 8.011425 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a" | null |
+| tpar_options_8x80 | null | 96 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a" | null |
 | traingenz_params | null | 454311936 |
 | trainmem_total_gb | 5.128571 | 9.063136 |
@@ -3368,11 +3964,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [10.321296, 34.060278] | [23.703706, 78.222231] |
+| advtrain_lora | [3.63337, 6.534261] | [8.094173, 11.441145] |
 | cluster_b_eff_4096 | 1 | 21 |
 | conv_kv_size | 131072 | 196608 |
 | conv_layers | [16, 16] | [24, 24] |
 | conv_prefill_weights_mb | 6676.0 | 5435.0 |
 | conv_serving_weight_bytes | 6738149376 | 7768307968 |
+| copt_quick | null | [3884153984, 62.81271, 0.971038] |
+| copt_quick_error | "TypeError: 'NoneType' object is not iterable" | null |
 | counter_params | 1720216064 | 3950617728 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 21 |
@@ -3406,8 +4006,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 24 |
 | kv_gb@32768 | 0.0 | 12.884901888 |
 | kv_gb@4096 | 0.0 | 1.610612736 |
+| kvcost_active_params | 1720216064 | 3950617728 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 461.75 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 461.75 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 461.76 |
+| kvplan_ws_tokens | null | 1260904 |
+| maxbatch_80gb_4096 | 1024 | 32 |
 | prefix_error | "TypeError: 'NoneType' object is not iterable" | null |
 | prefix_kv_bytes_per_token | null | 393216 |
 | report_kv_gb | 0.0 | 1.610612736 |
@@ -3428,6 +4036,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "TypeError: 'NoneType' object is not iterable" | null |
 | sim_max_running | 322 | 66 |
 | slice_mib_16x4352 | [29952, true] | [44800, true] |
+| tpar_mem_gb | null | 62.464255 |
+| tpar_mem_gb_error | "TypeError: 'NoneType' object is not iterable" | null |
+| tpar_options_8x80 | null | 92 |
+| tpar_options_8x80_error | "TypeError: 'NoneType' object is not iterable" | null |
 | traingenz_error | "TypeError: 'NoneType' object is not iterable" | null |
 | traingenz_params | null | 3884153984 |
 | trainmem_total_gb | 34.060278 | 78.222231 |
@@ -3447,9 +4059,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 21.113602048 | 671.0264192 |
 | conv_kv_size | 874496 | 35136 |
 | conv_prefill_weights_mb | 73563.0 | 1281503.5 |
 | conv_serving_weight_bytes | 75283038208 | 1342052838400 |
+| copt_quick | [38568198144, 623.419526, 9.64205] | [671026419200, 10805.996885, 167.756605] |
+| creq_gb | [298.717858, 640.0] | [9397.497298, 18048.0] |
+| creq_params | 21113602048 | 671026419200 |
 | disagg_transfer_bytes_640 | 1119354880 | 44974080 |
 | genz_chunked_kv_mb | 7686.0 | 308.8125 |
 | genz_decode_kv_mb | 152.5 | 274.5 |
@@ -3464,14 +4080,20 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_bytes_per_token | 1748992 | 70272 |
 | serving_requests_8gib_1k | 4 | 119 |
 | serving_weight_bytes | 75283038208 | 1342052838400 |
+| time_params | 38568198144 | 667980916736 |
+| tpar_mem_gb | 605.788346 | 10345.618016 |
 
 ## fixture:deepseek-v3.json (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 21.113602048 | 671.0264192 |
 | conv_kv_size | 874496 | 35136 |
 | conv_prefill_weights_mb | 73563.0 | 1281503.5 |
 | conv_serving_weight_bytes | 75283038208 | 1342052838400 |
+| copt_quick | [38568198144, 623.419526, 9.64205] | [671026419200, 10805.996885, 167.756605] |
+| creq_gb | [298.717858, 640.0] | [9397.497298, 18048.0] |
+| creq_params | 21113602048 | 671026419200 |
 | disagg_transfer_bytes_640 | 1119354880 | 44974080 |
 | genz_chunked_kv_mb | 7686.0 | 308.8125 |
 | genz_decode_kv_mb | 152.5 | 274.5 |
@@ -3486,15 +4108,21 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_bytes_per_token | 1748992 | 70272 |
 | serving_requests_8gib_1k | 4 | 119 |
 | serving_weight_bytes | 75283038208 | 1342052838400 |
+| time_params | 38568198144 | 667980916736 |
+| tpar_mem_gb | 605.788346 | 10345.618016 |
 
 ## fixture:deepseek_v2_lite_chat_config.json (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 3.107979264 | 15.706485888 |
 | cluster_b_eff_4096 | 41 | 90 |
 | conv_kv_size | 110592 | 15552 |
 | conv_prefill_weights_mb | 5126.75 | 29957.5 |
 | conv_serving_weight_bytes | 4956356608 | 31412971776 |
+| copt_quick | [2687893504, 43.587645, 0.671973] | [15706485888, 253.186982, 3.926621] |
+| creq_gb | [45.833832, 80.0] | [222.212925, 768.0] |
+| creq_params | 3107979264 | 15706485888 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 41 | 90 |
 | disagg_transfer_bytes_640 | 141557760 | 19906560 |
@@ -3515,11 +4143,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_bytes_per_token | 221184 | 31104 |
 | serving_requests_8gib_1k | 37 | 269 |
 | serving_weight_bytes | 4956356608 | 31412971776 |
+| time_params | 2687893504 | 15725195264 |
+| tpar_mem_gb | 43.095974 | 243.57889 |
+| tpar_options_8x80 | 48 | 7 |
 
 ## fixture:eagle3-gpt-oss-20b-redhatai.json (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [6.794824, 22.42292] | [10.269625, 33.889762] |
+| advtrain_lora | [2.269964, 3.15778] | [3.428231, 4.431874] |
 | cluster_b_eff_4096 | 4940 | 4801 |
 | conv_serving_weight_bytes | 1509949440 | 2668233600 |
 | counter_params | 1132470720 | 1711604160 |
@@ -3532,10 +4165,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_32768_total_mb | 3181.396864 | 4339.663744 |
 | eng_llamacpp_4096_params | 1132470720 | 1711604160 |
 | eng_llamacpp_4096_total_mb | 2698.003328 | 3856.270208 |
+| kvcost_active_params | 1132470720 | 1711604160 |
+| kvplan_ws_gib | 2.42 | 2.41 |
+| kvplan_ws_tokens | 1264069 | 1263412 |
 | report_params | 1132470720 | 1711604160 |
 | report_total_gb | 2.784615706 | 3.942882586 |
 | report_weight_gb | 2.26494144 | 3.42320832 |
 | serving_weight_bytes | 1509949440 | 2668233600 |
+| time_params | 1340743680 | 1711604160 |
+| tpar_mem_gb | 21.222272 | 21.343575 |
 | trainmem_total_gb | 22.42292 | 33.889762 |
 | trainmem_weight_gb | 6.794824 | 10.269625 |
 
@@ -3543,6 +4181,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [6.960712, 22.970351] | [10.435513, 34.437193] |
+| advtrain_lora | [2.325875, 3.306465] | [3.484141, 4.580558] |
 | cluster_b_eff_4096 | 4933 | 4795 |
 | conv_serving_weight_bytes | 1565245440 | 2723529600 |
 | counter_params | 1160118720 | 1739252160 |
@@ -3555,10 +4195,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_32768_total_mb | 3362.521984 | 4520.788864 |
 | eng_llamacpp_4096_params | 1160118720 | 1739252160 |
 | eng_llamacpp_4096_total_mb | 2816.213888 | 3974.480768 |
+| kvcost_active_params | 1160118720 | 1739252160 |
+| kvplan_ws_gib | 2.42 | 2.41 |
+| kvplan_ws_tokens | 1264037 | 1263380 |
 | report_params | 1160118720 | 1739252160 |
 | report_total_gb | 2.915409178 | 4.073676058 |
 | report_weight_gb | 2.32023744 | 3.47850432 |
 | serving_weight_bytes | 1565245440 | 2723529600 |
+| time_params | 1368391680 | 1739252160 |
+| tpar_mem_gb | 21.676887 | 21.79819 |
 | trainmem_total_gb | 22.970351 | 34.437193 |
 | trainmem_weight_gb | 6.960712 | 10.435513 |
 
@@ -3570,6 +4215,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | conv_serving_weight_bytes | 1630535680 | 2875219968 |
 | disagg_b_eff_4096 | 2462 | 2388 |
 | serving_weight_bytes | 1630535680 | 2875219968 |
+| time_params | 1462763520 | 1605382144 |
 
 ## fixture:eagle3-qwen3-8b-redhatai.json (decoder-only)
 
@@ -3579,6 +4225,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | conv_serving_weight_bytes | 1630535680 | 2875219968 |
 | disagg_b_eff_4096 | 2462 | 2388 |
 | serving_weight_bytes | 1630535680 | 2875219968 |
+| time_params | 1462763520 | 1605382144 |
 
 ## fixture:eagle3-qwen3-8b-tengyunw.json (decoder-only)
 
@@ -3588,16 +4235,20 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | conv_serving_weight_bytes | 1630535680 | 2875219968 |
 | disagg_b_eff_4096 | 2462 | 2388 |
 | serving_weight_bytes | 1630535680 | 2875219968 |
+| time_params | 1462763520 | 1605382144 |
 
 ## fixture:facebook_musicgen-small_hub.json (encoder-decoder)
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741423, 3.684597] | [3.555702, 11.733816] |
+| advtrain_lora | [0.440079, 3.021641] | [1.378172, 4.053543] |
 | cluster_b_eff_4096 | 104 | 51 |
 | conv_kv_size | 131072 | 98304 |
 | conv_layers | [16, 16] | [12, 24] |
 | conv_prefill_weights_mb | 6676.0 | 1260.5625 |
 | conv_serving_weight_bytes | 6738149376 | 1185233920 |
+| copt_quick | [406847488, 6.68916, 0.101712] | [592616960, 9.680048, 0.148154] |
 | counter_params | 123570432 | 592616960 |
 | disagg_b_eff_4096 | 104 | 51 |
 | disagg_transfer_bytes_640 | 62914560 | 125829120 |
@@ -3627,8 +4278,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 24 |
 | kv_gb@32768 | 0.0 | 6.442450944 |
 | kv_gb@4096 | 0.0 | 0.805306368 |
+| kvcost_active_params | 123570432 | 592616960 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [196608.0, 24, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [196608.0, 24, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 231.58 |
+| kvplan_ws_tokens | null | 1264708 |
+| maxbatch_80gb_4096 | 501 | 67 |
 | prefix_kv_bytes_per_token | 98304 | 196608 |
 | report_kv_gb | 0.11460608 | 0.860602368 |
 | report_params | 808394240 | 1080272640 |
@@ -3642,6 +4298,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 809500672 | 1185233920 |
 | sim_max_running | 72 | 242 |
 | slice_mib_16x4352 | [81582, false] | [22272, true] |
+| tpar_mem_gb | 7.281987 | 10.344327 |
 | traingenz_params | 406945792 | 592616960 |
 | trainmem_total_gb | 3.684597 | 11.733816 |
 | trainmem_weight_gb | 0.741423 | 3.555702 |
@@ -3653,12 +4310,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.973007, 4.109168] | [2.551417, 8.419675] |
+| advtrain_lora | [0.517274, 3.106555] | [1.04341, 3.685305] |
 | cluster_b_eff_4096 | 1 | 552 |
 | conv_kv_size | 131072 | 8192 |
 | conv_layers | [16, 16] | [20, 4] |
 | conv_prefill_weights_mb | 6676.0 | 548.675781 |
 | conv_serving_weight_bytes | 6738149376 | 520950240 |
 | conv_state_bytes | 0 | 9633792 |
+| copt_quick | null | [260475120, 4.216802, 0.065119] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
 | counter_params | 162167808 | 425236088 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 552 |
@@ -3695,8 +4356,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 4 |
 | kv_gb@32768 | 0.0 | 0.546504704 |
 | kv_gb@4096 | 0.0 | 0.076742656 |
+| kvcost_active_params | 162167808 | 425236088 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 0, 0.0, 16, 9633792.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 0, 0.0, 16, 9633792.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 19.31 |
+| kvplan_ws_tokens | null | 1264898 |
+| maxbatch_80gb_4096 | 500 | 290 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
 | prefix_kv_bytes_per_token | null | 16384 |
 | report_kv_gb | 0.11460608 | 0.199622656 |
@@ -3717,6 +4383,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo" | null |
 | sim_max_running | 72 | 400 |
 | slice_mib_16x4352 | [81582, false] | [7680, true] |
+| tpar_mem_gb | null | 5.026338 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
+| tpar_options_8x80 | null | 72 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
 | traingenz_params | null | 260475120 |
 | trainmem_total_gb | 4.109168 | 8.419675 |
@@ -3729,11 +4399,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.422861, 3.100567] | [0.49967, 3.241384] |
+| advtrain_lora | [0.333892, 2.904835] | [0.359495, 2.932998] |
 | cluster_b_eff_4096 | 1 | 425 |
 | conv_kv_size | 131072 | 12288 |
 | conv_layers | [16, 16] | [6, 6] |
 | conv_prefill_weights_mb | 6678.0 | 170.75 |
 | conv_serving_weight_bytes | 6739197952 | 166556672 |
+| copt_quick | null | [83278336, 1.358146, 0.02082] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra" | null |
 | counter_params | 70476800 | 83278336 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 425 |
@@ -3767,8 +4441,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 6 |
 | kv_gb@32768 | 0.0 | 0.805306368 |
 | kv_gb@4096 | 0.0 | 0.100663296 |
+| kvcost_active_params | 70476800 | 83278336 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 6, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 6, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 28.97 |
+| kvplan_ws_tokens | null | 1265287 |
+| maxbatch_80gb_4096 | 1024 | 497 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra" | null |
 | prefix_kv_bytes_per_token | null | 24576 |
 | report_kv_gb | 0.045056 | 0.119095296 |
@@ -3788,6 +4467,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | null | 166556672 |
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_rate', 'eos_token_id', 'initializer_factor" | null |
 | slice_mib_16x4352 | [6656, true] | [7424, true] |
+| tpar_mem_gb | null | 1.688495 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra" | null |
+| tpar_options_8x80 | null | 80 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra" | null |
 | traingenz_params | null | 83278336 |
 | trainmem_total_gb | 3.100567 | 3.241384 |
@@ -3799,12 +4482,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741192, 3.684174] | [1.702135, 5.617046] |
+| advtrain_lora | [0.440002, 3.021556] | [0.760316, 3.373902] |
 | cluster_b_eff_4096 | 1 | 140 |
 | conv_kv_size | 262144 | 18432 |
 | conv_layers | [0, 32] | [12, 12] |
 | conv_prefill_weights_mb | 12852.0 | 538.325684 |
 | conv_serving_weight_bytes | 13214154752 | 564731904 |
 | conv_state_bytes | 0 | 150994944 |
+| copt_quick | null | [282365952, 4.598185, 0.070591] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init" | null |
 | counter_params | 123532032 | 283689216 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 140 |
@@ -3838,8 +4525,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 12 |
 | kv_gb@32768 | 0.0 | 1.358954496 |
 | kv_gb@4096 | 0.0 | 0.301989888 |
+| kvcost_active_params | 123532032 | 283689216 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 150994944.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 150994944.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 43.44 |
+| kvplan_ws_tokens | null | 1265059 |
+| maxbatch_80gb_4096 | 1024 | 195 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init" | null |
 | prefix_kv_bytes_per_token | null | 36864 |
 | report_kv_gb | 0.0 | 0.301989888 |
@@ -3860,6 +4552,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'initializer_factor', 'initializer_range', 'i" | null |
 | sim_max_running | 400 | 391 |
 | slice_mib_16x4352 | [8960, true] | [11776, true] |
+| tpar_mem_gb | null | 5.063564 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init" | null |
+| tpar_options_8x80 | null | 112 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init" | null |
 | traingenz_params | null | 282365952 |
 | trainmem_total_gb | 3.684174 | 5.617046 |
@@ -3872,11 +4568,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [1.686657, 5.565968] | [1.813822, 5.985614] |
+| advtrain_lora | [0.755157, 3.368227] | [0.797545, 3.414854] |
 | cluster_b_eff_4096 | 13 | 420 |
 | conv_kv_size | 131072 | 12288 |
 | conv_layers | [16, 16] | [8, 8] |
 | conv_prefill_weights_mb | 10084.0 | 572.5 |
 | conv_serving_weight_bytes | 8524922880 | 604607488 |
+| copt_quick | [8524922880, 137.99214, 2.131231] | [302303744, 4.890243, 0.075576] |
 | counter_params | 281109504 | 302303744 |
 | disagg_b_eff_4096 | 13 | 420 |
 | disagg_transfer_bytes_640 | 335544320 | 15728640 |
@@ -3906,8 +4605,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 8 |
 | kv_gb@32768 | 0.0 | 0.805306368 |
 | kv_gb@4096 | 0.0 | 0.100663296 |
+| kvcost_active_params | 281109504 | 302303744 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 8, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 8, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 28.96 |
+| kvplan_ws_tokens | null | 1265038 |
+| maxbatch_80gb_4096 | 1024 | 470 |
 | prefix_kv_bytes_per_token | 524288 | 24576 |
 | report_kv_gb | 0.045056 | 0.125239296 |
 | report_params | 371283968 | 383938560 |
@@ -3920,6 +4624,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 16 | 341 |
 | serving_weight_bytes | 15000928256 | 604607488 |
 | slice_mib_16x4352 | [7424, true] | [8192, true] |
+| tpar_mem_gb | 134.101651 | 4.950757 |
+| tpar_options_8x80 | 22 | 80 |
 | traingenz_params | 8525447168 | 302303744 |
 | trainmem_total_gb | 5.565968 | 5.985614 |
 | trainmem_weight_gb | 1.686657 | 1.813822 |
@@ -3930,13 +4636,20 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 3.01621248 | 20.914757184 |
 | cluster_b_eff_4096 | 195 | 5 |
 | conv_serving_weight_bytes | 3626680320 | 41829514368 |
+| copt_quick | [2551726080, 41.473489, 0.637932] | [20914757184, 337.11829, 5.228689] |
+| creq_gb | [38.17715, 80.0] | [295.259585, 640.0] |
+| creq_params | 2551726080 | 20914757184 |
 | disagg_b_eff_4096 | 195 | 5 |
 | genz_chunked_kv_mb | 216.0 | 123.0 |
 | runtime_chunked | [25.702025, 39878.438, 36.0] | [25.696455, 39878.438, 27.0] |
 | serving_weight_bytes | 3626680320 | 41829514368 |
 | slice_mib_16x4352 | [49152, true] | [49408, true] |
+| time_params | 2551726080 | 21487201920 |
+| tpar_mem_gb | 37.278095 | 325.429334 |
+| tpar_options_8x80 | 104 | 2 |
 | vllm_limits | [85423, 1366768, 85423, 1, 0, 0.0, true] | [85423, 1366768, 85423, 1, 1, 0.0, true] |
 | vllm_running_1024 | 1024 | 959 |
 | vllm_running_8192 | 161 | 159 |
@@ -3945,13 +4658,20 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 3.01621248 | 20.914757184 |
 | cluster_b_eff_4096 | 195 | 5 |
 | conv_serving_weight_bytes | 3626680320 | 41829514368 |
+| copt_quick | [2551726080, 41.473489, 0.637932] | [20914757184, 337.11829, 5.228689] |
+| creq_gb | [38.17715, 80.0] | [295.259585, 640.0] |
+| creq_params | 2551726080 | 20914757184 |
 | disagg_b_eff_4096 | 195 | 5 |
 | genz_chunked_kv_mb | 216.0 | 123.0 |
 | runtime_chunked | [9.364153, 13110.469, 36.0] | [9.358584, 13110.469, 27.0] |
 | serving_weight_bytes | 3626680320 | 41829514368 |
 | slice_mib_16x4352 | [20736, true] | [20992, true] |
+| time_params | 2551726080 | 21487201920 |
+| tpar_mem_gb | 37.278095 | 325.429334 |
+| tpar_options_8x80 | 104 | 2 |
 | vllm_limits | [155360, 2485760, 155360, 1, 0, 0.0, true] | [155360, 2485760, 155360, 1, 1, 0.0, true] |
 | vllm_running_8192 | 294 | 289 |
 
@@ -3959,11 +4679,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 8.835301376 | 9.780235392 |
 | cluster_b_eff_4096 | 52 | 134 |
 | conv_kv_size | 65536 | 6144 |
 | conv_prefill_weights_mb | 15316.0 | 18653.945312 |
 | conv_serving_weight_bytes | 15009316864 | 19560470784 |
 | conv_state_bytes | 0 | 123104768 |
+| copt_quick | [8835301376, 142.989234, 2.208825] | [9780235392, 158.202672, 2.445059] |
+| creq_gb | [115.064175, 141.0] | [139.567541, 192.0] |
+| creq_params | 8029995008 | 9780235392 |
 | disagg_b_eff_4096 | 52 | 134 |
 | disagg_transfer_bytes_640 | 83886080 | 130969088 |
 | eng_None_32768_state_mb | 0.0 | 123.104768 |
@@ -3982,6 +4706,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"Mamba": 32} | {"MHA-global": 3, "Recurrent": 29} |
 | genz_prefill_kv_mb | 66.0 | 165.401855 |
 | genz_prefill_weights_mb | 19284.0 | 18653.945312 |
+| lora_adapter_gb | 0.29360128 | 0.393509376 |
+| lora_scratch_gb | 21.032186413 | 24.600146608 |
 | prefix_kv_bytes_per_token | 131072 | 12288 |
 | runtime_chunked | [13.908805, 15316.0, 96.0] | [17.216502, 18653.945, 243.804] |
 | runtime_decode | [13.494652, 18282.0, 258.0] | [12.407145, 17651.945, 475.654] |
@@ -3990,18 +4716,27 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 64 | 63 |
 | serving_state_bytes | 0 | 123104768 |
 | serving_weight_bytes | 15009316864 | 19560470784 |
+| time_params | 8835301376 | 9780501632 |
+| tpar_mem_gb | 126.659697 | 153.605325 |
+| tpar_options_8x80 | 24 | 16 |
 | traingenz_params | 8835825664 | 9780235392 |
 
 ## fixture:ibm-granite_granite-4.0-h-small.json (hybrid)
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [188.71617, 622.763362] | [193.246019, 637.711861] |
+| advtrain_lora | [63.010903, 70.469608] | [64.520852, 72.130553] |
+| ccb_params_b | 3.27155712 | 32.207340864 |
 | cluster_b_eff_4096 | 56 | 1 |
 | conv_kv_size | 81920 | 8192 |
 | conv_prefill_weights_mb | 56630.5 | 62214.15625 |
 | conv_serving_weight_bytes | 4932501504 | 64414681728 |
 | conv_state_bytes | 0 | 152819712 |
+| copt_quick | [3883925504, 63.457303, 0.970981] | [32207340864, 519.46429, 8.051835] |
 | counter_params | 31452695040 | 32207669760 |
+| creq_gb | [37.171756, 80.0] | [453.547017, 1536.0] |
+| creq_params | 2466250752 | 32207340864 |
 | disagg_b_eff_4096 | 56 | 1 |
 | disagg_transfer_bytes_640 | 104857600 | 163305472 |
 | eng_None_32768_params | 31452695040 | 32207669760 |
@@ -4024,6 +4759,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"Mamba": 40} | {"MHA-global": 4, "Recurrent": 36} |
 | genz_prefill_kv_mb | 82.5 | 209.740234 |
 | genz_prefill_weights_mb | 61590.5 | 62214.15625 |
+| kvcost_active_params | 8048478720 | 8803453440 |
+| kvplan_ws_gib | 19.17 | 19.16 |
+| kvplan_ws_tokens | 1256147 | 1255301 |
+| lora_adapter_gb | 0.091488256 | 0.283199488 |
+| lora_scratch_gb | 6.009196118 | 24.600146608 |
+| maxbatch_80gb_4096 | 31 | 26 |
 | prefix_kv_bytes_per_token | 163840 | 16384 |
 | report_params | 31452695040 | 32207669760 |
 | report_total_gb | 63.49545345 | 65.00540289 |
@@ -4036,6 +4777,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_state_bytes | 0 | 152819712 |
 | serving_weight_bytes | 4932501504 | 64414681728 |
 | sim_max_running | 68 | 60 |
+| time_params | 3883925504 | 32207669760 |
+| tpar_mem_gb | 46.952533 | 498.625185 |
+| tpar_options_8x80 | 88 | 1 |
 | traingenz_params | 30686183424 | 32207340864 |
 | trainmem_total_gb | 622.763362 | 637.711861 |
 | trainmem_weight_gb | 188.71617 | 193.246019 |
@@ -4047,10 +4791,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [614.99931, 2029.497724] | [617.339732, 2037.221115] |
+| advtrain_lora | [205.133988, 227.345241] | [205.914128, 228.203395] |
+| ccb_params_b | 7.059013632 | 102.889705216 |
 | cluster_b_eff_4096 | 119 | 1 |
 | conv_prefill_weights_mb | 201432.0 | 196246.0 |
 | conv_serving_weight_bytes | 10951327744 | 205779410432 |
+| copt_quick | [7059013632, 114.391001, 1.764753] | [102889705216, 1657.265136, 25.722426] |
 | counter_params | 102499885056 | 102889955328 |
+| creq_gb | [88.317099, 141.0] | [1443.100118, 2256.0] |
+| creq_params | 6119489536 | 102889705216 |
 | disagg_b_eff_4096 | 119 | 1 |
 | eng_None_32768_params | 102499885056 | 102889955328 |
 | eng_None_32768_total_mb | 207710.968218 | 208491.108762 |
@@ -4064,6 +4814,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_decode_weights_mb | 200204.0 | 195018.0 |
 | genz_ffn_kinds | {"MoE": 32} | {"Dense": 1, "MoE": 31} |
 | genz_prefill_weights_mb | 201432.0 | 196246.0 |
+| kvcost_active_params | 5762457600 | 6152527872 |
+| kvplan_ws_gib | 76.77 | 76.74 |
+| kvplan_ws_tokens | 1257682 | 1257244 |
 | report_params | 102499885056 | 102889955328 |
 | report_total_gb | 205.660121334 | 206.440261878 |
 | report_weight_gb | 204.999770112 | 205.779910656 |
@@ -4072,6 +4825,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | runtime_decode | [18.456694, 200204.0, 32.25] | [18.705434, 195018.0, 32.25] |
 | runtime_prefill | [131.489281, 201432.0, 32.0] | [129.743652, 196246.0, 32.0] |
 | serving_weight_bytes | 10951327744 | 205779410432 |
+| time_params | 7059013632 | 102889955328 |
+| tpar_mem_gb | 96.961089 | 1587.214336 |
+| tpar_options_8x80 | 35 | 0 |
 | trainmem_total_gb | 2029.497724 | 2037.221115 |
 | trainmem_weight_gb | 614.99931 | 617.339732 |
 
@@ -4090,6 +4846,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 |---|---|---|
 | cluster_b_eff_4096 | 52 | 50 |
 | conv_serving_weight_bytes | 15009316864 | 16060522496 |
+| creq_gb | [115.064175, 141.0] | [115.067903, 141.0] |
+| creq_params | 8029995008 | 8030261248 |
 | disagg_b_eff_4096 | 52 | 50 |
 | serving_weight_bytes | 15009316864 | 16060522496 |
 
@@ -4097,8 +4855,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [2.665616, 8.796532] | [42.481238, 140.188085] |
+| advtrain_lora | [1.081477, 3.727178] | [14.353351, 18.32624] |
 | cluster_b_eff_4096 | 1 | 13 |
 | conv_serving_weight_bytes | 13214679040 | 14126858240 |
+| copt_quick | null | [7063429120, 114.462091, 1.765857] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id" | null |
 | counter_params | 444269312 | 7080206336 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 13 |
@@ -4131,8 +4893,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 32 |
 | kv_gb@32768 | 0.0 | 17.179869184 |
 | kv_gb@4096 | 0.0 | 2.147483648 |
+| kvcost_active_params | 444269312 | 7080206336 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [524288.0, 32, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [524288.0, 32, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 500.0 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 500.0 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 613.96 |
+| kvplan_ws_tokens | null | 1257380 |
+| maxbatch_80gb_4096 | 1024 | 22 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id" | null |
 | prefix_kv_bytes_per_token | null | 524288 |
 | report_kv_gb | 0.0 | 2.147483648 |
@@ -4152,6 +4922,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | null | 14126858240 |
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id', 'projector_hidden_act', 'text_config'" | null |
 | sim_max_running | 105 | 113 |
+| tpar_mem_gb | null | 111.586573 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id" | null |
+| tpar_options_8x80 | null | 31 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id" | null |
 | traingenz_params | null | 7063429120 |
 | trainmem_total_gb | 8.796532 | 140.188085 |
@@ -4163,13 +4937,20 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 3.01621248 | 20.914757184 |
 | cluster_b_eff_4096 | 195 | 5 |
 | conv_serving_weight_bytes | 3626680320 | 41829514368 |
+| copt_quick | [2551726080, 41.473489, 0.637932] | [20914757184, 337.11829, 5.228689] |
+| creq_gb | [38.17715, 80.0] | [295.259585, 640.0] |
+| creq_params | 2551726080 | 20914757184 |
 | disagg_b_eff_4096 | 195 | 5 |
 | genz_chunked_kv_mb | 216.0 | 123.0 |
 | runtime_chunked | [9.364153, 13110.469, 36.0] | [9.358584, 13110.469, 27.0] |
 | serving_weight_bytes | 3626680320 | 41829514368 |
 | slice_mib_16x4352 | [20736, true] | [20992, true] |
+| time_params | 2551726080 | 21487201920 |
+| tpar_mem_gb | 37.278095 | 325.429334 |
+| tpar_options_8x80 | 104 | 2 |
 | vllm_limits | [155360, 2485760, 155360, 1, 0, 0.0, true] | [155360, 2485760, 155360, 1, 1, 0.0, true] |
 | vllm_running_8192 | 294 | 289 |
 
@@ -4177,11 +4958,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.745948, 3.692893] | [1.705574, 5.628395] |
+| advtrain_lora | [0.441587, 3.0233] | [0.761463, 3.375163] |
 | cluster_b_eff_4096 | 1 | 280 |
 | conv_kv_size | 131072 | 18432 |
 | conv_layers | [16, 16] | [6, 6] |
 | conv_prefill_weights_mb | 6977.390625 | 394.760742 |
 | conv_serving_weight_bytes | 6896164864 | 568524784 |
+| copt_quick | null | [284262392, 4.602671, 0.071066] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig" | null |
 | counter_params | 124324608 | 284262392 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 280 |
@@ -4203,8 +4988,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 6 |
 | kv_gb@32768 | 0.0 | 1.207959552 |
 | kv_gb@4096 | 0.0 | 0.150994944 |
+| kvcost_active_params | 124324608 | 284262392 |
 | kvgeo_32768 | [0.0, 6, 0, 0.0, 16, 0.0] | [36864.0, 6, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 6, 0, 0.0, 16, 0.0] | [36864.0, 6, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 43.44 |
+| kvplan_ws_tokens | null | 1265058 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig" | null |
 | prefix_kv_bytes_per_token | null | 36864 |
 | runtime_chunked | null | [0.244565, 340.761, 27.0] |
@@ -4220,6 +5009,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | null | 568524784 |
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ignore_index', 'is_encoder_decoder', 'mode" | null |
 | slice_mib_16x4352 | [7424, true] | [52224, true] |
+| tpar_mem_gb | null | 4.986654 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig" | null |
+| tpar_options_8x80 | null | 96 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig" | null |
 | traingenz_params | null | 284262392 |
 | trainmem_total_gb | 3.692893 | 5.628395 |
@@ -4231,6 +5024,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [25.97588, 85.720403] | [28.047636, 92.5572] |
+| advtrain_lora | [8.77397, 11.162365] | [9.464556, 11.922009] |
 | cluster_b_eff_4096 | 53 | 102 |
 | conv_kv_size | 81920 | 40960 |
 | conv_prefill_weights_mb | 7953.75 | 8612.34375 |
@@ -4272,8 +5067,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_gb@32768 | 0.08388608 | 2.68435456 |
 | kv_gb@4096 | 0.08388608 | 0.33554432 |
 | kv_sliding_layers | 32 | 15 |
+| kvcost_active_params | 4329313280 | 4674606080 |
 | kvgeo_32768 | [0.0, 32, 0, 0.0, 16, 0.0] | [81920.0, 1, 16, 358400.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 32, 0, 0.0, 16, 0.0] | [81920.0, 1, 16, 358400.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 96.14 |
+| kvplan_ws_tokens | null | 1260064 |
+| lora_adapter_gb | 0.19922944 | 0.273358848 |
+| maxbatch_80gb_4096 | 622 | 151 |
 | prefix_kv_bytes_per_token | 163840 | 81920 |
 | report_kv_gb | 0.08388608 | 0.33554432 |
 | report_params | 4329313280 | 4674606080 |
@@ -4290,6 +5091,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | sim_max_running | 389 | 400 |
 | slice_mib_16x4352 | [24832, true] | [19456, true] |
 | state_gb | 0.0 | 0.0057344 |
+| time_params | 4379770880 | 4674606080 |
 | trainmem_total_gb | 85.720403 | 92.5572 |
 | trainmem_weight_gb | 25.97588 | 28.047636 |
 | vllm_limits | [25739, 411824, 25739, 1, 0, 0.0, true] | [10133, 810640, 10133, 1, 0, 6553600.0, true] |
@@ -4300,10 +5102,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 5.637144576 | 7.285665792 |
 | cluster_b_eff_4096 | 11 | 104 |
 | conv_kv_size | 262144 | 0 |
 | conv_serving_weight_bytes | 17448304640 | 14571331584 |
 | conv_state_bytes | 0 | 272367616 |
+| creq_gb | [81.564269, 141.0] | [104.643566, 141.0] |
+| creq_params | 5637144576 | 7285665792 |
 | disagg_b_eff_4096 | 11 | 104 |
 | disagg_transfer_bytes_640 | 335544320 | 272367616 |
 | eng_None_32768_state_mb | 0.0 | 272.367616 |
@@ -4316,6 +5121,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_4096_total_mb | 14854.245581 | 15126.613197 |
 | facts_weight_bytes | 14570020864 | 14571331584 |
 | genz_kv_size | 262144 | 0 |
+| lora_adapter_gb | 0.570425344 | 0.672169984 |
+| lora_scratch_gb | 12.018392236 | 27.22916991 |
 | prefix_kv_bytes_per_token | 524288 | 0 |
 | serving_bytes_per_token | 524288 | 0 |
 | serving_requests_8gib_1k | 16 | 31 |
@@ -4326,13 +5133,20 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741192, 3.684174] | [67.081885, 221.370219] |
+| advtrain_lora | [0.440002, 3.021556] | [22.553566, 27.346477] |
+| ccb_params_b | 8.852078592 | 10.643111424 |
 | cluster_b_eff_4096 | 1 | 32 |
 | conv_kv_size | 262144 | 65536 |
 | conv_layers | [0, 32] | [0, 40] |
 | conv_prefill_weights_mb | 12852.0 | 18644.0 |
 | conv_serving_weight_bytes | 13214154752 | 21286222848 |
 | conv_state_bytes | 0 | 134348800 |
+| copt_quick | null | [10781458432, 174.507583, 2.695365] |
+| copt_quick_error | "TypeError: 'NoneType' object is not iterable" | null |
 | counter_params | 123532032 | 11180314112 |
+| creq_gb | [126.573345, 192.0] | [151.647805, 192.0] |
+| creq_params | 8852078592 | 10643111424 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 32 |
 | disagg_error | "TypeError: 'NoneType' object is not iterable" | null |
@@ -4369,8 +5183,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_gb@32768 | 5.36870912 | 4.429316096 |
 | kv_gb@4096 | 0.67108864 | 0.671219712 |
 | kv_source | "uniform" | "layer_plan:cross_attention_layers" |
+| kvcost_active_params | 123532032 | 11180314112 |
 | kvgeo_32768 | [163840.0, 40, 0, 0.0, 16, 0.0] | [131072.0, 32, 0, 0.0, 16, 134348800.0] |
 | kvgeo_4096 | [163840.0, 40, 0, 0.0, 16, 0.0] | [131072.0, 32, 0, 0.0, 16, 134348800.0] |
+| kvplan_host_gib | 0.0 | 168.75 |
+| kvplan_shm_gib | 0.0 | 168.75 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 192.84 | 152.76 |
+| kvplan_ws_tokens | 1263752 | 1251333 |
+| maxbatch_80gb_4096 | 85 | 58 |
 | prefix_error | "TypeError: 'NoneType' object is not iterable" | null |
 | prefix_kv_bytes_per_token | null | 131072 |
 | report_kv_gb | 0.67108864 | 0.671219712 |
@@ -4391,6 +5212,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "TypeError: 'NoneType' object is not iterable" | null |
 | sim_max_running | 315 | 196 |
 | slice_mib_16x4352 | [38912, true] | [39424, true] |
+| time_params | 8999534592 | 11180314112 |
+| tpar_mem_gb | null | 167.391899 |
+| tpar_mem_gb_error | "TypeError: 'NoneType' object is not iterable" | null |
+| tpar_options_8x80 | null | 11 |
+| tpar_options_8x80_error | "TypeError: 'NoneType' object is not iterable" | null |
 | traingenz_error | "TypeError: 'NoneType' object is not iterable" | null |
 | traingenz_params | null | 10782113792 |
 | trainmem_total_gb | 3.684174 | 221.370219 |
@@ -4403,12 +5229,18 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [292.91502, 966.619564] | [294.028017, 970.292457] |
+| advtrain_lora | [97.72991, 108.911622] | [98.100909, 109.319721] |
+| ccb_params_b | 3.472883712 | 49.122681728 |
 | cluster_b_eff_4096 | 36 | 1 |
 | conv_kv_size | 124416 | 4032 |
 | conv_prefill_weights_mb | 95875.875 | 93693.880859 |
 | conv_serving_weight_bytes | 5341446144 | 98245363456 |
 | conv_state_bytes | 0 | 43417600 |
+| copt_quick | [3048210432, 49.427817, 0.762053] | [49122681728, 791.226805, 12.28067] |
 | counter_params | 48819169920 | 49004669568 |
+| creq_gb | [50.98276, 80.0] | [690.079932, 1128.0] |
+| creq_params | 3472883712 | 49122681728 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 36 | 1 |
 | disagg_transfer_bytes_640 | 159252480 | 48578560 |
@@ -4435,6 +5267,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_prefill_error | "ValueError: cannot convert float NaN to integer" | null |
 | genz_prefill_kv_mb | null | 72.90625 |
 | genz_prefill_weights_mb | null | 93693.880859 |
+| kvcost_active_params | 3180948096 | 3366447744 |
+| kvplan_ws_tokens | 1261628 | 1261419 |
+| lora_adapter_gb | 0.150110208 | 0.273037312 |
 | prefix_kv_bytes_per_token | 248832 | 8064 |
 | report_params | 48819169920 | 49004669568 |
 | report_total_gb | 98.029047122 | 98.400046418 |
@@ -4448,6 +5283,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 33 | 166 |
 | serving_state_bytes | 0 | 43417600 |
 | serving_weight_bytes | 5341446144 | 98245363456 |
+| time_params | 3048210432 | 49004669568 |
+| tpar_mem_gb | 49.465372 | 759.008398 |
+| tpar_options_8x80 | 48 | 0 |
 | trainmem_total_gb | 966.619564 | 970.292457 |
 | trainmem_weight_gb | 292.91502 | 294.028017 |
 
@@ -4455,12 +5293,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741423, 3.684597] | [9.91708, 32.726363] |
+| advtrain_lora | [0.440079, 3.021641] | [3.498631, 6.386048] |
 | cluster_b_eff_4096 | 269 | 131 |
 | conv_kv_size | 131072 | 18432 |
 | conv_layers | [16, 16] | [12, 18] |
 | conv_prefill_weights_mb | 6676.0 | 3072.78125 |
 | conv_serving_weight_bytes | 6738149376 | 3305693184 |
 | conv_state_bytes | 0 | 150994944 |
+| copt_quick | [1212170240, 19.724314, 0.303043] | [1652846592, 26.819203, 0.413212] |
 | counter_params | 123570432 | 1652846592 |
 | disagg_b_eff_4096 | 269 | 131 |
 | disagg_transfer_bytes_640 | 23592960 | 174587904 |
@@ -4489,8 +5330,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 18 |
 | kv_gb@32768 | 0.0 | 1.358954496 |
 | kv_gb@4096 | 0.0 | 0.301989888 |
+| kvcost_active_params | 123570432 | 1652846592 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 18, 0, 0.0, 16, 150994944.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 18, 0, 0.0, 16, 150994944.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 43.38 |
+| kvplan_ws_tokens | null | 1263504 |
+| maxbatch_80gb_4096 | 501 | 150 |
 | report_kv_gb | 0.11460608 | 0.375717888 |
 | report_params | 808394240 | 1763025664 |
 | report_total_gb | 1.856430039 | 4.078566257 |
@@ -4503,6 +5349,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 2193637376 | 3305693184 |
 | sim_max_running | 72 | 376 |
 | slice_mib_16x4352 | [81582, false] | [14848, true] |
+| tpar_mem_gb | 18.217547 | 27.004052 |
 | traingenz_params | 1212317696 | 1652846592 |
 | trainmem_total_gb | 3.684597 | 32.726363 |
 | trainmem_weight_gb | 0.741423 | 9.91708 |
@@ -4514,12 +5361,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.973007, 4.109168] | [2.278227, 7.518148] |
+| advtrain_lora | [0.517274, 3.106555] | [0.952347, 3.585135] |
 | cluster_b_eff_4096 | 1 | 291 |
 | conv_kv_size | 131072 | 8192 |
 | conv_layers | [16, 16] | [20, 4] |
 | conv_prefill_weights_mb | 6676.0 | 574.185547 |
 | conv_serving_weight_bytes | 6738149376 | 434201056 |
 | conv_state_bytes | 0 | 78643200 |
+| copt_quick | null | [217100528, 3.518471, 0.054275] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
 | counter_params | 162167808 | 379704440 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 291 |
@@ -4556,8 +5407,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 4 |
 | kv_gb@32768 | 0.0 | 0.615514112 |
 | kv_gb@4096 | 0.0 | 0.145752064 |
+| kvcost_active_params | 162167808 | 379704440 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 0, 0.0, 16, 78643200.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 0, 0.0, 16, 78643200.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 19.31 |
+| kvplan_ws_tokens | null | 1264950 |
+| maxbatch_80gb_4096 | 500 | 216 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
 | prefix_kv_bytes_per_token | null | 16384 |
 | report_kv_gb | 0.11460608 | 0.268632064 |
@@ -4578,6 +5434,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_word_embeddings', 'torch_dtype', 'transfo" | null |
 | sim_max_running | 72 | 400 |
 | slice_mib_16x4352 | [81582, false] | [8704, true] |
+| tpar_mem_gb | null | 4.35837 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
+| tpar_options_8x80 | null | 72 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w" | null |
 | traingenz_params | null | 217100528 |
 | trainmem_total_gb | 4.109168 | 7.518148 |
@@ -4590,10 +5450,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 1.2754976 | 1.61096 |
 | cluster_b_eff_4096 | 242 | 227 |
 | conv_prefill_weights_mb | 2182.818604 | 3170.123291 |
 | conv_serving_weight_bytes | 2186448000 | 3221920000 |
 | conv_state_bytes | 0 | 7168000 |
+| copt_quick | [1275497600, 20.824918, 0.318874] | [1610960000, 26.225863, 0.40274] |
+| creq_gb | [18.273617, 32.0] | [24.805098, 32.0] |
+| creq_params | 1144425600 | 1610960000 |
 | disagg_b_eff_4096 | 242 | 227 |
 | disagg_transfer_bytes_640 | 26214400 | 33382400 |
 | eng_None_32768_state_mb | 0.0 | 7.168 |
@@ -4611,12 +5475,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"Mamba": 32} | {"MHA-global": 3, "MHA-local": 29} |
 | genz_prefill_kv_mb | 3.90625 | 58.085938 |
 | genz_prefill_weights_mb | 2790.631104 | 3170.123291 |
+| lora_adapter_gb | 0.113508352 | 0.232439808 |
+| lora_scratch_gb | 8.074857284 | 9.389368934 |
 | runtime_chunked | [2.022952, 2182.819, 30.0] | [3.040314, 3170.123, 43.672] |
 | runtime_decode | [3.56883, 2692.972, 13.281] | [3.612223, 3072.464, 47.5] |
 | runtime_prefill | [11.274933, 2790.631, 3.906] | [8.499001, 3170.123, 26.836] |
 | serving_requests_8gib_1k | 204 | 174 |
 | serving_state_bytes | 0 | 7168000 |
 | serving_weight_bytes | 2186448000 | 3221920000 |
+| time_params | 1275497600 | 1611064000 |
+| tpar_mem_gb | 19.482029 | 26.663505 |
 | traingenz_params | 1275702400 | 1610960000 |
 | vllm_limits | [9959, 1752784, 9959, 1, 0, 7208960.0, true] | [9953, 1751728, 9953, 1, 0, 7208960.0, true] |
 
@@ -4624,11 +5492,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 10.48707072 | 10.644638208 |
 | cluster_b_eff_4096 | 12 | 102 |
 | conv_kv_size | 114688 | 8192 |
 | conv_prefill_weights_mb | 30629.375 | 21422.281494 |
 | conv_serving_weight_bytes | 30942822400 | 21289276416 |
 | conv_state_bytes | 0 | 143548416 |
+| creq_gb | [135.13717, 192.0] | [151.729578, 192.0] |
+| creq_params | 9459466240 | 10644638208 |
 | disagg_b_eff_4096 | 12 | 102 |
 | disagg_transfer_bytes_640 | 146800640 | 154034176 |
 | eng_None_32768_state_mb | 0.0 | 143.548416 |
@@ -4648,6 +5519,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"Mamba": 56} | {"MHA-global": 4, "Recurrent": 27, "no_op": 25} |
 | genz_prefill_kv_mb | 63.164062 | 200.898438 |
 | genz_prefill_weights_mb | 24045.0 | 18072.672119 |
+| lora_adapter_gb | 0.41746432 | 0.494499328 |
+| lora_scratch_gb | 23.003953889 | 33.238366028 |
 | prefix_kv_bytes_per_token | 229376 | 16384 |
 | runtime_chunked | [21.081721, 23126.25, 168.0] | [16.809775, 18072.672, 285.797] |
 | runtime_decode | [16.983359, 22925.0, 246.914] | [11.317602, 15832.672, 555.656] |
@@ -4690,6 +5563,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"Mamba": 52} | {"MHA-global": 4, "Recurrent": 24, "no_op": 24} |
 | genz_prefill_kv_mb | 107.25 | 161.40625 |
 | genz_prefill_weights_mb | 30128.0 | 15514.8125 |
+| lora_adapter_gb | 0.449839104 | 0.496381952 |
 | prefix_kv_bytes_per_token | 212992 | 16384 |
 | runtime_chunked | [21.518349, 23680.0, 156.0] | [14.362543, 15514.812, 206.812] |
 | runtime_decode | [20.933382, 29104.0, 419.25] | [10.340875, 14426.812, 397.688] |
@@ -4703,13 +5577,19 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [1.013133, 3.34334] | [15.882007, 52.410622] |
+| advtrain_lora | [0.34977, 0.633312] | [5.306061, 6.085232] |
+| ccb_params_b | 0.570425344 | 2.647001088 |
 | cluster_b_eff_4096 | 317 | 126 |
 | conv_kv_size | 8192 | 16384 |
 | conv_layers | [4, 4] | [48, 8] |
 | conv_prefill_weights_mb | 192.0 | 2804.317383 |
 | conv_serving_weight_bytes | 167772160 | 5294002176 |
 | conv_state_bytes | 0 | 163840000 |
+| copt_quick | [167772160, 2.747437, 0.041943] | [2647001088, 42.663023, 0.66175] |
 | counter_params | 168855552 | 2647001088 |
+| creq_gb | [10.147016, 16.0] | [39.219077, 80.0] |
+| creq_params | 570425344 | 2647001088 |
 | disagg_b_eff_4096 | 317 | 126 |
 | disagg_transfer_bytes_640 | 20971520 | 184811520 |
 | eng_None_32768_kv_mb | 1122.893824 | 1606.221824 |
@@ -4734,8 +5614,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 8 |
 | kv_gb@32768 | 1.073741824 | 1.237581824 |
 | kv_gb@4096 | 0.134217728 | 0.298057728 |
+| kvcost_active_params | 168855552 | 2647001088 |
 | kvgeo_32768 | [32768.0, 8, 0, 0.0, 16, 0.0] | [32768.0, 8, 0, 0.0, 16, 163840000.0] |
 | kvgeo_4096 | [32768.0, 8, 0, 0.0, 16, 0.0] | [32768.0, 8, 0, 0.0, 16, 163840000.0] |
+| kvplan_ws_gib | 38.61 | 38.53 |
+| kvplan_ws_tokens | 1265115 | 1262304 |
+| maxbatch_80gb_4096 | 318 | 88 |
 | report_kv_gb | 0.183369728 | 0.666697728 |
 | report_params | 576643072 | 580837376 |
 | report_total_gb | 1.459883786 | 2.048726794 |
@@ -4748,6 +5632,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 301989888 | 5294002176 |
 | sim_max_running | 400 | 350 |
 | slice_mib_16x4352 | [8704, true] | [16640, true] |
+| time_params | 167772160 | 2647001088 |
+| tpar_mem_gb | 2.97175 | 41.797293 |
 | traingenz_params | 167804928 | 2647001088 |
 | trainmem_total_gb | 3.34334 | 52.410622 |
 | trainmem_weight_gb | 1.013133 | 15.882007 |
@@ -4759,11 +5645,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.181554, 0.599128] | [0.462926, 1.527655] |
+| advtrain_lora | [0.065417, 0.19543] | [0.159207, 0.2986] |
 | cluster_b_eff_4096 | 786 | 392 |
 | conv_kv_size | 3328 | 13312 |
 | conv_layers | [4, 4] | [8, 8] |
 | conv_prefill_weights_mb | 73.125 | 147.0625 |
 | conv_serving_weight_bytes | 49414144 | 154308544 |
+| copt_quick | [49414144, 0.814379, 0.012354] | [77154272, 1.260995, 0.019289] |
 | counter_params | 30259008 | 77154272 |
 | disagg_b_eff_4096 | 786 | 392 |
 | disagg_transfer_bytes_640 | 8519680 | 17039360 |
@@ -4786,8 +5675,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 8 |
 | kv_gb@32768 | 0.436207616 | 0.872415232 |
 | kv_gb@4096 | 0.054525952 | 0.109051904 |
+| kvcost_active_params | 30259008 | 77154272 |
 | kvgeo_32768 | [13312.0, 8, 0, 0.0, 16, 0.0] | [26624.0, 8, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [13312.0, 8, 0, 0.0, 16, 0.0] | [26624.0, 8, 0, 0.0, 16, 0.0] |
+| kvplan_ws_gib | 15.69 | 31.38 |
+| kvplan_ws_tokens | 1265317 | 1265263 |
+| maxbatch_80gb_4096 | 793 | 460 |
 | prefix_kv_bytes_per_token | 13312 | 26624 |
 | report_kv_gb | 0.074493952 | 0.129019904 |
 | report_total_gb | 0.351430523 | 0.416861665 |
@@ -4798,6 +5691,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 630 | 315 |
 | serving_weight_bytes | 71565312 | 154308544 |
 | slice_mib_16x4352 | [6656, true] | [7936, true] |
+| time_params | 49414144 | 77154272 |
+| tpar_mem_gb | 1.050118 | 1.573423 |
 | traingenz_params | 49427456 | 77154272 |
 | trainmem_total_gb | 0.599128 | 1.527655 |
 | trainmem_weight_gb | 0.181554 | 0.462926 |
@@ -4808,11 +5703,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [4.166339, 13.748917] | [5.405222, 17.837234] |
+| advtrain_lora | [1.581718, 4.277443] | [1.994679, 4.731701] |
 | cluster_b_eff_4096 | 1 | 359 |
 | conv_kv_size | 32768 | 10240 |
 | conv_prefill_weights_mb | 2354.40625 | 2118.325195 |
 | conv_serving_weight_bytes | 2043887616 | 1801740800 |
 | conv_state_bytes | 0 | 30720000 |
+| copt_quick | null | [900870400, 14.532954, 0.225218] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment" | null |
 | counter_params | 694389760 | 900870400 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 359 |
@@ -4837,8 +5736,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 32 | 4 |
 | kv_gb@32768 | 0.0 | 0.70180864 |
 | kv_gb@4096 | 0.0 | 0.11460608 |
+| kvcost_active_params | 694389760 | 900870400 |
 | kvgeo_32768 | [0.0, 32, 0, 0.0, 16, 0.0] | [20480.0, 4, 0, 0.0, 16, 30720000.0] |
 | kvgeo_4096 | [0.0, 32, 0, 0.0, 16, 0.0] | [20480.0, 4, 0, 0.0, 16, 30720000.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 24.12 |
+| kvplan_ws_tokens | null | 1264358 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment" | null |
 | prefix_kv_bytes_per_token | null | 20480 |
 | runtime_chunked | null | [0.44293, 1668.325, 73.594] |
@@ -4854,6 +5757,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | null | 1801740800 |
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment', 'architectures', 'attention_dropout'," | null |
 | slice_mib_16x4352 | [22272, true] | [9472, true] |
+| tpar_mem_gb | null | 15.395937 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment" | null |
+| tpar_options_8x80 | null | 72 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment" | null |
 | traingenz_params | null | 900870400 |
 | trainmem_total_gb | 13.748917 | 17.837234 |
@@ -4866,13 +5773,20 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 3.01621248 | 116.829156672 |
 | cluster_b_eff_4096 | 126 | 1 |
 | conv_serving_weight_bytes | 4860887040 | 233658313344 |
+| copt_quick | [3248455680, 52.886186, 0.812114] | [116829156672, 1881.535472, 29.207289] |
+| creq_gb | [38.17715, 80.0] | [1638.061178, 3072.0] |
+| creq_params | 2551726080 | 116829156672 |
 | disagg_b_eff_4096 | 126 | 1 |
 | genz_chunked_kv_mb | 324.0 | 184.5 |
 | runtime_chunked | [39.655232, 62149.219, 54.0] | [39.646878, 62149.219, 40.5] |
 | serving_weight_bytes | 4860887040 | 233658313344 |
 | sim_max_running | 250 | 220 |
+| time_params | 3248455680 | 117368392320 |
+| tpar_mem_gb | 45.995866 | 1803.179501 |
+| tpar_options_8x80 | 96 | 0 |
 | vllm_limits | [16363, 261808, 16363, 1, 0, 0.0, true] | [16363, 261808, 16363, 1, 1, 0.0, true] |
 | vllm_running_1024 | 204 | 183 |
 
@@ -4880,11 +5794,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.748832, 2.923074] | [1.85643, 6.126218] |
+| advtrain_lora | [0.321962, 1.98396] | [0.691162, 2.390079] |
 | cluster_b_eff_4096 | 46 | 205 |
 | conv_kv_size | 98304 | 18432 |
 | conv_prefill_weights_mb | 5442.390625 | 644.53125 |
 | conv_serving_weight_bytes | 5281882112 | 618809856 |
 | conv_state_bytes | 0 | 55296000 |
+| copt_quick | [2853380096, 46.21725, 0.713345] | [309404928, 5.033513, 0.077351] |
 | counter_params | 124805376 | 309404928 |
 | disagg_b_eff_4096 | 46 | 205 |
 | disagg_transfer_bytes_640 | 125829120 | 78888960 |
@@ -4899,8 +5816,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 12 |
 | kv_gb@32768 | 0.0 | 1.263255552 |
 | kv_gb@4096 | 0.0 | 0.206290944 |
+| kvcost_active_params | 124805376 | 309404928 |
 | kvgeo_32768 | [0.0, 12, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 55296000.0] |
 | kvgeo_4096 | [0.0, 12, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 55296000.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 43.44 |
+| kvplan_ws_tokens | null | 1265030 |
 | prefix_kv_bytes_per_token | 196608 | 36864 |
 | runtime_chunked | [4.084111, 4410.391, 144.0] | [0.41371, 536.531, 132.469] |
 | runtime_decode | [3.70201, 4005.195, 96.75] | [1.714991, 459.901, 229.078] |
@@ -4910,6 +5831,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_state_bytes | 0 | 55296000 |
 | serving_weight_bytes | 5281882112 | 618809856 |
 | slice_mib_16x4352 | [8960, true] | [9984, true] |
+| tpar_mem_gb | 45.818257 | 5.526102 |
+| tpar_options_8x80 | 96 | 112 |
 | traingenz_params | 2853576704 | 309404928 |
 | trainmem_total_gb | 2.923074 | 6.126218 |
 | trainmem_weight_gb | 0.748832 | 1.85643 |
@@ -4921,12 +5844,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741192, 3.684174] | [1.702135, 5.617046] |
+| advtrain_lora | [0.440002, 3.021556] | [0.760316, 3.373902] |
 | cluster_b_eff_4096 | 1 | 140 |
 | conv_kv_size | 131072 | 18432 |
 | conv_layers | [16, 16] | [12, 12] |
 | conv_prefill_weights_mb | 6676.0 | 538.325684 |
 | conv_serving_weight_bytes | 6738149376 | 564731904 |
 | conv_state_bytes | 0 | 150994944 |
+| copt_quick | null | [282365952, 4.598185, 0.070591] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token" | null |
 | counter_params | 123532032 | 283689216 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 140 |
@@ -4960,8 +5887,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 12 |
 | kv_gb@32768 | 0.0 | 1.358954496 |
 | kv_gb@4096 | 0.0 | 0.301989888 |
+| kvcost_active_params | 123532032 | 283689216 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 150994944.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 150994944.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 43.44 |
+| kvplan_ws_tokens | null | 1265059 |
+| maxbatch_80gb_4096 | 1024 | 195 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token" | null |
 | prefix_kv_bytes_per_token | null | 36864 |
 | report_kv_gb | 0.0 | 0.301989888 |
@@ -4982,6 +5914,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token_id', 'dtype', 'eos_token_id', 'id2label" | null |
 | sim_max_running | 400 | 391 |
 | slice_mib_16x4352 | [9216, true] | [11776, true] |
+| tpar_mem_gb | null | 5.063564 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token" | null |
+| tpar_options_8x80 | null | 112 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token" | null |
 | traingenz_params | null | 282365952 |
 | trainmem_total_gb | 3.684174 | 5.617046 |
@@ -4994,10 +5930,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [82.778284, 273.168337] | [87.761117, 289.611687] |
+| advtrain_lora | [27.653317, 31.281128] | [29.314261, 33.108167] |
+| ccb_params_b | 2.266497024 | 14.315589024 |
 | cluster_b_eff_4096 | 49 | 17 |
 | conv_prefill_weights_mb | 25720.625 | 27304.625 |
 | conv_serving_weight_bytes | 3088580608 | 28631178048 |
+| copt_quick | [1855455232, 30.15066, 0.463864] | [14315589024, 230.758814, 3.578897] |
 | counter_params | 13796380672 | 14626852864 |
+| creq_gb | [34.053081, 80.0] | [202.740369, 768.0] |
+| creq_params | 2266497024 | 14315589024 |
 | disagg_b_eff_4096 | 49 | 17 |
 | eng_None_32768_params | 13796380672 | 14626852864 |
 | eng_None_32768_total_mb | 34377.467494 | 36038.411878 |
@@ -5009,6 +5951,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_4096_total_mb | 28569.195315 | 30230.139699 |
 | genz_decode_weights_mb | 25127.125 | 26711.125 |
 | genz_prefill_weights_mb | 25720.625 | 27304.625 |
+| kvcost_active_params | 2169769984 | 3000242176 |
+| kvplan_ws_gib | 231.17 | 231.0 |
+| kvplan_ws_tokens | 1262473 | 1261534 |
+| maxbatch_80gb_4096 | 45 | 43 |
 | report_params | 13796380672 | 14626852864 |
 | report_total_gb | 28.764482109 | 30.425426493 |
 | report_weight_gb | 27.592761344 | 29.253705728 |
@@ -5016,6 +5962,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | runtime_decode | [6.05469, 25127.125, 96.75] | [7.117747, 26711.125, 96.75] |
 | runtime_prefill | [20.272026, 25720.625, 96.0] | [23.346704, 27304.625, 96.0] |
 | serving_weight_bytes | 3088580608 | 28631178048 |
+| time_params | 1855455232 | 14626852864 |
+| tpar_mem_gb | 29.753541 | 221.636573 |
+| tpar_options_8x80 | 104 | 10 |
 | trainmem_total_gb | 273.168337 | 289.611687 |
 | trainmem_weight_gb | 82.778284 | 87.761117 |
 
@@ -5030,10 +5979,17 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 2.36716032 | 30.532128768 |
 | cluster_b_eff_4096 | 91 | 1 |
 | conv_serving_weight_bytes | 6058147840 | 61064257536 |
+| copt_quick | [3239575552, 52.712828, 0.809894] | [30532128768, 492.122935, 7.633032] |
+| creq_gb | [32.174033, 40.0] | [429.771925, 640.0] |
+| creq_params | 2132279296 | 30532128768 |
 | disagg_b_eff_4096 | 91 | 1 |
 | serving_weight_bytes | 6058147840 | 61064257536 |
+| time_params | 3239575552 | 30843473920 |
+| tpar_mem_gb | 47.182643 | 472.907659 |
+| tpar_options_8x80 | 104 | 1 |
 
 ## fixture:qwen3-8b-fp8.json (decoder-only)
 
@@ -5041,6 +5997,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 |---|---|---|
 | cluster_b_eff_4096 | 46 | 43 |
 | conv_serving_weight_bytes | 15136194560 | 16381470720 |
+| creq_gb | [106.505698, 141.0] | [117.31454, 141.0] |
+| creq_params | 7418675200 | 8190735360 |
 | disagg_b_eff_4096 | 46 | 43 |
 | serving_weight_bytes | 15136194560 | 16381470720 |
 
@@ -5050,6 +6008,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 |---|---|---|
 | cluster_b_eff_4096 | 46 | 43 |
 | conv_serving_weight_bytes | 15136194560 | 16381470720 |
+| creq_gb | [106.505698, 141.0] | [117.31454, 141.0] |
+| creq_params | 7418675200 | 8190735360 |
 | disagg_b_eff_4096 | 46 | 43 |
 | serving_weight_bytes | 15136194560 | 16381470720 |
 
@@ -5057,12 +6017,18 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [167.5161, 552.80313] | [172.227264, 568.349971] |
+| advtrain_lora | [56.031638, 64.172356] | [57.602026, 65.899782] |
+| ccb_params_b | 8.852078592 | 27.361714416 |
 | conv_kv_size | 262144 | 32768 |
 | conv_layers | [0, 32] | [0, 64] |
 | conv_prefill_weights_mb | 12852.0 | 51299.21875 |
 | conv_serving_weight_bytes | 13214154752 | 54723428832 |
 | conv_state_bytes | 0 | 153944064 |
+| copt_quick | [26366443520, 426.351945, 6.591611] | [27361714416, 442.375807, 6.840429] |
 | counter_params | 27919350016 | 28704543984 |
+| creq_gb | [126.573345, 192.0] | [385.708247, 640.0] |
+| creq_params | 8852078592 | 27361714416 |
 | disagg_transfer_bytes_640 | 167772160 | 195887104 |
 | eng_None_32768_params | 27919350016 | 28704543984 |
 | eng_None_32768_state_mb | 0.0 | 153.944064 |
@@ -5084,6 +6050,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 64} | {"MHA-global": 16, "Recurrent": 48} |
 | genz_prefill_kv_mb | 1024.0 | 402.8125 |
 | genz_prefill_weights_mb | 46450.0 | 51299.21875 |
+| kvcost_active_params | 27919350016 | 28704543984 |
+| kvplan_ws_gib | 75.3 | 75.25 |
+| kvplan_ws_tokens | 1233697 | 1232849 |
+| lora_adapter_gb | 0.889192448 | 0.9967616 |
+| maxbatch_80gb_4096 | 77 | 75 |
 | prefix_kv_bytes_per_token | 262144 | 65536 |
 | report_params | 27919350016 | 28704543984 |
 | report_total_gb | 32.650026184 | 33.435220152 |
@@ -5095,6 +6066,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 32 | 38 |
 | serving_state_bytes | 0 | 153944064 |
 | serving_weight_bytes | 46163558400 | 54723428832 |
+| time_params | 8999534592 | 28704543984 |
+| tpar_mem_gb | 366.763337 | 425.135209 |
 | traingenz_params | 26367754240 | 27361714416 |
 | trainmem_total_gb | 552.80313 | 568.349971 |
 | trainmem_weight_gb | 167.5161 | 172.227264 |
@@ -5103,12 +6076,18 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [167.5161, 552.80313] | [172.227264, 568.349971] |
+| advtrain_lora | [56.031638, 64.172356] | [57.602026, 65.899782] |
+| ccb_params_b | 8.852078592 | 27.361714416 |
 | conv_kv_size | 262144 | 32768 |
 | conv_layers | [0, 32] | [0, 64] |
 | conv_prefill_weights_mb | 12852.0 | 51299.21875 |
 | conv_serving_weight_bytes | 13214154752 | 54723428832 |
 | conv_state_bytes | 0 | 153944064 |
+| copt_quick | [26366443520, 426.351945, 6.591611] | [27361714416, 442.375807, 6.840429] |
 | counter_params | 27919350016 | 28704543984 |
+| creq_gb | [126.573345, 192.0] | [385.708247, 640.0] |
+| creq_params | 8852078592 | 27361714416 |
 | disagg_transfer_bytes_640 | 167772160 | 195887104 |
 | eng_None_32768_params | 27919350016 | 28704543984 |
 | eng_None_32768_state_mb | 0.0 | 153.944064 |
@@ -5130,6 +6109,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 64} | {"MHA-global": 16, "Recurrent": 48} |
 | genz_prefill_kv_mb | 1024.0 | 402.8125 |
 | genz_prefill_weights_mb | 46450.0 | 51299.21875 |
+| kvcost_active_params | 27919350016 | 28704543984 |
+| kvplan_ws_gib | 75.3 | 75.25 |
+| kvplan_ws_tokens | 1233697 | 1232849 |
+| lora_adapter_gb | 0.889192448 | 0.9967616 |
+| maxbatch_80gb_4096 | 29 | 26 |
 | prefix_kv_bytes_per_token | 262144 | 65536 |
 | report_params | 27919350016 | 28704543984 |
 | report_total_gb | 56.938550728 | 58.508938664 |
@@ -5141,6 +6125,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 32 | 38 |
 | serving_state_bytes | 0 | 153944064 |
 | serving_weight_bytes | 46163558400 | 54723428832 |
+| time_params | 8999534592 | 28704543984 |
+| tpar_mem_gb | 366.763337 | 425.135209 |
 | traingenz_params | 26367754240 | 27361714416 |
 | trainmem_total_gb | 552.80313 | 568.349971 |
 | trainmem_weight_gb | 167.5161 | 172.227264 |
@@ -5149,12 +6135,18 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [167.5161, 552.80313] | [172.227264, 568.349971] |
+| advtrain_lora | [56.031638, 64.172356] | [57.602026, 65.899782] |
+| ccb_params_b | 8.852078592 | 27.361714416 |
 | conv_kv_size | 262144 | 32768 |
 | conv_layers | [0, 32] | [0, 64] |
 | conv_prefill_weights_mb | 12852.0 | 51299.21875 |
 | conv_serving_weight_bytes | 13214154752 | 54723428832 |
 | conv_state_bytes | 0 | 153944064 |
+| copt_quick | [26366443520, 426.351945, 6.591611] | [27361714416, 442.375807, 6.840429] |
 | counter_params | 27919350016 | 28704543984 |
+| creq_gb | [126.573345, 192.0] | [385.708247, 640.0] |
+| creq_params | 8852078592 | 27361714416 |
 | disagg_transfer_bytes_640 | 167772160 | 195887104 |
 | eng_None_32768_params | 27919350016 | 28704543984 |
 | eng_None_32768_state_mb | 0.0 | 153.944064 |
@@ -5176,6 +6168,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 64} | {"MHA-global": 16, "Recurrent": 48} |
 | genz_prefill_kv_mb | 1024.0 | 402.8125 |
 | genz_prefill_weights_mb | 46450.0 | 51299.21875 |
+| kvcost_active_params | 27919350016 | 28704543984 |
+| kvplan_ws_gib | 75.3 | 75.25 |
+| kvplan_ws_tokens | 1233697 | 1232849 |
+| lora_adapter_gb | 0.889192448 | 0.9967616 |
+| maxbatch_80gb_4096 | 29 | 26 |
 | prefix_kv_bytes_per_token | 262144 | 65536 |
 | report_params | 27919350016 | 28704543984 |
 | report_total_gb | 56.938550728 | 58.508938664 |
@@ -5187,6 +6184,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 32 | 38 |
 | serving_state_bytes | 0 | 153944064 |
 | serving_weight_bytes | 46163558400 | 54723428832 |
+| time_params | 8999534592 | 28704543984 |
+| tpar_mem_gb | 366.763337 | 425.135209 |
 | traingenz_params | 26367754240 | 27361714416 |
 | trainmem_total_gb | 552.80313 | 568.349971 |
 | trainmem_weight_gb | 167.5161 | 172.227264 |
@@ -5195,12 +6194,18 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [167.5161, 552.80313] | [172.227264, 568.349971] |
+| advtrain_lora | [56.031638, 64.172356] | [57.602026, 65.899782] |
+| ccb_params_b | 8.852078592 | 27.361714416 |
 | conv_kv_size | 262144 | 32768 |
 | conv_layers | [0, 32] | [0, 64] |
 | conv_prefill_weights_mb | 12852.0 | 51299.21875 |
 | conv_serving_weight_bytes | 13214154752 | 54723428832 |
 | conv_state_bytes | 0 | 153944064 |
+| copt_quick | [26366443520, 426.351945, 6.591611] | [27361714416, 442.375807, 6.840429] |
 | counter_params | 27919350016 | 28704543984 |
+| creq_gb | [126.573345, 192.0] | [385.708247, 640.0] |
+| creq_params | 8852078592 | 27361714416 |
 | disagg_transfer_bytes_640 | 167772160 | 195887104 |
 | eng_None_32768_params | 27919350016 | 28704543984 |
 | eng_None_32768_state_mb | 0.0 | 153.944064 |
@@ -5222,6 +6227,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 64} | {"MHA-global": 16, "Recurrent": 48} |
 | genz_prefill_kv_mb | 1024.0 | 402.8125 |
 | genz_prefill_weights_mb | 46450.0 | 51299.21875 |
+| kvcost_active_params | 27919350016 | 28704543984 |
+| kvplan_ws_gib | 75.3 | 75.25 |
+| kvplan_ws_tokens | 1233697 | 1232849 |
+| lora_adapter_gb | 0.889192448 | 0.9967616 |
+| maxbatch_80gb_4096 | 29 | 26 |
 | prefix_kv_bytes_per_token | 262144 | 65536 |
 | report_params | 27919350016 | 28704543984 |
 | report_total_gb | 56.938550728 | 58.508938664 |
@@ -5233,6 +6243,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 32 | 38 |
 | serving_state_bytes | 0 | 153944064 |
 | serving_weight_bytes | 46163558400 | 54723428832 |
+| time_params | 8999534592 | 28704543984 |
+| tpar_mem_gb | 366.763337 | 425.135209 |
 | traingenz_params | 26367754240 | 27361714416 |
 | trainmem_total_gb | 552.80313 | 568.349971 |
 | trainmem_weight_gb | 167.5161 | 172.227264 |
@@ -5241,10 +6253,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 2.3545856 | 2.89722624 |
 | cluster_b_eff_4096 | 12 | 1619 |
 | conv_kv_size | 327680 | 0 |
 | conv_serving_weight_bytes | 8646041600 | 5794452480 |
 | conv_state_bytes | 0 | 22937600 |
+| creq_gb | [35.366852, 80.0] | [42.963821, 80.0] |
+| creq_params | 2354585600 | 2897226240 |
 | disagg_b_eff_4096 | 12 | 1619 |
 | disagg_transfer_bytes_640 | 419430400 | 22937600 |
 | eng_None_32768_state_mb | 0.0 | 22.9376 |
@@ -5257,6 +6272,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_4096_total_mb | 5713.840128 | 5736.777728 |
 | facts_weight_bytes | 5588716544 | 5794452480 |
 | genz_kv_size | 327680 | 0 |
+| lora_adapter_gb | 0.35651584 | 0.485261312 |
+| lora_scratch_gb | 7.511495148 | 15.022990295 |
 | prefix_kv_bytes_per_token | 655360 | 0 |
 | serving_bytes_per_token | 655360 | 0 |
 | serving_requests_8gib_1k | 12 | 374 |
@@ -5270,11 +6287,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [3.503383, 11.561162] | [17.105043, 56.446643] |
+| advtrain_lora | [1.360732, 4.034359] | [5.894619, 9.021635] |
 | cluster_b_eff_4096 | 1 | 23 |
 | conv_kv_size | 131072 | 196608 |
 | conv_layers | [16, 16] | [24, 24] |
 | conv_prefill_weights_mb | 6678.0 | 5435.0 |
 | conv_serving_weight_bytes | 6739197952 | 5568753664 |
+| copt_quick | null | [2784376832, 45.106298, 0.696094] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'" | null |
 | counter_params | 583897088 | 2850840576 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 23 |
@@ -5308,8 +6329,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 24 |
 | kv_gb@32768 | 0.0 | 12.884901888 |
 | kv_gb@4096 | 0.0 | 1.610612736 |
+| kvcost_active_params | 583897088 | 2850840576 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 462.0 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 462.0 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 462.22 |
+| kvplan_ws_tokens | null | 1262148 |
+| maxbatch_80gb_4096 | 303 | 28 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'" | null |
 | prefix_kv_bytes_per_token | null | 393216 |
 | report_kv_gb | 0.18284544 | 1.905524736 |
@@ -5330,6 +6359,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout', 'd_ff', 'd_kv', 'd_model', 'dense_act_" | null |
 | sim_max_running | 331 | 69 |
 | slice_mib_16x4352 | [27904, true] | [42496, true] |
+| tpar_mem_gb | null | 45.527687 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'" | null |
+| tpar_options_8x80 | null | 104 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'" | null |
 | traingenz_params | null | 2784376832 |
 | trainmem_total_gb | 11.561162 | 56.446643 |
@@ -5342,11 +6375,17 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [470.279455, 1551.922201] | [477.527212, 1575.8398] |
+| advtrain_lora | [156.858384, 173.732259] | [159.274303, 176.38977] |
+| ccb_params_b | 4.405387264 | 80.39318528 |
 | cluster_b_eff_4096 | 68 | 1 |
 | conv_prefill_weights_mb | null | 154338.609375 |
 | conv_serving_weight_bytes | 6150217728 | 160786370560 |
 | conv_weights_error | "TypeError: unsupported operand type(s) for /: 'list' and 'int'" | null |
+| copt_quick | [4405387264, 71.667617, 1.101347] | [80393185280, 1295.071165, 20.098296] |
 | counter_params | 78379909120 | 79587868672 |
+| creq_gb | [53.045378, 80.0] | [1128.148839, 2256.0] |
+| creq_params | 3600080896 | 80393185280 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 68 | 1 |
 | eng_None_32768_params | 78379909120 | 79587868672 |
@@ -5372,6 +6411,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_prefill_error | "TypeError: unsupported operand type(s) for /: 'list' and 'int'" | null |
 | genz_prefill_kv_mb | null | 512.0 |
 | genz_prefill_weights_mb | null | 154338.609375 |
+| kvcost_active_params | 78379909120 | 79587868672 |
+| kvplan_ws_gib | 144.18 | 144.03 |
+| kvplan_ws_tokens | 1181067 | 1179871 |
+| lora_adapter_gb | null | 0.222298112 |
+| lora_error | "TypeError: int() argument must be a string, a bytes-like object or a real number, not 'list'" | null |
+| lora_scratch_gb | null | 6.009196118 |
 | report_params | 78379909120 | 79587868672 |
 | report_total_gb | 158.128839066 | 160.54475817 |
 | report_weight_gb | 156.75981824 | 159.175737344 |
@@ -5384,6 +6429,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 6150217728 | 160786370560 |
 | sim_error | null | "RuntimeError: the KV pool cannot hold one request at the step's budget" |
 | slice_mib_16x4352 | null | [81582, false] |
+| time_params | 4405387264 | 79587868672 |
+| tpar_mem_gb | 57.830007 | 1240.43574 |
+| tpar_options_8x80 | 80 | 0 |
 | trainmem_total_gb | 1551.922201 | 1575.8398 |
 | trainmem_weight_gb | 470.279455 | 477.527212 |
 | vllm_error | "TypeError: int() argument must be a string, a bytes-like object or a real number, not 'list'" | null |
@@ -5395,9 +6443,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 16.59895808 | 33.642516224 |
 | conv_prefill_weights_mb | 54780.0 | 64166.71875 |
 | conv_serving_weight_bytes | 54767124480 | 67285032448 |
 | conv_state_bytes | 0 | 304201728 |
+| creq_gb | [216.400238, 768.0] | [473.800534, 1128.0] |
+| creq_params | 15256780800 | 33642516224 |
 | disagg_transfer_bytes_640 | 94371840 | 398573568 |
 | eng_None_32768_state_mb | 0.0 | 304.201728 |
 | eng_None_32768_total_mb | 73265.91703 | 73570.118758 |
@@ -5414,6 +6465,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"Mamba": 72} | {"MHA-global": 72} |
 | genz_prefill_kv_mb | 365.625 | 866.109375 |
 | genz_prefill_weights_mb | 73680.0 | 64166.71875 |
+| lora_adapter_gb | 0.924844032 | 1.37816064 |
 | runtime_chunked | [49.399305, 54780.0, 108.0] | [58.622617, 64166.719, 688.219] |
 | runtime_decode | [48.848846, 71130.0, 1445.625] | [40.955966, 61616.719, 1233.0] |
 | runtime_prefill | [440.484613, 73680.0, 365.625] | [120.493241, 64166.719, 362.109] |
@@ -5422,6 +6474,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 54767124480 | 67285032448 |
 | sim_error | "RuntimeError: the KV pool cannot hold one request at the step's budget" | null |
 | sim_max_running | null | 11 |
+| tpar_mem_gb | 481.433597 | 522.330158 |
 | vllm_limits | [0, 0, 0, 1, 0, 304349184.0, false] | [22, 45408, 22, 1, 0, 304349184.0, false] |
 | vllm_running_1024 | 1024 | 11 |
 | vllm_running_8192 | 1024 | 3 |
@@ -5448,6 +6501,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_source | "_layer_metadata" | "layer_plan:layer_types" |
 | kvgeo_32768 | [0.0, 28, 0, 0.0, 16, 0.0] | [114688.0, 28, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 28, 0, 0.0, 16, 0.0] | [114688.0, 28, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 168.75 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 168.75 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 134.79 |
+| kvplan_ws_tokens | null | 1261866 |
+| maxbatch_80gb_4096 | 1024 | 118 |
 | report_kv_gb | 0.0 | 0.469762048 |
 | report_total_gb | 5.125091328 | 5.688805786 |
 | serving_weight_bytes | 6030360576 | 6423926784 |
@@ -5456,11 +6516,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [164.555201, 543.032162] | [173.221627, 571.631368] |
+| advtrain_lora | [55.044671, 63.086693] | [57.93348, 66.264382] |
+| ccb_params_b | 8.852078592 | 28.870271088 |
 | conv_kv_size | 262144 | 253952 |
 | conv_layers | [0, 32] | [0, 62] |
 | conv_prefill_weights_mb | 12852.0 | 54202.3125 |
 | conv_serving_weight_bytes | 13214154752 | 57740542176 |
 | counter_params | 27425866752 | 28870271088 |
+| creq_gb | [126.573345, 192.0] | [406.82804, 640.0] |
+| creq_params | 8852078592 | 28870271088 |
 | eng_None_32768_params | 27425866752 | 28870271088 |
 | eng_None_32768_total_mb | 72733.676749 | 75622.485421 |
 | eng_None_4096_params | 27425866752 | 28870271088 |
@@ -5479,6 +6544,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_layer_kinds | {"MHA-global": 62} | {"MHA-global": 10, "MHA-local": 52} |
 | genz_prefill_kv_mb | 1984.0 | 736.0 |
 | genz_prefill_weights_mb | 40531.3125 | 54202.3125 |
+| kvcost_active_params | 27425866752 | 28870271088 |
+| kvplan_ws_gib | 582.8 | 582.06 |
+| kvplan_ws_tokens | 1232059 | 1230503 |
+| maxbatch_80gb_4096 | 6 | 4 |
 | report_params | 27425866752 | 28870271088 |
 | report_total_gb | 58.137320571 | 61.026129243 |
 | report_weight_gb | 54.851733504 | 57.740542176 |
@@ -5488,6 +6557,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 54015983616 | 57740542176 |
 | sim_max_running | 32 | 28 |
 | slice_mib_16x4352 | [81582, false] | [80896, true] |
+| time_params | 8999534592 | 28870271088 |
 | trainmem_total_gb | 543.032162 | 571.631368 |
 | trainmem_weight_gb | 164.555201 | 173.221627 |
 | vllm_limits | [2067, 33072, 2067, 1, 0, 0.0, false] | [12768, 204288, 12768, 1, 6, 0.0, true] |
@@ -5498,11 +6568,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [1.811343, 5.977433] | [10.910676, 36.005232] |
+| advtrain_lora | [0.796719, 3.413945] | [3.82983, 6.750367] |
 | cluster_b_eff_4096 | 13 | 42 |
 | conv_kv_size | 262144 | 81920 |
 | conv_prefill_weights_mb | 13162.40625 | 3868.325195 |
 | conv_serving_weight_bytes | 13376897024 | 3636892160 |
 | conv_state_bytes | 0 | 245760000 |
+| copt_quick | [6900891648, 111.845237, 1.725223] | [1818446080, 29.508507, 0.454612] |
 | counter_params | 301890560 | 1818446080 |
 | disagg_b_eff_4096 | 13 | 42 |
 | disagg_transfer_bytes_640 | 335544320 | 350617600 |
@@ -5518,8 +6591,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 32 |
 | kv_gb@32768 | 0.0 | 5.61446912 |
 | kv_gb@4096 | 0.0 | 0.91684864 |
+| kvcost_active_params | 301890560 | 1818446080 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [163840.0, 32, 0, 0.0, 16, 245760000.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [163840.0, 32, 0, 0.0, 16, 245760000.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 192.77 |
+| kvplan_ws_tokens | null | 1263317 |
 | prefix_kv_bytes_per_token | 524288 | 163840 |
 | runtime_chunked | [9.680075, 10410.406, 384.0] | [1.947247, 3068.325, 588.75] |
 | runtime_decode | [7.78941, 10005.203, 258.0] | [3.650774, 2940.605, 1018.125] |
@@ -5530,6 +6607,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 13376897024 | 3636892160 |
 | sim_max_running | 400 | 173 |
 | slice_mib_16x4352 | [65536, true] | [70144, true] |
+| tpar_mem_gb | 109.09157 | 30.034113 |
+| tpar_options_8x80 | 31 | 80 |
 | traingenz_params | 6901415936 | 1818446080 |
 | trainmem_total_gb | 5.977433 | 36.005232 |
 | trainmem_weight_gb | 1.811343 | 10.910676 |
@@ -6274,6 +7353,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [11.407614, 37.645126] | [11.291534, 37.262063] |
+| advtrain_lora | [3.860734, 5.072089] | [3.822041, 5.029527] |
 | cluster_b_eff_4096 | 196 | 560 |
 | conv_kv_size | 24576 | 6144 |
 | conv_prefill_weights_mb | 4148.0 | 4559.164062 |
@@ -6317,8 +7398,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_gb@32768 | 1.610612736 | 0.402653184 |
 | kv_gb@4096 | 0.201326592 | 0.050331648 |
 | kv_source | "uniform" | "layer_plan:layer_types" |
+| kvcost_active_params | 1901268992 | 1881922368 |
 | kvgeo_32768 | [49152.0, 24, 0, 0.0, 16, 0.0] | [12288.0, 6, 18, 1085440.0, 544, 0.0] |
 | kvgeo_4096 | [49152.0, 24, 0, 0.0, 16, 0.0] | [12288.0, 6, 18, 1085440.0, 544, 0.0] |
+| kvplan_host_gib | 168.75 | 0.0 |
+| kvplan_shm_gib | 168.75 | 0.0 |
+| kvplan_tiers | "T1" | "-" |
+| kvplan_ws_gib | 57.81 | 14.46 |
+| kvplan_ws_tokens | 1262777 | 1263133 |
+| lora_adapter_gb | 0.100663296 | 0.149505024 |
+| maxbatch_80gb_4096 | 280 | 808 |
 | model_type | "decoder-only" | "hybrid" |
 | prefix_kv_bytes_per_token | 49152 | 12288 |
 | report_kv_gb | 0.201326592 | 0.050331648 |
@@ -6344,6 +7433,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [11.407614, 37.645126] | [11.291534, 37.262063] |
+| advtrain_lora | [3.860734, 5.072089] | [3.822041, 5.029527] |
 | cluster_b_eff_4096 | 196 | 560 |
 | conv_kv_size | 24576 | 6144 |
 | conv_prefill_weights_mb | 4148.0 | 4559.164062 |
@@ -6387,8 +7478,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_gb@32768 | 1.610612736 | 0.402653184 |
 | kv_gb@4096 | 0.201326592 | 0.050331648 |
 | kv_source | "uniform" | "layer_plan:layer_types" |
+| kvcost_active_params | 1901268992 | 1881922368 |
 | kvgeo_32768 | [49152.0, 24, 0, 0.0, 16, 0.0] | [12288.0, 6, 18, 1085440.0, 544, 0.0] |
 | kvgeo_4096 | [49152.0, 24, 0, 0.0, 16, 0.0] | [12288.0, 6, 18, 1085440.0, 544, 0.0] |
+| kvplan_host_gib | 168.75 | 0.0 |
+| kvplan_shm_gib | 168.75 | 0.0 |
+| kvplan_tiers | "T1" | "-" |
+| kvplan_ws_gib | 57.81 | 14.46 |
+| kvplan_ws_tokens | 1262777 | 1263133 |
+| lora_adapter_gb | 0.100663296 | 0.149505024 |
+| maxbatch_80gb_4096 | 280 | 808 |
 | model_type | "decoder-only" | "hybrid" |
 | prefix_kv_bytes_per_token | 49152 | 12288 |
 | report_kv_gb | 0.201326592 | 0.050331648 |
@@ -6414,8 +7513,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [2.21885, 7.322205] | [2.455517, 8.103205] |
+| advtrain_lora | [0.774351, 1.296579] | [0.85324, 1.383356] |
 | conv_serving_weight_bytes | 723763200 | 818505600 |
 | counter_params | 369808320 | 409252800 |
+| creq_gb | [7.879661, 16.0] | [7.880534, 16.0] |
+| creq_params | 409190400 | 409252800 |
 | eng_None_32768_params | 369808320 | 409252800 |
 | eng_None_32768_total_mb | 2239.08032 | 2317.96928 |
 | eng_None_4096_params | 369808320 | 409252800 |
@@ -6425,6 +7528,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_4096_params | 369808320 | 409252800 |
 | eng_llamacpp_4096_total_mb | 986.032 | 1064.92096 |
 | gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
+| kvcost_active_params | 369808320 | 409252800 |
+| kvplan_ws_tokens | 1264682 | 1264637 |
+| lora_adapter_gb | 0.06029312 | 0.07471104 |
+| maxbatch_80gb_4096 | 353 | 352 |
 | report_params | 369808320 | 409252800 |
 | report_total_gb | 1.035315072 | 1.114204032 |
 | report_weight_gb | 0.73961664 | 0.8185056 |
@@ -6436,8 +7543,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [2.21885, 7.322205] | [2.455517, 8.103205] |
+| advtrain_lora | [0.774351, 1.296579] | [0.85324, 1.383356] |
 | conv_serving_weight_bytes | 723763200 | 818505600 |
 | counter_params | 369808320 | 409252800 |
+| creq_gb | [7.879661, 16.0] | [7.880534, 16.0] |
+| creq_params | 409190400 | 409252800 |
 | eng_None_32768_params | 369808320 | 409252800 |
 | eng_None_32768_total_mb | 2239.08032 | 2317.96928 |
 | eng_None_4096_params | 369808320 | 409252800 |
@@ -6447,6 +7558,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_4096_params | 369808320 | 409252800 |
 | eng_llamacpp_4096_total_mb | 986.032 | 1064.92096 |
 | gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
+| kvcost_active_params | 369808320 | 409252800 |
+| kvplan_ws_tokens | 1264682 | 1264637 |
+| lora_adapter_gb | 0.06029312 | 0.07471104 |
+| maxbatch_80gb_4096 | 353 | 352 |
 | report_params | 369808320 | 409252800 |
 | report_total_gb | 1.035315072 | 1.114204032 |
 | report_weight_gb | 0.73961664 | 0.8185056 |
@@ -6458,10 +7573,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [11.952265, 39.442474] | [125.448411, 413.979756] |
+| advtrain_lora | [4.038278, 5.166742] | [41.870327, 46.781995] |
+| ccb_params_b | 3.01621248 | 20.907928128 |
 | cluster_b_eff_4096 | 195 | 5 |
 | conv_prefill_weights_mb | 4563.28125 | 39878.4375 |
 | conv_serving_weight_bytes | 3626680320 | 41815856256 |
+| copt_quick | [2551726080, 41.473489, 0.637932] | [20907928128, 337.008342, 5.226982] |
 | counter_params | 1992044160 | 20908068480 |
+| creq_gb | [38.17715, 80.0] | [295.163979, 640.0] |
+| creq_params | 2551726080 | 20907928128 |
 | disagg_b_eff_4096 | 195 | 5 |
 | eng_None_32768_params | 1992044160 | 20908068480 |
 | eng_None_32768_total_mb | 5945.764301 | 44049.60384 |
@@ -6476,6 +7597,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_ffn_kinds | {"Dense": 24} | {"MoE": 24} |
 | genz_prefill_weights_mb | 4183.59375 | 39878.4375 |
 | gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "moe_intermediate_size", "n_routed_experts", "num_attention_heads", "num_experts", "num_experts_per_tok", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
+| kvcost_active_params | 1992044160 | 4186558080 |
+| kvplan_host_gib | 168.75 | 0.0 |
+| kvplan_shm_gib | 168.75 | 0.0 |
+| kvplan_tiers | "T1" | "-" |
+| kvplan_ws_gib | 57.8 | 57.68 |
+| kvplan_ws_tokens | 1262494 | 1260014 |
+| lora_adapter_gb | 0.10616832 | 0.12386304 |
+| maxbatch_80gb_4096 | 279 | 121 |
 | report_params | 1992044160 | 20908068480 |
 | report_total_gb | 4.436318177 | 42.431441357 |
 | report_weight_gb | 3.98408832 | 41.81613696 |
@@ -6484,6 +7613,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | runtime_prefill | [9.452835, 4183.594, 24.0] | [31.010111, 39878.438, 24.0] |
 | serving_weight_bytes | 3626680320 | 41815856256 |
 | slice_mib_16x4352 | [14336, true] | [52736, true] |
+| time_params | 2551726080 | 20908068480 |
+| tpar_mem_gb | 37.278095 | 325.324167 |
+| tpar_options_8x80 | 104 | 2 |
 | traingenz_params | 2552002560 | 21065103360 |
 | trainmem_total_gb | 39.442474 | 413.979756 |
 | trainmem_weight_gb | 11.952265 | 125.448411 |
@@ -6495,10 +7627,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [11.952265, 39.442474] | [125.448411, 413.979756] |
+| advtrain_lora | [4.038278, 5.166742] | [41.870327, 46.781995] |
+| ccb_params_b | 3.01621248 | 20.907928128 |
 | cluster_b_eff_4096 | 195 | 5 |
 | conv_prefill_weights_mb | 4563.28125 | 39878.4375 |
 | conv_serving_weight_bytes | 3626680320 | 41815856256 |
+| copt_quick | [2551726080, 41.473489, 0.637932] | [20907928128, 337.008342, 5.226982] |
 | counter_params | 1992044160 | 20908068480 |
+| creq_gb | [38.17715, 80.0] | [295.163979, 640.0] |
+| creq_params | 2551726080 | 20907928128 |
 | disagg_b_eff_4096 | 195 | 5 |
 | eng_None_32768_params | 1992044160 | 20908068480 |
 | eng_None_32768_total_mb | 5945.764301 | 44049.60384 |
@@ -6513,6 +7651,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_ffn_kinds | {"Dense": 24} | {"MoE": 24} |
 | genz_prefill_weights_mb | 4183.59375 | 39878.4375 |
 | gguf_config_keys | ["head_dim", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["head_dim", "hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "moe_intermediate_size", "n_routed_experts", "num_attention_heads", "num_experts", "num_experts_per_tok", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
+| kvcost_active_params | 1992044160 | 4186558080 |
+| kvplan_host_gib | 168.75 | 0.0 |
+| kvplan_shm_gib | 168.75 | 0.0 |
+| kvplan_tiers | "T1" | "-" |
+| kvplan_ws_gib | 57.8 | 57.68 |
+| kvplan_ws_tokens | 1262494 | 1260014 |
+| lora_adapter_gb | 0.10616832 | 0.12386304 |
+| maxbatch_80gb_4096 | 279 | 121 |
 | report_params | 1992044160 | 20908068480 |
 | report_total_gb | 4.436318177 | 42.431441357 |
 | report_weight_gb | 3.98408832 | 41.81613696 |
@@ -6521,6 +7667,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | runtime_prefill | [9.452835, 4183.594, 24.0] | [31.010111, 39878.438, 24.0] |
 | serving_weight_bytes | 3626680320 | 41815856256 |
 | slice_mib_16x4352 | [14336, true] | [52736, true] |
+| time_params | 2551726080 | 20908068480 |
+| tpar_mem_gb | 37.278095 | 325.324167 |
+| tpar_options_8x80 | 104 | 2 |
 | traingenz_params | 2552002560 | 21065103360 |
 | trainmem_total_gb | 39.442474 | 413.979756 |
 | trainmem_weight_gb | 11.952265 | 125.448411 |
@@ -6532,6 +7681,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.659921, 2.177739] | [0.820353, 2.707165] |
+| advtrain_lora | [0.23354, 0.562481] | [0.287017, 0.621306] |
 | conv_serving_weight_bytes | 273374208 | 273412608 |
 | counter_params | 109986816 | 136725504 |
 | eng_None_32768_params | 109986816 | 136725504 |
@@ -6546,6 +7697,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_decode_weights_mb | 206.709961 | 260.709961 |
 | genz_prefill_weights_mb | 251.419922 | 305.419922 |
 | gguf_config_keys | ["hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
+| kvcost_active_params | 109986816 | 136725504 |
+| kvplan_ws_tokens | 1265173 | 1265142 |
+| lora_adapter_gb | 0.021233664 | 0.027131904 |
+| maxbatch_80gb_4096 | 395 | 394 |
 | report_params | 109986816 | 136725504 |
 | report_total_gb | 0.500824228 | 0.554301604 |
 | report_weight_gb | 0.219973632 | 0.273451008 |
@@ -6561,6 +7716,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.659921, 2.177739] | [0.820353, 2.707165] |
+| advtrain_lora | [0.23354, 0.562481] | [0.287017, 0.621306] |
 | conv_serving_weight_bytes | 273374208 | 273412608 |
 | counter_params | 109986816 | 136725504 |
 | eng_None_32768_params | 109986816 | 136725504 |
@@ -6575,6 +7732,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_decode_weights_mb | 206.709961 | 260.709961 |
 | genz_prefill_weights_mb | 251.419922 | 305.419922 |
 | gguf_config_keys | ["hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "vocab_size"] | ["hidden_act", "hidden_size", "intermediate_size", "max_position_embeddings", "model_type", "num_attention_heads", "num_hidden_layers", "num_key_value_heads", "rope_theta", "tie_word_embeddings", "vocab_size"] |
+| kvcost_active_params | 109986816 | 136725504 |
+| kvplan_ws_tokens | 1265173 | 1265142 |
+| lora_adapter_gb | 0.021233664 | 0.027131904 |
+| maxbatch_80gb_4096 | 395 | 394 |
 | report_params | 109986816 | 136725504 |
 | report_total_gb | 0.500824228 | 0.554301604 |
 | report_weight_gb | 0.219973632 | 0.273451008 |
@@ -6590,11 +7751,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [9.983917, 32.946926] | [21.901975, 72.276518] |
+| advtrain_lora | [3.52091, 6.410555] | [7.493596, 10.78051] |
 | cluster_b_eff_4096 | 282 | 22 |
 | conv_kv_size | 131072 | 196608 |
 | conv_layers | [16, 16] | [24, 24] |
 | conv_prefill_weights_mb | 6676.0 | 5435.0 |
 | conv_serving_weight_bytes | 6738149376 | 7300658432 |
+| copt_quick | [162398208, 2.666704, 0.0406] | [3650329216, 59.048131, 0.912582] |
 | counter_params | 1663986176 | 3650329216 |
 | disagg_b_eff_4096 | 282 | 22 |
 | disagg_transfer_bytes_640 | 23592960 | 251658240 |
@@ -6623,8 +7787,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 24 |
 | kv_gb@32768 | 0.0 | 12.884901888 |
 | kv_gb@4096 | 0.0 | 1.610612736 |
+| kvcost_active_params | 1663986176 | 3650329216 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 461.75 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 461.75 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 461.89 |
+| kvplan_ws_tokens | null | 1261244 |
+| maxbatch_80gb_4096 | 1024 | 33 |
 | prefix_kv_bytes_per_token | 36864 | 393216 |
 | report_kv_gb | 0.0 | 1.610612736 |
 | report_params | 1663986176 | 3650329216 |
@@ -6638,6 +7810,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 275644416 | 7300658432 |
 | sim_max_running | 322 | 67 |
 | slice_mib_16x4352 | [30208, true] | [44288, true] |
+| tpar_mem_gb | 3.110513 | 58.863353 |
+| tpar_options_8x80 | 112 | 92 |
 | traingenz_params | 162435072 | 3650329216 |
 | trainmem_total_gb | 32.946926 | 72.276518 |
 | trainmem_weight_gb | 9.983917 | 21.901975 |
@@ -6649,61 +7823,85 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
-| cluster_b_eff_4096 | 13 | 14 |
-| conv_kv_size | 262144 | 229376 |
+| advtrain_full | [15.381529, 50.759044] | [37.462131, 123.625031] |
+| advtrain_lora | [5.320114, 8.38968] | [12.680315, 16.4859] |
+| cluster_b_eff_4096 | 13 | 243 |
+| conv_kv_size | 262144 | 14336 |
 | conv_layers | [0, 32] | [0, 28] |
-| conv_prefill_weights_mb | 12852.0 | 13588.0 |
-| conv_serving_weight_bytes | 13214154752 | 15557140480 |
-| counter_params | 2357735424 | 6797668352 |
-| disagg_b_eff_4096 | 13 | 14 |
-| disagg_transfer_bytes_640 | 335544320 | 293601280 |
-| eng_None_32768_kv_mb | 6442.450944 | 15032.385536 |
-| eng_None_32768_params | 2357735424 | 6797668352 |
-| eng_None_32768_total_mb | 11938.062336 | 29407.862784 |
-| eng_None_4096_kv_mb | 805.306368 | 1879.048192 |
-| eng_None_4096_params | 2357735424 | 6797668352 |
-| eng_None_4096_total_mb | 5910.847488 | 15864.455168 |
-| eng_llamacpp_32768_kv_mb | 6442.450944 | 15032.385536 |
-| eng_llamacpp_32768_params | 2357735424 | 6797668352 |
-| eng_llamacpp_32768_total_mb | 11938.062336 | 29407.862784 |
-| eng_llamacpp_4096_kv_mb | 805.306368 | 1879.048192 |
-| eng_llamacpp_4096_params | 2357735424 | 6797668352 |
-| eng_llamacpp_4096_total_mb | 5910.847488 | 15864.455168 |
-| genz_chunked_kv_mb | 2304.0 | 2016.0 |
-| genz_decode_kv_mb | 2048.0 | 1792.0 |
-| genz_decode_weights_mb | 9850.0 | 13080.0 |
+| conv_prefill_weights_mb | 12852.0 | 11908.0 |
+| conv_serving_weight_bytes | 13214154752 | 14336598016 |
+| copt_quick | [6738149376, 109.225087, 1.684537] | [7168299008, 116.057886, 1.792075] |
+| counter_params | 2563588096 | 6243688448 |
+| disagg_b_eff_4096 | 13 | 243 |
+| disagg_transfer_bytes_640 | 335544320 | 18350080 |
+| eng_None_32768_kv_mb | 6442.450944 | 939.524096 |
+| eng_None_32768_params | 2563588096 | 6243688448 |
+| eng_None_32768_total_mb | 12349.76768 | 14207.041536 |
+| eng_None_4096_kv_mb | 805.306368 | 117.440512 |
+| eng_None_4096_params | 2563588096 | 6243688448 |
+| eng_None_4096_total_mb | 6322.552832 | 12994.88768 |
+| eng_llamacpp_32768_kv_mb | 6442.450944 | 939.524096 |
+| eng_llamacpp_32768_params | 2563588096 | 6243688448 |
+| eng_llamacpp_32768_total_mb | 12349.76768 | 14207.041536 |
+| eng_llamacpp_4096_kv_mb | 805.306368 | 117.440512 |
+| eng_llamacpp_4096_params | 2563588096 | 6243688448 |
+| eng_llamacpp_4096_total_mb | 6322.552832 | 12994.88768 |
+| facts_kv_bytes_4096 | 1879048192 | 117440512 |
+| facts_kv_bytes_per_token | 458752 | 28672 |
+| facts_weight_bytes | 15557140480 | 14336598016 |
+| genz_chunked_kv_mb | 2304.0 | 126.0 |
+| genz_decode_kv_mb | 2048.0 | 112.0 |
+| genz_decode_weights_mb | 9850.0 | 11400.0 |
 | genz_ffn_kinds | {"Dense": 32} | {"Dense": 28} |
-| genz_kv_size | 262144 | 229376 |
+| genz_kv_size | 262144 | 14336 |
 | genz_layer_kinds | {"MHA-global": 32} | {"MHA-global": 28} |
-| genz_prefill_kv_mb | 2048.0 | 1792.0 |
-| genz_prefill_weights_mb | 10100.0 | 13588.0 |
-| kv_gb@32768 | 6.442450944 | 15.032385536 |
-| kv_gb@4096 | 0.805306368 | 1.879048192 |
-| kvgeo_32768 | [458752.0, 1, 0, 0.0, 16, 0.0] | [458752.0, 28, 0, 0.0, 16, 0.0] |
-| kvgeo_4096 | [458752.0, 1, 0, 0.0, 16, 0.0] | [458752.0, 28, 0, 0.0, 16, 0.0] |
+| genz_prefill_kv_mb | 2048.0 | 112.0 |
+| genz_prefill_weights_mb | 10100.0 | 11908.0 |
+| kv_gb@32768 | 6.442450944 | 0.939524096 |
+| kv_gb@4096 | 0.805306368 | 0.117440512 |
+| kvcost_active_params | 2563588096 | 6243688448 |
+| kvgeo_32768 | [458752.0, 1, 0, 0.0, 16, 0.0] | [28672.0, 28, 0, 0.0, 16, 0.0] |
+| kvgeo_4096 | [458752.0, 1, 0, 0.0, 16, 0.0] | [28672.0, 28, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 500.0 | 0.0 |
+| kvplan_shm_gib | 500.0 | 0.0 |
+| kvplan_tiers | "T1" | "-" |
+| kvplan_ws_gib | 539.39 | 33.61 |
+| kvplan_ws_tokens | 1262473 | 1258320 |
+| maxbatch_80gb_4096 | 68 | 415 |
 | model_type | "unknown" | "decoder-only" |
-| prefix_kv_bytes_per_token | 524288 | 458752 |
-| report_kv_gb | 0.805306368 | 1.879048192 |
-| report_params | 2357735424 | 6797668352 |
-| report_total_gb | 6.149922816 | 16.318278861 |
-| report_weight_gb | 4.715470848 | 13.595336704 |
-| runtime_chunked | [9.401786, 10100.0, 384.0] | [12.492831, 13588.0, 336.0] |
-| runtime_decode | [7.694589, 9850.0, 258.0] | [9.581397, 13080.0, 225.75] |
-| runtime_prefill | [20.426598, 10100.0, 256.0] | [26.500875, 13588.0, 224.0] |
-| serving_bytes_per_token | 524288 | 458752 |
-| serving_requests_8gib_1k | 16 | 18 |
-| serving_weight_bytes | 13214154752 | 15557140480 |
-| traingenz_params | 6738673664 | 7778570240 |
-| trainmem_total_gb | 46.683161 | 134.593833 |
-| trainmem_weight_gb | 14.146413 | 40.78601 |
+| prefix_kv_bytes_per_token | 524288 | 28672 |
+| report_kv_gb | 0.805306368 | 0.117440512 |
+| report_params | 2563588096 | 6243688448 |
+| report_total_gb | 6.56162816 | 13.096389837 |
+| report_weight_gb | 5.127176192 | 12.487376896 |
+| runtime_chunked | [9.401786, 10100.0, 384.0] | [10.79146, 11908.0, 21.0] |
+| runtime_decode | [7.694589, 9850.0, 258.0] | [8.418709, 11400.0, 14.109] |
+| runtime_prefill | [20.426598, 10100.0, 256.0] | [23.366224, 11908.0, 14.0] |
+| serving_bytes_per_token | 524288 | 28672 |
+| serving_requests_8gib_1k | 16 | 292 |
+| serving_weight_bytes | 13214154752 | 14336598016 |
+| sim_max_running | 125 | 400 |
+| slice_mib_16x4352 | [57088, true] | [21248, true] |
+| tpar_mem_gb | 106.585339 | 113.346902 |
+| tpar_options_8x80 | 31 | 30 |
+| traingenz_params | 6738673664 | 7168299008 |
+| trainmem_total_gb | 50.759044 | 123.625031 |
+| trainmem_weight_gb | 15.381529 | 37.462131 |
+| vllm_limits | [8131, 130096, 8131, 1, 0, 0.0, true] | [132538, 2120608, 132538, 1, 0, 0.0, true] |
+| vllm_running_1024 | 101 | 1024 |
+| vllm_running_8192 | 15 | 251 |
 
 ## synth:decoder-only-isencdec-false (decoder-only)
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [45.230875, 149.261886] | [48.382894, 159.66355] |
+| advtrain_lora | [15.24473, 18.946886] | [16.295404, 20.102627] |
 | cluster_b_eff_4096 | 52 | 50 |
 | conv_serving_weight_bytes | 15009316864 | 16060522496 |
 | counter_params | 7538479104 | 8063815680 |
+| creq_gb | [115.064175, 141.0] | [115.067903, 141.0] |
+| creq_params | 8029995008 | 8030261248 |
 | disagg_b_eff_4096 | 52 | 50 |
 | eng_None_32768_params | 7538479104 | 8063815680 |
 | eng_None_32768_total_mb | 20177.231872 | 21227.905024 |
@@ -6713,6 +7911,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_32768_total_mb | 20177.231872 | 21227.905024 |
 | eng_llamacpp_4096_params | 7538479104 | 8063815680 |
 | eng_llamacpp_4096_total_mb | 16016.482304 | 17067.155456 |
+| kvcost_active_params | 7538479104 | 8063815680 |
+| kvplan_ws_gib | 153.29 | 153.22 |
+| kvplan_ws_tokens | 1255690 | 1255102 |
+| maxbatch_80gb_4096 | 86 | 85 |
 | report_params | 7538479104 | 8063815680 |
 | report_total_gb | 16.204387123 | 17.255060275 |
 | report_weight_gb | 15.076958208 | 16.12763136 |
@@ -6724,10 +7926,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 3.107979264 | 15.706485888 |
 | cluster_b_eff_4096 | 41 | 90 |
 | conv_kv_size | 110592 | 15552 |
 | conv_prefill_weights_mb | 5126.75 | 29957.5 |
 | conv_serving_weight_bytes | 4956356608 | 31412971776 |
+| copt_quick | [2687893504, 43.587645, 0.671973] | [15706485888, 253.186982, 3.926621] |
+| creq_gb | [45.833832, 80.0] | [222.212925, 768.0] |
+| creq_params | 3107979264 | 15706485888 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 41 | 90 |
 | disagg_transfer_bytes_640 | 141557760 | 19906560 |
@@ -6748,16 +7954,22 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_bytes_per_token | 221184 | 31104 |
 | serving_requests_8gib_1k | 37 | 269 |
 | serving_weight_bytes | 4956356608 | 31412971776 |
+| time_params | 2687893504 | 15725195264 |
+| tpar_mem_gb | 43.095974 | 243.57889 |
+| tpar_options_8x80 | 48 | 7 |
 
 ## synth:enc-dec-llama-dec (encoder-decoder)
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741423, 3.684597] | [10.04979, 33.164307] |
+| advtrain_lora | [0.440079, 3.021641] | [3.542868, 6.434709] |
 | cluster_b_eff_4096 | 304 | 147 |
 | conv_kv_size | 131072 | 32768 |
 | conv_layers | [16, 16] | [24, 16] |
 | conv_prefill_weights_mb | 6676.0 | 3198.0 |
 | conv_serving_weight_bytes | 6738149376 | 3349929984 |
+| copt_quick | [1204813824, 19.582723, 0.301203] | [1674964992, 27.152157, 0.418741] |
 | counter_params | 123570432 | 1674964992 |
 | disagg_b_eff_4096 | 304 | 147 |
 | disagg_transfer_bytes_640 | 20971520 | 41943040 |
@@ -6787,8 +7999,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 16 |
 | kv_gb@32768 | 0.0 | 2.147483648 |
 | kv_gb@4096 | 0.0 | 0.268435456 |
+| kvcost_active_params | 123570432 | 1674964992 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [65536.0, 16, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [65536.0, 16, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 77.12 |
+| kvplan_ws_tokens | null | 1263479 |
+| maxbatch_80gb_4096 | 501 | 136 |
 | prefix_kv_bytes_per_token | 32768 | 65536 |
 | report_kv_gb | 0.11460608 | 0.415891456 |
 | report_params | 808394240 | 1649767168 |
@@ -6802,6 +8019,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 2077229056 | 3349929984 |
 | sim_max_running | 72 | 400 |
 | slice_mib_16x4352 | [81582, false] | [14080, true] |
+| tpar_mem_gb | 18.629971 | 28.636521 |
 | traingenz_params | 1204944896 | 1674964992 |
 | trainmem_total_gb | 3.684597 | 33.164307 |
 | trainmem_weight_gb | 0.741423 | 10.04979 |
@@ -6813,19 +8031,28 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 35.425091584 | 57.941106688 |
 | conv_serving_weight_bytes | 65741520896 | 115882213376 |
+| copt_quick | [33403437056, 540.573644, 8.350859] | [57941106688, 935.630125, 14.485277] |
+| creq_gb | [499.239772, 1128.0] | [814.463984, 1536.0] |
+| creq_params | 35425091584 | 57941106688 |
 | serving_weight_bytes | 65741520896 | 115882213376 |
+| tpar_mem_gb | 525.866815 | 903.716649 |
 | traingenz_params | 33405403136 | 57941106688 |
 
 ## synth:florence2 (multimodal)
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [1.740678, 5.744238] | [3.348919, 11.051431] |
+| advtrain_lora | [0.773164, 3.388034] | [1.309244, 3.977722] |
 | cluster_b_eff_4096 | 1 | 103 |
 | conv_kv_size | 131072 | 49152 |
 | conv_layers | [16, 16] | [12, 12] |
 | conv_prefill_weights_mb | 6676.0 | 1064.347656 |
 | conv_serving_weight_bytes | 6738149376 | 1116306176 |
+| copt_quick | null | [558153088, 9.055722, 0.139538] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [" | null |
 | counter_params | 290113024 | 558153088 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 103 |
@@ -6860,8 +8087,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 12 |
 | kv_gb@32768 | 0.0 | 3.221225472 |
 | kv_gb@4096 | 0.0 | 0.402653184 |
+| kvcost_active_params | 290113024 | 558153088 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 115.8 |
+| kvplan_ws_tokens | null | 1264747 |
+| maxbatch_80gb_4096 | 1024 | 145 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [" | null |
 | prefix_kv_bytes_per_token | null | 98304 |
 | report_kv_gb | 0.0 | 0.402653184 |
@@ -6881,6 +8113,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | null | 1116306176 |
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t" | null |
 | slice_mib_16x4352 | [10496, true] | [14592, true] |
+| tpar_mem_gb | null | 9.610579 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [" | null |
+| tpar_options_8x80 | null | 96 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [" | null |
 | traingenz_params | null | 558153088 |
 | trainmem_total_gb | 5.744238 | 11.051431 |
@@ -6893,8 +8129,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| ccb_params_b | 8.411676672 | 10.158908928 |
 | cluster_b_eff_4096 | 17 | 16 |
 | conv_serving_weight_bytes | 18482200576 | 20317817856 |
+| creq_gb | [114.572603, 141.0] | [144.788439, 192.0] |
+| creq_params | 8000634880 | 10158908928 |
 | disagg_b_eff_4096 | 17 | 16 |
 | eng_None_32768_kv_mb | 1409.286144 | 11274.289152 |
 | eng_None_32768_total_mb | 20726.532915 | 30591.535923 |
@@ -6908,8 +8147,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_sliding_layers | 42 | 21 |
 | kv_source | "uniform" | "_layer_metadata" |
 | kvgeo_32768 | [0.0, 42, 0, 0.0, 16, 0.0] | [344064.0, 42, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 401.5 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 401.5 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 401.7 |
+| kvplan_ws_tokens | null | 1253579 |
 | serving_weight_bytes | 18482200576 | 20317817856 |
 | slice_mib_16x4352 | [52992, true] | [52224, true] |
+| tpar_mem_gb | 155.281043 | 158.837112 |
+| tpar_options_8x80 | 15 | 13 |
 | vllm_limits | [9855, 157680, 9855, 1, 0, 0.0, true] | [19711, 315376, 19711, 1, 1, 0.0, true] |
 | vllm_running_8192 | 18 | 25 |
 
@@ -6917,9 +8164,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [17.932769, 59.178139] | [23.280507, 76.825673] |
+| advtrain_lora | [6.100142, 8.229084] | [7.882721, 10.189921] |
 | cluster_b_eff_4096 | 61 | 59 |
 | conv_serving_weight_bytes | 7759462400 | 9101992960 |
 | counter_params | 2988794880 | 3880084480 |
+| creq_gb | [65.233327, 80.0] | [66.116604, 80.0] |
+| creq_params | 4487905280 | 4550996480 |
 | disagg_b_eff_4096 | 61 | 59 |
 | eng_None_32768_params | 2988794880 | 3880084480 |
 | eng_None_32768_total_mb | 11094.64064 | 12877.21984 |
@@ -6939,8 +8190,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 34 | 5 |
 | kv_sliding_layers | 0 | 29 |
 | kv_source | "uniform" | "layer_plan:layer_types" |
+| kvcost_active_params | 2988794880 | 3880084480 |
 | kvgeo_32768 | [139264.0, 34, 0, 0.0, 16, 0.0] | [139264.0, 5, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [139264.0, 34, 0, 0.0, 16, 0.0] | [139264.0, 5, 0, 0.0, 16, 0.0] |
+| kvplan_ws_gib | 163.58 | 163.45 |
+| kvplan_ws_tokens | 1261204 | 1260198 |
+| maxbatch_80gb_4096 | 95 | 92 |
 | report_params | 2988794880 | 3880084480 |
 | report_total_gb | 6.99428905 | 8.77686825 |
 | report_weight_gb | 5.97758976 | 7.76016896 |
@@ -6956,9 +8211,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [17.932769, 59.178139] | [23.280507, 76.825673] |
+| advtrain_lora | [6.100142, 8.229084] | [7.882721, 10.189921] |
 | cluster_b_eff_4096 | 61 | 59 |
 | conv_serving_weight_bytes | 7759462400 | 9101992960 |
 | counter_params | 2988794880 | 3880084480 |
+| creq_gb | [65.233327, 80.0] | [66.116604, 80.0] |
+| creq_params | 4487905280 | 4550996480 |
 | disagg_b_eff_4096 | 61 | 59 |
 | eng_None_32768_params | 2988794880 | 3880084480 |
 | eng_None_32768_total_mb | 11094.64064 | 12877.21984 |
@@ -6978,8 +8237,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 34 | 29 |
 | kv_sliding_layers | 0 | 5 |
 | kv_source | "uniform" | "layer_plan:layer_types" |
+| kvcost_active_params | 2988794880 | 3880084480 |
 | kvgeo_32768 | [139264.0, 34, 0, 0.0, 16, 0.0] | [139264.0, 29, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [139264.0, 34, 0, 0.0, 16, 0.0] | [139264.0, 29, 0, 0.0, 16, 0.0] |
+| kvplan_ws_gib | 163.58 | 163.45 |
+| kvplan_ws_tokens | 1261204 | 1260198 |
+| maxbatch_80gb_4096 | 95 | 92 |
 | report_params | 2988794880 | 3880084480 |
 | report_total_gb | 6.99428905 | 8.77686825 |
 | report_weight_gb | 5.97758976 | 7.76016896 |
@@ -6995,11 +8258,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741423, 3.684597] | [0.911292, 3.996024] |
+| advtrain_lora | [0.440079, 3.021641] | [0.496702, 3.083926] |
 | cluster_b_eff_4096 | 13 | 281 |
 | conv_kv_size | 262144 | 18432 |
 | conv_layers | [0, 32] | [0, 12] |
 | conv_prefill_weights_mb | 13137.265625 | 783.237305 |
 | conv_serving_weight_bytes | 13363716096 | 380920320 |
+| copt_quick | [6887710720, 111.633024, 1.721928] | [409855488, 6.650767, 0.102464] |
 | counter_params | 123570432 | 151881984 |
 | disagg_b_eff_4096 | 13 | 281 |
 | disagg_transfer_bytes_640 | 335544320 | 23592960 |
@@ -7020,8 +8286,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_prefill_kv_mb | 2048.0 | 144.0 |
 | genz_prefill_weights_mb | 10385.265625 | 589.737305 |
 | kv_full_layers | 0 | 12 |
+| kvcost_active_params | 123570432 | 151881984 |
 | kvgeo_32768 | [0.0, 12, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 12, 0, 0.0, 16, 0.0] | [36864.0, 12, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 43.44 |
+| kvplan_ws_tokens | null | 1265125 |
 | prefix_kv_bytes_per_token | 524288 | 36864 |
 | report_params | 123570432 | 151881984 |
 | report_total_gb | 0.52799146 | 0.584614564 |
@@ -7032,6 +8302,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_bytes_per_token | 524288 | 36864 |
 | serving_requests_8gib_1k | 16 | 227 |
 | serving_weight_bytes | 13363716096 | 380920320 |
+| tpar_mem_gb | 108.888583 | 7.207407 |
+| tpar_options_8x80 | 31 | 112 |
 | traingenz_params | 6888235008 | 409892352 |
 | trainmem_total_gb | 3.684597 | 3.996024 |
 | trainmem_weight_gb | 0.741423 | 0.911292 |
@@ -7040,11 +8312,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [9.983917, 32.946926] | [22.529898, 74.348664] |
+| advtrain_lora | [3.52091, 6.410555] | [7.702904, 11.010748] |
 | cluster_b_eff_4096 | 282 | 22 |
 | conv_kv_size | 131072 | 196608 |
 | conv_layers | [16, 16] | [24, 24] |
 | conv_prefill_weights_mb | 6676.0 | 5435.0 |
 | conv_serving_weight_bytes | 6738149376 | 7509966080 |
+| copt_quick | [162398208, 2.666704, 0.0406] | [3754983040, 60.733058, 0.938746] |
 | counter_params | 1663986176 | 3754983040 |
 | disagg_b_eff_4096 | 282 | 22 |
 | disagg_transfer_bytes_640 | 23592960 | 251658240 |
@@ -7073,8 +8348,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 24 |
 | kv_gb@32768 | 0.0 | 12.884901888 |
 | kv_gb@4096 | 0.0 | 1.610612736 |
+| kvcost_active_params | 1663986176 | 3754983040 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 461.75 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 461.75 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 461.84 |
+| kvplan_ws_tokens | null | 1261125 |
+| maxbatch_80gb_4096 | 1024 | 33 |
 | prefix_kv_bytes_per_token | 36864 | 393216 |
 | report_kv_gb | 0.0 | 1.610612736 |
 | report_params | 1663986176 | 3754983040 |
@@ -7088,6 +8371,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 275644416 | 7509966080 |
 | sim_max_running | 322 | 67 |
 | slice_mib_16x4352 | [30208, true] | [44544, true] |
+| tpar_mem_gb | 3.110513 | 60.475022 |
+| tpar_options_8x80 | 112 | 92 |
 | traingenz_params | 162435072 | 3754983040 |
 | trainmem_total_gb | 32.946926 | 74.348664 |
 | trainmem_weight_gb | 9.983917 | 22.529898 |
@@ -7099,9 +8384,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [45.230875, 149.261886] | [48.382894, 159.66355] |
+| advtrain_lora | [15.24473, 18.946886] | [16.295404, 20.102627] |
 | cluster_b_eff_4096 | 52 | 50 |
 | conv_serving_weight_bytes | 15009316864 | 16060522496 |
 | counter_params | 7538479104 | 8063815680 |
+| creq_gb | [115.064175, 141.0] | [115.067903, 141.0] |
+| creq_params | 8029995008 | 8030261248 |
 | disagg_b_eff_4096 | 52 | 50 |
 | eng_None_32768_params | 7538479104 | 8063815680 |
 | eng_None_32768_total_mb | 20177.231872 | 21227.905024 |
@@ -7111,6 +8400,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_32768_total_mb | 20177.231872 | 21227.905024 |
 | eng_llamacpp_4096_params | 7538479104 | 8063815680 |
 | eng_llamacpp_4096_total_mb | 16016.482304 | 17067.155456 |
+| kvcost_active_params | 7538479104 | 8063815680 |
+| kvplan_ws_gib | 153.29 | 153.22 |
+| kvplan_ws_tokens | 1255690 | 1255102 |
+| maxbatch_80gb_4096 | 86 | 85 |
 | report_params | 7538479104 | 8063815680 |
 | report_total_gb | 16.204387123 | 17.255060275 |
 | report_weight_gb | 15.076958208 | 16.12763136 |
@@ -7122,12 +8415,18 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.911292, 3.996024] | [4705.528449, 15528.243882] |
+| advtrain_lora | [0.496702, 3.083926] | [1568.702421, 1728.110217] |
+| ccb_params_b | 8.852078592 | 784.254741504 |
 | cluster_b_eff_4096 | 28 | 1 |
 | conv_kv_size | 262144 | 98304 |
 | conv_layers | [0, 32] | [0, 48] |
 | conv_prefill_weights_mb | 12852.0 | 764296.25 |
 | conv_serving_weight_bytes | 13214154752 | 1568509483008 |
+| copt_quick | [13141934080, 212.974292, 3.285484] | [784254741504, 12627.890492, 196.063685] |
 | counter_params | 151881984 | 784254741504 |
+| creq_gb | [126.573345, 192.0] | [10982.210626, 18048.0] |
+| creq_params | 8852078592 | 784254741504 |
 | disagg_b_eff_4096 | 28 | 1 |
 | eng_None_32768_params | 151881984 | 784254741504 |
 | eng_None_32768_total_mb | 7370.327347 | 1575576.046387 |
@@ -7141,6 +8440,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_decode_weights_mb | 990833.125 | 762323.125 |
 | genz_ffn_kinds | {"MoE": 48} | {"Dense": 24, "MoE": 24} |
 | genz_prefill_weights_mb | 992806.25 | 764296.25 |
+| kvcost_active_params | 0 | 17200425984 |
+| kvplan_host_gib | 0.0 | 227.75 |
+| kvplan_shm_gib | 0.0 | 227.75 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 231.29 | 227.78 |
+| kvplan_ws_tokens | 1263149 | 1243953 |
+| maxbatch_80gb_4096 | 73 | 1 |
 | report_params | 151881984 | 784254741504 |
 | report_total_gb | 1.644599071 | 1569.850318111 |
 | report_weight_gb | 0.303763968 | 1568.509483008 |
@@ -7148,6 +8454,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | runtime_decode_error | "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 967.6104736328125 GB, KV Cache:0.140625. \n System:{'Flops': 400, 'Memory_size': 200, 'M" | "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 744.4561767578125 GB, KV Cache:0.140625. \n System:{'Flops': 400, 'Memory_size': 200, 'M" |
 | runtime_prefill_error | "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 969.537353515625 GB, KV Cache:0.09375. \n System:{'Flops': 400, 'Memory_size': 200, 'Mem" | "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 746.383056640625 GB, KV Cache:0.09375. \n System:{'Flops': 400, 'Memory_size': 200, 'Mem" |
 | serving_weight_bytes | 20188364800 | 1568509483008 |
+| time_params | 8999534592 | 784254741504 |
+| tpar_mem_gb | 175.142981 | 12081.269371 |
+| tpar_options_8x80 | 11 | 0 |
 | traingenz_params | 780197232640 | 784254741504 |
 | trainmem_total_gb | 3.996024 | 15528.243882 |
 | trainmem_weight_gb | 0.911292 | 4705.528449 |
@@ -7156,12 +8465,18 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.911292, 3.996024] | [646.622147, 2133.853084] |
+| advtrain_lora | [0.496702, 3.083926] | [215.733654, 239.844573] |
+| ccb_params_b | 8.852078592 | 107.769861888 |
 | cluster_b_eff_4096 | 28 | 1 |
 | conv_kv_size | 262144 | 98304 |
 | conv_layers | [0, 32] | [0, 48] |
 | conv_prefill_weights_mb | 12852.0 | 205553.75 |
 | conv_serving_weight_bytes | 13214154752 | 215539723776 |
+| copt_quick | [13141934080, 212.974292, 3.285484] | [107769861888, 1736.48393, 26.942465] |
 | counter_params | 151881984 | 107770357760 |
+| creq_gb | [126.573345, 192.0] | [1511.422312, 2256.0] |
+| creq_params | 8852078592 | 107769861888 |
 | decode_fit_refused | true | null |
 | disagg_b_eff_4096 | 28 | 1 |
 | eng_None_32768_params | 151881984 | 107770357760 |
@@ -7175,6 +8490,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | facts_weight_bytes | 203460128256 | 215539723776 |
 | genz_decode_weights_mb | 130620.625 | 203580.625 |
 | genz_prefill_weights_mb | 132593.75 | 205553.75 |
+| kvcost_active_params | 0 | 17173391360 |
+| kvplan_host_gib | 0.0 | 227.75 |
+| kvplan_shm_gib | 0.0 | 227.75 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 231.29 | 227.78 |
+| kvplan_ws_tokens | 1263149 | 1243982 |
+| maxbatch_80gb_4096 | 73 | 1 |
 | report_params | 151881984 | 107770357760 |
 | report_total_gb | 1.644599071 | 216.881550623 |
 | report_weight_gb | 0.303763968 | 215.54071552 |
@@ -7184,6 +8506,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | runtime_prefill | [96.180362, 132593.75, 96.0] | null |
 | runtime_prefill_error | null | "ValueError: All params would not fit on chip. System Memory Cap:200.0 GB , Weights : 200.736083984375 GB, KV Cache:0.09375. \n System:{'Flops': 400, 'Memory_size': 200, 'Mem" |
 | serving_weight_bytes | 20188364800 | 215539723776 |
+| time_params | 8999534592 | 107770357760 |
+| tpar_mem_gb | 175.142981 | 1663.402225 |
+| tpar_options_8x80 | 11 | 0 |
 | traingenz_params | 103739883520 | 107769861888 |
 | trainmem_total_gb | 3.996024 | 2133.853084 |
 | trainmem_weight_gb | 0.911292 | 646.622147 |
@@ -7192,11 +8517,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.403953, 3.065902] | [0.659248, 3.533944] |
+| advtrain_lora | [0.327589, 2.897902] | [0.412687, 2.99151] |
 | cluster_b_eff_4096 | 13 | 424 |
 | conv_kv_size | 262144 | 12288 |
 | conv_layers | [0, 32] | [6, 6] |
 | conv_prefill_weights_mb | 13259.828125 | 221.478516 |
 | conv_serving_weight_bytes | 13427974144 | 219749376 |
+| copt_quick | [6951968768, 112.667579, 1.737992] | [109874688, 1.786347, 0.027469] |
 | counter_params | 67325440 | 109874688 |
 | disagg_b_eff_4096 | 13 | 424 |
 | disagg_transfer_bytes_640 | 335544320 | 15728640 |
@@ -7222,8 +8550,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 6 |
 | kv_gb@32768 | 0.0 | 0.805306368 |
 | kv_gb@4096 | 0.0 | 0.100663296 |
+| kvcost_active_params | 67325440 | 109874688 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 6, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 6, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 28.96 |
+| kvplan_ws_tokens | null | 1265257 |
+| maxbatch_80gb_4096 | 678 | 498 |
 | prefix_kv_bytes_per_token | 524288 | 24576 |
 | report_kv_gb | 0.087195648 | 0.119095296 |
 | report_total_gb | 0.323719209 | 0.361998787 |
@@ -7234,6 +8567,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 16 | 341 |
 | serving_weight_bytes | 13427974144 | 219749376 |
 | slice_mib_16x4352 | [6656, true] | [7680, true] |
+| tpar_mem_gb | 109.878157 | 2.098079 |
+| tpar_options_8x80 | 31 | 80 |
 | traingenz_params | 6952493056 | 109874688 |
 | trainmem_total_gb | 3.065902 | 3.533944 |
 | trainmem_weight_gb | 0.403953 | 0.659248 |
@@ -7244,8 +8579,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [42.865287, 141.455448] | [43.651719, 144.050673] |
+| advtrain_lora | [14.456201, 18.079504] | [14.718345, 18.367862] |
 | conv_serving_weight_bytes | 14220787712 | 14483464192 |
 | counter_params | 7144214528 | 7275286528 |
+| creq_gb | [104.024767, 141.0] | [104.028494, 141.0] |
+| creq_params | 7241465856 | 7241732096 |
 | eng_None_32768_params | 7144214528 | 7275286528 |
 | eng_None_32768_total_mb | 15630.606336 | 15892.750336 |
 | eng_None_4096_params | 7144214528 | 7275286528 |
@@ -7254,6 +8593,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_32768_total_mb | 15630.606336 | 15892.750336 |
 | eng_llamacpp_4096_params | 7144214528 | 7275286528 |
 | eng_llamacpp_4096_total_mb | 15227.953152 | 15490.097152 |
+| kvcost_active_params | 7144214528 | 7275286528 |
+| maxbatch_80gb_4096 | 88 | 87 |
 | report_params | 7144214528 | 7275286528 |
 | report_total_gb | 15.415857971 | 15.678001971 |
 | report_weight_gb | 14.288429056 | 14.550573056 |
@@ -7265,12 +8606,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [6.823904, 22.518884] | [9.336375, 30.810037] |
+| advtrain_lora | [2.467573, 5.251884] | [3.305063, 6.173123] |
 | cluster_b_eff_4096 | 495 | 558 |
 | conv_kv_size | 262144 | 8192 |
 | conv_layers | [0, 32] | [0, 10] |
 | conv_prefill_weights_mb | 12852.0 | 1410.0 |
 | conv_serving_weight_bytes | 13214154752 | 3112038912 |
 | conv_state_bytes | 0 | 4198400 |
+| copt_quick | [802160640, 13.030549, 0.20054] | [1556019456, 25.167676, 0.389005] |
 | counter_params | 1137317376 | 1556062464 |
 | disagg_b_eff_4096 | 495 | 558 |
 | disagg_transfer_bytes_640 | 13107200 | 14684160 |
@@ -7302,8 +8646,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_gb@32768 | 0.67108864 | 0.541069312 |
 | kv_gb@4096 | 0.08388608 | 0.071307264 |
 | kv_source | "uniform" | "layer_plan:cross_attention_layers" |
+| kvcost_active_params | 1137317376 | 1556062464 |
 | kvgeo_32768 | [20480.0, 10, 0, 0.0, 16, 0.0] | [16384.0, 8, 0, 0.0, 16, 4198400.0] |
 | kvgeo_4096 | [20480.0, 10, 0, 0.0, 16, 0.0] | [16384.0, 8, 0, 0.0, 16, 4198400.0] |
+| kvplan_ws_gib | 24.11 | 19.28 |
+| kvplan_ws_tokens | 1263903 | 1263428 |
+| maxbatch_80gb_4096 | 544 | 610 |
 | prefix_kv_bytes_per_token | 20480 | 16384 |
 | report_kv_gb | 0.08388608 | 0.071307264 |
 | report_params | 1137317376 | 1556062464 |
@@ -7315,6 +8663,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_bytes_per_token | 20480 | 16384 |
 | serving_state_bytes | 0 | 4198400 |
 | serving_weight_bytes | 1347420160 | 3112038912 |
+| tpar_mem_gb | 12.419128 | 24.996176 |
 | traingenz_params | 802242560 | 1556019456 |
 | trainmem_total_gb | 22.518884 | 30.810037 |
 | trainmem_weight_gb | 6.823904 | 9.336375 |
@@ -7325,12 +8674,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [6.818928, 22.502461] | [9.549334, 31.512801] |
+| advtrain_lora | [2.465914, 5.250059] | [3.376049, 6.251208] |
 | cluster_b_eff_4096 | 495 | 473 |
 | conv_kv_size | 262144 | 8192 |
 | conv_layers | [0, 32] | [0, 10] |
 | conv_prefill_weights_mb | 12852.0 | 1410.0 |
 | conv_serving_weight_bytes | 13214154752 | 3183025152 |
 | conv_state_bytes | 0 | 16793600 |
+| copt_quick | [802160640, 13.030549, 0.20054] | [1591512576, 25.739115, 0.397878] |
 | counter_params | 1136487936 | 1591555584 |
 | disagg_b_eff_4096 | 495 | 473 |
 | disagg_transfer_bytes_640 | 13107200 | 27279360 |
@@ -7362,8 +8714,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_gb@32768 | 0.67108864 | 0.553664512 |
 | kv_gb@4096 | 0.08388608 | 0.083902464 |
 | kv_source | "uniform" | "layer_plan:cross_attention_layers" |
+| kvcost_active_params | 1136487936 | 1591555584 |
 | kvgeo_32768 | [20480.0, 10, 0, 0.0, 16, 0.0] | [16384.0, 8, 0, 0.0, 16, 16793600.0] |
 | kvgeo_4096 | [20480.0, 10, 0, 0.0, 16, 0.0] | [16384.0, 8, 0, 0.0, 16, 16793600.0] |
+| kvplan_ws_gib | 24.11 | 19.28 |
+| kvplan_ws_tokens | 1263904 | 1263388 |
+| maxbatch_80gb_4096 | 654 | 645 |
 | prefix_kv_bytes_per_token | 20480 | 16384 |
 | report_kv_gb | 0.08388608 | 0.083902464 |
 | report_params | 1136487936 | 1591555584 |
@@ -7377,6 +8733,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_state_bytes | 0 | 16793600 |
 | serving_weight_bytes | 1347420160 | 3183025152 |
 | slice_mib_16x4352 | [8704, true] | [8960, true] |
+| tpar_mem_gb | 12.419128 | 25.54277 |
 | traingenz_params | 802242560 | 1591512576 |
 | trainmem_total_gb | 22.502461 | 31.512801 |
 | trainmem_weight_gb | 6.818928 | 9.549334 |
@@ -7387,9 +8744,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [39.884734, 131.619624] | [39.897317, 131.661147] |
+| advtrain_lora | [13.487849, 17.374188] | [13.492044, 17.378802] |
+| ccb_params_b | 9.003073536 | 9.003339776 |
 | cluster_b_eff_4096 | 13 | 11 |
 | conv_serving_weight_bytes | 13365149696 | 18006679552 |
+| copt_quick | [6889144320, 111.656105, 1.722286] | [9003339776, 145.694652, 2.250835] |
 | counter_params | 6647455744 | 6649552896 |
+| creq_gb | [128.687275, 192.0] | [128.691002, 192.0] |
+| creq_params | 9003073536 | 9003339776 |
 | disagg_b_eff_4096 | 13 | 11 |
 | eng_None_32768_kv_mb | 0.0 | 17179.869184 |
 | eng_None_32768_params | 6647455744 | 6649552896 |
@@ -7405,13 +8768,23 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | eng_llamacpp_4096_total_mb | 13737.82999 | 15889.507942 |
 | kv_gb@32768 | 0.0 | 17.179869184 |
 | kv_gb@4096 | 0.0 | 2.147483648 |
+| kvcost_active_params | 6647455744 | 6649552896 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [524288.0, 32, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [524288.0, 32, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 500.0 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 500.0 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 614.2 |
+| kvplan_ws_tokens | null | 1257864 |
+| maxbatch_80gb_4096 | 1024 | 22 |
 | report_kv_gb | 0.0 | 2.147483648 |
 | report_params | 6647455744 | 6649552896 |
 | report_total_gb | 13.826413691 | 16.407588372 |
 | report_weight_gb | 13.294911488 | 13.299105792 |
 | serving_weight_bytes | 13365149696 | 18006679552 |
+| tpar_mem_gb | 108.910661 | 141.461197 |
+| tpar_options_8x80 | 31 | 20 |
 | traingenz_params | 6889668608 | 9003339776 |
 | trainmem_total_gb | 131.619624 | 131.661147 |
 | trainmem_weight_gb | 39.884734 | 39.897317 |
@@ -7420,11 +8793,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.918313, 4.008896] | [1.813822, 5.985614] |
+| advtrain_lora | [0.499042, 3.0865] | [0.797545, 3.414854] |
 | cluster_b_eff_4096 | 13 | 420 |
 | conv_kv_size | 262144 | 12288 |
 | conv_layers | [0, 32] | [8, 8] |
 | conv_prefill_weights_mb | 16260.0 | 572.5 |
 | conv_serving_weight_bytes | 15000928256 | 604607488 |
+| copt_quick | [8524922880, 137.99214, 2.131231] | [302303744, 4.890243, 0.075576] |
 | counter_params | 153052160 | 302303744 |
 | disagg_b_eff_4096 | 13 | 420 |
 | disagg_transfer_bytes_640 | 335544320 | 15728640 |
@@ -7454,8 +8830,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 8 |
 | kv_gb@32768 | 0.0 | 0.805306368 |
 | kv_gb@4096 | 0.0 | 0.100663296 |
+| kvcost_active_params | 153052160 | 302303744 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 8, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 8, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 28.96 |
+| kvplan_ws_tokens | null | 1265038 |
+| maxbatch_80gb_4096 | 1024 | 471 |
 | model_type | "unknown" | "encoder-decoder" |
 | prefix_kv_bytes_per_token | 524288 | 24576 |
 | report_kv_gb | 0.0 | 0.125239296 |
@@ -7469,6 +8850,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 16 | 341 |
 | serving_weight_bytes | 15000928256 | 604607488 |
 | slice_mib_16x4352 | [7424, true] | [8192, true] |
+| tpar_mem_gb | 134.101651 | 4.950757 |
+| tpar_options_8x80 | 22 | 80 |
 | traingenz_params | 8525447168 | 302303744 |
 | trainmem_total_gb | 4.008896 | 5.985614 |
 | trainmem_weight_gb | 0.918313 | 1.813822 |
@@ -7479,11 +8862,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741423, 3.684597] | [3.555702, 11.733816] |
+| advtrain_lora | [0.440079, 3.021641] | [1.378172, 4.053543] |
 | cluster_b_eff_4096 | 104 | 51 |
 | conv_kv_size | 131072 | 98304 |
 | conv_layers | [16, 16] | [12, 24] |
 | conv_prefill_weights_mb | 6676.0 | 1260.5625 |
 | conv_serving_weight_bytes | 6738149376 | 1185233920 |
+| copt_quick | [406847488, 6.68916, 0.101712] | [592616960, 9.680048, 0.148154] |
 | counter_params | 123570432 | 592616960 |
 | disagg_b_eff_4096 | 104 | 51 |
 | disagg_transfer_bytes_640 | 62914560 | 125829120 |
@@ -7513,8 +8899,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 24 |
 | kv_gb@32768 | 0.0 | 6.442450944 |
 | kv_gb@4096 | 0.0 | 0.805306368 |
+| kvcost_active_params | 123570432 | 592616960 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [196608.0, 24, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [196608.0, 24, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 231.58 |
+| kvplan_ws_tokens | null | 1264708 |
+| maxbatch_80gb_4096 | 501 | 67 |
 | prefix_kv_bytes_per_token | 98304 | 196608 |
 | report_kv_gb | 0.11460608 | 0.860602368 |
 | report_params | 808394240 | 1080272640 |
@@ -7528,6 +8919,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 809500672 | 1185233920 |
 | sim_max_running | 72 | 242 |
 | slice_mib_16x4352 | [81582, false] | [22272, true] |
+| tpar_mem_gb | 7.281987 | 10.344327 |
 | traingenz_params | 406945792 | 592616960 |
 | trainmem_total_gb | 3.684597 | 11.733816 |
 | trainmem_weight_gb | 0.741423 | 3.555702 |
@@ -7539,12 +8931,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [13.103102, 43.240237] | [48.810301, 161.073995] |
+| advtrain_lora | [4.579513, 7.844922] | [16.481913, 20.937561] |
 | cluster_b_eff_4096 | 1 | 133 |
 | conv_kv_size | 65536 | 8192 |
 | conv_layers | [0, 32] | [0, 52] |
 | conv_prefill_weights_mb | 20736.0 | 19546.8125 |
 | conv_serving_weight_bytes | 20669530112 | 20429662208 |
 | conv_state_bytes | 0 | 102137856 |
+| copt_quick | null | [18303942656, 295.89741, 4.575986] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au" | null |
 | counter_params | 2183850336 | 8135050240 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 133 |
@@ -7588,8 +8984,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_gb@32768 | 0.805306368 | 0.536870912 |
 | kv_gb@4096 | 0.100663296 | 0.067108864 |
 | kv_source | "uniform" | "layer_plan:layers_block_type" |
+| kvcost_active_params | 2183850336 | 8135050240 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 24, 4255744.0, 1040, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 24, 4255744.0, 1040, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 19.17 |
+| kvplan_ws_tokens | null | 1256050 |
+| lora_adapter_gb | 0.103809024 | 0.496381952 |
+| maxbatch_80gb_4096 | 437 | 267 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au" | null |
 | prefix_kv_bytes_per_token | null | 16384 |
 | report_kv_gb | 0.100663296 | 0.067108864 |
@@ -7612,6 +9014,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | sim_max_running | 384 | 400 |
 | slice_mib_16x4352 | [37376, true] | [32512, true] |
 | state_gb | 0.025534464 | 0.102137856 |
+| tpar_mem_gb | null | 266.24405 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au" | null |
+| tpar_options_8x80 | null | 5 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au" | null |
 | traingenz_params | null | 18304794624 |
 | trainmem_total_gb | 43.240237 | 161.073995 |
@@ -7624,13 +9030,20 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741423, 3.684597] | [61.288987, 202.253656] |
+| advtrain_lora | [0.440079, 3.021641] | [20.6226, 25.222414] |
+| ccb_params_b | 8.852078592 | 10.214831104 |
 | cluster_b_eff_4096 | 1 | 133 |
 | conv_kv_size | 262144 | 8192 |
 | conv_layers | [0, 32] | [0, 52] |
 | conv_prefill_weights_mb | 12852.0 | 19546.8125 |
 | conv_serving_weight_bytes | 13214154752 | 20429662208 |
 | conv_state_bytes | 0 | 102137856 |
+| copt_quick | null | [18303942656, 295.89741, 4.575986] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at " | null |
 | counter_params | 123570432 | 10214831104 |
+| creq_gb | [126.573345, 192.0] | [145.651881, 192.0] |
+| creq_params | 8852078592 | 10214831104 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 133 |
 | disagg_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at the top level and in nested blocks. Refu" | null |
@@ -7673,8 +9086,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_gb@32768 | 1.610612736 | 0.536870912 |
 | kv_gb@4096 | 0.201326592 | 0.067108864 |
 | kv_source | "uniform" | "layer_plan:layers_block_type" |
+| kvcost_active_params | 123570432 | 10214831104 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 24, 4255744.0, 1040, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [16384.0, 4, 24, 4255744.0, 1040, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 19.14 |
+| kvplan_ws_tokens | null | 1253724 |
+| lora_adapter_gb | 0.021233664 | 0.078068736 |
+| maxbatch_80gb_4096 | 291 | 247 |
 | model_type | "unknown" | "hybrid" |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at " | null |
 | prefix_kv_bytes_per_token | null | 16384 |
@@ -7698,6 +9117,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | sim_max_running | 384 | 400 |
 | slice_mib_16x4352 | [37376, true] | [32512, true] |
 | state_gb | 0.0 | 0.102137856 |
+| time_params | 8999534592 | 10214831104 |
+| tpar_mem_gb | null | 266.24405 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at " | null |
+| tpar_options_8x80 | null | 5 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at " | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at " | null |
 | traingenz_params | null | 18304794624 |
 | trainmem_total_gb | 3.684597 | 202.253656 |
@@ -7710,10 +9134,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [313.608634, 1034.908493] | [946.131278, 3122.233217] |
+| advtrain_lora | [104.729149, 117.739618] | [315.570031, 349.664588] |
+| ccb_params_b | 10.688774144 | 157.688546304 |
 | cluster_b_eff_4096 | 12 | 1 |
 | conv_prefill_weights_mb | 799675.21875 | 301533.609375 |
 | conv_serving_weight_bytes | 11812847616 | 315377092608 |
+| copt_quick | [8574844928, 138.795885, 2.143711] | [157688546304, 2539.063426, 39.422137] |
 | counter_params | 52268105728 | 157688546304 |
+| creq_gb | [152.287083, 192.0] | [2210.283893, 4512.0] |
+| creq_params | 10688774144 | 157688546304 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 12 | 1 |
 | disagg_transfer_bytes_640 | 335544320 | 251658240 |
@@ -7739,8 +9169,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 24 |
 | kv_gb@32768 | 0.0 | 12.884901888 |
 | kv_gb@4096 | 0.0 | 1.610612736 |
+| kvcost_active_params | 52268105728 | 157688546304 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [393216.0, 24, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 405.75 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 405.75 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 405.88 |
+| kvplan_ws_tokens | null | 1108305 |
+| maxbatch_80gb_4096 | 38 | 28 |
 | prefix_kv_bytes_per_token | 524288 | 393216 |
 | report_kv_gb | 1.395130368 | 1.905524736 |
 | report_total_gb | 8.665537495 | 9.278010737 |
@@ -7753,6 +9191,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_bytes_per_token | 524288 | 393216 |
 | serving_requests_8gib_1k | 16 | 21 |
 | serving_weight_bytes | 15050850304 | 315377092608 |
+| time_params | 10688774144 | 157688546304 |
+| tpar_mem_gb | 134.87045 | 2430.212197 |
+| tpar_options_8x80 | 22 | 0 |
 | traingenz_params | 558297628672 | 157688546304 |
 | trainmem_total_gb | 1034.908493 | 3122.233217 |
 | trainmem_weight_gb | 313.608634 | 946.131278 |
@@ -7762,12 +9203,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [4.280678, 14.126239] | [5.594785, 18.46279] |
+| advtrain_lora | [1.619831, 4.319368] | [2.057866, 4.801207] |
 | cluster_b_eff_4096 | 1 | 90 |
 | conv_kv_size | 131072 | 36864 |
 | conv_layers | [16, 16] | [18, 18] |
 | conv_prefill_weights_mb | 6676.0 | 1785.518555 |
 | conv_serving_weight_bytes | 6738149376 | 1835225600 |
 | conv_state_bytes | 0 | 150994944 |
+| copt_quick | null | [917612800, 14.877753, 0.229403] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [" | null |
 | counter_params | 713446400 | 932464128 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 90 |
@@ -7801,8 +9246,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 18 |
 | kv_gb@32768 | 0.0 | 2.566914048 |
 | kv_gb@4096 | 0.0 | 0.452984832 |
+| kvcost_active_params | 713446400 | 932464128 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [73728.0, 18, 0, 0.0, 16, 150994944.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [73728.0, 18, 0, 0.0, 16, 150994944.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 86.82 |
+| kvplan_ws_tokens | null | 1264322 |
+| maxbatch_80gb_4096 | 1024 | 127 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [" | null |
 | prefix_kv_bytes_per_token | null | 73728 |
 | report_kv_gb | 0.0 | 0.452984832 |
@@ -7823,6 +9273,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for ['num_hidden_layers', 'hidden_size'] at t" | null |
 | sim_max_running | 400 | 319 |
 | slice_mib_16x4352 | [14080, true] | [16128, true] |
+| tpar_mem_gb | null | 15.280057 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [" | null |
+| tpar_options_8x80 | null | 80 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [" | null |
 | traingenz_params | null | 917612800 |
 | trainmem_total_gb | 14.126239 | 18.46279 |
@@ -7835,12 +9289,18 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [1.09577, 3.616041] | [2.792098, 9.213923] |
+| advtrain_lora | [0.413491, 1.089229] | [0.978934, 1.711216] |
+| ccb_params_b | 0.263835648 | 0.465349632 |
 | cluster_b_eff_4096 | 75 | 104 |
 | conv_kv_size | 32768 | 49152 |
 | conv_layers | [16, 16] | [12, 12] |
 | conv_prefill_weights_mb | 1279.226562 | 984.226562 |
 | conv_serving_weight_bytes | 1278857216 | 930699264 |
+| copt_quick | [1278857216, 20.774822, 0.319714] | [465349632, 7.561587, 0.116337] |
 | counter_params | 182628352 | 465349632 |
+| creq_gb | [5.754097, 16.0] | [8.575293, 16.0] |
+| creq_params | 263835648 | 465349632 |
 | disagg_b_eff_4096 | 75 | 104 |
 | disagg_transfer_bytes_640 | 83886080 | 62914560 |
 | eng_None_32768_kv_mb | 559.34976 | 3294.953472 |
@@ -7871,8 +9331,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 12 |
 | kv_gb@32768 | 0.0 | 3.221225472 |
 | kv_gb@4096 | 0.0 | 0.402653184 |
+| kvcost_active_params | 182628352 | 465349632 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 115.81 |
+| kvplan_ws_tokens | null | 1264852 |
+| maxbatch_80gb_4096 | 633 | 122 |
 | prefix_kv_bytes_per_token | 131072 | 98304 |
 | report_kv_gb | 0.09142272 | 0.476381184 |
 | report_params | 506632192 | 640940032 |
@@ -7885,6 +9350,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 64 | 85 |
 | serving_weight_bytes | 2495205376 | 930699264 |
 | slice_mib_16x4352 | [18432, true] | [14336, true] |
+| tpar_mem_gb | 22.173995 | 8.181406 |
+| tpar_options_8x80 | 80 | 96 |
 | traingenz_params | 1278988288 | 465349632 |
 | trainmem_total_gb | 3.616041 | 9.213923 |
 | trainmem_weight_gb | 1.09577 | 2.792098 |
@@ -7896,15 +9363,26 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741423, 3.684597] | [50.482741, 166.593046] |
+| advtrain_lora | [0.440079, 3.021641] | [17.020518, 21.260124] |
 | cluster_b_eff_4096 | 13 | 12 |
 | conv_prefill_weights_mb | 12852.0 | 14790.0 |
 | conv_serving_weight_bytes | 13214154752 | 16827047936 |
+| copt_quick | [7754219520, 125.583816, 1.938555] | [8413523968, 136.198618, 2.103381] |
 | counter_params | 123570432 | 8413790208 |
 | disagg_b_eff_4096 | 13 | 12 |
 | facts_weight_bytes | 15508971520 | 16827047936 |
+| kvcost_active_params | 123570432 | 8413790208 |
+| kvplan_host_gib | 0.0 | 500.0 |
+| kvplan_shm_gib | 0.0 | 500.0 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 617.22 | 612.66 |
+| kvplan_ws_tokens | 1264050 | 1254711 |
 | serving_weight_bytes | 14230224896 | 16827047936 |
 | sim_max_running | 108 | 106 |
 | slice_mib_16x4352 | [62208, true] | [63744, true] |
+| tpar_mem_gb | 122.232819 | 132.378033 |
+| tpar_options_8x80 | 26 | 22 |
 | traingenz_params | 7754743808 | 8413523968 |
 | trainmem_total_gb | 3.684597 | 166.593046 |
 | trainmem_weight_gb | 0.741423 | 50.482741 |
@@ -7915,10 +9393,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [20.115014, 66.379545] | [66.403222, 219.130631] |
+| advtrain_lora | [6.897943, 10.125291] | [22.327345, 27.097634] |
+| ccb_params_b | 8.852078592 | 11.066937344 |
 | cluster_b_eff_4096 | 13 | 9 |
 | conv_prefill_weights_mb | 12852.0 | 21108.0 |
 | conv_serving_weight_bytes | 13214154752 | 22133874688 |
+| copt_quick | [6738149376, 109.225087, 1.684537] | [11066937344, 178.918573, 2.766734] |
 | counter_params | 3352502272 | 11067203584 |
+| creq_gb | [126.573345, 192.0] | [157.581368, 192.0] |
+| creq_params | 8852078592 | 11066937344 |
 | disagg_b_eff_4096 | 13 | 9 |
 | eng_None_32768_kv_mb | 6442.450944 | 17179.869184 |
 | eng_None_32768_params | 3352502272 | 11067203584 |
@@ -7939,8 +9423,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_gb@32768 | 6.442450944 | 17.179869184 |
 | kv_gb@4096 | 0.805306368 | 2.147483648 |
 | kv_source | "uniform" | "_layer_metadata" |
+| kvcost_active_params | 3352502272 | 11067203584 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [524288.0, 32, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [524288.0, 32, 0, 0.0, 16, 0.0] |
+| kvplan_host_gib | 0.0 | 500.0 |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_shm_gib | 0.0 | 500.0 |
+| kvplan_tiers | "-" | "T1" |
+| kvplan_ws_gib | 0.0 | 611.78 |
+| kvplan_ws_tokens | null | 1252919 |
+| maxbatch_80gb_4096 | 66 | 18 |
 | model_type | "unknown" | "decoder-only" |
 | report_kv_gb | 0.805306368 | 2.147483648 |
 | report_params | 3352502272 | 11067203584 |
@@ -7952,6 +9444,9 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 13214154752 | 22133874688 |
 | sim_max_running | 105 | 97 |
 | slice_mib_16x4352 | [64512, true] | [69376, true] |
+| time_params | 8852078592 | 11067203584 |
+| tpar_mem_gb | 106.585339 | 173.839745 |
+| tpar_options_8x80 | 31 | 11 |
 | traingenz_params | 6738673664 | 11067195392 |
 | trainmem_total_gb | 66.379545 | 219.130631 |
 | trainmem_weight_gb | 20.115014 | 66.403222 |
@@ -7963,11 +9458,15 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [15.737063, 51.932309] | [31.263123, 103.168307] |
+| advtrain_lora | [5.438626, 8.520042] | [10.613979, 14.212931] |
 | cluster_b_eff_4096 | 1 | 182 |
 | conv_kv_size | 262144 | 16384 |
 | conv_prefill_weights_mb | 12852.0 | 9234.023438 |
 | conv_serving_weight_bytes | 13214154752 | 9078539264 |
 | conv_state_bytes | 0 | 51511296 |
+| copt_quick | null | [4539269632, 73.545292, 1.134817] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi" | null |
 | counter_params | 2622843904 | 5210520576 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 182 |
@@ -8004,8 +9503,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | genz_prefill_weights_mb | null | 9234.023438 |
 | kv_free_layers | 0 | 24 |
 | kv_source | "_layer_metadata" | "layer_plan:layer_types" |
+| kvcost_active_params | 2622843904 | 5210520576 |
 | kvgeo_32768 | [32768.0, 1, 0, 0.0, 16, 0.0] | [32768.0, 8, 24, 2146304.0, 528, 0.0] |
 | kvgeo_4096 | [32768.0, 1, 0, 0.0, 16, 0.0] | [32768.0, 8, 24, 2146304.0, 528, 0.0] |
+| kvplan_ws_gib | 38.53 | 38.44 |
+| kvplan_ws_tokens | 1262406 | 1259299 |
+| lora_adapter_gb | 0.085721088 | 0.280702976 |
+| maxbatch_80gb_4096 | 408 | 272 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi" | null |
 | prefix_kv_bytes_per_token | null | 32768 |
 | report_params | 2622843904 | 5210520576 |
@@ -8026,6 +9530,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddings', 'transformers_version', 'video_tok" | null |
 | slice_mib_16x4352 | [23808, true] | [20480, true] |
 | state_gb | 0.0 | 0.051511296 |
+| tpar_mem_gb | null | 71.565697 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi" | null |
+| tpar_options_8x80 | null | 73 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi" | null |
 | traingenz_params | null | 4539269632 |
 | trainmem_total_gb | 51.932309 | 103.168307 |
@@ -8038,11 +9546,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [7.857328, 25.929183] | [8.486044, 28.003944] |
+| advtrain_lora | [2.691461, 4.009078] | [2.901033, 4.239607] |
 | cluster_b_eff_4096 | 49 | 39994 |
 | conv_kv_size | 98304 | 0 |
 | conv_prefill_weights_mb | 3464.789062 | 3465.257812 |
 | conv_serving_weight_bytes | 3427160064 | 3633786880 |
 | conv_state_bytes | 0 | 983040 |
+| copt_quick | [1816547328, 29.524243, 0.454137] | [1816893440, 29.529815, 0.454223] |
 | counter_params | 1309554688 | 1414340608 |
 | disagg_b_eff_4096 | 49 | 39994 |
 | disagg_transfer_bytes_640 | 125829120 | 983040 |
@@ -8074,6 +9585,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_free_layers | 0 | 24 |
 | kv_full_layers | 24 | 0 |
 | kv_source | "uniform" | "layer_plan:rwkv_stack" |
+| kvcost_active_params | 1309554688 | 1414340608 |
 | kvgeo_32768 | [0.0, 24, 0, 0.0, 16, 0.0] | [0.0, 1, 24, 40960.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 24, 0, 0.0, 16, 0.0] | [0.0, 1, 24, 40960.0, 16, 0.0] |
 | prefix_kv_bytes_per_token | 196608 | 0 |
@@ -8090,6 +9602,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 3427160064 | 3633786880 |
 | sim_max_running | 342 | 338 |
 | state_gb | 0.00688128 | 0.00098304 |
+| tpar_mem_gb | 30.0079 | 30.010202 |
 | traingenz_params | 1816743936 | 1816893440 |
 | trainmem_total_gb | 25.929183 | 28.003944 |
 | trainmem_weight_gb | 7.857328 | 8.486044 |
@@ -8100,11 +9613,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [1.111142, 4.362417] | [3.057973, 10.091312] |
+| advtrain_lora | [0.563319, 3.157205] | [1.212262, 3.871043] |
 | cluster_b_eff_4096 | 13 | 104 |
 | conv_kv_size | 131072 | 49152 |
 | conv_layers | [16, 16] | [24, 12] |
 | conv_prefill_weights_mb | 6678.0 | 1103.5 |
 | conv_serving_weight_bytes | 6739197952 | 1019324416 |
+| copt_quick | [6739197952, 109.241969, 1.684799] | [509662208, 8.275019, 0.127416] |
 | counter_params | 185190400 | 509662208 |
 | disagg_b_eff_4096 | 13 | 104 |
 | disagg_transfer_bytes_640 | 335544320 | 62914560 |
@@ -8135,8 +9651,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 24 | 12 |
 | kv_gb@32768 | 0.0 | 3.221225472 |
 | kv_gb@4096 | 0.0 | 0.402653184 |
+| kvcost_active_params | 185190400 | 509662208 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [98304.0, 12, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 115.8 |
+| kvplan_ws_tokens | null | 1264802 |
+| maxbatch_80gb_4096 | 633 | 106 |
 | prefix_kv_bytes_per_token | 524288 | 98304 |
 | report_kv_gb | 0.09142272 | 0.550109184 |
 | report_params | 497725440 | 611061760 |
@@ -8150,6 +9671,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 13215203328 | 1019324416 |
 | sim_max_running | 400 | 293 |
 | slice_mib_16x4352 | [15104, true] | [14336, true] |
+| tpar_mem_gb | 106.601487 | 8.997618 |
+| tpar_options_8x80 | 31 | 96 |
 | traingenz_params | 6739722240 | 509662208 |
 | trainmem_total_gb | 4.362417 | 10.091312 |
 | trainmem_weight_gb | 1.111142 | 3.057973 |
@@ -8161,11 +9684,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.422861, 3.100567] | [0.49967, 3.241384] |
+| advtrain_lora | [0.333892, 2.904835] | [0.359495, 2.932998] |
 | cluster_b_eff_4096 | 13 | 425 |
 | conv_kv_size | 131072 | 12288 |
 | conv_layers | [16, 16] | [6, 6] |
 | conv_prefill_weights_mb | 6678.0 | 170.75 |
 | conv_serving_weight_bytes | 6739197952 | 166556672 |
+| copt_quick | [6739197952, 109.241969, 1.684799] | [83278336, 1.358146, 0.02082] |
 | counter_params | 70476800 | 83278336 |
 | disagg_b_eff_4096 | 13 | 425 |
 | disagg_transfer_bytes_640 | 335544320 | 15728640 |
@@ -8194,8 +9720,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 6 |
 | kv_gb@32768 | 0.0 | 0.805306368 |
 | kv_gb@4096 | 0.0 | 0.100663296 |
+| kvcost_active_params | 70476800 | 83278336 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 6, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [24576.0, 6, 0, 0.0, 16, 0.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 28.97 |
+| kvplan_ws_tokens | null | 1265287 |
+| maxbatch_80gb_4096 | 1024 | 497 |
 | prefix_kv_bytes_per_token | 524288 | 24576 |
 | report_kv_gb | 0.045056 | 0.119095296 |
 | report_params | 135813120 | 144303104 |
@@ -8208,6 +9739,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_requests_8gib_1k | 16 | 341 |
 | serving_weight_bytes | 13215203328 | 166556672 |
 | slice_mib_16x4352 | [6656, true] | [7424, true] |
+| tpar_mem_gb | 106.601487 | 1.688495 |
+| tpar_options_8x80 | 31 | 80 |
 | traingenz_params | 6739722240 | 83278336 |
 | trainmem_total_gb | 3.100567 | 3.241384 |
 | trainmem_weight_gb | 0.422861 | 0.49967 |
@@ -8236,6 +9769,7 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_source | "_layer_metadata" | "layer_plan:layer_types" |
 | kvgeo_32768 | [4096.0, 4, 0, 0.0, 16, 0.0] | [8192.0, 4, 0, 0.0, 16, 0.0] |
 | kvgeo_4096 | [4096.0, 4, 0, 0.0, 16, 0.0] | [8192.0, 4, 0, 0.0, 16, 0.0] |
+| kvplan_ws_gib | 4.83 | 9.66 |
 | report_kv_gb | 0.016777216 | 0.033554432 |
 | report_total_gb | 0.769351025 | 0.789483684 |
 | serving_weight_bytes | 617611264 | 748720128 |
@@ -8244,12 +9778,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741423, 3.684597] | [2.644302, 8.726198] |
+| advtrain_lora | [0.440079, 3.021641] | [1.074372, 3.719363] |
 | cluster_b_eff_4096 | 1 | 183 |
 | conv_kv_size | 131072 | 24576 |
 | conv_layers | [16, 16] | [12, 12] |
 | conv_prefill_weights_mb | 6676.0 | 896.820801 |
 | conv_serving_weight_bytes | 6738149376 | 881434112 |
 | conv_state_bytes | 0 | 28360704 |
+| copt_quick | null | [440717056, 7.165002, 0.110179] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde" | null |
 | counter_params | 123570432 | 440717056 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 183 |
@@ -8286,8 +9824,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 12 |
 | kv_gb@32768 | 0.0 | 1.63897344 |
 | kv_gb@4096 | 0.0 | 0.229687296 |
+| kvcost_active_params | 123570432 | 440717056 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [49152.0, 12, 0, 0.0, 16, 28360704.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [49152.0, 12, 0, 0.0, 16, 28360704.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 57.91 |
+| kvplan_ws_tokens | null | 1264880 |
+| maxbatch_80gb_4096 | 501 | 203 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde" | null |
 | prefix_kv_bytes_per_token | null | 49152 |
 | report_kv_gb | 0.11460608 | 0.284983296 |
@@ -8308,6 +9851,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev" | null |
 | sim_max_running | 72 | 400 |
 | slice_mib_16x4352 | [81582, false] | [11008, true] |
+| tpar_mem_gb | null | 7.802064 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde" | null |
+| tpar_options_8x80 | null | 96 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde" | null |
 | traingenz_params | null | 440717056 |
 | trainmem_total_gb | 3.684597 | 8.726198 |
@@ -8320,12 +9867,16 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [0.741423, 3.684597] | [1.402694, 4.896927] |
+| advtrain_lora | [0.440079, 3.021641] | [0.660503, 3.264107] |
 | cluster_b_eff_4096 | 1 | 536 |
 | conv_kv_size | 131072 | 9216 |
 | conv_layers | [16, 16] | [12, 6] |
 | conv_prefill_weights_mb | 6676.0 | 708.903809 |
 | conv_serving_weight_bytes | 6738149376 | 467564544 |
 | conv_state_bytes | 0 | 3631104 |
+| copt_quick | null | [243525120, 3.946801, 0.060881] |
+| copt_quick_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde" | null |
 | counter_params | 123570432 | 233782272 |
 | decode_fit_refused | null | true |
 | disagg_b_eff_4096 | 1 | 536 |
@@ -8362,8 +9913,13 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_full_layers | 0 | 6 |
 | kv_gb@32768 | 0.0 | 0.60761088 |
 | kv_gb@4096 | 0.0 | 0.079128576 |
+| kvcost_active_params | 123570432 | 233782272 |
 | kvgeo_32768 | [0.0, 1, 0, 0.0, 16, 0.0] | [18432.0, 6, 0, 0.0, 16, 3631104.0] |
 | kvgeo_4096 | [0.0, 1, 0, 0.0, 16, 0.0] | [18432.0, 6, 0, 0.0, 16, 3631104.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 21.72 |
+| kvplan_ws_tokens | null | 1265116 |
+| maxbatch_80gb_4096 | 501 | 431 |
 | prefix_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde" | null |
 | prefix_kv_bytes_per_token | null | 18432 |
 | report_kv_gb | 0.11460608 | 0.134424576 |
@@ -8384,6 +9940,10 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidden_layers', 'hidden_size'] at the top lev" | null |
 | sim_max_running | 72 | 400 |
 | slice_mib_16x4352 | [81582, false] | [7424, true] |
+| tpar_mem_gb | null | 4.869401 |
+| tpar_mem_gb_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde" | null |
+| tpar_options_8x80 | null | 96 |
+| tpar_options_8x80_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde" | null |
 | traingenz_error | "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde" | null |
 | traingenz_params | null | 243543552 |
 | trainmem_total_gb | 3.684597 | 4.896927 |
@@ -8396,11 +9956,14 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [4.166339, 13.748917] | [10.910676, 36.005232] |
+| advtrain_lora | [1.581718, 4.277443] | [3.82983, 6.750367] |
 | cluster_b_eff_4096 | 13 | 42 |
 | conv_kv_size | 262144 | 81920 |
 | conv_prefill_weights_mb | 13162.40625 | 3868.325195 |
 | conv_serving_weight_bytes | 13376897024 | 3636892160 |
 | conv_state_bytes | 0 | 245760000 |
+| copt_quick | [6900891648, 111.845237, 1.725223] | [1818446080, 29.508507, 0.454612] |
 | counter_params | 694389760 | 1818446080 |
 | disagg_b_eff_4096 | 13 | 42 |
 | disagg_transfer_bytes_640 | 335544320 | 350617600 |
@@ -8415,8 +9978,12 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_cross_layers | 0 | 32 |
 | kv_gb@32768 | 0.0 | 5.61446912 |
 | kv_gb@4096 | 0.0 | 0.91684864 |
+| kvcost_active_params | 694389760 | 1818446080 |
 | kvgeo_32768 | [0.0, 32, 0, 0.0, 16, 0.0] | [163840.0, 32, 0, 0.0, 16, 245760000.0] |
 | kvgeo_4096 | [0.0, 32, 0, 0.0, 16, 0.0] | [163840.0, 32, 0, 0.0, 16, 245760000.0] |
+| kvplan_pool_gib | 0.0 | 56.31 |
+| kvplan_ws_gib | 0.0 | 192.77 |
+| kvplan_ws_tokens | null | 1263317 |
 | prefix_kv_bytes_per_token | 524288 | 163840 |
 | runtime_chunked | [9.680075, 10410.406, 384.0] | [1.947247, 3068.325, 588.75] |
 | runtime_decode | [7.78941, 10005.203, 258.0] | [3.650774, 2940.605, 1018.125] |
@@ -8427,6 +9994,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | serving_weight_bytes | 13376897024 | 3636892160 |
 | sim_max_running | 400 | 171 |
 | slice_mib_16x4352 | [22272, true] | [26624, true] |
+| tpar_mem_gb | 109.09157 | 30.034113 |
+| tpar_options_8x80 | 31 | 80 |
 | traingenz_params | 6901415936 | 1818446080 |
 | trainmem_total_gb | 13.748917 | 36.005232 |
 | trainmem_weight_gb | 4.166339 | 10.910676 |
@@ -8438,12 +10007,18 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 
 | figure | before | after |
 |---|---|---|
+| advtrain_full | [39.881589, 131.609243] | [41.143026, 135.771985] |
+| advtrain_lora | [13.486801, 17.373035] | [13.90728, 17.835562] |
+| ccb_params_b | 9.00202496 | 9.004388352 |
 | cluster_b_eff_4096 | 13 | 185 |
 | conv_kv_size | 262144 | 0 |
 | conv_prefill_weights_mb | 13138.0 | 13142.0 |
 | conv_serving_weight_bytes | 13364101120 | 18008776704 |
 | conv_state_bytes | 0 | 134480896 |
+| copt_quick | [6888095744, 111.639223, 1.722024] | [9004388352, 145.711534, 2.251097] |
 | counter_params | 6646931456 | 6857170944 |
+| creq_gb | [128.672595, 192.0] | [128.705682, 192.0] |
+| creq_params | 9002024960 | 9004388352 |
 | disagg_b_eff_4096 | 13 | 185 |
 | disagg_transfer_bytes_640 | 335544320 | 134480896 |
 | eng_None_32768_params | 6646931456 | 6857170944 |
@@ -8474,8 +10049,11 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | kv_free_layers | 0 | 32 |
 | kv_full_layers | 32 | 0 |
 | kv_source | "uniform" | "layer_plan:mlstm_stack" |
+| kvcost_active_params | 6646931456 | 6857170944 |
 | kvgeo_32768 | [0.0, 32, 0, 0.0, 16, 0.0] | [0.0, 1, 32, 4202528.0, 16, 0.0] |
 | kvgeo_4096 | [0.0, 32, 0, 0.0, 16, 0.0] | [0.0, 1, 32, 4202528.0, 16, 0.0] |
+| lora_adapter_gb | 0.301989888 | 0.352387072 |
+| maxbatch_80gb_4096 | 1024 | 354 |
 | model_type | "unknown" | "state-space" |
 | prefix_kv_bytes_per_token | 524288 | 0 |
 | report_params | 6646931456 | 6857170944 |
@@ -8492,6 +10070,8 @@ The full per-config table (before = origin/main, after = this branch) follows. 2
 | sim_max_running | 103 | 78 |
 | slice_mib_16x4352 | [66304, true] | [68608, true] |
 | state_gb | 0.0 | 0.134480896 |
+| tpar_mem_gb | 108.894513 | 141.477345 |
+| tpar_options_8x80 | 31 | 20 |
 | traingenz_params | 6888620032 | 9004388352 |
 | trainmem_total_gb | 131.609243 | 135.771985 |
 | trainmem_weight_gb | 39.881589 | 41.143026 |

@@ -125,6 +125,14 @@ an MLA cache is its latent, sized by its own path).
 A multimodal config nests the decoder under `text_config`; every reader looks there first, so a
 model that is both multimodal and hybrid (Qwen3.5) gets the hybrid layout.
 
+ChatGLM states its KV heads as `multi_query_group_num` beside `multi_query_attention`, and its
+token table as `padded_vocab_size`. `layer_plan.with_class_geometry`, which every reader takes,
+reads the query groups as the KV heads where no count is stated -- a boolean
+`num_key_value_heads: true`, as prepopulated.db's glm-4-9b-chat row stores it, is a flag, not a
+count -- and a table padded past the stated vocabulary as the padded rows (round 16: every reader
+had charged glm-4-9b-chat one KV head, half its 40,960 B a token, and ChatGLM3-6B its 32 query
+heads, 16 x its 28,672).
+
 ### Encoder-decoder models
 
 An encoder-decoder's per-token KV cache is its **decoder's** self-attention. Such a config states
@@ -478,11 +486,68 @@ counted an encoder-decoder as its decoder alone:
   matrices, count more than the model, and that figure stands, so no training figure is lowered.
   TrainingTimeEstimator's rough count is held to the parameter counter's the same way.
 
+* Every other estimator that counted the `ModelConfig`'s decoder fields (round 16): GenZ's
+  training parallelization (`_estimate_memory_per_gpu`, which decides what
+  `get_training_parallelization_options` admits, and through it
+  `get_best_training_parallelization`, the scale optimizer and the cluster ranker), the training
+  cluster requirements (`cluster_requirements._estimate_model_params`, behind
+  `predict_cluster_requirements`), the comprehensive config builder (`_estimate_model_size`) and the
+  cluster optimizer's quick check and GPU-type filter (`_estimated_model_parameters`). Once
+  `get_configs` read an encoder-decoder's real decoder geometry (origin/main read 4096-wide
+  defaults, or raised), each fell from an over-count to below the model: whisper-large-v3's
+  parallelization estimate was 16.49 GB where its bf16 weights, fp32 gradients and AdamW state
+  alone are 21.6 GB, and a 20 GB GPU was offered for it. Each now holds its count with the one
+  helper, `memory_model.held_to_the_model` (the fields' count, or the model's own where that is
+  larger; never lowered): whisper-large-v3 30.03 GB (floor 23.77 with the estimator's 10 %
+  overhead), and no single 20 GB option. The parallelization estimate also counts an
+  encoder-decoder's encoder layers in its LoRA adapters and its activations.
+
 `scripts/kv_corpus.py` measures them for every row (`counter_params`, `trainmem_weight_gb`,
 `trainmem_total_gb` -- full fine-tuning, AdamW, bf16, one 2,048-token sequence -- and
-`traingenz_params`), and the gate holds them: the counts to every parameter, the trainer's
+`traingenz_params`; and since round 16 `tpar_mem_gb` and `tpar_options_8x80`, `creq_params` and
+`creq_gb` -- the per-GPU breakdown and the minimum cluster memory --, `ccb_params_b`,
+`copt_quick` -- parameters, the quick check's GB a GPU, the filter's weights a GPU on eight --,
+`advtrain_full` / `advtrain_lora` -- weights and total --, `time_params` and the KV planner's
+`kvcost_active_params`), and the gate holds them: the counts to every parameter, the trainer's
 weights to 6 B a parameter (bf16 and its fp32 master copy) and its total to 18 B (with fp32
-gradients and AdamW's two moments; activations on top).
+gradients and AdamW's two moments; activations on top), the estimators' per-GPU and cluster
+memory to 14 B a parameter (bf16 weights, fp32 gradients, AdamW's moments; the parallelization
+estimate with its own 10 % overhead), LoRA training's frozen weights to 2 B, and the options a
+cluster admits by the estimate they are sized from.
+
+## LoRA buffers
+
+`calculate_lora_adapter_memory` (``calculate_memory(..., max_loras=..)``) follows vLLM's
+pre-allocation: per adapter slot and wrapped linear map, an A buffer of rank x in and a B buffer
+of out x rank. vLLM wraps every linear layer ("In vLLM, all linear layers support LoRA",
+`lora/utils.py get_supported_lora_modules`), so a hybrid's recurrent and linear-attention layers
+hold buffers too: Mamba's in_proj, conv (a `ColumnParallelLinear` of kernel -> channels in vLLM),
+x_proj, dt_proj and out_proj, Gated DeltaNet's in_proj_qkv(z) / in_proj_ba / conv / out_proj,
+KDA's projections, convs and low-rank gates, a short conv's, lightning attention's. Where the
+layer plan places the kinds, the `attn` target is the plan's attention layers (Q / K / V / O
+each) and every recurrent layer adds its mechanism's maps (`mixer_params.recurrent_mixer_linears`;
+each mechanism's `*_linears` is the one statement of its shapes, and its `*_params` is those
+maps' weights plus the vectors no map holds). Counted from the attention layers alone, a hybrid
+held no adapter on its recurrent layers: Jamba 0.243 GB (origin/main 0.294, which took half the
+layers for attention), now 0.451 against vLLM's floor of 0.313 (4 adapters, rank 16, bf16). The
+CPU prefill scratch is sized from the widest wrapped slice, which can now be a mixer's (Jamba's
+in_proj, 16,384 wide, over its 14,336-wide FFN). A stated null FFN width (GPT-Neo) is the class's
+4 x hidden, and a per-layer list of expert widths (Hunyuan-A13B) its widest entry; both had
+raised. The harness measures the adapters and the scratch (`lora_adapter_gb`, `lora_scratch_gb`)
+and the gate holds the adapters to the floor `kv_truth` reads off transformers' modules: rank x
+adapters x 2 B over (in + out) of every `nn.Linear` of the decoder layers, routed experts left out.
+
+## The KV tier planner and the max batch
+
+`scripts/kv_corpus.py` measures `kv.plan_kv_tiers` (vLLM, a dedicated 80 GiB card with fixed
+weights and demand, 16 clients of 8,000 + 2,000 tokens, 1,000 GiB of host memory: `kvplan_*` --
+the GPU and CPU KV, the host and shared memory its T1 asks for, the GPU pool, the working set in
+GiB and tokens, and the tiers) and `utils.estimate_max_batch_size` (80 GB, 4,096 tokens:
+`maxbatch_80gb_4096`). The gate holds the working set to its own tokens at the K + V bytes a token
+adds at the workload's 8,000-token context, the max batch by the calculator's weights, KV and
+state it is sized from, and the pool by the KV geometry's bytes a token. `kv.pd` decides P/D from
+the parameter counter and GenZ's disaggregation analysis, both measured; its own output is a
+decision, not an amount.
 
 ## What is conservative, and why
 
@@ -614,6 +679,12 @@ the gate holds below its ground truth and why):
   27.78B. Reading `rope_parameters` there lowers figures that sit below their truth for other
   reasons (ModernBERT encoders' counter figures, 320M of 395M), so it waits for those.
 
+Holding the training estimators to the model's own count (round 16) carries the FRD-027 facts'
+count, which is above the checkpoint for a model whose experts sit on every other layer: Jamba-v0.1
+93.85B against 51.57B (on origin/main as here; the serving weights read the same count). Its
+parallelization estimate is high by the same factor (1,448 GB a GPU, no option on eight 80 GB
+GPUs, where 14 B a parameter over eight is still 91 GB a GPU: none fits either way).
+
 ## What errs low, measured
 
 `scripts/kv_corpus.py --gate` holds every figure the branch moves in the unsafe direction against
@@ -671,6 +742,12 @@ these, stated rather than hidden:
   biases) are in neither the facts' nor the counter's count, on origin/main as here: Qwen2.5-7B
   15,230,974,976 B of 15,231,233,024 (2 parts in 100,000), and the synthetic Qwen2 that leaves its
   depth to the class 11,066.9M of 11,067.3M.
+* **The calculator's LoRA buffers** (`lora_adapter_gb`, round 16), on origin/main as here: a MoE
+  layer's routed experts are counted as one FFN (vLLM 0.21 wraps `FusedMoE` too, per expert), a
+  merged module's A buffer once (vLLM stacks one per slice), and an attention map at the hidden
+  width where the heads are wider (Gemma 3 27B: 0.768 GB against a 0.908 GB floor), and an FFN
+  whose config names no gated activation is counted with two maps (LFM2-2.6B: 0.156 GB against
+  0.196; origin/main 0.115). Every hybrid's figure now sits above origin/main's.
 * **A neural codec or a speech encoder** (a TTS model's speech tokenizer, Mimi, w2v-BERT) states
   a stack's geometry but no token vocabulary: it is not a language model, which every reader
   sizes, and the corpus names it (`_not_language_models`) without measuring it. Read as one, the
@@ -696,7 +773,9 @@ harness on `c17ef89`). It fails on:
   names the error the branch records for that reader, and the gate checks it is that error,
 
 unless the allowlist names it: the config, the reader, both figures, its cause, and its ground
-truth -- transformers 5.12's own model for the config on the meta device (`scripts/kv_truth.py`:
+truth (a tier the KV planner derives -- its T1 host and shared memory, its GPU and CPU KV,
+`kv_corpus.DERIVED_FIGURES` -- is held, like a capacity, by the working set and KV geometry it is
+derived from, each held to its own truth) -- transformers 5.12's own model for the config on the meta device (`scripts/kv_truth.py`:
 every parameter; the K / V projections each decoder layer's self-attention caches, and those of
 its cross-attention; the recurrent state transformers' mixer modules hold; the cache kinds and
 windows `DynamicCache(config=...)` builds), the checkpoint's or GGUF's tensors (`kv_truth.py
