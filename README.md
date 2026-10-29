@@ -330,14 +330,18 @@ linear layer -- in the calculator and in the FRD-027 vLLM planner's reservation,
 a figure only the branch reports, or one it no longer reports -- to a ground truth (transformers'
 own model for the config, a checkpoint's tensors, or the cited arithmetic):
 `llm-memory-calculator/tests/test_kv_gate.py` over every config the repository ships (the GGUF
-reader included, on metadata-only GGUF fixtures) -- no reader needs transformers or torch (the
+and ONNX-GenAI readers included, on metadata-only GGUF fixtures and genai_config.json folders) --
+and fails on any public function of the calculator, BudSimulator or `bud_component.py` that reads a
+model-shape key (found in the source with `ast`) which the harness neither runs nor names, with its
+reason, in `tests/fixtures/kv_gate/unmeasured.json` -- no reader needs transformers or torch (the
 config-class defaults ship with the package, with the layout a class gives a windowed config that
 states none -- applied only where the config leaves the keys the class builds that layout from
 out, or states them at values the rule was checked at -- and a head width a class derives; only a
 type newer than transformers 5.12, a class layout no shipped rule reproduces, or a layout key stated
 at another value asks the installed release, and without it is charged full KV on every windowed
 layer), and a reader that cannot import either fails; the
-GGUF reader needs `gguf` and the converter BudSimulator's `requests`, `lxml` and `json_repair`, and
+GGUF reader needs `gguf` and the converter and the API routes BudSimulator's `requests`, `lxml`,
+`json_repair` and `fastapi`, and
 where those are absent their figures are reported as not measured -- and `scripts/kv_corpus.py --gate` over a machine's
 HF cache and model folders; the figures that
 stay below their truth without having moved, and the serving weights of the two checkpoints that

@@ -288,9 +288,14 @@ The calculator provides detailed breakdown:
   those keys out or states a value the rule was checked at; a model type newer than 5.12, a class
   layout no shipped rule reproduces (Qwen2-MoE), or a config that states such a key at another
   value asks the installed transformers, and without it is charged full KV on every windowed
-  layer, an over-estimate. A reader that cannot import transformers or torch fails the gate,
-  and only the GGUF reader (`gguf`) and BudSimulator's converter (`requests`, `lxml`,
-  `json_repair`) may be reported as not measured where their own dependencies are absent. The
+  layer, an over-estimate -- with or without a window (LFM2's `full_attn_idxs` alone: 6 attention
+  layers of 24, the rest short convolutions with their conv state). A reader that cannot import
+  transformers or torch fails the gate, and only the GGUF reader (`gguf`), BudSimulator's
+  converter (`requests`, `lxml`, `json_repair`) and its API routes (those and `fastapi`) may be
+  reported as not measured where their own dependencies are absent. Which readers the gate holds
+  is read from the source: every public function that names a model-shape key is run by the
+  corpus harness or named, with its reason, in `tests/fixtures/kv_gate/unmeasured.json`
+  (LAYER_KINDS.md, "The reader inventory"). The
   serving simulator's weights (a `ServingSimulator` run's weight load, the cluster's and
   disaggregation's `B_eff`) are the model's own parameter count -- the FRD-027 facts' count of the
   config the GenZ model was read from, every stack, tower, adapter and expert -- and a decoder
@@ -315,8 +320,9 @@ The calculator provides detailed breakdown:
   `memory_model.trained_layers`), the LoRA buffers and scratch, the max batch and the KV tier
   planner, and the gate holds them. LoRA adapter buffers (`max_loras`) cover every layer's linear
   maps, a hybrid's recurrent and linear-attention layers among them
-  (`mixer_params.recurrent_mixer_linears`, over the layers `layer_plan.placed_mixers` places,
-  a layout read from the config class among them), with a gated FFN's three maps read as the
+  (`mixer_params.recurrent_mixer_linears`, over the layers the layer plan places, a layout read
+  from the config class among them: `resolve_layer_plan`'s `config_class` dialect, LFM2's
+  `full_attn_idxs` with or without a window), with a gated FFN's three maps read as the
   weight counters read them (`stack_params.ffn_is_gated`), as vLLM wraps every linear layer;
   GenZ's `training_modeling` sizes an encoder's activations at the encoder's own width and a
   decoder layer's at least its widest attention or mixer maps (`memory_model.activation_shape`);

@@ -494,6 +494,20 @@ the rule was checked at, from the class otherwise
 `tests/test_layout_dependencies_and_training_optimizer.py` re-probes every rule's keys and checks
 each accepted value at depths the writer did not use).
 
+**Without a window** the lookup was never reached, so a config that states a layout key the rule
+was not checked at kept every layer full attention: LFM2 with `full_attn_idxs` and no window
+(the round-19 review's case: 24 layers, 6 attention layers in Lfm2Config) was charged KV on all
+24 (4x high) and no conv state. `layer_plan.class_layout` is the one place the class's layout is
+asked for: with a window and no layout, as before, and with no window when the config states such
+a key (``layout_rule_applies`` refuses the rule) -- the class answers, and without transformers
+every layer stays full attention. Where that layout places a layer other than attention (LFM2's
+short convolutions) it is a layer plan (`resolve_layer_plan`'s `config_class` dialect), so every
+reader -- the KV, the recurrent state, the facts, the parameters, the LoRA buffers, GenZ -- reads
+the same layers; before, only the KV read them, and the conv state of a class-placed layout was 0
+(with a window too: the round-18 shape `lfm2-full-attn-idxs` held 0 B where its 18 conv layers
+hold 18 x 2,048 x 3 elements). The harness carries both shapes (`lfm2-full-attn-idxs`,
+`lfm2-full-attn-idxs-no-window`).
+
 The towers and adapters this reaches are read at their own geometry, by the config's keys:
 
 * **A hierarchical tower that states its stages** under `embed_dim` as a list (transformers 5.12's
@@ -658,11 +672,11 @@ KDA's projections, convs and low-rank gates, a short conv's, lightning attention
 layer plan places the kinds, the `attn` target is the plan's attention layers (Q / K / V / O
 each) and every recurrent layer adds its mechanism's maps (`mixer_params.recurrent_mixer_linears`;
 each mechanism's `*_linears` is the one statement of its shapes, and its `*_params` is those
-maps' weights plus the vectors no map holds); where the plan reads no layout but the layer kinds
-place recurrent layers -- from the config's names or its class's layout (`layer_plan.placed_mixers`,
-round 18: LFM2 with a window and `full_attn_idxs`, whose class builds 18 of 24 layers as short
-convolutions) -- those are read the same way, where they had held neither attention nor mixer
-buffers (0.0755 GB, below origin/main's 0.088 and vLLM's 0.109 floor; now 0.140). The FFN is
+maps' weights plus the vectors no map holds); a layout the config's class derives that places a
+layer other than attention is a plan too (`resolve_layer_plan`'s `config_class` dialect, round 19:
+LFM2 with `full_attn_idxs`, whose class builds 18 of 24 layers as short convolutions), where its
+layers had held neither attention nor mixer buffers (0.0755 GB, below origin/main's 0.088 and
+vLLM's 0.109 floor; now 0.140). The FFN is
 gated (gate, up and down) as the weight counters read it (`stack_params.ffn_is_gated`: the
 config's statement, its family's modelling, its activation's name), where it had been read from
 the activation's name alone: LFM2 states none and builds w1 / w3 / w2 (LFM2-2.6B 0.156 GB
@@ -907,6 +921,11 @@ these, stated rather than hidden:
   tower and the geometry its `text_config` leaves to the class (5,374.8M of 8,397.1M), NLLB-MoE's
   experts (3,360.9M of 54,500.6M), the hub mT5 that leaves its flags to the class (247.5M of
   300.2M; origin/main 153.1M). The training and serving readers count these models whole.
+  BudSimulator stores, for a model it is given as a config, the larger of this count and its
+  API's older estimate (`src.db.model_manager.estimate_parameter_count`, round 19: two embeddings
+  and 4h^2 + 2hi + 4h a layer), so its stored count is never below origin/main's (Zamba2-2.7B
+  4.41B, its checkpoint 2.84B, the calculator 2.58B); on origin/main the model manager stored none
+  (it asked the calculator for a method it does not have).
 * **Attention biases a class builds and no config key states** (Qwen1.5 / 2 / 2.5's Q / K / V
   biases, which Qwen2Config states no flag for) are in neither the facts' nor the counter's count,
   on origin/main as here (a class that states its default -- Qwen2MoeConfig's `qkv_bias`, GLM-4's,
@@ -978,9 +997,10 @@ layers of 2,048, the LFM2.5-Audio detokenizers' 3 of 512). The serving path's we
 and the fixed bytes a request it is sized from.
 
 The gate needs no transformers or torch: the figures read the shipped class defaults, layouts
-and head widths (above) and the allowlist's truths are committed. Two readers have third-party dependencies of their own
+and head widths (above) and the allowlist's truths are committed. Three readers have third-party dependencies of their own
 (`kv_corpus.READER_DEPENDENCIES`): the GGUF reader needs `gguf`, and BudSimulator's converter
-imports BudSimulator's database package, which needs `requests`, `lxml` and `json_repair`. Where
+imports BudSimulator's database package, which needs `requests`, `lxml` and `json_repair`, and
+the API routes need `fastapi` too. Where
 one of those is not installed, that reader cannot run at all: its figures are reported as not
 measured here, by module and figure count, and `test_the_gguf_fixtures_are_read_through_the_gguf_reader`
 skips without `gguf`. A reader that cannot import any other module fails the gate --
@@ -993,6 +1013,58 @@ measured. `python scripts/kv_corpus.py --gate main.json branch.json --allowlist
 tests/fixtures/kv_gate/allowlist.json` runs the same check over the machine's HF cache, model
 folders and GGUFs too. A figure that moves again, or a new drop, fails until its entry is
 re-measured (`scripts/kv_truth.py --allowlist-from`).
+
+The ONNX-GenAI reader (`bud_component.onnx_dir_to_hf_config`) runs on `tests/fixtures/onnx`'s
+folders as the GGUF reader runs on its metadata copies: Qwen2.5-0.5B-Instruct's genai_config.json
+(a known dense type), Qwen1.5-MoE-A2.7B's beside its source config.json (the reader takes the
+experts and the shared expert from it: it had required both a shared-expert count and width, which
+no family states together, and dropped Qwen-MoE's and DeepSeek's shared experts), and
+onnxruntime-genai's Qwen3.5 test folder without one, which the reader refuses (a model type
+neither known dense nor sized by a config: fail-closed, so its figures are entries that name the
+refusal). Each folder's figures are measured through every reader, the ONNX Runtime engine's own
+total among them (`eng_onnxruntime_*_total_mb`: its non-freeing arena holds every layer's working
+set, read from the decoder's own depth, width, vocabulary and experts under every spelling --
+`num_hidden_layers` / `hidden_size` alone made ChatGLM a 12-layer, 768-wide default).
+
+### The reader inventory
+
+The harness's reach is not a reviewer's list. `kv_corpus.figure_readers` reads the sources with
+`ast` -- `llm-memory-calculator/src`, `BudSimulator/src`, `BudSimulator/apis`, `bud_component.py`
+-- and lists every function whose body names a model-shape key (`kv_corpus.SHAPE_KEYS`: the depth,
+width, head, KV-head, FFN, expert, vocabulary and window keys, `layer_types`, `text_config`,
+`kv_lora_rank`, GenZ's `num_decoder_layers` and `get_kv_size`) as a string, an attribute, a keyword
+or a variable. `tests/test_kv_gate.py` runs the corpus once, in a fresh interpreter (so what it
+enters does not depend on what other tests imported first), with `kv_corpus.ran_code` recording
+every function of the repository it enters (Python 3.12's `sys.monitoring`, at the harness's own
+speed) and fails on any public reader the harness did not enter that
+`tests/fixtures/kv_gate/unmeasured.json` does not name with its reason -- and on an entry there
+that names no public reader, gives no reason, or that the harness does run. Round 19's count: 272
+readers, 160 public, 138 run by the harness, 22 excluded: FLOP and time estimates (GenZ's training
+FLOP counters, the backward pass's timing, the pipeline bubble's delay, the MoE all-to-all's
+locality), benchmark records and their fits, a kernel-overhead self-check, two ratios of the
+training characteristics, the legacy kv_plan renderer (it reads no model config: `sliding_window`
+is the vLLM argument it emits), and the gated-config submission route (network-bound; its count
+is the shared `estimate_parameter_count`, measured through `/models/add/config`). Where a reader's
+declared module is not installed (`READER_DEPENDENCIES`: the GGUF reader's `gguf`, the converter's
+and the API routes' `requests`, `lxml`, `json_repair`, `fastapi`) the functions only it reaches do
+not run, and the inventory is checked where every reader runs. `python scripts/kv_corpus.py
+--inventory tests/fixtures/kv_gate/unmeasured.json` prints the same list.
+
+What the harness gained in round 19 to run them: the ONNX folders; the ONNX Runtime engine; the
+sampler's working set at 256 sequences (`report_sampler_gb`); the training characteristics' KV
+(`amc_kv`: a layer's KV at 4k -- an MLA layer's latent and its rotary key, 576 a token, where the
+latent alone was counted --, and the two ratios) and their restated shape (`amc_config`), and
+`training.distributed.calculate_distributed_memory` over them (ZeRO-3 on eight GPUs,
+`dist_zero3_gb`, held to 14 B a parameter over eight); GenZ's parallelism options for eight devices
+(`genz_par_options_8`, `genz_trainpar_options_8`); the fp8 KV decision (`kvfp8_bytes`,
+`plan_kv_bytes`: `kv.dtype.kv_fp8_support` and the runtime planner's numerics stage, as bytes a
+KV element, held to 2 for an MLA latent or a hybrid); BudSimulator's `/models/analyze` (held by
+the calculator's KV and weights it rounds), `/models/add/config`, `/models/{id}/config` and the
+model manager; the database's HF config for GenZ's built-in models (`genz_to_hf`, read back by the
+calculator: `conv_rt_*`) and the converter's own check; the grounding store's memory fit over the
+planner fixtures' measured runs (`fit_memory_gib`, a residual of measured runs reported, not
+gated: bytes the facts now count in a model's weights leave its fitted overhead); RecurrentGemma's
+RG-LRU stack and a Nemotron-NAS stack's no_op and linear blocks (GenZ's linear FFN operators).
 
 ## The recurrent state
 
