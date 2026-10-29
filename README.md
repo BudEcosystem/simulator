@@ -332,8 +332,10 @@ own model for the config, a checkpoint's tensors, or the cited arithmetic):
 `llm-memory-calculator/tests/test_kv_gate.py` over every config the repository ships (the GGUF
 and ONNX-GenAI readers included, on metadata-only GGUF fixtures and genai_config.json folders) --
 and fails on any public function of the calculator, BudSimulator or `bud_component.py` that reads a
-model-shape key (found in the source with `ast`) which the harness neither runs nor names, with its
-reason, in `tests/fixtures/kv_gate/unmeasured.json` -- no reader needs transformers or torch (the
+model-shape key, in its own body or through a private helper (found in the source with `ast`),
+which the harness neither calls itself nor names in `tests/fixtures/kv_gate/unmeasured.json` --
+with its reason, or as a helper whose every caller is measured, checked against the source; a
+function the harness only reaches through another is not measured -- no reader needs transformers or torch (the
 config-class defaults ship with the package, with the layout a class gives a windowed config that
 states none -- applied only where the config leaves the keys the class builds that layout from
 out, or states them at values the rule was checked at -- and a head width a class derives; only a

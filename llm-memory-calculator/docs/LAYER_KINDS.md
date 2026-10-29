@@ -422,7 +422,13 @@ beside Falcon-40B's stated 8,192 that is another model's). Every reader takes it
 `_text_config`, and `depth`, which reads a class's depth for a block that states none), the
 FRD-027 facts, the parameter counter, the tower and adapter readers (`stack_params`), and through
 them the calculator, GenZ's loader, BudSimulator's converter and every planner. The figures are
-the same with transformers 5.12, an older release or none installed.
+the same with transformers 5.12, an older release or none installed: the installed release is
+asked for a class's geometry only for a model type the snapshot does not know at all (`defaults`
+lists every 5.12 class). A type it knows but holds no geometry for builds none at its top level
+-- Qwen2-VL's and Qwen2.5-VL's 5.12 classes keep the language model's in `text_config` -- and gets
+none (round 20: with transformers 4.50.3 installed, its flat Qwen2VLConfig filled the 72B model's
+80 layers, 8,192 wide, 8 KV heads over the stated 28 x 1,536 decoder, and the converter's
+`conv_kv_size` read 163,840 where 5.12 reads 14,336).
 
 Two things a class derives rather than states ship as rules, each checked by
 `scripts/config_class_defaults.py` against the class at several depths, windows, widths and
@@ -923,9 +929,26 @@ these, stated rather than hidden:
   300.2M; origin/main 153.1M). The training and serving readers count these models whole.
   BudSimulator stores, for a model it is given as a config, the larger of this count and its
   API's older estimate (`src.db.model_manager.estimate_parameter_count`, round 19: two embeddings
-  and 4h^2 + 2hi + 4h a layer), so its stored count is never below origin/main's (Zamba2-2.7B
-  4.41B, its checkpoint 2.84B, the calculator 2.58B); on origin/main the model manager stored none
-  (it asked the calculator for a method it does not have).
+  and 4h^2 + 2hi + 4h a layer), so a user config's stored count is never below what the API's
+  older estimate gave (Zamba2-2.7B 4.41B, its checkpoint 2.84B, the calculator 2.58B); on
+  origin/main the model manager stored none (it asked the calculator for a method it does not
+  have). For GenZ's **built-in** models (the loader's `/models/list` count and the count
+  `sync_static_models_to_db` stores, which `ModelManager.get_model_config` hands the calculator as
+  `num_parameters`) the count is the one the stored HF config states
+  (`ModelConverter.genz_parameter_count`, round 20): GenZ's own count of the ModelConfig's fields
+  (`genz.serving.memory_model.model_parameter_count`: heads at `head_dim`, a gated FFN, every
+  routed and shared expert at its width, the layers it places experts on, the Mamba mixers, an
+  untied head and a Q / K / V bias -- each an upper bound where the ModelConfig states nothing),
+  never below the calculator's count of the HF config. Round 19 had counted the HF config alone,
+  which states no MLA rank, shared expert or dense leading layer and read Gemma's GeGLU (`hidden_act:
+  gelu`) as two matrices: Gemma-7B 6.86B (8.54B), GLM-4-9B 8.41B (9.40B), DeepSeek-V2 234.0B
+  (235.7B), DeepSeek-MoE-16B 15.99B (16.38B). The HF config now states the gated FFN
+  (`is_gated_act`) and the count, and the training routes read a built-in through the same
+  conversion (their hand mapping counted Gemma-7B at 7.24B). Each is at or above its model now;
+  five MoE built-ins are listed below origin/main's count -- its fallback charged every layer's
+  experts at the dense width (DeepSeek-V2 1,818.8B, Qwen1.5-MoE-A2.7B 84.0B, DeepSeek-V3 6,196.9B,
+  DeepSeek-MoE-16B 121.0B, Llama-4-Maverick 1,550.2B) -- and each is held to its model in the gate
+  (`loader_params`, `loader_sync_params`, `loader_sync_weight_gb`; truths in `truths.json`).
 * **Attention biases a class builds and no config key states** (Qwen1.5 / 2 / 2.5's Q / K / V
   biases, which Qwen2Config states no flag for) are in neither the facts' nor the counter's count,
   on origin/main as here (a class that states its default -- Qwen2MoeConfig's `qkv_bias`, GLM-4's,
@@ -1030,25 +1053,56 @@ set, read from the decoder's own depth, width, vocabulary and experts under ever
 
 The harness's reach is not a reviewer's list. `kv_corpus.figure_readers` reads the sources with
 `ast` -- `llm-memory-calculator/src`, `BudSimulator/src`, `BudSimulator/apis`, `bud_component.py`
--- and lists every function whose body names a model-shape key (`kv_corpus.SHAPE_KEYS`: the depth,
-width, head, KV-head, FFN, expert, vocabulary and window keys, `layer_types`, `text_config`,
-`kv_lora_rank`, GenZ's `num_decoder_layers` and `get_kv_size`) as a string, an attribute, a keyword
-or a variable. `tests/test_kv_gate.py` runs the corpus once, in a fresh interpreter (so what it
-enters does not depend on what other tests imported first), with `kv_corpus.ran_code` recording
-every function of the repository it enters (Python 3.12's `sys.monitoring`, at the harness's own
-speed) and fails on any public reader the harness did not enter that
-`tests/fixtures/kv_gate/unmeasured.json` does not name with its reason -- and on an entry there
-that names no public reader, gives no reason, or that the harness does run. Round 19's count: 272
-readers, 160 public, 138 run by the harness, 22 excluded: FLOP and time estimates (GenZ's training
-FLOP counters, the backward pass's timing, the pipeline bubble's delay, the MoE all-to-all's
-locality), benchmark records and their fits, a kernel-overhead self-check, two ratios of the
-training characteristics, the legacy kv_plan renderer (it reads no model config: `sliding_window`
-is the vLLM argument it emits), and the gated-config submission route (network-bound; its count
-is the shared `estimate_parameter_count`, measured through `/models/add/config`). Where a reader's
-declared module is not installed (`READER_DEPENDENCIES`: the GGUF reader's `gguf`, the converter's
-and the API routes' `requests`, `lxml`, `json_repair`, `fastapi`) the functions only it reaches do
-not run, and the inventory is checked where every reader runs. `python scripts/kv_corpus.py
---inventory tests/fixtures/kv_gate/unmeasured.json` prints the same list.
+-- and lists every function that reads a model-shape key (`kv_corpus.SHAPE_KEYS`: the depth,
+width, head, KV-head, FFN, expert and vocabulary keys under their spellings, the layout keys --
+`layer_types`, `full_attention_interval`, `attn_layer_*`, `layers_block_type`,
+`hybrid_override_pattern`, the window keys, `num_kv_shared_layers` --, MLA's ranks, the recurrent
+mixers' dimensions, `text_config`, every GenZ ModelConfig field that sizes a layer, the
+parameter-count keys a caller hands on -- `num_parameters`, `parameter_count`, `total_params`,
+`num_params`, `param_count` --, `kv_bytes_per_token`, and `model_config` itself) as a string, an
+attribute, a keyword, an argument or a variable -- in its own body, or through a private helper it
+uses, at any depth (round 20: `sync_static_models_to_db` and `get_model_metadata` read the shape
+only through `_estimate_parameters`). A function a module-level table holds (`mixer_params`'
+`_DISPATCH`) is used by whatever uses the table.
+
+`tests/test_kv_gate.py` runs the corpus once, in a fresh interpreter, with `kv_corpus.ran_code`
+recording (Python 3.12's `sys.monitoring`) which functions **the harness itself calls** -- the
+first frame of the repository up the stack is `scripts/kv_corpus.py`; library frames between
+(asyncio running a route) are passed over. A function entered only from another function of the
+repository returns its figure to that function, not to the gate, and is not measured (round 20:
+`calculate_decoder_kv_cache` was counted measured because `calculate_total_memory` entered it). A
+public reader the harness does not call is named in `tests/fixtures/kv_gate/unmeasured.json`
+either with the reason it is no memory or capacity figure (a FLOP, time or communication estimate,
+a benchmark record, a constructor, a database write, a network-bound route, code nothing calls),
+or as a **helper** with the functions that use it (`used_by`). `kv_corpus.helper_faults` checks
+every helper against the source: each function whose body uses it (`kv_corpus._users_of`: a module
+function by its name where its file or an importing file uses it, a method by its attribute on any
+receiver, a class's `__init__` by the class's name) is measured, excluded, or a helper held the same
+way, and `used_by` names exactly them -- a new caller the harness does not measure fails, naming
+it. The test fails on a public reader neither called nor named, on a stale entry, and on a helper
+some unheld function uses. Round 20's count: **451 readers, 286 public; 85 called by the harness,
+43 excluded with their reasons, 158 helpers; 0 neither**. Where a reader's declared module is not
+installed (`READER_DEPENDENCIES`: the GGUF reader's `gguf`, the converter's and the API routes'
+`requests`, `lxml`, `json_repair`, `fastapi`) the functions only it reaches do not run, and the
+inventory is checked where every reader runs. `python scripts/kv_corpus.py --inventory
+tests/fixtures/kv_gate/unmeasured.json` prints the list of public readers neither called nor named.
+
+What the harness gained in round 20 to call them itself: the calculator's weights
+(`calcw_params`), `estimate_memory` and `analyze_attention_efficiency` (`api_estmem`,
+`api_attn_eff`), the HF loader on the config as a local folder (`hfl_params`, `api_hfl_analyze`),
+GenZ's `huggingface_config_to_model_config` (`hf2mc_kv_size`), `calculate_optimizer_memory`
+(`optmem_gb`), budsim's `kv_fp8_option` (`kvfp8opt_bytes`), `TrainingOptimizer.optimize`
+(`topt2_params`) and `compare_training_strategies` (`ctrain_gpus`), `kv.plan_kv` and budsim's
+`plan_node_group` (`kvplan2`, `budsimplan`), `ServingSimulator.simulate` (`servesim`),
+`PrefixCacheAnalyzer.analyze` (`prefixsim`), `bud_component.main --config` (`component`), the
+training-estimate `to_dict`s (`trainmem_dict_total_gb`, `advtrain_*[2]`); for GenZ's built-ins
+`DisaggregationAnalyzer.analyze`, `ClusterAnalyzer.analyze_scaling`, `MemoryModel.from_system`,
+the loader's metadata and sync and the `/models/list`, `/filter`, `/popular` and `/{id}` routes
+(`loader_*`); and BudSimulator's `/models/calculate`, `/compare`, `/{id}`, the use-case
+recommendations, `/serving/memory/tiers` and the four training routes (`route_*`). A figure a
+route or wrapper rounds or re-reports from the calculator, the serving memory model, the KV
+planner or the training estimate is held by the figures it follows (`kv_corpus.DERIVED_FIGURES`,
+`kv_truth.HELD_BY_PREFIX`); the rest are held to their truths.
 
 What the harness gained in round 19 to run them: the ONNX folders; the ONNX Runtime engine; the
 sampler's working set at 256 sequences (`report_sampler_gb`); the training characteristics' KV

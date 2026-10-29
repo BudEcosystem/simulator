@@ -293,9 +293,13 @@ The calculator provides detailed breakdown:
   transformers or torch fails the gate, and only the GGUF reader (`gguf`), BudSimulator's
   converter (`requests`, `lxml`, `json_repair`) and its API routes (those and `fastapi`) may be
   reported as not measured where their own dependencies are absent. Which readers the gate holds
-  is read from the source: every public function that names a model-shape key is run by the
-  corpus harness or named, with its reason, in `tests/fixtures/kv_gate/unmeasured.json`
-  (LAYER_KINDS.md, "The reader inventory"). The
+  is read from the source: every public function that reads a model-shape key -- in its own body
+  or through a private helper -- is called by the corpus harness itself or named in
+  `tests/fixtures/kv_gate/unmeasured.json`, with its reason or as a helper whose every caller the
+  gate holds (LAYER_KINDS.md, "The reader inventory"). A model type the shipped config-class
+  snapshot knows never takes its geometry from the installed transformers. GenZ's built-in models
+  are listed and stored at the count their stored HF config states: GenZ's own count of the
+  ModelConfig, never below the calculator's (LAYER_KINDS.md, "What errs low, measured"). The
   serving simulator's weights (a `ServingSimulator` run's weight load, the cluster's and
   disaggregation's `B_eff`) are the model's own parameter count -- the FRD-027 facts' count of the
   config the GenZ model was read from, every stack, tower, adapter and expert -- and a decoder
