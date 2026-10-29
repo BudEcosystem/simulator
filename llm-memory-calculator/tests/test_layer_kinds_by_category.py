@@ -781,7 +781,10 @@ def test_a_transformers_release_without_layer_layouts_places_no_window(monkeypat
     """transformers before 4.53 derives no `layer_types` for any family, so a config class
     with none says nothing about the layout: Gemma 2 alternates, yet 4.50's Gemma2Config
     states no list. Reading that silence as "every layer takes the window" under-counted
-    Gemma 2 8x at 32k; the window is placed on no layer instead, and said so."""
+    Gemma 2 8x at 32k; the window is placed on no layer instead, and said so. Since round 17 the
+    layout a 5.12 class derives ships with the package (``config_class_defaults.json``'s
+    ``layouts``), so this reaches only a type the snapshot holds no rule for: Gemma 2 alternates
+    whatever release is installed."""
     transformers = pytest.importorskip("transformers")
     from transformers import CONFIG_MAPPING
 
@@ -797,6 +800,14 @@ def test_a_transformers_release_without_layer_layouts_places_no_window(monkeypat
     gemma2 = dict(model_type="gemma2", hidden_size=2304, num_hidden_layers=8,
                   num_attention_heads=8, num_key_value_heads=4, head_dim=256,
                   sliding_window=4096, vocab_size=1000, intermediate_size=9216)
+    # the shipped rule: Gemma2Config's alternation, under the 4.50 class too
+    assert layer_kinds(gemma2)["attn"] == ["sliding", "full"] * 4
+    # a type the snapshot holds no rule for falls back to the installed class, and 4.50's says
+    # nothing: every layer full, with a warning
+    snap = lp._class_default_snapshot()
+    monkeypatch.setitem(snap, "layouts", {k: v for k, v in snap["layouts"].items()
+                                          if k != "gemma2"})
+    monkeypatch.setattr(lp, "_CLASS_LAYOUT_CACHE", {})
     with pytest.warns(UserWarning, match="window"):
         kinds = layer_kinds(gemma2)
     assert kinds["attn"] == ["full"] * 8

@@ -2823,10 +2823,16 @@ def training_modeling(
     # For MoE: total_params includes all experts (for memory), active_params for MFU/FLOPs
     total_params, active_params = training_parameter_counts(model_config)
 
+    # The layers a step trains through: an encoder-decoder's encoder layers hold the same LoRA
+    # adapters and activations as its decoder's (``memory_model.trained_layers``, the count the
+    # training parallelization estimate uses too)
+    from ..serving.memory_model import trained_layers
+    stack_layers = trained_layers(model_config)
+
     # Calculate trainable parameters based on method
     # Use total_params for memory and optimizer state calculations
     trainable_params = _calculate_trainable_params(
-        total_params, method, lora_rank, num_layers, hidden_size, intermediate_size,
+        total_params, method, lora_rank, stack_layers, hidden_size, intermediate_size,
         num_attention_heads=num_heads, num_key_value_heads=num_kv_heads,
     )
 
@@ -2836,7 +2842,7 @@ def training_modeling(
     else:
         # For LoRA etc., trainable params are the same regardless of MoE
         trainable_active_params = _calculate_trainable_params(
-            active_params, method, lora_rank, num_layers, hidden_size, intermediate_size,
+            active_params, method, lora_rank, stack_layers, hidden_size, intermediate_size,
             num_attention_heads=num_heads, num_key_value_heads=num_kv_heads,
         )
 
@@ -3563,7 +3569,7 @@ def training_modeling(
         seq_length,
         hidden_size,
         intermediate_size,
-        num_layers,
+        stack_layers,
         num_heads,
         method,
         optimizer,
@@ -3771,9 +3777,13 @@ def training_parameter_counts(model_config) -> Tuple[int, int]:
     num_heads = getattr(model_config, 'num_attention_heads', 32) or 32
     num_experts = getattr(model_config, 'num_experts', 1) or 1
     expert_top_k = getattr(model_config, 'expert_top_k', 2) or 2
+    # a routed expert at its own width (`moe_intermediate_size`), not the dense FFN's: read at
+    # the dense width, SmallThinker-21BA3B's 64 experts of 768 counted 283.5B of its 21.5B
+    expert_size = getattr(model_config, 'moe_intermediate_size', None) or intermediate_size
     total_params, active_params = _calculate_total_params(
         num_layers, hidden_size, intermediate_size, vocab_size, num_heads,
-        num_experts=num_experts, expert_top_k=expert_top_k
+        num_experts=num_experts, expert_top_k=expert_top_k,
+        expert_intermediate_size=expert_size if num_experts > 1 else None,
     )
     return _held_to_the_model(model_config, total_params, active_params)
 
@@ -3797,6 +3807,7 @@ def _calculate_total_params(
     num_heads: int,
     num_experts: int = 1,
     expert_top_k: int = 2,
+    expert_intermediate_size: Optional[int] = None,
 ) -> Tuple[int, int]:
     """
     Calculate total and active model parameters.
@@ -3812,6 +3823,7 @@ def _calculate_total_params(
         num_heads: Number of attention heads
         num_experts: Number of experts (1 for dense models)
         expert_top_k: Number of experts activated per token
+        expert_intermediate_size: A routed expert's FFN width, where it is not the dense one
 
     Returns:
         Tuple of (total_params, active_params)
@@ -3823,8 +3835,10 @@ def _calculate_total_params(
     # Attention: Q, K, V, O projections
     attention_params = 4 * hidden_size * hidden_size
 
-    # FFN: Up, Gate, Down (SwiGLU)
-    ffn_params_per_expert = 3 * hidden_size * intermediate_size
+    # FFN: Up, Gate, Down (SwiGLU), each routed expert at its own width
+    ffn_params_per_expert = 3 * hidden_size * (
+        expert_intermediate_size if num_experts > 1 and expert_intermediate_size
+        else intermediate_size)
 
     # For MoE, multiply FFN by number of experts
     total_ffn_params = ffn_params_per_expert * max(1, num_experts)

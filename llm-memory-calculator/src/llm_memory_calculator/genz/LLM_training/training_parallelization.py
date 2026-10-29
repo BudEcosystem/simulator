@@ -21,7 +21,7 @@ import pandas as pd
 
 from ..parallelism import ParallelismConfig
 from ..Models import get_configs
-from ..serving.memory_model import held_to_the_model
+from ..serving.memory_model import held_to_the_model, trained_layers
 from .training_modeling import training_modeling, TrainingModelingOutput
 
 # Make paretoset optional
@@ -119,7 +119,7 @@ def _estimate_memory_per_gpu(
     # cross-attention, a multimodal model's towers (``memory_model.held_to_the_model``)
     total_params = held_to_the_model(model_config, embedding_params + num_layers * params_per_layer)
     # an encoder-decoder's encoder layers carry the same adapters and activations as its decoder's
-    encoder_layers = int(getattr(model_config, 'num_encoder_layers', 0) or 0)
+    stack_layers = trained_layers(model_config)
 
     # Calculate trainable params based on method
     if method == 'full':
@@ -140,14 +140,14 @@ def _estimate_memory_per_gpu(
             lora_rank * (hidden_size + intermediate_size) +  # up_proj
             lora_rank * (hidden_size + intermediate_size)    # down_proj
         )
-        trainable_params = (num_layers + encoder_layers) * (attn_params_per_layer + mlp_params_per_layer)
+        trainable_params = stack_layers * (attn_params_per_layer + mlp_params_per_layer)
 
         if method == 'dora':
             dora_magnitude = (
                 hidden_size + kv_dim + kv_dim + hidden_size +
                 intermediate_size + intermediate_size + hidden_size
             )
-            trainable_params += (num_layers + encoder_layers) * dora_magnitude
+            trainable_params += stack_layers * dora_magnitude
     else:
         trainable_params = total_params
 
@@ -198,7 +198,6 @@ def _estimate_memory_per_gpu(
         optimizer_state_bytes /= config.data_parallel
 
     # Activation memory
-    stack_layers = num_layers + encoder_layers
     effective_layers = int(np.ceil(np.sqrt(stack_layers))) if config.gradient_checkpointing else stack_layers
     attn_elements = batch_size * seq_length * hidden_size * 4
     attn_scores = batch_size * num_heads * seq_length * seq_length

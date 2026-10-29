@@ -128,6 +128,53 @@ def stack_params(view: Optional[Dict[str, Any]]) -> int:
     return int(layers * per_layer + 2 * h)
 
 
+def _block_features(h: int, heads: int, kv_heads: int, head_dim: int, ffn: int, gated: bool) -> int:
+    """One transformer block's linear maps (``_block``'s matrices), as the sum of each map's
+    (in + out) features: Q / K / V / O and the FFN's."""
+    attn = 4 * h + 2 * heads * head_dim + 2 * kv_heads * head_dim
+    return attn + (3 if gated else 2) * (h + ffn)
+
+
+def stack_linear_features(view: Optional[Dict[str, Any]]) -> int:
+    """The sum of (in + out) over every linear map of one stack's blocks (``stack_params``'
+    geometry: a uniform stack, a hierarchical tower's stages and the 2 x 2 merging between them, a
+    conformer block's second FFN and pointwise convolutions), what an engine that wraps every
+    linear layer with LoRA (vLLM) allocates A and B buffers over. 0 for None."""
+    if not isinstance(view, dict):
+        return 0
+    gated = _gated(view)
+    stages = view.get("stages")
+    if stages:
+        total = 0
+        for i, st in enumerate(stages):
+            c, heads = st["hidden_size"], st["num_attention_heads"]
+            hd = max(c // heads, 1)
+            total += st["layers"] * _block_features(c, heads, heads, hd, st["intermediate_size"],
+                                                    gated)
+            if i + 1 < len(stages):
+                total += 4 * c + 2 * c  # the 2 x 2 merge: 4c -> 2c
+        return int(total)
+    layers = _pos_int(view.get("num_hidden_layers")) or 0
+    h = _pos_int(view.get("hidden_size")) or 0
+    heads = _pos_int(view.get("num_attention_heads")) or 0
+    if not (layers and h and heads):
+        return 0
+    kv_heads = _pos_int(view.get("num_key_value_heads")) or heads
+    hd = attention_head_dim(view, heads, h) or max(h // heads, 1)
+    ffn = _pos_int(view.get("intermediate_size")) or 4 * h
+    per_layer = _block_features(h, heads, kv_heads, hd, ffn, gated)
+    if _pos_int(view.get("conv_kernel_size")):
+        # a conformer block: the macaron FFN and the two pointwise projections (h -> 2h, h -> h)
+        per_layer += (3 if gated else 2) * (h + ffn) + 3 * h + 2 * h
+    return int(layers * per_layer)
+
+
+def encoder_linear_features(config: Dict[str, Any]) -> int:
+    """``stack_linear_features`` of an encoder-decoder's encoder (``layer_plan.encoder_view``), 0
+    for any other config."""
+    return stack_linear_features(encoder_view(config)) if isinstance(config, dict) else 0
+
+
 def stage_embedding_params(view: Dict[str, Any]) -> int:
     """How a hierarchical tower's stages are entered: a tower that states a patch size per stage
     (DaViT / Florence-2: `patch_size` [7, 3, 3, 3]) embeds each stage with its own convolution

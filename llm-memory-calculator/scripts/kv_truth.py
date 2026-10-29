@@ -331,6 +331,9 @@ def truth_profile(cfg_dict):
                 int(m.out_features) for layer in layers for path, m in layer.named_modules()
                 if isinstance(m, torch.nn.Linear) and "experts" not in path.split(".")),
                 default=0))
+            # the activations a layer-checkpointed step keeps at least: one input a decoder layer
+            out["activation_floor_elements"] = int(len(layers) * int(
+                getattr(tc, "hidden_size", 0) or getattr(tc, "d_model", 0) or 0)) or None
             out["lora_linear_features"] = int(sum(
                 int(m.in_features) + int(m.out_features)
                 for layer in layers for path, m in layer.named_modules()
@@ -587,6 +590,19 @@ def figure_truth(profile, reader, row=None):
         # routed experts (an MoE model's active share is not read off the module tree)
         (r"^kvcost_active_params$", lambda: None if p.get("routed_experts") else params,
          "the parameters a token runs through (a model without routed experts: all of them)"),
+        # GenZ training_modeling (full fine-tuning and LoRA, bf16, AdamW, one 2,048-token
+        # sequence): the total holds at least bf16 weights, gradients and AdamW's two fp32
+        # moments (14 B a parameter) when it trains every weight, the frozen bf16 weights (2 B)
+        # under LoRA; the activations at least one layer-boundary checkpoint a layer (2,048 tokens
+        # x the width x 2 B, every decoder layer)
+        (r"^tmodel_full\[0\]$", lambda: None if params is None else 14 * params / 1e9,
+         "bf16 weights, gradients and AdamW's two fp32 moments (14 B a parameter, GB)"),
+        (r"^(tmodel_full\[1\]|tmodel_lora\[[01]\])$",
+         lambda: None if params is None else 2 * params / 1e9,
+         "the bf16 weights (2 B a parameter, GB)"),
+        (r"^tmodel_(full|lora)\[2\]$", lambda: None if not p.get("activation_floor_elements")
+         else 2 * 2048 * p["activation_floor_elements"] / 1e9,
+         "one layer-boundary checkpoint a decoder layer: 2,048 tokens x its width x 2 B (GB)"),
         (r"^tpar_mem_gb$", lambda: None if params is None else 14 * 1.1 * params / 1e9,
          "bf16 weights, fp32 gradients and AdamW's two fp32 moments (14 B a parameter), with the"
          " estimator's own 10% overhead, before activations (GB)"),
@@ -605,7 +621,7 @@ def figure_truth(profile, reader, row=None):
         (r"^advtrain_lora\[[01]\]$", lambda: None if params is None else 2 * params / 1e9,
          "the frozen bf16 weights (2 B a parameter, GB; adapters and activations on top)"),
         # vLLM's LoRA buffers: 4 adapters x rank 16 x (in + out) x 2 B over every linear map
-        (r"^lora_adapter_gb$", lambda: None if p.get("lora_linear_features") is None
+        (r"^(lora_adapter_gb|vllm_lora_gb)$", lambda: None if p.get("lora_linear_features") is None
          else 2 * 4 * 16 * p["lora_linear_features"] / 1e9,
          "4 adapters x rank 16 x 2 B over (in + out) of every linear map of the decoder layers"
          " (routed experts left out: vLLM wraps those too)"),
@@ -650,6 +666,9 @@ GRAPH_SLACK = 5e-5
 #: The memory figures a capacity figure is sized from, per capacity figure.
 HELD_BY = {
     "vllm": ["facts_weight_bytes", "facts_kv_bytes_per_token", "facts_kv_bytes_4096"],
+    # the limits with LoRA: the same, and the reservation the weights carry
+    "vllm_lora": ["facts_weight_bytes", "facts_kv_bytes_per_token", "facts_kv_bytes_4096",
+                  "vllm_lora_gb"],
     # the training parallelization's options are sized from its per-GPU estimate
     "tpar_options": ["tpar_mem_gb"],
     # estimate_max_batch_size: the calculator's report at 4,096 tokens, a sequence at a time
@@ -672,6 +691,8 @@ def _held_by(reader):
             return HELD_BY[key]
     if reader.startswith("serving_requests"):
         return HELD_BY["serving_requests"]
+    if reader.startswith("vllm_limits_lora"):
+        return HELD_BY["vllm_lora"]
     if re.match(r"^(cluster|disagg)_b_eff_\d+$", reader):
         return HELD_BY["b_eff"]
     return HELD_BY["vllm"]

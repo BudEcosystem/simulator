@@ -855,6 +855,14 @@ def _config_class_head_dim(tc: Dict[str, Any]) -> Optional[int]:
     if not mt or tc.get("kv_lora_rank"):
         # MLA keeps a latent, not per-head K and V; its class's head_dim alias is the RoPE width.
         return None
+    # the shipped rule first (``config_class_defaults.json``'s ``head_dims``: transformers 5.12's
+    # classes), so the width does not depend on whether or which transformers is installed
+    rule = (_class_default_snapshot().get("head_dims") or {}).get(mt)
+    if isinstance(rule, dict):
+        hidden = _pos_int(_first(tc, "hidden_size", "d_model", "n_embd"))
+        heads = _pos_int(_first(tc, *ATTENTION_HEAD_KEYS))
+        if hidden and heads:
+            return int(float(rule["ratio"]) * hidden) // heads
     try:
         import json
 
@@ -1437,8 +1445,60 @@ def transformers_states_layer_layouts() -> bool:
     return bool(m) and (int(m.group(1)), int(m.group(2))) >= LAYER_LAYOUTS_SINCE
 
 
+def class_layout_names(rule: Dict[str, Any], tc: Dict[str, Any]) -> Optional[List[str]]:
+    """The per-layer names a config class's layout rule (``config_class_defaults.json``'s
+    ``layouts``, written by ``scripts/config_class_defaults.py``) gives a config, or None for a
+    class that derives no layout (the window is on every layer, unless the config's own
+    `max_window_layers` says otherwise). A ``period`` is layer i = ``names[i % len(names)]``, the
+    last layer ``last`` where the class forces it; ``max_window_layers`` windows the layers from
+    the config's `max_window_layers` on, the class's default where the config states none. A class
+    with a `use_sliding_window` switch (``switch``: its default) builds every layer full when the
+    config leaves the switch to it and it is off -- a window the config states is then unused
+    (Qwen2Config, whose default is off)."""
+    n = depth(tc)
+    kind = rule.get("rule")
+    if not n or kind == "none":
+        return None
+    if kind in ("period", "max_window_layers") and "switch" in rule and \
+            tc.get("use_sliding_window", rule["switch"]) is False:
+        return ["full_attention"] * n
+    if kind == "period":
+        names = [str(x) for x in rule.get("names") or ()]
+        if not names:
+            return None
+        out = [names[i % len(names)] for i in range(n)]
+        if rule.get("last"):
+            out[-1] = str(rule["last"])
+        return out
+    if kind == "max_window_layers":
+        mwl = tc.get("max_window_layers")
+        if not (isinstance(mwl, int) and not isinstance(mwl, bool)):
+            mwl = rule.get("default")
+        if not (isinstance(mwl, int) and not isinstance(mwl, bool)):
+            return None
+        return ["full_attention" if i < mwl else "sliding_attention" for i in range(n)]
+    return None
+
+
+def _snapshot_layer_types(tc: Dict[str, Any]):
+    """``(True, names)`` from the shipped snapshot's layout rule for the config's model type
+    (``class_layout_names``), or None when the snapshot holds no rule for it -- a model type
+    transformers 5.12 does not know, or a class whose layout no rule reproduces (Qwen2-MoE's,
+    which mixes a period with `max_window_layers`; Zamba's): the installed transformers is
+    asked then."""
+    rule = (_class_default_snapshot().get("layouts") or {}).get(str(tc.get("model_type") or ""))
+    if not isinstance(rule, dict):
+        return None
+    return True, class_layout_names(rule, tc)
+
+
 def _config_class_layer_types(tc: Dict[str, Any]):
     """``(known, names)``: what the model type's own config class says the layers are.
+
+    Read from the shipped snapshot's layout rule (``_snapshot_layer_types``: transformers 5.12's
+    classes) for every model type it holds one for, so the layout does not depend on whether or
+    which transformers is installed; the installed transformers is asked only about a type the
+    snapshot holds no rule for.
 
     transformers derives a per-layer list for families whose hub configs predate it --
     Gemma 2 alternates sliding and full in `Gemma2Config`, Qwen2 windows the layers from
@@ -1451,6 +1511,9 @@ def _config_class_layer_types(tc: Dict[str, Any]):
     mt = str(tc.get("model_type") or "")
     if not mt:
         return False, None
+    shipped = _snapshot_layer_types(tc)
+    if shipped is not None:
+        return shipped
     try:
         import json
 
@@ -1911,6 +1974,22 @@ def decoder_streams(config: Dict[str, Any]) -> int:
 #: Spellings of the FFN's activation (Gemma's `hidden_activation`, GPT-2's `activation_function`).
 ACTIVATION_KEYS = ("hidden_act", "activation_function", "hidden_activation")
 
+#: Spellings of "the attention's Q / K / V (and O) projections carry biases": transformers'
+#: `attention_bias`, and Qwen2-MoE's `qkv_bias` (its class default True, so a Qwen1.5-MoE config
+#: that states neither builds them).
+ATTENTION_BIAS_KEYS = ("attention_bias", "qkv_bias")
+
+
+def attention_bias(config: Dict[str, Any]) -> bool:
+    """Whether the attention projections carry biases: the config's own flag under either
+    spelling (``ATTENTION_BIAS_KEYS``), else its config class's default."""
+    tc = config if isinstance(config, dict) else {}
+    for key in ATTENTION_BIAS_KEYS:
+        if isinstance(tc.get(key), bool):
+            return tc[key]
+    mt = tc.get("model_type")
+    return any(config_class_default(mt, key) is True for key in ATTENTION_BIAS_KEYS) if mt else False
+
 #: Spellings of "the attention normalises its queries and keys" (a norm at least head_dim wide
 #: each; the facts count head_dim): `qk_norm`, Hunyuan's `use_qk_norm`, Persimmon's / StableLM's
 #: `qk_layernorm`.
@@ -1933,6 +2012,7 @@ TOWER_CLASS_KEYS = ("num_global_layers", "vision_output_dim", "intermediate_size
 #: knows.
 CLASS_DEFAULT_KEYS = tuple(dict.fromkeys(
     ("model_type", "tie_word_embeddings", "relative_attention_num_buckets", "feed_forward_proj")
+    + ATTENTION_BIAS_KEYS
     + ACTIVATION_KEYS
     + ROPE_KEYS + TOWER_CLASS_KEYS))
 

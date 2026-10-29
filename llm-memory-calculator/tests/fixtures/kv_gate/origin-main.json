@@ -1,5 +1,5 @@
 {
-"about": "origin/main (c17ef891) measured by scripts/kv_corpus.py over the committed corpus: prepopulated.db's rows with a config, every fixture under tests/fixtures (the GGUF reader on tests/fixtures/gguf's metadata-only GGUFs), the built-in synthetic shapes and GenZ's built-in models. The baseline tests/test_kv_gate.py holds the branch's figures against. Round 14 added, measured with the same harness on the same tree, the serving path's weights and the concurrency they leave: `serving_weight_bytes` (a ServingSimulator's weight load), `cluster_b_eff_4096` / `disagg_b_eff_4096` and the converter's `conv_serving_weight_bytes`. Round 15 added, measured with the same harness on the same tree, the training readers -- the parameter counter (`counter_params`), the training memory calculator's weights and total (`trainmem_weight_gb`, `trainmem_total_gb`) and GenZ's training_modeling parameters (`traingenz_params`) -- and the hub configs as shipped (tests/fixtures/hub_as_shipped) and the synthetic qwen2-window-depth-left-to-class; every figure the earlier rows held is unchanged. Round 16 added, measured with the same harness on the same tree, the LoRA buffers and scratch (`lora_adapter_gb`, `lora_scratch_gb`), the max batch (`maxbatch_80gb_4096`), the KV tier planner (`kvplan_*`) and the training estimators (`tpar_*`, `creq_*`, `ccb_params_b`, `copt_quick`, `advtrain_*`, `time_params`, `kvcost_active_params`), and the synthetic chatglm3 states `tie_word_embeddings: false` as its hub config does; every other figure the earlier rows held is unchanged.",
+"about": "origin/main (c17ef891) measured by scripts/kv_corpus.py over the committed corpus: prepopulated.db's rows with a config, every fixture under tests/fixtures (the GGUF reader on tests/fixtures/gguf's metadata-only GGUFs), the built-in synthetic shapes and GenZ's built-in models. The baseline tests/test_kv_gate.py holds the branch's figures against. Round 14 added, measured with the same harness on the same tree, the serving path's weights and the concurrency they leave: `serving_weight_bytes` (a ServingSimulator's weight load), `cluster_b_eff_4096` / `disagg_b_eff_4096` and the converter's `conv_serving_weight_bytes`. Round 15 added, measured with the same harness on the same tree, the training readers -- the parameter counter (`counter_params`), the training memory calculator's weights and total (`trainmem_weight_gb`, `trainmem_total_gb`) and GenZ's training_modeling parameters (`traingenz_params`) -- and the hub configs as shipped (tests/fixtures/hub_as_shipped) and the synthetic qwen2-window-depth-left-to-class; every figure the earlier rows held is unchanged. Round 16 added, measured with the same harness on the same tree, the LoRA buffers and scratch (`lora_adapter_gb`, `lora_scratch_gb`), the max batch (`maxbatch_80gb_4096`), the KV tier planner (`kvplan_*`) and the training estimators (`tpar_*`, `creq_*`, `ccb_params_b`, `copt_quick`, `advtrain_*`, `time_params`, `kvcost_active_params`), and the synthetic chatglm3 states `tie_word_embeddings: false` as its hub config does; every other figure the earlier rows held is unchanged. Round 17 added, measured with the same harness on the same tree, the vLLM planner's LoRA reservation and the limits it leaves (`vllm_lora_gb`, `vllm_limits_lora`: 4 adapters of rank 16) and GenZ training_modeling's memory (`tmodel_full`, `tmodel_lora`: the per-GPU total, the weights and the activations); every other figure the earlier rows held is unchanged.",
 "origin_main": "c17ef891da9300a2b80630a5a0671025d768728c",
 "rows": [
 {
@@ -144,6 +144,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 22581084160,
+"tmodel_full": [
+375.331661,
+45.163807,
+1.14747
+],
+"tmodel_lora": [
+50.61358,
+45.163807,
+1.14747
+],
 "tpar_mem_gb": 352.718769,
 "tpar_options_8x80": 2,
 "traingenz_params": 22581903360,
@@ -158,6 +168,12 @@ false
 0.0,
 true
 ],
+"vllm_limits_lora": [
+2134,
+34144,
+2134
+],
+"vllm_lora_gb": 0.63045632,
 "vllm_running_1024": 27,
 "vllm_running_8192": 4
 },
@@ -303,6 +319,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 619446272,
+"tmodel_full": [
+12.354954,
+1.239089,
+0.14064
+],
+"tmodel_lora": [
+3.499086,
+1.239089,
+0.14064
+],
 "tpar_mem_gb": 10.498336,
 "tpar_options_8x80": 104,
 "traingenz_params": 619544576,
@@ -317,6 +343,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+47065,
+753040,
+47065
+],
+"vllm_lora_gb": 0.05111808,
 "vllm_running_1024": 588,
 "vllm_running_8192": 89
 },
@@ -449,6 +481,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 120603017216,
+"tmodel_full": [
+1992.899327,
+241.211277,
+3.22175
+],
+"tmodel_lora": [
+256.709109,
+241.211277,
+3.22175
+],
 "tpar_mem_gb": 1723.270169,
 "tpar_options_8x80": 0,
 "traingenz_params": 120605638656,
@@ -463,6 +505,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 2.03423744,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -608,6 +656,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 14166261760,
+"tmodel_full": [
+236.539825,
+28.334162,
+1.035272
+],
+"tmodel_lora": [
+32.892631,
+28.334162,
+1.035272
+],
 "tpar_mem_gb": 222.266583,
 "tpar_options_8x80": 7,
 "traingenz_params": 14167080960,
@@ -622,6 +680,12 @@ false
 0.0,
 true
 ],
+"vllm_limits_lora": [
+3515,
+56240,
+3515
+],
+"vllm_lora_gb": 0.42008576,
 "vllm_running_1024": 44,
 "vllm_running_8192": 6
 },
@@ -767,6 +831,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 1836580864,
+"tmodel_full": [
+32.558597,
+3.673555,
+0.280101
+],
+"tmodel_lora": [
+6.226676,
+3.673555,
+0.280101
+],
 "tpar_mem_gb": 29.457108,
 "tpar_options_8x80": 104,
 "traingenz_params": 1836777472,
@@ -781,6 +855,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+22629,
+362064,
+22629
+],
+"vllm_lora_gb": 0.101056512,
 "vllm_running_1024": 283,
 "vllm_running_8192": 42
 },
@@ -926,6 +1006,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 35195453440,
+"tmodel_full": [
+583.742983,
+70.393528,
+1.650786
+],
+"tmodel_lora": [
+77.579986,
+70.393528,
+1.650786
+],
 "tpar_mem_gb": 506.356774,
 "tpar_options_8x80": 1,
 "traingenz_params": 35196764160,
@@ -940,6 +1030,12 @@ false
 0.0,
 true
 ],
+"vllm_limits_lora": [
+2112,
+33792,
+2112
+],
+"vllm_lora_gb": 0.941621248,
 "vllm_running_1024": 29,
 "vllm_running_8192": 4
 },
@@ -1085,6 +1181,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 3949854720,
+"tmodel_full": [
+67.634061,
+7.900529,
+0.51816
+],
+"tmodel_lora": [
+10.993572,
+7.900529,
+0.51816
+],
 "tpar_mem_gb": 62.884875,
 "tpar_options_8x80": 77,
 "traingenz_params": 3950264320,
@@ -1099,6 +1205,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+10197,
+163152,
+10197
+],
+"vllm_lora_gb": 0.21102592,
 "vllm_running_1024": 127,
 "vllm_running_8192": 19
 },
@@ -1244,6 +1356,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 72284635136,
+"tmodel_full": [
+1196.405024,
+144.574513,
+3.020423
+],
+"tmodel_lora": [
+156.182851,
+144.574513,
+3.020423
+],
 "tpar_mem_gb": 1121.860662,
 "tpar_options_8x80": 0,
 "traingenz_params": 72287256576,
@@ -1258,6 +1380,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 1.42606336,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -1403,6 +1531,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 7720665088,
+"tmodel_full": [
+129.960453,
+15.442379,
+0.694419
+],
+"tmodel_lora": [
+19.032665,
+15.442379,
+0.694419
+],
 "tpar_mem_gb": 121.716081,
 "tpar_options_8x80": 26,
 "traingenz_params": 7721189376,
@@ -1417,6 +1555,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+7052,
+112832,
+7052
+],
+"vllm_lora_gb": 0.269484032,
 "vllm_running_1024": 88,
 "vllm_running_8192": 13
 },
@@ -1562,6 +1706,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 1855455232,
+"tmodel_full": [
+840.498012,
+101.707022,
+0.419561
+],
+"tmodel_lora": [
+107.346311,
+101.707022,
+0.419561
+],
 "tpar_mem_gb": 29.753541,
 "tpar_options_8x80": 104,
 "traingenz_params": 50853511168,
@@ -1576,6 +1730,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+14900,
+238400,
+14900
+],
+"vllm_lora_gb": 0.10223616,
 "vllm_running_1024": 186,
 "vllm_running_8192": 28
 },
@@ -1721,6 +1881,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 120603017216,
+"tmodel_full": [
+1992.899327,
+241.211277,
+3.22175
+],
+"tmodel_lora": [
+256.898114,
+241.211277,
+3.22175
+],
 "tpar_mem_gb": 1867.956879,
 "tpar_options_8x80": 0,
 "traingenz_params": 120605638656,
@@ -1735,6 +1905,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 2.18103808,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -1880,6 +2056,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 12049186816,
+"tmodel_full": [
+201.387374,
+24.099422,
+0.784597
+],
+"tmodel_lora": [
+28.216458,
+24.099422,
+0.784597
+],
 "tpar_mem_gb": 188.970487,
 "tpar_options_8x80": 11,
 "traingenz_params": 12049711104,
@@ -1894,6 +2080,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+5895,
+94320,
+5895
+],
+"vllm_lora_gb": 0.404750336,
 "vllm_running_1024": 74,
 "vllm_running_8192": 11
 },
@@ -2039,6 +2231,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 2648178688,
+"tmodel_full": [
+45.98017,
+5.296751,
+0.32519
+],
+"tmodel_lora": [
+8.010318,
+5.296751,
+0.32519
+],
 "tpar_mem_gb": 42.203703,
 "tpar_options_8x80": 104,
 "traingenz_params": 2648375296,
@@ -2053,6 +2255,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+21895,
+350320,
+21895
+],
+"vllm_lora_gb": 0.151781376,
 "vllm_running_1024": 274,
 "vllm_running_8192": 41
 },
@@ -2198,6 +2406,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 663126016,
+"tmodel_full": [
+13.076737,
+1.326424,
+0.142721
+],
+"tmodel_lora": [
+3.603841,
+1.326424,
+0.142721
+],
 "tpar_mem_gb": 10.650617,
 "tpar_options_8x80": 88,
 "traingenz_params": 663212032,
@@ -2212,6 +2430,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+376188,
+6019008,
+376188
+],
+"vllm_lora_gb": 0.062128128,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 713
 },
@@ -2357,6 +2581,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 16782458880,
+"tmodel_full": [
+279.831339,
+33.566884,
+1.204093
+],
+"tmodel_lora": [
+38.522878,
+33.566884,
+1.204093
+],
 "tpar_mem_gb": 231.56232,
 "tpar_options_8x80": 7,
 "traingenz_params": 16783441920,
@@ -2371,6 +2605,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+14251,
+228016,
+14251
+],
+"vllm_lora_gb": 0.45613056,
 "vllm_running_1024": 179,
 "vllm_running_8192": 27
 },
@@ -2516,6 +2756,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 1887043584,
+"tmodel_full": [
+33.384383,
+3.774431,
+0.274825
+],
+"tmodel_lora": [
+6.360921,
+3.774431,
+0.274825
+],
 "tpar_mem_gb": 28.682487,
 "tpar_options_8x80": 96,
 "traingenz_params": 1887215616,
@@ -2530,6 +2780,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+156435,
+2502960,
+156435
+],
+"vllm_lora_gb": 0.131203072,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 296
 },
@@ -2675,6 +2931,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 35447111680,
+"tmodel_full": [
+587.892471,
+70.896845,
+1.652883
+],
+"tmodel_lora": [
+78.108663,
+70.896845,
+1.652883
+],
 "tpar_mem_gb": 510.250766,
 "tpar_options_8x80": 1,
 "traingenz_params": 35448422400,
@@ -2689,6 +2955,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+1991,
+31856,
+1991
+],
+"vllm_lora_gb": 0.947912704,
 "vllm_running_1024": 27,
 "vllm_running_8192": 4
 },
@@ -2834,6 +3106,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 3661103104,
+"tmodel_full": [
+62.778468,
+7.322796,
+0.425853
+],
+"tmodel_lora": [
+10.289424,
+7.322796,
+0.425853
+],
 "tpar_mem_gb": 54.018684,
 "tpar_options_8x80": 96,
 "traingenz_params": 3661398016,
@@ -2848,6 +3130,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+116269,
+1860304,
+116269
+],
+"vllm_lora_gb": 0.211156992,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 220
 },
@@ -2993,6 +3281,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 82099306496,
+"tmodel_full": [
+1358.19293,
+164.203856,
+3.061318
+],
+"tmodel_lora": [
+176.451633,
+164.203856,
+3.061318
+],
 "tpar_mem_gb": 1128.724745,
 "tpar_options_8x80": 0,
 "traingenz_params": 82101927936,
@@ -3007,6 +3305,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 1.43261696,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -3152,6 +3456,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8231845888,
+"tmodel_full": [
+138.311372,
+16.464495,
+0.625181
+],
+"tmodel_lora": [
+20.018178,
+16.464495,
+0.625181
+],
 "tpar_mem_gb": 120.24356,
 "tpar_options_8x80": 27,
 "traingenz_params": 8232247296,
@@ -3166,6 +3480,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+64717,
+1035472,
+64717
+],
+"vllm_lora_gb": 0.28442624,
 "vllm_running_1024": 812,
 "vllm_running_8192": 123
 },
@@ -3311,6 +3631,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 914657280,
+"tmodel_full": [
+17.230832,
+1.829511,
+0.151126
+],
+"tmodel_lora": [
+4.133209,
+1.829511,
+0.151126
+],
 "tpar_mem_gb": 15.102258,
 "tpar_options_8x80": 104,
 "traingenz_params": 914755584,
@@ -3325,6 +3655,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+45976,
+735616,
+45976
+],
+"vllm_lora_gb": 0.06291456,
 "vllm_running_1024": 575,
 "vllm_running_8192": 87
 },
@@ -3457,6 +3793,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 38568198144,
+"tmodel_full": [
+102246.745738,
+12407.953252,
+3.117416
+],
+"tmodel_lora": [
+12786.751312,
+12407.953252,
+3.117416
+],
 "tpar_mem_gb": 605.788346,
 "tpar_options_8x80": 0,
 "traingenz_params": 6203976626176,
@@ -3471,6 +3817,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 0.494528805,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -3616,6 +3968,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 2771910656,
+"tmodel_full": [
+2003.228901,
+242.766774,
+0.806486
+],
+"tmodel_lora": [
+253.135911,
+242.766774,
+0.806486
+],
 "tpar_mem_gb": 44.389964,
 "tpar_options_8x80": 80,
 "traingenz_params": 121383387136,
@@ -3630,6 +3992,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+11344,
+181504,
+11344
+],
+"vllm_lora_gb": 0.09211904,
 "vllm_running_1024": 142,
 "vllm_running_8192": 21
 },
@@ -3775,6 +4143,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 11162681344,
+"tmodel_full": [
+186.814679,
+22.326526,
+0.819519
+],
+"tmodel_lora": [
+26.391581,
+22.326526,
+0.819519
+],
 "tpar_mem_gb": 177.31924,
 "tpar_options_8x80": 7,
 "traingenz_params": 11163262976,
@@ -3789,6 +4167,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+5632,
+90112,
+5632
+],
+"vllm_lora_gb": 0.37224448,
 "vllm_running_1024": 70,
 "vllm_running_8192": 10
 },
@@ -3933,6 +4317,16 @@ false
 ],
 "state_gb": 0.29360128,
 "time_params": 11270094848,
+"tmodel_full": [
+188.992912,
+22.542287,
+1.208222
+],
+"tmodel_lora": [
+27.197446,
+22.542287,
+1.208222
+],
 "tpar_mem_gb": 177.118957,
 "tpar_options_8x80": 11,
 "traingenz_params": 11271143424,
@@ -3947,6 +4341,12 @@ false
 301989888.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 1.753481216,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -4092,6 +4492,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 10999562240,
+"tmodel_full": [
+184.182444,
+22.000435,
+0.872677
+],
+"tmodel_lora": [
+26.128011,
+22.000435,
+0.872677
+],
 "tpar_mem_gb": 152.996912,
 "tpar_options_8x80": 15,
 "traingenz_params": 11000217600,
@@ -4106,6 +4516,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+169256,
+2708096,
+169256
+],
+"vllm_lora_gb": 0.37879808,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 322
 },
@@ -4251,6 +4667,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+4.717431,
+0.320336,
+0.075596
+],
+"tmodel_lora": [
+2.442742,
+0.320336,
+0.075596
+],
 "tpar_mem_gb": 3.075599,
 "tpar_options_8x80": 112,
 "traingenz_params": 160167936,
@@ -4265,6 +4691,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+126234,
+2019744,
+126234
+],
+"vllm_lora_gb": 0.02359296,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 239
 },
@@ -4381,6 +4813,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "TypeError: 'NoneType' object is not iterable",
 "tpar_mem_gb_error": "TypeError: 'NoneType' object is not iterable",
 "tpar_options_8x80_error": "TypeError: 'NoneType' object is not iterable",
 "traingenz_error": "TypeError: 'NoneType' object is not iterable",
@@ -4395,6 +4828,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+21155,
+338480,
+21155
+],
+"vllm_lora_gb": 0.226492416,
 "vllm_running_1024": 265,
 "vllm_running_8192": 40
 },
@@ -4539,6 +4978,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+8.862126,
+0.813892,
+0.151126
+],
+"tmodel_lora": [
+3.087121,
+0.813892,
+0.151126
+],
 "tpar_mem_gb": 7.281987,
 "tpar_options_8x80": 104,
 "traingenz_params": 406945792,
@@ -4553,6 +5002,12 @@ false
 0.0,
 true
 ],
+"vllm_limits_lora": [
+4630,
+74080,
+4630
+],
+"vllm_lora_gb": 0.603979776,
 "vllm_running_1024": 58,
 "vllm_running_8192": 8
 },
@@ -4669,6 +5124,7 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
@@ -4683,6 +5139,12 @@ false
 0.0,
 true
 ],
+"vllm_limits_lora": [
+4630,
+74080,
+4630
+],
+"vllm_lora_gb": 0.603979776,
 "vllm_running_1024": 58,
 "vllm_running_8192": 8
 },
@@ -4799,6 +5261,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_commit_hash', '_name_or_path', 'architectures', 'decoder_start_token_id', 'init",
@@ -4813,6 +5276,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+125949,
+2015184,
+125949
+],
+"vllm_lora_gb": 0.02359296,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 238
 },
@@ -4930,6 +5399,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "TypeError: 'NoneType' object is not iterable",
 "tpar_mem_gb_error": "TypeError: 'NoneType' object is not iterable",
 "tpar_options_8x80_error": "TypeError: 'NoneType' object is not iterable",
 "traingenz_error": "TypeError: 'NoneType' object is not iterable",
@@ -4944,6 +5414,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+20508,
+328128,
+20508
+],
+"vllm_lora_gb": 0.35651584,
 "vllm_running_1024": 258,
 "vllm_running_8192": 39
 },
@@ -5060,6 +5536,7 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'decoder', 'encoder', 'is_encoder_decoder', 'model_type', 'tie_w",
@@ -5074,6 +5551,12 @@ false
 0.0,
 true
 ],
+"vllm_limits_lora": [
+4630,
+74080,
+4630
+],
+"vllm_lora_gb": 0.603979776,
 "vllm_running_1024": 58,
 "vllm_running_8192": 8
 },
@@ -5190,6 +5673,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'decoder_start_token",
@@ -5204,6 +5688,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+125534,
+2008544,
+125534
+],
+"vllm_lora_gb": 0.042467328,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 237
 },
@@ -5338,6 +5828,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 2687893504,
+"tmodel_full": [
+1932.024332,
+234.126492,
+0.798097
+],
+"tmodel_lora": [
+244.218657,
+234.126492,
+0.798097
+],
 "tpar_mem_gb": 43.095974,
 "tpar_options_8x80": 48,
 "traingenz_params": 117063245824,
@@ -5352,6 +5852,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+87642,
+1402272,
+87642
+],
+"vllm_lora_gb": 0.083853312,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 166
 },
@@ -5468,6 +5974,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 9001705472,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'architectures', 'a",
@@ -5482,6 +5989,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+94545,
+1512720,
+94545
+],
+"vllm_lora_gb": 0.056623104,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 179
 },
@@ -5626,6 +6139,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+22.238339,
+2.424635,
+0.251789
+],
+"tmodel_lora": [
+4.887334,
+2.424635,
+0.251789
+],
 "tpar_mem_gb": 18.217547,
 "tpar_options_8x80": 80,
 "traingenz_params": 1212317696,
@@ -5640,6 +6163,12 @@ false
 0.0,
 true
 ],
+"vllm_limits_lora": [
+4630,
+74080,
+4630
+],
+"vllm_lora_gb": 0.603979776,
 "vllm_running_1024": 58,
 "vllm_running_8192": 8
 },
@@ -5785,6 +6314,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 167772160,
+"tmodel_full": [
+4.851895,
+0.33561,
+0.083952
+],
+"tmodel_lora": [
+2.463199,
+0.33561,
+0.083952
+],
 "tpar_mem_gb": 2.97175,
 "tpar_options_8x80": 80,
 "traingenz_params": 167804928,
@@ -5799,6 +6338,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+141683,
+2266928,
+141683
+],
+"vllm_lora_gb": 0.037748736,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 268
 },
@@ -5944,6 +6489,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 49414144,
+"tmodel_full": [
+2.849733,
+0.098855,
+0.034144
+],
+"tmodel_lora": [
+2.149604,
+0.098855,
+0.034144
+],
 "tpar_mem_gb": 1.050118,
 "tpar_options_8x80": 80,
 "traingenz_params": 49427456,
@@ -5958,6 +6513,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+351301,
+5620816,
+351301
+],
+"vllm_lora_gb": 0.015335424,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 665
 },
@@ -6074,6 +6635,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 9014820864,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'activation_dropout', 'activation_function', 'apply_spec_augment",
@@ -6088,6 +6650,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+27272,
+436352,
+27272
+],
+"vllm_lora_gb": 0.18874368,
 "vllm_running_1024": 341,
 "vllm_running_8192": 51
 },
@@ -6204,6 +6772,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8853127168,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'chunk_size_feed_forward', 'classifier_dropout'",
@@ -6218,6 +6787,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+21784,
+348544,
+21784
+],
+"vllm_lora_gb": 0.226492416,
 "vllm_running_1024": 273,
 "vllm_running_8192": 41
 },
@@ -6334,6 +6909,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'perceiver_config', 'text_config",
@@ -6348,6 +6924,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+6719,
+107504,
+6719
+],
+"vllm_lora_gb": 0.33554432,
 "vllm_running_1024": 84,
 "vllm_running_8192": 12
 },
@@ -6464,6 +7046,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 9868148736,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'audio_config', 'audio_token_index', 'ignore_index', 'model_type",
@@ -6478,6 +7061,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+7042,
+112672,
+7042
+],
+"vllm_lora_gb": 0.269484032,
 "vllm_running_1024": 88,
 "vllm_running_8192": 13
 },
@@ -6594,6 +7183,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_text_hidden_size', 'image_token_index', 'initializer_fact",
@@ -6608,6 +7198,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+21742,
+347872,
+21742
+],
+"vllm_lora_gb": 0.226492416,
 "vllm_running_1024": 272,
 "vllm_running_8192": 41
 },
@@ -6753,6 +7349,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+62.02312,
+7.226655,
+0.461636
+],
+"tmodel_lora": [
+10.229449,
+7.226655,
+0.461636
+],
 "tpar_mem_gb": 58.247388,
 "tpar_options_8x80": 80,
 "traingenz_params": 3613327360,
@@ -6767,6 +7373,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+12800,
+204800,
+12800
+],
+"vllm_lora_gb": 0.2097152,
 "vllm_running_1024": 160,
 "vllm_running_8192": 24
 },
@@ -6883,6 +7495,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', ",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', ",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', ",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_index', 'initializer_factor', 'initializer_range', ",
@@ -6897,6 +7510,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+21742,
+347872,
+21742
+],
+"vllm_lora_gb": 0.226492416,
 "vllm_running_1024": 272,
 "vllm_running_8192": 41
 },
@@ -7013,6 +7632,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8853127168,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'd_ff', 'd_kv', 'd_model', 'decoder_start_token_id', 'dropout_ra",
@@ -7027,6 +7647,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+382568,
+6121088,
+382568
+],
+"vllm_lora_gb": 0.014155776,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 724
 },
@@ -7171,6 +7797,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 10638852096,
+"tmodel_full": [
+143.214621,
+17.050894,
+0.694419
+],
+"tmodel_lora": [
+20.689436,
+17.050894,
+0.694419
+],
 "tpar_mem_gb": 134.101651,
 "tpar_options_8x80": 22,
 "traingenz_params": 8525447168,
@@ -7185,6 +7821,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+280886,
+4494176,
+280886
+],
+"vllm_lora_gb": 0.018874368,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 532
 },
@@ -7301,6 +7943,7 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 8852602880,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'ignore_index', 'image_token_index', 'model_type', 'pad_token_id",
@@ -7315,6 +7958,12 @@ false
 0.0,
 true
 ],
+"vllm_limits_lora": [
+6824,
+109184,
+6824
+],
+"vllm_lora_gb": 0.33554432,
 "vllm_running_1024": 85,
 "vllm_running_8192": 13
 },
@@ -7411,6 +8060,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 9010094080,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['_name_or_path', 'architectures', 'auto_map', 'bos_token_id', 'eos_token_id', 'ig",
@@ -7425,6 +8075,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+252474,
+4039584,
+252474
+],
+"vllm_lora_gb": 0.021233664,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 478
 },
@@ -7569,6 +8225,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 3646103552,
+"tmodel_full": [
+49.396585,
+5.707153,
+0.358875
+],
+"tmodel_lora": [
+8.40242,
+5.707153,
+0.358875
+],
 "tpar_mem_gb": 45.818257,
 "tpar_options_8x80": 96,
 "traingenz_params": 2853576704,
@@ -7583,6 +8249,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+126597,
+2025552,
+126597
+],
+"vllm_lora_gb": 0.042467328,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 239
 },
@@ -7689,6 +8361,7 @@ true
 ],
 "state_gb": 0.00172032,
 "time_params_error": "TypeError: unsupported operand type(s) for *: 'int' and 'NoneType'",
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', ",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', ",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', ",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['activation_function', 'architectures', 'attention_dropout', 'attention_layers', ",
@@ -7702,6 +8375,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+22531,
+360496,
+22531
+],
+"vllm_lora_gb": 0.12582912,
 "vllm_running_1024": 282,
 "vllm_running_8192": 42
 },
@@ -7847,6 +8526,16 @@ true
 ],
 "state_gb": 0.000270336,
 "time_params": 2753560576,
+"tmodel_full": [
+47.76749,
+5.507613,
+0.373555
+],
+"tmodel_lora": [
+8.313267,
+5.507613,
+0.373555
+],
 "tpar_mem_gb": 42.076429,
 "tpar_options_8x80": 88,
 "traingenz_params": 2753806336,
@@ -7861,6 +8550,12 @@ true
 786432.0,
 true
 ],
+"vllm_limits_lora": [
+262646,
+4202336,
+262646
+],
+"vllm_lora_gb": 0.196067328,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 496
 },
@@ -7993,6 +8688,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 4447272960,
+"tmodel_full": [
+3764.533538,
+456.501707,
+0.931529
+],
+"tmodel_lora": [
+473.496274,
+456.501707,
+0.931529
+],
 "tpar_mem_gb": 57.579027,
 "tpar_options_8x80": 78,
 "traingenz_params": 228250853376,
@@ -8007,6 +8712,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 0.211288064,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -8139,6 +8850,16 @@ false
 ],
 "state_gb": 0.29360128,
 "time_params": 28127526912,
+"tmodel_full": [
+7410.534186,
+898.810774,
+2.265448
+],
+"tmodel_lora": [
+931.222293,
+898.810774,
+2.265448
+],
 "tpar_mem_gb": 358.866931,
 "tpar_options_8x80": 1,
 "traingenz_params": 449405386752,
@@ -8153,6 +8874,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 0.44040192,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -8298,6 +9025,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 6230507520,
+"tmodel_full": [
+110.440033,
+13.075497,
+0.677609
+],
+"tmodel_lora": [
+16.652401,
+13.075497,
+0.677609
+],
 "tpar_mem_gb": 94.91123,
 "tpar_options_8x80": 33,
 "traingenz_params": 6537748480,
@@ -8312,6 +9049,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+36380,
+582080,
+36380
+],
+"vllm_lora_gb": 0.327155712,
 "vllm_running_1024": 457,
 "vllm_running_8192": 69
 },
@@ -8457,6 +9200,16 @@ false
 ],
 "state_gb": 0.077266944,
 "time_params": 2937585664,
+"tmodel_full": [
+12767.006354,
+1549.044285,
+0.855769
+],
+"tmodel_lora": [
+1598.668415,
+1549.044285,
+0.855769
+],
 "tpar_mem_gb": 41.43393,
 "tpar_options_8x80": 104,
 "traingenz_params": 774522142720,
@@ -8471,6 +9224,12 @@ false
 77856768.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 0.14942208,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -8616,6 +9375,16 @@ true
 ],
 "state_gb": 0.051511296,
 "time_params": 8999534592,
+"tmodel_full": [
+74.575131,
+8.751022,
+0.453116
+],
+"tmodel_lora": [
+11.754321,
+8.751022,
+0.453116
+],
 "tpar_mem_gb": 64.199393,
 "tpar_options_8x80": 80,
 "traingenz_params": 4375511040,
@@ -8630,6 +9399,12 @@ true
 51904512.0,
 true
 ],
+"vllm_limits_lora": [
+3755,
+1982640,
+3755
+],
+"vllm_lora_gb": 0.22020096,
 "vllm_running_1024": 627,
 "vllm_running_8192": 198
 },
@@ -8775,6 +9550,16 @@ false
 ],
 "state_gb": 0.153944064,
 "time_params": 8999534592,
+"tmodel_full": [
+438.156522,
+52.735508,
+1.568866
+],
+"tmodel_lora": [
+58.988331,
+52.735508,
+1.568866
+],
 "tpar_mem_gb": 366.763337,
 "tpar_options_8x80": 1,
 "traingenz_params": 26367754240,
@@ -8789,6 +9574,12 @@ false
 154140672.0,
 false
 ],
+"vllm_limits_lora": [
+363,
+284592,
+363
+],
+"vllm_lora_gb": 0.77594624,
 "vllm_running_1024": 75,
 "vllm_running_8192": 27
 },
@@ -8934,6 +9725,16 @@ true
 ],
 "state_gb": 0.072479232,
 "time_params": 5826150400,
+"tmodel_full": [
+98.737163,
+11.653407,
+0.692322
+],
+"tmodel_lora": [
+15.240086,
+11.653407,
+0.692322
+],
 "tpar_mem_gb": 93.20076,
 "tpar_options_8x80": 33,
 "traingenz_params": 5826703360,
@@ -8948,6 +9749,12 @@ true
 79626240.0,
 true
 ],
+"vllm_limits_lora": [
+5246,
+755424,
+5246
+],
+"vllm_lora_gb": 0.201977856,
 "vllm_running_1024": 350,
 "vllm_running_8192": 80
 },
@@ -9083,6 +9890,16 @@ false
 ],
 "state_gb": 0.01605632,
 "time_params": 8321499136,
+"tmodel_full": [
+1533.513382,
+185.758384,
+0.839123
+],
+"tmodel_lora": [
+194.627446,
+185.758384,
+0.839123
+],
 "tpar_mem_gb": 118.747143,
 "tpar_options_8x80": 27,
 "traingenz_params": 92879192064,
@@ -9097,6 +9914,12 @@ false
 16515072.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 0.161005568,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -9229,6 +10052,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 38568198144,
+"tmodel_full": [
+102246.745738,
+12407.953252,
+3.117416
+],
+"tmodel_lora": [
+12786.751312,
+12407.953252,
+3.117416
+],
 "tpar_mem_gb": 605.788346,
 "tpar_options_8x80": 0,
 "traingenz_params": 6203976626176,
@@ -9243,6 +10076,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 0.494528805,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -9388,6 +10227,16 @@ true
 ],
 "state_gb": 0.123104768,
 "time_params": 8835301376,
+"tmodel_full": [
+148.35774,
+17.671651,
+0.721682
+],
+"tmodel_lora": [
+21.377147,
+17.671651,
+0.721682
+],
 "tpar_mem_gb": 126.659697,
 "tpar_options_8x80": 24,
 "traingenz_params": 8835825664,
@@ -9402,6 +10251,12 @@ true
 127795200.0,
 true
 ],
+"vllm_limits_lora": [
+4277,
+4448080,
+4277
+],
+"vllm_lora_gb": 0.339853312,
 "vllm_running_1024": 358,
 "vllm_running_8192": 226
 },
@@ -9547,6 +10402,16 @@ false
 ],
 "state_gb": 0.152819712,
 "time_params": 3883925504,
+"tmodel_full": [
+508.533718,
+61.372367,
+0.801374
+],
+"tmodel_lora": [
+66.310649,
+61.372367,
+0.801374
+],
 "tpar_mem_gb": 46.952533,
 "tpar_options_8x80": 88,
 "traingenz_params": 30686183424,
@@ -9561,6 +10426,12 @@ false
 153354240.0,
 false
 ],
+"vllm_limits_lora": [
+677,
+704080,
+677
+],
+"vllm_lora_gb": 0.20414464,
 "vllm_running_1024": 62,
 "vllm_running_8192": 38
 },
@@ -9702,6 +10573,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 7059013632,
+"tmodel_full": [
+15348.573317,
+1862.29719,
+1.208222
+],
+"tmodel_lora": [
+1921.756185,
+1862.29719,
+1.208222
+],
 "tpar_mem_gb": 96.961089,
 "tpar_options_8x80": 35,
 "traingenz_params": 931148595200,
@@ -9716,6 +10597,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 0.12058624,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -9861,6 +10748,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 2141192192,
+"tmodel_full": [
+37.636373,
+4.282843,
+0.335675
+],
+"tmodel_lora": [
+6.96498,
+4.282843,
+0.335675
+],
 "tpar_mem_gb": 32.719523,
 "tpar_options_8x80": 80,
 "traingenz_params": 2141421568,
@@ -9875,6 +10772,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+38716,
+619456,
+38716
+],
+"vllm_lora_gb": 0.139460608,
 "vllm_running_1024": 484,
 "vllm_running_8192": 73
 },
@@ -10019,6 +10922,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 4379770880,
+"tmodel_full": [
+74.659576,
+8.760197,
+0.461701
+],
+"tmodel_lora": [
+11.795564,
+8.760197,
+0.461701
+],
 "tpar_mem_gb": 67.268968,
 "tpar_options_8x80": 81,
 "traingenz_params": 4380098560,
@@ -10033,6 +10946,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+25663,
+410608,
+25663
+],
+"vllm_lora_gb": 0.19922944,
 "vllm_running_1024": 321,
 "vllm_running_8192": 48
 },
@@ -10177,6 +11096,16 @@ false
 ],
 "state_gb": 0.272367616,
 "time_params": 11005853696,
+"tmodel_full": [
+184.638218,
+22.013805,
+1.208222
+],
+"tmodel_lora": [
+26.65311,
+22.013805,
+1.208222
+],
 "tpar_mem_gb": 173.049643,
 "tpar_options_8x80": 11,
 "traingenz_params": 11006902272,
@@ -10191,6 +11120,12 @@ false
 276824064.0,
 false
 ],
+"vllm_limits_lora": [
+216,
+114048,
+216
+],
+"vllm_lora_gb": 0.353370112,
 "vllm_running_1024": 54,
 "vllm_running_8192": 12
 },
@@ -10325,6 +11260,16 @@ false
 ],
 "state_gb": 0.0434176,
 "time_params": 3048210432,
+"tmodel_full": [
+7280.982624,
+883.259578,
+0.896795
+],
+"tmodel_lora": [
+912.916857,
+883.259578,
+0.896795
+],
 "tpar_mem_gb": 49.465372,
 "tpar_options_8x80": 48,
 "traingenz_params": 441629789184,
@@ -10339,6 +11284,12 @@ false
 45674496.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 0.09316443,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -10484,6 +11435,16 @@ true
 ],
 "state_gb": 0.007168,
 "time_params": 1275497600,
+"tmodel_full": [
+23.313235,
+2.551405,
+0.281223
+],
+"tmodel_lora": [
+5.083999,
+2.551405,
+0.281223
+],
 "tpar_mem_gb": 19.482029,
 "tpar_options_8x80": 40,
 "traingenz_params": 1275702400,
@@ -10498,6 +11459,12 @@ true
 7208960.0,
 true
 ],
+"vllm_limits_lora": [
+9944,
+1750144,
+9944
+],
+"vllm_lora_gb": 0.107814912,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 203
 },
@@ -10643,6 +11610,16 @@ true
 ],
 "state_gb": 0.143548416,
 "time_params": 17471569920,
+"tmodel_full": [
+291.214687,
+34.945147,
+1.229783
+],
+"tmodel_lora": [
+40.082944,
+34.945147,
+1.229783
+],
 "tpar_mem_gb": 246.112768,
 "tpar_options_8x80": 6,
 "traingenz_params": 17472573440,
@@ -10657,6 +11634,12 @@ true
 150470656.0,
 true
 ],
+"vllm_limits_lora": [
+2505,
+3286560,
+2505
+],
+"vllm_lora_gb": 0.328343552,
 "vllm_running_1024": 315,
 "vllm_running_8192": 180
 },
@@ -10802,6 +11785,16 @@ true
 ],
 "state_gb": 0.102137856,
 "time_params": 18303942656,
+"tmodel_full": [
+304.812441,
+36.609589,
+1.115947
+],
+"tmodel_lora": [
+41.743605,
+36.609589,
+1.115947
+],
 "tpar_mem_gb": 266.24405,
 "tpar_options_8x80": 5,
 "traingenz_params": 18304794624,
@@ -10816,6 +11809,12 @@ true
 102236160.0,
 true
 ],
+"vllm_limits_lora": [
+3156,
+3282240,
+3156
+],
+"vllm_lora_gb": 0.344326144,
 "vllm_running_1024": 397,
 "vllm_running_8192": 211
 },
@@ -10962,6 +11961,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 3248455680,
+"tmodel_full": [
+1930.988664,
+234.029722,
+0.566755
+],
+"tmodel_lora": [
+243.84368,
+234.029722,
+0.566755
+],
 "tpar_mem_gb": 45.995866,
 "tpar_options_8x80": 96,
 "traingenz_params": 117014860800,
@@ -10976,6 +11985,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+16201,
+259216,
+16201
+],
+"vllm_lora_gb": 0.095551488,
 "vllm_running_1024": 204,
 "vllm_running_8192": 30
 },
@@ -11120,6 +12135,16 @@ true
 ],
 "state_gb": 0.0229376,
 "time_params": 4451737600,
+"tmodel_full": [
+76.15333,
+8.904786,
+0.755237
+],
+"tmodel_lora": [
+12.408838,
+8.904786,
+0.755237
+],
 "tpar_mem_gb": 71.667281,
 "tpar_options_8x80": 66,
 "traingenz_params": 4452392960,
@@ -11134,6 +12159,12 @@ true
 31457280.0,
 true
 ],
+"vllm_limits_lora": [
+2195,
+105360,
+2195
+],
+"vllm_lora_gb": 0.210632704,
 "vllm_running_1024": 78,
 "vllm_running_8192": 12
 },
@@ -11248,6 +12279,16 @@ true
 "serving_weight_bytes": 6150217728,
 "state_gb": 0.0,
 "time_params": 4405387264,
+"tmodel_full": [
+1329.435558,
+161.014727,
+0.654574
+],
+"tmodel_lora": [
+168.773187,
+161.014727,
+0.654574
+],
 "tpar_mem_gb": 57.830007,
 "tpar_options_8x80": 80,
 "traingenz_params": 80507363328,
@@ -11397,6 +12438,16 @@ false
 ],
 "state_gb": 0.304201728,
 "time_params": 34005319680,
+"tmodel_full": [
+564.255234,
+68.013588,
+1.77016
+],
+"tmodel_lora": [
+75.213802,
+68.013588,
+1.77016
+],
 "tpar_mem_gb": 481.433597,
 "tpar_options_8x80": 1,
 "traingenz_params": 34006794240,
@@ -11411,6 +12462,12 @@ false
 304349184.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 1.321500672,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -11556,6 +12613,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+522.646344,
+62.981517,
+1.629749
+],
+"tmodel_lora": [
+69.758061,
+62.981517,
+1.629749
+],
 "tpar_mem_gb": 462.050204,
 "tpar_options_8x80": 1,
 "traingenz_params": 31490758656,
@@ -11570,6 +12637,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+1971,
+31536,
+1971
+],
+"vllm_lora_gb": 0.780140544,
 "vllm_running_1024": 25,
 "vllm_running_8192": 3
 },
@@ -11715,6 +12788,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 692846592,
+"tmodel_full": [
+13.584302,
+1.385923,
+0.159515
+],
+"tmodel_lora": [
+3.681578,
+1.385923,
+0.159515
+],
 "tpar_mem_gb": 11.382119,
 "tpar_options_8x80": 80,
 "traingenz_params": 692961280,
@@ -11729,6 +12812,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+40187,
+642992,
+40187
+],
+"vllm_lora_gb": 0.069730304,
 "vllm_running_1024": 502,
 "vllm_running_8192": 76
 },
@@ -11875,6 +12964,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 2551726080,
+"tmodel_full": [
+349.590857,
+42.130207,
+0.425198
+],
+"tmodel_lora": [
+45.971606,
+42.130207,
+0.425198
+],
 "tpar_mem_gb": 37.278095,
 "tpar_options_8x80": 104,
 "traingenz_params": 21065103360,
@@ -11889,6 +12988,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+155198,
+2483168,
+155198
+],
+"vllm_lora_gb": 0.063700992,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 294
 },
@@ -12021,6 +13126,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 38568198144,
+"tmodel_full": [
+102246.745738,
+12407.953252,
+3.117416
+],
+"tmodel_lora": [
+12786.751312,
+12407.953252,
+3.117416
+],
 "tpar_mem_gb": 605.788346,
 "tpar_options_8x80": 0,
 "traingenz_params": 6203976626176,
@@ -12035,6 +13150,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 0.494528805,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -12180,6 +13301,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 1340743680,
+"tmodel_full": [
+24.302742,
+2.68151,
+0.201064
+],
+"tmodel_lora": [
+4.981986,
+2.68151,
+0.201064
+],
 "tpar_mem_gb": 21.222272,
 "tpar_options_8x80": 32,
 "traingenz_params": 1340755200,
@@ -12194,6 +13325,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+2200208,
+35203328,
+2200208
+],
+"vllm_lora_gb": 0.009289728,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -12339,6 +13476,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 1368391680,
+"tmodel_full": [
+24.785382,
+2.736806,
+0.227279
+],
+"tmodel_lora": [
+5.067523,
+2.736806,
+0.227279
+],
 "tpar_mem_gb": 21.676887,
 "tpar_options_8x80": 32,
 "traingenz_params": 1368403200,
@@ -12353,6 +13500,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+2198483,
+35175728,
+2198483
+],
+"vllm_lora_gb": 0.010518528,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -12498,6 +13651,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 1462763520,
+"tmodel_full": [
+26.296969,
+2.92556,
+0.184812
+],
+"tmodel_lora": [
+5.21617,
+2.92556,
+0.184812
+],
 "tpar_mem_gb": 22.619085,
 "tpar_options_8x80": 32,
 "traingenz_params": 1462779904,
@@ -12512,6 +13675,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+1098455,
+17575280,
+1098455
+],
+"vllm_lora_gb": 0.008126464,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -12657,6 +13826,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 1462763520,
+"tmodel_full": [
+26.296969,
+2.92556,
+0.184812
+],
+"tmodel_lora": [
+5.21617,
+2.92556,
+0.184812
+],
 "tpar_mem_gb": 22.619085,
 "tpar_options_8x80": 32,
 "traingenz_params": 1462779904,
@@ -12671,6 +13850,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+1098455,
+17575280,
+1098455
+],
+"vllm_lora_gb": 0.008126464,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -12816,6 +14001,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 1462763520,
+"tmodel_full": [
+26.296969,
+2.92556,
+0.184812
+],
+"tmodel_lora": [
+5.21617,
+2.92556,
+0.184812
+],
 "tpar_mem_gb": 22.619085,
 "tpar_options_8x80": 32,
 "traingenz_params": 1462779904,
@@ -12830,6 +14025,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+1098455,
+17575280,
+1098455
+],
+"vllm_lora_gb": 0.008126464,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -12976,6 +14177,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 2551726080,
+"tmodel_full": [
+349.590857,
+42.130207,
+0.425198
+],
+"tmodel_lora": [
+45.971606,
+42.130207,
+0.425198
+],
 "tpar_mem_gb": 37.278095,
 "tpar_options_8x80": 104,
 "traingenz_params": 21065103360,
@@ -12990,6 +14201,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+85261,
+1364176,
+85261
+],
+"vllm_lora_gb": 0.063700992,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 161
 },
@@ -13136,6 +14353,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 2551726080,
+"tmodel_full": [
+349.590857,
+42.130207,
+0.425198
+],
+"tmodel_lora": [
+45.971606,
+42.130207,
+0.425198
+],
 "tpar_mem_gb": 37.278095,
 "tpar_options_8x80": 104,
 "traingenz_params": 21065103360,
@@ -13150,6 +14377,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+155198,
+2483168,
+155198
+],
+"vllm_lora_gb": 0.063700992,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 294
 },
@@ -13295,6 +14528,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8835301376,
+"tmodel_full": [
+148.35774,
+17.671651,
+0.721682
+],
+"tmodel_lora": [
+21.377147,
+17.671651,
+0.721682
+],
 "tpar_mem_gb": 126.659697,
 "tpar_options_8x80": 24,
 "traingenz_params": 8835825664,
@@ -13309,6 +14552,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+27942,
+447072,
+27942
+],
+"vllm_lora_gb": 0.285212672,
 "vllm_running_1024": 350,
 "vllm_running_8192": 53
 },
@@ -13454,6 +14703,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 1855455232,
+"tmodel_full": [
+840.498012,
+101.707022,
+0.419561
+],
+"tmodel_lora": [
+107.346311,
+101.707022,
+0.419561
+],
 "tpar_mem_gb": 29.753541,
 "tpar_options_8x80": 104,
 "traingenz_params": 50853511168,
@@ -13468,6 +14727,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+14900,
+238400,
+14900
+],
+"vllm_lora_gb": 0.10223616,
 "vllm_running_1024": 186,
 "vllm_running_8192": 28
 },
@@ -13613,6 +14878,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 3239575552,
+"tmodel_full": [
+3848.575518,
+466.712527,
+0.839123
+],
+"tmodel_lora": [
+483.873858,
+466.712527,
+0.839123
+],
 "tpar_mem_gb": 47.182643,
 "tpar_options_8x80": 104,
 "traingenz_params": 233356263424,
@@ -13627,6 +14902,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+28197,
+451152,
+28197
+],
+"vllm_lora_gb": 0.106954752,
 "vllm_running_1024": 353,
 "vllm_running_8192": 53
 },
@@ -13772,6 +15053,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 9096396800,
+"tmodel_full": [
+152.713514,
+18.193973,
+0.772014
+],
+"tmodel_lora": [
+21.984531,
+18.193973,
+0.772014
+],
 "tpar_mem_gb": 129.020631,
 "tpar_options_8x80": 25,
 "traingenz_params": 9096986624,
@@ -13786,6 +15077,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+27892,
+446272,
+27892
+],
+"vllm_lora_gb": 0.292552704,
 "vllm_running_1024": 350,
 "vllm_running_8192": 53
 },
@@ -13931,6 +15228,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 9096396800,
+"tmodel_full": [
+152.713514,
+18.193973,
+0.772014
+],
+"tmodel_lora": [
+21.984531,
+18.193973,
+0.772014
+],
 "tpar_mem_gb": 129.020631,
 "tpar_options_8x80": 25,
 "traingenz_params": 9096986624,
@@ -13945,6 +15252,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+24667,
+394672,
+24667
+],
+"vllm_lora_gb": 0.292552704,
 "vllm_running_1024": 309,
 "vllm_running_8192": 46
 },
@@ -14090,6 +15403,16 @@ true
 ],
 "state_gb": 0.153944064,
 "time_params": 8999534592,
+"tmodel_full": [
+438.156522,
+52.735508,
+1.568866
+],
+"tmodel_lora": [
+58.988331,
+52.735508,
+1.568866
+],
 "tpar_mem_gb": 366.763337,
 "tpar_options_8x80": 1,
 "traingenz_params": 26367754240,
@@ -14104,6 +15427,12 @@ true
 154140672.0,
 false
 ],
+"vllm_limits_lora": [
+829,
+649936,
+829
+],
+"vllm_lora_gb": 0.77594624,
 "vllm_running_1024": 168,
 "vllm_running_8192": 60
 },
@@ -14249,6 +15578,16 @@ true
 ],
 "state_gb": 0.153944064,
 "time_params": 8999534592,
+"tmodel_full": [
+438.156522,
+52.735508,
+1.568866
+],
+"tmodel_lora": [
+58.988331,
+52.735508,
+1.568866
+],
 "tpar_mem_gb": 366.763337,
 "tpar_options_8x80": 1,
 "traingenz_params": 26367754240,
@@ -14263,6 +15602,12 @@ true
 154140672.0,
 true
 ],
+"vllm_limits_lora": [
+1049,
+822416,
+1049
+],
+"vllm_lora_gb": 0.77594624,
 "vllm_running_1024": 212,
 "vllm_running_8192": 76
 },
@@ -14408,6 +15753,16 @@ false
 ],
 "state_gb": 0.153944064,
 "time_params": 8999534592,
+"tmodel_full": [
+438.156522,
+52.735508,
+1.568866
+],
+"tmodel_lora": [
+58.988331,
+52.735508,
+1.568866
+],
 "tpar_mem_gb": 366.763337,
 "tpar_options_8x80": 1,
 "traingenz_params": 26367754240,
@@ -14422,6 +15777,12 @@ false
 154140672.0,
 false
 ],
+"vllm_limits_lora": [
+363,
+284592,
+363
+],
+"vllm_lora_gb": 0.77594624,
 "vllm_running_1024": 75,
 "vllm_running_8192": 27
 },
@@ -14566,6 +15927,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 3564109824,
+"tmodel_full": [
+61.226257,
+7.128908,
+0.469959
+],
+"tmodel_lora": [
+10.077265,
+7.128908,
+0.469959
+],
 "tpar_mem_gb": 51.570701,
 "tpar_options_8x80": 104,
 "traingenz_params": 3564453888,
@@ -14580,6 +15951,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+36962,
+591392,
+36962
+],
+"vllm_lora_gb": 0.161480704,
 "vllm_running_1024": 463,
 "vllm_running_8192": 70
 },
@@ -14724,6 +16101,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 9014820864,
+"tmodel_full": [
+116.450587,
+13.802832,
+0.694419
+],
+"tmodel_lora": [
+17.343932,
+13.802832,
+0.694419
+],
 "tpar_mem_gb": 109.09157,
 "tpar_options_8x80": 31,
 "traingenz_params": 6901415936,
@@ -14738,6 +16125,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+27522,
+440352,
+27522
+],
+"vllm_lora_gb": 0.18874368,
 "vllm_running_1024": 344,
 "vllm_running_8192": 52
 },
@@ -14883,6 +16276,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 663126016,
+"tmodel_full": [
+13.076737,
+1.326424,
+0.142721
+],
+"tmodel_lora": [
+3.603841,
+1.326424,
+0.142721
+],
 "tpar_mem_gb": 10.650617,
 "tpar_options_8x80": 88,
 "traingenz_params": 663212032,
@@ -14897,6 +16300,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+376188,
+6019008,
+376188
+],
+"vllm_lora_gb": 0.062128128,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 713
 },
@@ -15042,6 +16451,16 @@ false
 ],
 "state_gb": 0.153944064,
 "time_params": 8999534592,
+"tmodel_full": [
+438.156522,
+52.735508,
+1.568866
+],
+"tmodel_lora": [
+58.988331,
+52.735508,
+1.568866
+],
 "tpar_mem_gb": 366.763337,
 "tpar_options_8x80": 1,
 "traingenz_params": 26367754240,
@@ -15056,6 +16475,12 @@ false
 154140672.0,
 false
 ],
+"vllm_limits_lora": [
+363,
+284592,
+363
+],
+"vllm_lora_gb": 0.77594624,
 "vllm_running_1024": 75,
 "vllm_running_8192": 27
 },
@@ -15200,6 +16625,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8852078592,
+"tmodel_full": [
+113.768594,
+13.477347,
+0.694419
+],
+"tmodel_lora": [
+17.008682,
+13.477347,
+0.694419
+],
 "tpar_mem_gb": 106.585339,
 "tpar_options_8x80": 31,
 "traingenz_params": 6738673664,
@@ -15214,6 +16649,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+6818,
+109088,
+6818
+],
+"vllm_lora_gb": 0.33554432,
 "vllm_running_1024": 85,
 "vllm_running_8192": 12
 },
@@ -15358,6 +16799,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 9001639936,
+"tmodel_full": [
+116.233365,
+13.77647,
+0.694419
+],
+"tmodel_lora": [
+17.316779,
+13.77647,
+0.694419
+],
 "tpar_mem_gb": 108.888583,
 "tpar_options_8x80": 31,
 "traingenz_params": 6888235008,
@@ -15372,6 +16823,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+127029,
+2032464,
+127029
+],
+"vllm_lora_gb": 0.02359296,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 240
 },
@@ -15516,6 +16973,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 9003073536,
+"tmodel_full": [
+116.256991,
+13.779337,
+0.694419
+],
+"tmodel_lora": [
+17.319732,
+13.779337,
+0.694419
+],
 "tpar_mem_gb": 108.910661,
 "tpar_options_8x80": 31,
 "traingenz_params": 6889668608,
@@ -15530,6 +16997,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+6667,
+106672,
+6667
+],
+"vllm_lora_gb": 0.33554432,
 "vllm_running_1024": 83,
 "vllm_running_8192": 12
 },
@@ -15675,6 +17148,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+113.768594,
+13.477347,
+0.694419
+],
+"tmodel_lora": [
+17.008682,
+13.477347,
+0.694419
+],
 "tpar_mem_gb": 106.585339,
 "tpar_options_8x80": 31,
 "traingenz_params": 6738673664,
@@ -15689,6 +17172,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+8091,
+129456,
+8091
+],
+"vllm_lora_gb": 0.29360128,
 "vllm_running_1024": 101,
 "vllm_running_8192": 15
 },
@@ -15834,6 +17323,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 65489862656,
+"tmodel_full": [
+554.826915,
+66.810806,
+2.23871
+],
+"tmodel_lora": [
+74.33857,
+66.810806,
+2.23871
+],
 "tpar_mem_gb": 525.866815,
 "tpar_options_8x80": 0,
 "traingenz_params": 33405403136,
@@ -15848,6 +17347,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 1.1403264,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -15993,6 +17498,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8835301376,
+"tmodel_full": [
+148.35774,
+17.671651,
+0.721682
+],
+"tmodel_lora": [
+21.377147,
+17.671651,
+0.721682
+],
 "tpar_mem_gb": 126.659697,
 "tpar_options_8x80": 24,
 "traingenz_params": 8835825664,
@@ -16007,6 +17522,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+27942,
+447072,
+27942
+],
+"vllm_lora_gb": 0.285212672,
 "vllm_running_1024": 350,
 "vllm_running_8192": 53
 },
@@ -16151,6 +17672,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8046772224,
+"tmodel_full": [
+135.362779,
+16.094593,
+0.721682
+],
+"tmodel_lora": [
+19.752777,
+16.094593,
+0.721682
+],
 "tpar_mem_gb": 114.516348,
 "tpar_options_8x80": 30,
 "traingenz_params": 8047296512,
@@ -16165,6 +17696,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+28835,
+461360,
+28835
+],
+"vllm_lora_gb": 0.285212672,
 "vllm_running_1024": 362,
 "vllm_running_8192": 54
 },
@@ -16309,6 +17846,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 10466885632,
+"tmodel_full": [
+175.320838,
+20.934975,
+0.792855
+],
+"tmodel_lora": [
+24.925419,
+20.934975,
+0.792855
+],
 "tpar_mem_gb": 155.281043,
 "tpar_options_8x80": 15,
 "traingenz_params": 10467487744,
@@ -16323,6 +17870,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+9787,
+156592,
+9787
+],
+"vllm_lora_gb": 0.374341632,
 "vllm_running_1024": 123,
 "vllm_running_8192": 18
 },
@@ -16468,6 +18021,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 399507456,
+"tmodel_full": [
+8.722802,
+0.79908,
+0.134349
+],
+"tmodel_lora": [
+2.990458,
+0.79908,
+0.134349
+],
 "tpar_mem_gb": 6.282104,
 "tpar_options_8x80": 72,
 "traingenz_params": 399540224,
@@ -16482,6 +18045,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+564007,
+9024112,
+564007
+],
+"vllm_lora_gb": 0.019398656,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -16627,6 +18196,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+1712.825975,
+207.479767,
+1.157956
+],
+"tmodel_lora": [
+217.471972,
+207.479767,
+1.157956
+],
 "tpar_mem_gb": 175.142981,
 "tpar_options_8x80": 11,
 "traingenz_params": 103739883520,
@@ -16641,6 +18220,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 0.201326592,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -16773,6 +18358,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+12860.843088,
+1560.394465,
+1.157956
+],
+"tmodel_lora": [
+1610.974111,
+1560.394465,
+1.157956
+],
 "tpar_mem_gb": 175.142981,
 "tpar_options_8x80": 11,
 "traingenz_params": 780197232640,
@@ -16787,6 +18382,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 0.201326592,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -16931,6 +18532,16 @@ true
 ],
 "state_gb": 0.00688128,
 "time_params": 1816547328,
+"tmodel_full": [
+32.25126,
+3.633488,
+0.302252
+],
+"tmodel_lora": [
+6.240118,
+3.633488,
+0.302252
+],
 "tpar_mem_gb": 30.0079,
 "tpar_options_8x80": 104,
 "traingenz_params": 1816743936,
@@ -16945,6 +18556,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+22531,
+360496,
+22531
+],
+"vllm_lora_gb": 0.12582912,
 "vllm_running_1024": 282,
 "vllm_running_8192": 42
 },
@@ -17089,6 +18706,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 9002024960,
+"tmodel_full": [
+116.23971,
+13.77724,
+0.694419
+],
+"tmodel_lora": [
+17.317572,
+13.77724,
+0.694419
+],
 "tpar_mem_gb": 108.894513,
 "tpar_options_8x80": 31,
 "traingenz_params": 6888620032,
@@ -17103,6 +18730,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+6667,
+106672,
+6667
+],
+"vllm_lora_gb": 0.33554432,
 "vllm_running_1024": 83,
 "vllm_running_8192": 12
 },
@@ -17219,6 +18852,7 @@ true
 ],
 "state_gb": 0.025534464,
 "time_params": 11676942336,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'attention_bias', 'attention_dropout', 'attention_head_dim', 'au",
@@ -17233,6 +18867,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+25185,
+402960,
+25185
+],
+"vllm_lora_gb": 0.373293056,
 "vllm_running_1024": 317,
 "vllm_running_8192": 48
 },
@@ -17349,6 +18989,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at ",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at ",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at ",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['model_type', 'text_config']. Looked for ['num_hidden_layers', 'hidden_size'] at ",
@@ -17363,6 +19004,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+25185,
+402960,
+25185
+],
+"vllm_lora_gb": 0.373293056,
 "vllm_running_1024": 317,
 "vllm_running_8192": 48
 },
@@ -17480,6 +19127,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['architectures', 'image_token_id', 'model_type', 'text_config', 'tie_word_embeddi",
@@ -17494,6 +19142,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+31286,
+500576,
+31286
+],
+"vllm_lora_gb": 0.213909504,
 "vllm_running_1024": 392,
 "vllm_running_8192": 59
 },
@@ -17638,6 +19292,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8853127168,
+"tmodel_full": [
+113.785875,
+13.479444,
+0.694419
+],
+"tmodel_lora": [
+17.010843,
+13.479444,
+0.694419
+],
 "tpar_mem_gb": 106.601487,
 "tpar_options_8x80": 31,
 "traingenz_params": 6739722240,
@@ -17652,6 +19316,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+382568,
+6121088,
+382568
+],
+"vllm_lora_gb": 0.014155776,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 724
 },
@@ -17796,6 +19466,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8853127168,
+"tmodel_full": [
+113.785875,
+13.479444,
+0.694419
+],
+"tmodel_lora": [
+17.010843,
+13.479444,
+0.694419
+],
 "tpar_mem_gb": 106.601487,
 "tpar_options_8x80": 31,
 "traingenz_params": 6739722240,
@@ -17810,6 +19490,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+46741,
+747856,
+46741
+],
+"vllm_lora_gb": 0.113246208,
 "vllm_running_1024": 585,
 "vllm_running_8192": 88
 },
@@ -17954,6 +19640,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 10638852096,
+"tmodel_full": [
+143.214621,
+17.050894,
+0.694419
+],
+"tmodel_lora": [
+20.689436,
+17.050894,
+0.694419
+],
 "tpar_mem_gb": 134.101651,
 "tpar_options_8x80": 22,
 "traingenz_params": 8525447168,
@@ -17968,6 +19664,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+281174,
+4498784,
+281174
+],
+"vllm_lora_gb": 0.01048576,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 532
 },
@@ -18112,6 +19814,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 9014820864,
+"tmodel_full": [
+116.450587,
+13.802832,
+0.694419
+],
+"tmodel_lora": [
+17.343932,
+13.802832,
+0.694419
+],
 "tpar_mem_gb": 109.09157,
 "tpar_options_8x80": 31,
 "traingenz_params": 6901415936,
@@ -18126,6 +19838,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+27272,
+436352,
+27272
+],
+"vllm_lora_gb": 0.18874368,
 "vllm_running_1024": 341,
 "vllm_running_8192": 51
 },
@@ -18270,6 +19988,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 9065897984,
+"tmodel_full": [
+117.292338,
+13.904986,
+0.694419
+],
+"tmodel_lora": [
+17.44915,
+13.904986,
+0.694419
+],
 "tpar_mem_gb": 109.878157,
 "tpar_options_8x80": 31,
 "traingenz_params": 6952493056,
@@ -18284,6 +20012,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+379998,
+6079968,
+379998
+],
+"vllm_lora_gb": 0.00786432,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 719
 },
@@ -18428,6 +20162,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 599379968,
+"tmodel_full": [
+23.326405,
+2.557977,
+0.241435
+],
+"tmodel_lora": [
+5.116951,
+2.557977,
+0.241435
+],
 "tpar_mem_gb": 22.173995,
 "tpar_options_8x80": 80,
 "traingenz_params": 1278988288,
@@ -18442,6 +20186,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+34550,
+552800,
+34550
+],
+"vllm_lora_gb": 0.150994944,
 "vllm_running_1024": 432,
 "vllm_running_8192": 65
 },
@@ -18573,6 +20323,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 10688774144,
+"tmodel_full": [
+9203.553055,
+1116.595257,
+0.784597
+],
+"tmodel_lora": [
+1153.313013,
+1116.595257,
+0.784597
+],
 "tpar_mem_gb": 134.87045,
 "tpar_options_8x80": 22,
 "traingenz_params": 558297628672,
@@ -18587,6 +20347,12 @@ false
 0.0,
 false
 ],
+"vllm_limits_lora": [
+0,
+0,
+0
+],
+"vllm_lora_gb": 0.150994944,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 1024
 },
@@ -18703,6 +20469,7 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
@@ -18717,6 +20484,12 @@ false
 0.0,
 true
 ],
+"vllm_limits_lora": [
+4630,
+74080,
+4630
+],
+"vllm_lora_gb": 0.603979776,
 "vllm_running_1024": 58,
 "vllm_running_8192": 8
 },
@@ -18833,6 +20606,7 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['decoder', 'encoder', 'is_encoder_decoder', 'model_type']. Looked for ['num_hidde",
@@ -18847,6 +20621,12 @@ false
 0.0,
 true
 ],
+"vllm_limits_lora": [
+4630,
+74080,
+4630
+],
+"vllm_lora_gb": 0.603979776,
 "vllm_running_1024": 58,
 "vllm_running_8192": 8
 },
@@ -18991,6 +20771,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+22.099689,
+2.40989,
+0.235143
+],
+"tmodel_lora": [
+4.840488,
+2.40989,
+0.235143
+],
 "tpar_mem_gb": 18.629971,
 "tpar_options_8x80": 80,
 "traingenz_params": 1204944896,
@@ -19005,6 +20795,12 @@ false
 0.0,
 true
 ],
+"vllm_limits_lora": [
+4630,
+74080,
+4630
+],
+"vllm_lora_gb": 0.603979776,
 "vllm_running_1024": 58,
 "vllm_running_8192": 8
 },
@@ -19149,6 +20945,16 @@ false
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+8.862126,
+0.813892,
+0.151126
+],
+"tmodel_lora": [
+3.087121,
+0.813892,
+0.151126
+],
 "tpar_mem_gb": 7.281987,
 "tpar_options_8x80": 104,
 "traingenz_params": 406945792,
@@ -19163,6 +20969,12 @@ false
 0.0,
 true
 ],
+"vllm_limits_lora": [
+4630,
+74080,
+4630
+],
+"vllm_lora_gb": 0.603979776,
 "vllm_running_1024": 58,
 "vllm_running_8192": 8
 },
@@ -19307,6 +21119,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+4.754794,
+0.32487,
+0.075596
+],
+"tmodel_lora": [
+2.447412,
+0.32487,
+0.075596
+],
 "tpar_mem_gb": 3.110513,
 "tpar_options_8x80": 112,
 "traingenz_params": 162435072,
@@ -19321,6 +21143,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+21149,
+338384,
+21149
+],
+"vllm_lora_gb": 0.226492416,
 "vllm_running_1024": 265,
 "vllm_running_8192": 40
 },
@@ -19465,6 +21293,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+4.754794,
+0.32487,
+0.075596
+],
+"tmodel_lora": [
+2.447412,
+0.32487,
+0.075596
+],
 "tpar_mem_gb": 3.110513,
 "tpar_options_8x80": 112,
 "traingenz_params": 162435072,
@@ -19479,6 +21317,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+21149,
+338384,
+21149
+],
+"vllm_lora_gb": 0.226492416,
 "vllm_running_1024": 265,
 "vllm_running_8192": 40
 },
@@ -19595,6 +21439,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
@@ -19609,6 +21454,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+93772,
+1500352,
+93772
+],
+"vllm_lora_gb": 0.056623104,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 177
 },
@@ -19754,6 +21605,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+130.51343,
+15.509488,
+0.694419
+],
+"tmodel_lora": [
+19.101787,
+15.509488,
+0.694419
+],
 "tpar_mem_gb": 122.232819,
 "tpar_options_8x80": 26,
 "traingenz_params": 7754743808,
@@ -19768,6 +21629,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+7042,
+112672,
+7042
+],
+"vllm_lora_gb": 0.269484032,
 "vllm_running_1024": 88,
 "vllm_running_8192": 13
 },
@@ -19913,6 +21780,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8835301376,
+"tmodel_full": [
+148.35774,
+17.671651,
+0.721682
+],
+"tmodel_lora": [
+21.377147,
+17.671651,
+0.721682
+],
 "tpar_mem_gb": 126.659697,
 "tpar_options_8x80": 24,
 "traingenz_params": 8835825664,
@@ -19927,6 +21804,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+27942,
+447072,
+27942
+],
+"vllm_lora_gb": 0.285212672,
 "vllm_running_1024": 350,
 "vllm_running_8192": 53
 },
@@ -20072,6 +21955,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 4907335680,
+"tmodel_full": [
+83.375512,
+9.815368,
+0.48241
+],
+"tmodel_lora": [
+12.922284,
+9.815368,
+0.48241
+],
 "tpar_mem_gb": 73.420257,
 "tpar_options_8x80": 52,
 "traingenz_params": 4907683840,
@@ -20086,6 +21979,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+29302,
+468832,
+29302
+],
+"vllm_lora_gb": 0.204996608,
 "vllm_running_1024": 367,
 "vllm_running_8192": 55
 },
@@ -20231,6 +22130,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 4907335680,
+"tmodel_full": [
+83.375512,
+9.815368,
+0.48241
+],
+"tmodel_lora": [
+12.922284,
+9.815368,
+0.48241
+],
 "tpar_mem_gb": 73.420257,
 "tpar_options_8x80": 52,
 "traingenz_params": 4907683840,
@@ -20245,6 +22154,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+29302,
+468832,
+29302
+],
+"vllm_lora_gb": 0.204996608,
 "vllm_running_1024": 367,
 "vllm_running_8192": 55
 },
@@ -20379,6 +22294,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 2687893504,
+"tmodel_full": [
+1932.024332,
+234.126492,
+0.798097
+],
+"tmodel_lora": [
+244.218657,
+234.126492,
+0.798097
+],
 "tpar_mem_gb": 43.095974,
 "tpar_options_8x80": 48,
 "traingenz_params": 117063245824,
@@ -20393,6 +22318,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+87642,
+1402272,
+87642
+],
+"vllm_lora_gb": 0.083853312,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 166
 },
@@ -20538,6 +22469,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+15.411178,
+1.604485,
+0.18468
+],
+"tmodel_lora": [
+3.915405,
+1.604485,
+0.18468
+],
 "tpar_mem_gb": 12.419128,
 "tpar_options_8x80": 64,
 "traingenz_params": 802242560,
@@ -20552,6 +22493,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+221354,
+3541664,
+221354
+],
+"vllm_lora_gb": 0.04849664,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 419
 },
@@ -20697,6 +22644,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_full": [
+15.411178,
+1.604485,
+0.18468
+],
+"tmodel_lora": [
+3.915405,
+1.604485,
+0.18468
+],
 "tpar_mem_gb": 12.419128,
 "tpar_options_8x80": 64,
 "traingenz_params": 802242560,
@@ -20711,6 +22668,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+221354,
+3541664,
+221354
+],
+"vllm_lora_gb": 0.04849664,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 419
 },
@@ -20827,6 +22790,7 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 8999534592,
+"tmodel_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
 "tpar_mem_gb_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
 "tpar_options_8x80_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
 "traingenz_error": "ValueError: Could not locate the decoder's geometry in this model config. Top-level keys: ['is_encoder_decoder', 'model_type', 'text_config', 'vision_config']. Looked for [",
@@ -20841,6 +22805,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+61282,
+980512,
+61282
+],
+"vllm_lora_gb": 0.084934656,
 "vllm_running_1024": 766,
 "vllm_running_8192": 116
 },
@@ -20998,6 +22968,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 2325741568,
+"tmodel_full": [
+40.625298,
+4.651876,
+0.285278
+],
+"tmodel_lora": [
+7.235124,
+4.651876,
+0.285278
+],
 "tpar_mem_gb": 34.324598,
 "tpar_options_8x80": 104,
 "traingenz_params": 2325938176,
@@ -21012,6 +22992,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+88478,
+1415648,
+88478
+],
+"vllm_lora_gb": 0.097517568,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 167
 },
@@ -21169,6 +23155,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 448512000,
+"tmodel_full": [
+9.561035,
+0.89727,
+0.162652
+],
+"tmodel_lora": [
+3.18116,
+0.89727,
+0.162652
+],
 "tpar_mem_gb": 7.376118,
 "tpar_options_8x80": 56,
 "traingenz_params": 448634880,
@@ -21183,6 +23179,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+113598,
+1817568,
+113598
+],
+"vllm_lora_gb": 0.05767168,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 215
 },
@@ -21340,6 +23342,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 2551726080,
+"tmodel_full": [
+44.422053,
+5.104005,
+0.354419
+],
+"tmodel_lora": [
+7.761716,
+5.104005,
+0.354419
+],
 "tpar_mem_gb": 37.278095,
 "tpar_options_8x80": 104,
 "traingenz_params": 2552002560,
@@ -21354,6 +23366,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+87929,
+1406864,
+87929
+],
+"vllm_lora_gb": 0.090243072,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 166
 },
@@ -21510,6 +23528,16 @@ true
 ],
 "state_gb": 0.0,
 "time_params": 160128000,
+"tmodel_full": [
+4.717381,
+0.32033,
+0.075596
+],
+"tmodel_lora": [
+2.442736,
+0.32033,
+0.075596
+],
 "tpar_mem_gb": 3.075552,
 "tpar_options_8x80": 112,
 "traingenz_params": 160164864,
@@ -21524,6 +23552,12 @@ true
 0.0,
 true
 ],
+"vllm_limits_lora": [
+126449,
+2023184,
+126449
+],
+"vllm_lora_gb": 0.02359296,
 "vllm_running_1024": 1024,
 "vllm_running_8192": 239
 },

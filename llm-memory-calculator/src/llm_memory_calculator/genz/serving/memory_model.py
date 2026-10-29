@@ -86,6 +86,17 @@ def held_to_the_model(model_config, fields_total: int) -> int:
     return max(fields_total, counted)
 
 
+def trained_layers(model_config) -> int:
+    """The layers a training step runs through and keeps activations and adapters for: the
+    decoder's (``num_decoder_layers``) and an encoder-decoder's encoder's (``num_encoder_layers``,
+    which ``get_configs`` reads from the encoder's own stack). Every training estimator that
+    charges per-layer activations or LoRA adapters counts these (GenZ's training modelling and
+    parallelization); counting the decoder alone, training_modeling gave whisper-large-v3's 64
+    layers the adapters and activations of 32."""
+    decoder = int(getattr(model_config, "num_decoder_layers", 32) or 32)
+    return decoder + int(getattr(model_config, "num_encoder_layers", 0) or 0)
+
+
 def config_parameters_held_to_the_model(model, fields_total: int) -> int:
     """``held_to_the_model`` for a caller holding a model id, a HuggingFace config dict or a
     ModelConfig: read through ``get_configs`` (a dict that is no model config it can read keeps

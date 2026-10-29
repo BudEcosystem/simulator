@@ -214,9 +214,11 @@
      23
     ]
    ],
-   "source": "the checkpoint's tensors (microsoft/Phi-4-mini-flash-reasoning@1dff8163d28ec880ca2411c474ddc0a927792810: 3,852,562,944 parameters, 3,851,980,800 in matrices, a 512,163,840-element token embedding; each safetensors shard's header read by scripts/kv_truth.py --checkpoint); KV: the hub's modeling_phi4flash.py (SambaY): the self-decoder's 8 attention layers slide (sliding_window=512) beside 8 Mamba layers; one full-attention layer writes the KV the cross-decoder's layers read (none of their own); 20 KV heads x 64 (2560 / 40)",
+   "source": "the checkpoint's tensors (microsoft/Phi-4-mini-flash-reasoning@1dff8163d28ec880ca2411c474ddc0a927792810: 3,852,562,944 parameters, 3,851,980,800 in matrices, a 512,163,840-element token embedding; each safetensors shard's header read by scripts/kv_truth.py --checkpoint); KV: the hub's modeling_phi4flash.py (SambaY): the self-decoder's 8 attention layers slide (sliding_window=512) beside 8 Mamba layers; one full-attention layer writes the KV the cross-decoder's layers read (none of their own); 20 KV heads x 64 (2560 / 40). LoRA floor (the MLPs alone, every mixer map left out): per layer gate_up_proj 2560 -> 20480 and down_proj 10240 -> 2560: 35,840 x 32 layers; activations: one 2560-wide checkpoint a layer, 32 layers",
    "state_bytes": 1556480,
-   "state_bytes_source": "config arithmetic: SambaY's self-decoder (its first 16 layers) alternates Mamba and sliding attention (mb_per_layer 2): 8 Mamba-1 mixers at Phi4FlashConfig's defaults (d_state 16, d_conv 4, expand 2: d_inner 5,120), each a 3 x 5,120 convolution buffer and a 5,120 x 16 SSM state, at 2 B an element: 1,556,480 B (the cross-decoder's GMU layers hold none)"
+   "state_bytes_source": "config arithmetic: SambaY's self-decoder (its first 16 layers) alternates Mamba and sliding attention (mb_per_layer 2): 8 Mamba-1 mixers at Phi4FlashConfig's defaults (d_state 16, d_conv 4, expand 2: d_inner 5,120), each a 3 x 5,120 convolution buffer and a 5,120 x 16 SSM state, at 2 B an element: 1,556,480 B (the cross-decoder's GMU layers hold none)",
+   "lora_linear_features": 1146880,
+   "activation_floor_elements": 81920
   },
   "fixture:moonshotai_Kimi-Linear-48B-A3B-Instruct.json": {
    "params": 49122681728,
@@ -267,7 +269,9 @@
      28
     ]
    ],
-   "source": "ChatGLM3-6B arithmetic (the hub's modeling_chatglm.py): per layer a fused QKV 4096 x (4096 + 2 x 2 x 128) with bias, dense 4096 x 4096, SwiGLU 4096 x 2 x 13696 and 13696 x 4096, two norms; 65024 x 4096 embedding and output layer: 6,243,584,000 (the published count). KV: multi_query_group_num 2 x kv_channels 128 x 2"
+   "source": "ChatGLM3-6B arithmetic (the hub's modeling_chatglm.py): per layer a fused QKV 4096 x (4096 + 2 x 2 x 128) with bias, dense 4096 x 4096, SwiGLU 4096 x 2 x 13696 and 13696 x 4096, two norms; 65024 x 4096 embedding and output layer: 6,243,584,000 (the published count). KV: multi_query_group_num 2 x kv_channels 128 x 2. LoRA floor (in + out of every decoder-layer linear map, the hub's modeling_chatglm.py): per layer query_key_value 4096 -> 4608, dense 4096 -> 4096, dense_h_to_4h 4096 -> 2 x 13696, dense_4h_to_h 13696 -> 4096: 66,176 x 28 layers; activations: one 4096-wide checkpoint a layer, 28 layers",
+   "lora_linear_features": 1852928,
+   "activation_floor_elements": 114688
   },
   "db:deepseek-ai/deepseek-moe-16b-base": {
    "params": 16375728128,
@@ -303,7 +307,9 @@
      39
     ]
    ],
-   "source": "SmallThinker-21BA3B arithmetic (the hub's modeling): 52 layers of 28 x 128 queries and 4 x 128 K / V, 64 gated experts 768 wide and a 64-way router per layer, an untied 151936 x 2560 embedding and head (21.5B published); sliding_window_layout 1 marks a layer windowed at sliding_window_size 4096"
+   "source": "SmallThinker-21BA3B arithmetic (the hub's modeling): 52 layers of 28 x 128 queries and 4 x 128 K / V, 64 gated experts 768 wide and a 64-way router per layer, an untied 151936 x 2560 embedding and head (21.5B published); sliding_window_layout 1 marks a layer windowed at sliding_window_size 4096. LoRA floor (routed experts left out): per layer q 2560 -> 3584, k / v 2560 -> 512, o 3584 -> 2560 and the 64-way router 2560 -> 64: 21,056 x 52 layers; activations: one 2560-wide checkpoint a layer, 52 layers",
+   "lora_linear_features": 1094912,
+   "activation_floor_elements": 133120
   },
   "fixture:nvidia_Hymba-1.5B-Base.json": {
    "kv": [
@@ -438,9 +444,11 @@
      "source": "the GGUF's tensor bytes (Q4_K_M)"
     }
    },
-   "source": "the GGUF's own tensors (1,881,825,088 parameters); KV: full_attention_interval 4 -> 6 attention layers of 2 x 2 x 256, Gated DeltaNet elsewhere",
+   "source": "the GGUF's own tensors (1,881,825,088 parameters); KV: full_attention_interval 4 -> 6 attention layers of 2 x 2 x 256, Gated DeltaNet elsewhere. LoRA floor: (in + out) of every 2-D blk.* weight of the GGUF's tensors (attn_q / k / v / output, attn_gate, attn_qkv, ssm_alpha / beta / conv1d / out, ffn_gate / up / down), 24 blocks; activations: one 2048-wide checkpoint a layer, 24 layers",
    "state_bytes": 10100736,
-   "state_bytes_source": "GGUF arithmetic: full_attention_interval 4 leaves 18 Gated DeltaNet layers, each an ssm.time_step_rank (16 value heads) x 128 x 128 state and a (ssm.conv_kernel 4 - 1) x (2 x 16 x 128 + 16 x 128) convolution buffer, at 2 B an element: 10,100,736 B"
+   "state_bytes_source": "GGUF arithmetic: full_attention_interval 4 leaves 18 Gated DeltaNet layers, each an ssm.time_step_rank (16 value heads) x 128 x 128 state and a (ssm.conv_kernel 4 - 1) x (2 x 16 x 128 + 16 x 128) convolution buffer, at 2 B an element: 10,100,736 B",
+   "lora_linear_features": 1161864,
+   "activation_floor_elements": 49152
   },
   "gguf:nomic-embed-text-v1.5.Q8_0.gguf": {
    "params": 136727040,
@@ -455,7 +463,9 @@
      "source": "the GGUF's tensor bytes (Q8_0)"
     }
    },
-   "source": "the GGUF's own tensors; nomic-bert is a bidirectional encoder (an embedding model): no KV cache"
+   "source": "the GGUF's own tensors; nomic-bert is a bidirectional encoder (an embedding model): no KV cache. LoRA floor: (in + out) of every 2-D blk.* weight of the GGUF's tensors (attn_qkv, attn_output, ffn_gate / up / down), 12 blocks; activations: one 768-wide checkpoint a layer, 12 layers",
+   "lora_linear_features": 193536,
+   "activation_floor_elements": 9216
   },
   "synth:enc-dec-llama-dec": {
    "params": 1438000000,
@@ -470,7 +480,9 @@
      16
     ]
    ],
-   "source": "config arithmetic, a lower bound: the BERT encoder (24 x 1024, 334M with its embeddings) and the Llama decoder (16 x 2048, 8 x 64 K / V, 8192 SwiGLU, untied 32000-token embedding and head: 1,104M), no cross-attention counted (LlamaForCausalLM builds none, so transformers refuses the composite)"
+   "source": "config arithmetic, a lower bound: the BERT encoder (24 x 1024, 334M with its embeddings) and the Llama decoder (16 x 2048, 8 x 64 K / V, 8192 SwiGLU, untied 32000-token embedding and head: 1,104M), no cross-attention counted (LlamaForCausalLM builds none, so transformers refuses the composite). LoRA floor (the Llama decoder's linear maps alone, the BERT encoder and any cross-attention left out): per layer q 2048 -> 2048, k / v 2048 -> 512, o 2048 -> 2048, gate / up 2048 -> 8192, down 8192 -> 2048: 44,032 x 16 layers; activations: one 2048-wide checkpoint a decoder layer, 16 layers",
+   "lora_linear_features": 704512,
+   "activation_floor_elements": 32768
   },
   "synth:gguf-swa-short-pattern": {
    "base": "transformers",
@@ -672,9 +684,11 @@
      "source": "the source GGUF's tensor bytes (Q4_K_M)"
     }
    },
-   "source": "the source GGUF's own tensors (/home/bud/models: Qwen3.5-2B-Q4_K_M.gguf, of which tests/fixtures/gguf/Qwen3.5-2B-Q4_K_M.metadata.gguf is the metadata, scripts/gguf_metadata_fixture.py); KV: full_attention_interval 4 -> 6 attention layers of 2 x 2 x 256, Gated DeltaNet elsewhere",
+   "source": "the source GGUF's own tensors (/home/bud/models: Qwen3.5-2B-Q4_K_M.gguf, of which tests/fixtures/gguf/Qwen3.5-2B-Q4_K_M.metadata.gguf is the metadata, scripts/gguf_metadata_fixture.py); KV: full_attention_interval 4 -> 6 attention layers of 2 x 2 x 256, Gated DeltaNet elsewhere. LoRA floor: (in + out) of every 2-D blk.* weight of the source GGUF's tensors (attn_q / k / v / output, attn_gate, attn_qkv, ssm_alpha / beta / conv1d / out, ffn_gate / up / down), 24 blocks; activations: one 2048-wide checkpoint a layer, 24 layers",
    "state_bytes": 10100736,
-   "state_bytes_source": "GGUF arithmetic: full_attention_interval 4 leaves 18 Gated DeltaNet layers, each an ssm.time_step_rank (16 value heads) x 128 x 128 state and a (ssm.conv_kernel 4 - 1) x (2 x 16 x 128 + 16 x 128) convolution buffer, at 2 B an element: 10,100,736 B"
+   "state_bytes_source": "GGUF arithmetic: full_attention_interval 4 leaves 18 Gated DeltaNet layers, each an ssm.time_step_rank (16 value heads) x 128 x 128 state and a (ssm.conv_kernel 4 - 1) x (2 x 16 x 128 + 16 x 128) convolution buffer, at 2 B an element: 10,100,736 B",
+   "lora_linear_features": 1161864,
+   "activation_floor_elements": 49152
   },
   "gguf:nomic-embed-text-v1.5.Q8_0.metadata.gguf": {
    "params": 136727040,
@@ -689,7 +703,9 @@
      "source": "the source GGUF's tensor bytes (Q8_0)"
     }
    },
-   "source": "the source GGUF's own tensors (/home/bud/models: nomic-embed-text-v1.5.Q8_0.gguf, of which tests/fixtures/gguf/nomic-embed-text-v1.5.Q8_0.metadata.gguf is the metadata, scripts/gguf_metadata_fixture.py); nomic-bert is a bidirectional encoder (an embedding model): no KV cache"
+   "source": "the source GGUF's own tensors (/home/bud/models: nomic-embed-text-v1.5.Q8_0.gguf, of which tests/fixtures/gguf/nomic-embed-text-v1.5.Q8_0.metadata.gguf is the metadata, scripts/gguf_metadata_fixture.py); nomic-bert is a bidirectional encoder (an embedding model): no KV cache. LoRA floor: (in + out) of every 2-D blk.* weight of the source GGUF's tensors (attn_qkv, attn_output, ffn_gate / up / down), 12 blocks; activations: one 768-wide checkpoint a layer, 12 layers",
+   "lora_linear_features": 193536,
+   "activation_floor_elements": 9216
   },
   "fixture:bart_transformers-5.12-default.json": {
    "base": "transformers",
@@ -766,10 +782,12 @@
      5
     ]
    ],
-   "source": "the detokenizer's own checkpoint (audio_detokenizer/model.safetensors in the snapshot: lfm.layers.{2,4,6}.self_attn.k_proj and v_proj 256 x 512 each, so 512 K+V elements a token on each of the 3 sliding_attention layers, windowed at sliding_window 30; the 5 conv layers hold a fixed state). transformers 5.12's Lfm2 reads only full_attention and builds these layers as convolutions, so its model is not this checkpoint; parameters: the detokenizer checkpoint's tensors (audio_detokenizer/model.safetensors in the snapshot, its header read: 78,532,290)",
+   "source": "the detokenizer's own checkpoint (audio_detokenizer/model.safetensors in the snapshot: lfm.layers.{2,4,6}.self_attn.k_proj and v_proj 256 x 512 each, so 512 K+V elements a token on each of the 3 sliding_attention layers, windowed at sliding_window 30; the 5 conv layers hold a fixed state). transformers 5.12's Lfm2 reads only full_attention and builds these layers as convolutions, so its model is not this checkpoint; parameters: the detokenizer checkpoint's tensors (audio_detokenizer/model.safetensors in the snapshot, its header read: 78,532,290). LoRA floor: (in + out) of every 2-D lfm.layers.* weight of the detokenizer's checkpoint header (conv in_proj / out_proj, self_attn q / k / v / out_proj, feed_forward w1 / w2 / w3), 8 layers; activations: one 512-wide checkpoint a layer, 8 layers",
    "params": 78532290,
    "state_bytes": 15360,
-   "state_bytes_source": "config arithmetic: 5 `conv` layers, each a conv_L_cache (3) x hidden (512) convolution cache, at 2 B an element: 15,360 B"
+   "state_bytes_source": "config arithmetic: 5 `conv` layers, each a conv_L_cache (3) x hidden (512) convolution cache, at 2 B an element: 15,360 B",
+   "lora_linear_features": 93696,
+   "activation_floor_elements": 4096
   },
   "config:models--LiquidAI--LFM2.5-Audio-1.5B/snapshots/c362a0625dfe45aa588dce5f0ada28a7e5707628/audio_detokenizer/config.json": {
    "kv": [
@@ -786,10 +804,12 @@
      5
     ]
    ],
-   "source": "the detokenizer's own checkpoint (audio_detokenizer/model.safetensors in the snapshot: lfm.layers.{2,4,6}.self_attn.k_proj and v_proj 256 x 512 each, so 512 K+V elements a token on each of the 3 sliding_attention layers, windowed at sliding_window 30; the 5 conv layers hold a fixed state). transformers 5.12's Lfm2 reads only full_attention and builds these layers as convolutions, so its model is not this checkpoint; parameters: the detokenizer checkpoint's tensors (audio_detokenizer/model.safetensors in the snapshot, its header read: 78,532,290)",
+   "source": "the detokenizer's own checkpoint (audio_detokenizer/model.safetensors in the snapshot: lfm.layers.{2,4,6}.self_attn.k_proj and v_proj 256 x 512 each, so 512 K+V elements a token on each of the 3 sliding_attention layers, windowed at sliding_window 30; the 5 conv layers hold a fixed state). transformers 5.12's Lfm2 reads only full_attention and builds these layers as convolutions, so its model is not this checkpoint; parameters: the detokenizer checkpoint's tensors (audio_detokenizer/model.safetensors in the snapshot, its header read: 78,532,290). LoRA floor: (in + out) of every 2-D lfm.layers.* weight of the detokenizer's checkpoint header (conv in_proj / out_proj, self_attn q / k / v / out_proj, feed_forward w1 / w2 / w3), 8 layers; activations: one 512-wide checkpoint a layer, 8 layers",
    "params": 78532290,
    "state_bytes": 15360,
-   "state_bytes_source": "config arithmetic: 5 `conv` layers, each a conv_L_cache (3) x hidden (512) convolution cache, at 2 B an element: 15,360 B"
+   "state_bytes_source": "config arithmetic: 5 `conv` layers, each a conv_L_cache (3) x hidden (512) convolution cache, at 2 B an element: 15,360 B",
+   "lora_linear_features": 93696,
+   "activation_floor_elements": 4096
   },
   "config:models--mistralai--Voxtral-Mini-4B-Realtime-2602/snapshots/2769294da9567371363522aac9bbcfdd19447add/config.json": {
    "base": "transformers",

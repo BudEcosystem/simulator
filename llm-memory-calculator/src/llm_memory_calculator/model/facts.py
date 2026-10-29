@@ -17,11 +17,12 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, Mapping, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 from ..layer_plan import (
     ATTN_FULL,
     ATTN_SLIDING,
+    attention_bias,
     attention_head_dim,
     attention_heads,
     attention_output_gate,
@@ -43,6 +44,7 @@ from ..stack_params import (
     adapter_params,
     vision_tower_params,
     audio_tower_params,
+    encoder_linear_features,
     encoder_params,
     stack_params,
     tower_embedding_params,
@@ -204,6 +206,11 @@ class ModelFacts:
     # an encoder-decoder's cross-attention cache (layer_plan.cross_attention_cache): every decoder layer's K and V
     # over the encoder's output, fixed per sequence
     cross_attention: Optional[Mapping[str, Any]] = None
+    # the sum of (in + out) over every linear map the model's layers hold -- every attention,
+    # cross-attention and recurrent mixer's maps, the dense FFN, the routed and shared experts and
+    # the routers, an encoder-decoder's encoder --: what vLLM allocates LoRA A and B buffers over
+    # ("all linear layers support LoRA"; its fused-MoE LoRA wraps every expert)
+    lora_linear_features: int = 0
 
     # ------------------------------------------------------------------ construction
 
@@ -582,31 +589,44 @@ def _layer_counts(config: Mapping[str, Any], text: Mapping[str, Any], n_layers: 
     return LayerCounts(full=n_layers, sliding=0, recurrent=0, sliding_window=None, mla=mla)
 
 
-def _attention_params(
+def _attention_linears(
     text: Mapping[str, Any], h: int, nh: int, nkv: int, hd: int
-) -> Tuple[int, int]:
-    """(large linear params, small params) of one attention layer."""
+) -> List[Tuple[int, int]]:
+    """One attention layer's linear maps, ``[(in, out), ...]``: Q (with a query-width output gate),
+    K, V and O; MLA's down- and up-projections of the query and the latent, and O."""
     if _get(text, "kv_lora_rank", default=0):
         q_lora = int(_get(text, "q_lora_rank", default=0) or 0)
         kv_lora = int(text["kv_lora_rank"])
         nope = int(_get(text, "qk_nope_head_dim", default=128))
         rope = int(_get(text, "qk_rope_head_dim", default=64))
         vh = int(_get(text, "v_head_dim", default=128))
-        q = h * q_lora + q_lora * nh * (nope + rope) if q_lora else h * nh * (nope + rope)
-        kv = h * (kv_lora + rope) + kv_lora * nh * (nope + vh)
-        o = nh * vh * h
-        return q + kv + o, (q_lora + kv_lora)
+        q = [(h, q_lora), (q_lora, nh * (nope + rope))] if q_lora else [(h, nh * (nope + rope))]
+        return q + [(h, kv_lora + rope), (kv_lora, nh * (nope + vh)), (nh * vh, h)]
     # a query-width output gate: stated, or built by the config class (layer_plan's one reader)
     gate = 2 if attention_output_gate(dict(text)) else 1
-    q = h * nh * hd * gate
-    kv = 2 * h * nkv * hd
-    o = nh * hd * h
+    return [(h, nh * hd * gate), (h, nkv * hd), (h, nkv * hd), (nh * hd, h)]
+
+
+def _features(linears) -> int:
+    """The sum of (in + out) over linear maps: the A and B rows a LoRA slot holds for them."""
+    return int(sum(i + o for i, o in linears))
+
+
+def _attention_params(
+    text: Mapping[str, Any], h: int, nh: int, nkv: int, hd: int
+) -> Tuple[int, int]:
+    """(large linear params, small params) of one attention layer."""
+    large = int(sum(i * o for i, o in _attention_linears(text, h, nh, nkv, hd)))
+    if _get(text, "kv_lora_rank", default=0):
+        q_lora = int(_get(text, "q_lora_rank", default=0) or 0)
+        return large, (q_lora + int(text["kv_lora_rank"]))
+    gate = 2 if attention_output_gate(dict(text)) else 1
     small = 0
-    if text.get("attention_bias"):
+    if attention_bias(dict(text)):
         small += (nh * hd * gate) + 2 * nkv * hd + h
     if "qwen3" in str(text.get("model_type") or "") or stated_qk_norm(dict(text)):
         small += 2 * hd
-    return q + kv + o, small
+    return large, small
 
 
 def _gdn_params(text: Mapping[str, Any], h: int) -> Tuple[int, int, Tuple[int, int, int, int]]:
@@ -642,6 +662,17 @@ def _recurrent_params(mech: str, text: Mapping[str, Any], h: int) -> Tuple[int, 
     return total, 0
 
 
+def _recurrent_linears(mech: str, text: Mapping[str, Any], h: int) -> List[Tuple[int, int]]:
+    """One recurrent layer's linear maps (``mixer_params``' one statement of each mechanism's),
+    read by the same dispatch as its parameters (``_recurrent_params``: Mamba-2's for a mechanism
+    with no count of its own)."""
+    from ..mixer_params import _DISPATCH, _LINEARS, mamba2_linears
+
+    if mech == "mamba2" or mech not in _DISPATCH or mech not in _LINEARS:
+        return list(mamba2_linears(dict(text), h))
+    return list(_LINEARS[mech](dict(text), h))
+
+
 def _mamba_params(text: Mapping[str, Any], h: int) -> Tuple[int, int]:
     """One Mamba-2 layer's (projections, small parameters), from the one count of its mixer
     (``mixer_params.mamba2_params``: dims from ``mechanism_dims.mamba_dims``) -- its depthwise
@@ -664,37 +695,70 @@ def _ffn_params(
 
     ``ffn_layers`` is the layer plan's weight-counting FFN count: Nemotron-H's FFN slots, none
     in a pure SSM, one per shared block in Zamba (whose block runs on many layers)."""
+    shape = _ffn_shape(text, h, n_layers, ffn_layers)
+    width, inter, moe = shape["width"], shape["inter"], shape["moe_layers"]
+    roles = {"dense_ffn": shape["dense_layers"] * width * h * inter, "expert": 0,
+             "shared_expert": 0, "router": 0}
+    if not shape["experts"]:
+        return roles
+    n_experts, moe_inter = shape["experts"], shape["moe_inter"]
+    per_expert = width * h * moe_inter
+    if str(text.get("model_type")) == "gpt_oss":
+        per_expert += 2 * moe_inter + h  # gate_up and down biases
+    roles["expert"] = moe * n_experts * per_expert
+    # the shared expert(s) beside the routed ones, under any spelling (layer_plan's one reader),
+    # and the gate that scales its output (Linear(h, 1): Qwen2-MoE, Qwen3-Next, Qwen3.5-MoE build
+    # one; no config key says so, and a family that builds none is over-counted by h a layer)
+    roles["shared_expert"] = moe * (width * h * shape["shared"] + (h if shape["shared"] else 0))
+    roles["router"] = moe * (h * n_experts + n_experts)
+    return roles
+
+
+def _ffn_shape(
+    text: Mapping[str, Any], h: int, n_layers: int, ffn_layers: Optional[int]
+) -> Dict[str, int]:
+    """The FFN's shape, as ``_ffn_params`` and ``_ffn_linear_features`` read it: the matrices a
+    FFN holds (``width``: 3 gated, 2 not), the dense width and layers, the routed experts, their
+    width and the layers that route, and the shared experts' width."""
     inter = int(_get(text, "intermediate_size", "ffn_dim", default=4 * h))
     # the routed experts and their width under any spelling (layer_plan's readers): read from four
     # spellings alone, SmallThinker's 64 `moe_num_primary_experts` of `moe_ffn_hidden_size` were
     # a dense model (6.0B of 21.5B)
     n_experts = routed_expert_count(dict(text))
-    roles = {"dense_ffn": 0, "expert": 0, "shared_expert": 0, "router": 0}
     gated = str(text.get("hidden_act") or "silu") not in ("gelu_new_plain",)
-    width = 3 if gated else 2
+    shape = {"width": 3 if gated else 2, "inter": inter, "experts": int(n_experts or 0),
+             "moe_layers": 0, "moe_inter": 0, "shared": 0}
     if not n_experts:
-        layers = n_layers if ffn_layers is None else int(ffn_layers)
-        roles["dense_ffn"] = layers * width * h * inter
-        return roles
-    moe_inter = int(routed_expert_width(dict(text)) or inter)
+        shape["dense_layers"] = n_layers if ffn_layers is None else int(ffn_layers)
+        return shape
     first_dense = int(_get(text, "first_k_dense_replace", default=0) or 0)
     sparse_step = int(_get(text, "decoder_sparse_step", default=1) or 1)
     mlp_only = set(text.get("mlp_only_layers") or ())
-    moe_layers = [
-        i
+    moe_layers = sum(
+        1
         for i in range(n_layers)
         if i >= first_dense and i not in mlp_only and (i + 1) % sparse_step == 0
-    ]
-    dense_layers = n_layers - len(moe_layers)
-    roles["dense_ffn"] = dense_layers * width * h * inter
-    per_expert = width * h * moe_inter
-    if str(text.get("model_type")) == "gpt_oss":
-        per_expert += 2 * moe_inter + h  # gate_up and down biases
-    roles["expert"] = len(moe_layers) * n_experts * per_expert
-    # the shared expert(s) beside the routed ones, under any spelling (layer_plan's one reader)
-    roles["shared_expert"] = len(moe_layers) * width * h * shared_expert_width(dict(text))
-    roles["router"] = len(moe_layers) * (h * n_experts + n_experts)
-    return roles
+    )
+    shape.update(dense_layers=n_layers - moe_layers, moe_layers=moe_layers,
+                 moe_inter=int(routed_expert_width(dict(text)) or inter),
+                 shared=int(shared_expert_width(dict(text)) or 0))
+    return shape
+
+
+def _ffn_linear_features(
+    text: Mapping[str, Any], h: int, n_layers: int, ffn_layers: Optional[int]
+) -> int:
+    """(in + out) over the FFN's linear maps, every layer: each of the dense FFN's, every routed
+    expert's and the shared experts' gate / up / down (h <-> width), and the router (h -> experts)."""
+    shape = _ffn_shape(text, h, n_layers, ffn_layers)
+    width, moe = shape["width"], shape["moe_layers"]
+    total = shape["dense_layers"] * width * (h + shape["inter"])
+    if shape["experts"]:
+        total += moe * shape["experts"] * width * (h + shape["moe_inter"])
+        if shape["shared"]:
+            total += moe * (width * (h + shape["shared"]) + h + 1)  # and its gate, h -> 1
+        total += moe * (h + shape["experts"])
+    return int(total)
 
 
 def _moe_layer_count(text: Mapping[str, Any], n_layers: int) -> int:
@@ -850,6 +914,9 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
             enc = enc_layers * (4 * h * h + 2 * h * enc_ffn)
         roles["encoder"] = roles.get("encoder", 0) + int(enc)
     roles = {k: int(v) for k, v in roles.items() if v}
+    lora_features = _lora_linear_features(
+        text, whole, h, nh, nkv, hd, layers, n_attn_layers + own_cross, n_layers, ffn_layers,
+        encoder_decoder)
 
     n_experts = routed_expert_count(dict(text))
     k_experts = _get(text, "num_experts_per_tok", "experts_per_token", "num_experts_per_token",
@@ -941,4 +1008,42 @@ def _build(config: Dict[str, Any], family: Optional[str]) -> ModelFacts:
         ),
         config_digest=digest,
         cross_attention=cross,
+        lora_linear_features=lora_features,
     )
+
+
+def _lora_linear_features(
+    text: Mapping[str, Any], whole: Any, h: int, nh: int, nkv: int, hd: int,
+    layers: LayerCounts, attn_layers: int, n_layers: int, ffn_layers: Optional[int],
+    encoder_decoder: bool,
+) -> int:
+    """The sum of (in + out) over every linear map the model's layers hold, from the same shapes
+    its parameters are counted from: each attention layer's (``_attention_linears``; a
+    cross-attention layer of its own among them), each recurrent layer's mixer
+    (``_recurrent_linears``, by the same dispatch as its weights), the FFN's -- dense, every routed
+    and shared expert, the router (``_ffn_linear_features``) --, an encoder-decoder's
+    cross-attention (Q / K / V / O of every decoder layer) and its encoder at its own geometry
+    (``stack_params.encoder_linear_features``; a stack the view cannot read at the decoder's
+    width). vLLM allocates LoRA A and B buffers over every one of them."""
+    total = attn_layers * _features(_attention_linears(text, h, nh, nkv, hd))
+    if layers.recurrent:
+        if "gdn" in layers.mechanisms or "linear_num_value_heads" in text:
+            from ..mixer_params import gdn_linears
+
+            total += layers.recurrent * _features(gdn_linears(dict(text), h))
+        else:
+            for mech in layers.recurrent_mechanisms or ("mamba2",) * layers.recurrent:
+                total += _features(_recurrent_linears(mech, text, h))
+    total += _ffn_linear_features(text, h, n_layers, ffn_layers)
+    if encoder_decoder:
+        # the decoder's cross-attention: Q / O at the decoder's width, K / V reading the encoder's
+        # output (projected to the decoder's); at least four h x h maps, as its weights count them
+        inner = nh * hd
+        total += n_layers * max(8 * h, 4 * h + 4 * inner)
+        enc = encoder_linear_features(whole) if isinstance(whole, dict) else 0
+        if not enc:
+            enc_layers = int(_get(text, "encoder_layers", default=n_layers) or n_layers)
+            enc_ffn = int(_get(text, "encoder_ffn_dim", default=4 * h) or 4 * h)
+            enc = enc_layers * (8 * h + 2 * (h + enc_ffn))
+        total += enc
+    return int(total)

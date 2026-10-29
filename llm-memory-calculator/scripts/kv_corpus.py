@@ -424,6 +424,17 @@ def measure_readers(cfg):
             p = eng.predict({}, Workload(concurrency=1024, input_tokens=inp, output_tokens=256), facts, dev)
             out[f"vllm_running_{inp}"] = int(p.running)
         try:
+            # LoRA (the legacy `Lora` runtime module sets `lora.max_adapters` for every record that
+            # supports it): the reservation the weights carry, and the KV it leaves
+            from llm_memory_calculator.engine.vllm import _lora_bytes
+
+            out["vllm_lora_gb"] = round(float(_lora_bytes(facts, 4, 16)) / 1e9, 9)  # exact bytes
+            lora = eng.limits({"lora.max_adapters": 4, "lora.max_rank": 16}, facts, dev)
+            out["vllm_limits_lora"] = [int(lora.num_blocks), int(lora.kv_tokens),
+                                       int(lora.sequence_ceiling or 0)]
+        except Exception as e:
+            out["vllm_lora_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+        try:
             from llm_memory_calculator.perf.predict import sim_config
             from llm_memory_calculator.perf.sched import simulate
 
@@ -555,6 +566,27 @@ def measure_training(cfg):
         out["traingenz_params"] = int(total)
     except Exception as e:
         out["traingenz_error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    try:
+        # training_modeling's memory (behind get_best_training_parallelization, the cluster
+        # ranker, optimizer and requirements, the node selector and the config builder): one
+        # A100-80GB, batch 1, 2,048 tokens, bf16, AdamW -- the per-GPU total, the weights and the
+        # activations, full fine-tuning and LoRA
+        import importlib
+
+        from llm_memory_calculator.genz.Models.get_language_model import get_configs
+
+        tm = importlib.import_module("llm_memory_calculator.genz.LLM_training.training_modeling")
+        for method in ("full", "lora"):
+            with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                o = tm.training_modeling(model=get_configs(copy.deepcopy(cfg)), batch_size=1,
+                                         seq_length=2048, system_name="A100_80GB_GPU",
+                                         method=method)
+            out[f"tmodel_{method}"] = [round(float(o.memory_per_gpu_gb), 6),
+                                       round(float(o.weight_memory_gb), 6),
+                                       round(float(o.activation_memory_gb), 6)]
+    except Exception as e:
+        out["tmodel_error"] = f"{type(e).__name__}: {str(e)[:160]}"
     out.update(measure_training_estimators(cfg))
     return out
 
@@ -1260,7 +1292,7 @@ import re  # noqa: E402
 #: Capacity figures: higher admits more requests into the same memory.
 CAPACITY_FIGURES = re.compile(
     r"^(vllm_limits\[[012]\]|vllm_running_\d+|serving_requests_\w+|sim_max_running"
-    r"|(cluster|disagg)_b_eff_\d+|tpar_options_\w+|maxbatch_\w+)$")
+    r"|(cluster|disagg)_b_eff_\d+|tpar_options_\w+|maxbatch_\w+|vllm_limits_lora\[[012]\])$")
 #: Neither memory nor capacity: kinds and layer counts, latencies (`runtime_*[0]`), vLLM's KV
 #: group counts, the KV planner's layer counts and block size, flags, GGUF bookkeeping, the KV
 #: tier planner's working-set tokens (a workload estimate) and its GPU pool (the device less the

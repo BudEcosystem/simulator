@@ -1165,13 +1165,10 @@ def _eagle3_draft_bytes(draft: Any) -> float:
 
 
 def _lora_bytes(model: Any, adapters: int, rank: int) -> float:
-    """vLLM's LoRA slots: A and B for every linear layer, ``adapters`` x rank, bf16."""
-    h = model.hidden_size
-    per_layer_dims = 0
-    for role, count in model.params_by_role.items():
-        if role in ("attention", "dense_ffn", "shared_expert"):
-            per_layer_dims += count / max(h, 1)  # sum of (out) dims per layer, times layers
-    total_dims = (
-        per_layer_dims + h * max(model.layers.total, 1) * 4
-    )  # + the input side of each projection
-    return 2.0 * adapters * rank * total_dims
+    """vLLM's LoRA slots: A (rank x in) and B (out x rank) for every linear layer, ``adapters``
+    of them at ``rank``, bf16 -- over the (in + out) features of every linear map the model's
+    layers hold (``ModelFacts.lora_linear_features``: the attention, cross-attention and mixer
+    maps, the FFN's, every expert's and router's, an encoder-decoder's encoder). Read from the
+    facts' role totals instead (out-dims of three roles and 4 x hidden a layer for the in-dims),
+    whisper-large-v3 was reserved 0.126 GB where vLLM's decoder layers alone take 0.136 GB."""
+    return 2.0 * adapters * rank * float(getattr(model, "lora_linear_features", 0) or 0)
