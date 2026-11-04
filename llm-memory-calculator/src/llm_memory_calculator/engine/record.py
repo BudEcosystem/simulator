@@ -15,6 +15,23 @@ from typing import Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Set,
 
 from ..runtime.vocabulary import MAPPING_KEYS, VOCABULARY
 
+#: What a dedicated card keeps outside vLLM's fraction, whatever the percentage says: activation memory and the CUDA context
+#: live there. 0.92 leaves 6.4 GiB on an 80 GB card and 0.3 GiB on a 4 GiB one, which crashed under load (accubits, 2026-10-30;
+#: 0.85 held and 0.88 didn't at maximum activation). The same 1.5 GiB as the fit check (``legacy.DEVICE_CTX_BYTES``) and the shared
+#: slice's reserve. [MEASURE] on larger models: only one small model has been measured.
+DEDICATED_OUTSIDE_RESERVE_BYTES = 1536 * 1024**2
+#: The least fraction the reserve can leave: below this the card can't host a plan, and the fit check refuses it.
+MIN_RESERVED_FRACTION = 0.5
+
+
+def _keep_reserve(fraction: float, device: Any) -> float:
+    """Return ``fraction``, lowered so a dedicated ``device`` keeps its reserve outside it. A shared slice has its own."""
+    usable = getattr(device, "usable_memory_bytes", None)
+    if not usable or getattr(getattr(device, "hardware_mode", None), "kind", "dedicated") == "shared":
+        return fraction
+    return min(fraction, max(1 - DEDICATED_OUTSIDE_RESERVE_BYTES / float(usable), MIN_RESERVED_FRACTION))
+
+
 _OPS = {
     "<": operator.lt,
     "<=": operator.le,
@@ -35,6 +52,8 @@ KV_FEATURES = frozenset(
         "cpu_offload_shm_per_copy",
         "kv_fp8",
         "tiering_fs",
+        # T3 (FRD-023 Phase 4): the build's Mooncake store connector, compatible with Bud's pool
+        "mooncake_store",
     }
 )
 
@@ -232,10 +251,10 @@ class EngineRecord:
         return table if table is not None else default
 
     def default_fraction(self, device: Any) -> float:
-        return float(self._by_device("default_gpu_memory_utilization", device, 0.90))
+        return _keep_reserve(float(self._by_device("default_gpu_memory_utilization", device, 0.90)), device)
 
     def max_fraction(self, device: Any) -> float:
-        return float(self._by_device("max_gpu_memory_utilization", device, 0.95))
+        return _keep_reserve(float(self._by_device("max_gpu_memory_utilization", device, 0.95)), device)
 
     def planning_max_running(self) -> int:
         """The record's ``default_max_num_seqs``: the floor ``context.batching`` uses (FRD-027 §10.2)."""

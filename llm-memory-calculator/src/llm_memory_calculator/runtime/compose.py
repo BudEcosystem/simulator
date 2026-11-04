@@ -364,6 +364,7 @@ def assemble(ctx: PlanContext, comp: Composition) -> RuntimeSpec:
             "name": record.engine,
             "version": record.version,
             "record": f"bud-connect:{record.id}",
+            "record_basis": str((record.raw or {}).get("record_basis") or "exact"),
             "image": engine_container["image"],
             "pull_policy": comp.engine.get("pull_policy") or "IfNotPresent",
             "arg_style": arg_cfg.get("style", "--{key}={value}"),

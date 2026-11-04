@@ -224,6 +224,11 @@
      "title": "Record",
      "type": "string"
     },
+    "record_basis": {
+     "default": "exact",
+     "title": "Record Basis",
+     "type": "string"
+    },
     "trailing_args": {
      "items": {
       "type": "string"

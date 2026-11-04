@@ -532,9 +532,9 @@ def test_every_dropped_tier_is_on_the_wire_with_its_reason():
 # ------------------------------------------------------------------------------- release ceiling
 
 
-def test_tiers_above_the_release_ceiling_are_planned_but_withheld():
-    """This release returns T1 and T2; T3 (the Mooncake pool) is planned but withheld until
-    budcluster renders it."""
+def test_tiers_above_the_release_ceiling_are_planned_but_withheld(monkeypatch):
+    """A tier the package release doesn't return is planned, kept as withheld, and said so."""
+    monkeypatch.setattr(constants, "RELEASED_TIERS", frozenset({"T1", "T2"}))
     deploy = _deploy(input_tokens=32000, output_tokens=2000, cross_node_need=True, concurrency=64)
     plan = _plan(
         deploy=deploy,
@@ -547,6 +547,11 @@ def test_tiers_above_the_release_ceiling_are_planned_but_withheld():
     assert [t["tier"] for t in plan.withheld] == ["T3"]
     assert any("T3 planned but withheld" in d for d in plan.decisions)
     assert all(t["tier"] in constants.RELEASED_TIERS for t in plan.to_wire()["tiers"])
+
+
+def test_this_release_returns_t3_and_withholds_only_pd():
+    """FRD-023 Phase 4 (revision 3): the cluster tier is released; P/D still isn't."""
+    assert {"T1", "T2", "T3"} <= constants.RELEASED_TIERS and "PD" not in constants.RELEASED_TIERS
 
 
 def test_raising_the_ceiling_returns_them(released_all):
@@ -1362,3 +1367,406 @@ def test_a_slower_deployment_sees_the_traces_bursts_thinned(released_all):
     assert arrivals(40 / curve.arrival_rate) == pytest.approx(
         1 + 0.1 * (curve.arrival_cv2 - 1), abs=0.05
     )
+
+
+# ------------------------------------------------------- T3 trigger and spread (revision 3, §19)
+
+# An RDMA pool on GPUDirect nodes pays for an 8B on an H100 (a TCP pool's 300 ms floor can't: S10).
+POOL_FAST = {
+    "backend": "mooncake",
+    "transport": "rdma",
+    "read_gbps": 40.0,
+    "capacity_gib": 64,
+    "master": "mooncake-master.bud-kv.svc:50051",
+}
+QWEN3_8B_BF16 = {**QWEN3_8B, "torch_dtype": "bfloat16"}
+
+
+def _cluster_info(nodes, t3=POOL_FAST, storage=STORAGE):
+    return [{"id": "c1", "nodes": nodes, "kv_capability": {**storage, "t3": t3}}]
+
+
+def _node(name, caps=RDMA_NODE, host_gb=1000.0, gpus=1, raw="H100", pods=0):
+    return {
+        "name": name,
+        "id": name,
+        "kv_capabilities": caps,
+        "devices": [
+            {"type": "cpu", "available_memory_gb": host_gb},
+            {
+                "type": "cuda",
+                "raw_name": raw,
+                "available_count": gpus,
+                "mem_per_GPU_in_GB": 80.0,
+                "memory_allocated_gb": 0.0,
+                "shared_containers_count": pods,
+            },
+        ],
+    }
+
+
+def _wire_group(**over):
+    """A budsim NodeGroupConfiguration as plan_node_group reads it (by attribute or key)."""
+    base = {
+        "name": "H100",
+        "type": "cuda",
+        "engine_type": "vllm",
+        "kv_features": FEATURES,
+        "upstream_vllm": "0.32.0",
+        "image": "docker.io/vllm/vllm-openai@sha256:befccf",
+        "tp_size": 1,
+        "pp_size": 1,
+        "replicas": 1,
+        "labels": {"concurrency": "32"},
+        "e2e_latency": 20.0,
+        "weight_memory_gb": 16.4,
+        "kv_cache_memory_gb": 4.0,
+        "activation_memory_gb": 1.0,
+        "device_total_memory_gb": 80.0,
+        "device_model": "H100",
+        "raw_name": "H100",
+        "target_node_name": None,
+        "args": {},
+        "envs": {},
+    }
+    base.update(over)
+    return base
+
+
+ROW = {"model_name": "Qwen/Qwen3-8B", "input_tokens": 8000, "output_tokens": 2000, "cluster_id": "c1"}
+
+
+def _plan_group(group, cluster_info, monkeypatch=None, **kw):
+    from llm_memory_calculator.kv.budsim import plan_node_group
+
+    return plan_node_group(group, ROW, cluster_info=cluster_info, model_config=QWEN3_8B_BF16, **kw)
+
+
+def test_a_pinned_deployment_has_no_cross_node_need():
+    wire = _plan_group(
+        _wire_group(target_node_name="n1"),
+        _cluster_info([_node("n1"), _node("n2")]),
+        autoscale_max_replicas=8,
+    )
+    assert not any(t["tier"] == "T3" for t in wire["tiers"])
+    t3 = next(d for d in wire["dropped"] if d["tier"] == "T3")
+    assert "every replica runs on one node" in t3["reason"]
+
+
+def test_a_spread_deployment_beyond_one_nodes_pool_needs_the_cluster_tier():
+    wire = _plan_group(
+        _wire_group(spans_nodes=True),
+        _cluster_info([_node("n1", gpus=2), _node("n2", gpus=2)]),
+        autoscale_max_replicas=4,
+    )
+    t3 = next(t for t in wire["tiers"] if t["tier"] == "T3")
+    assert t3["backend"] == "mooncake" and t3["transport"] == "rdma"
+    assert t3["params"]["cache_prefix"] == wire["namespace"]
+    assert t3["params"]["master_server_address"] == "mooncake-master.bud-kv.svc:50051"
+    assert t3["params"]["protocol"] == "rdma" and t3["params"]["load_failure_policy"] == "recompute"
+    assert wire["profile"] in ("mooncake", "native_mooncake") and wire["hash_algo"] == "sha256_cbor"
+    assert any("cross-node need: up to 4 replicas" in d for d in wire["decisions"])
+
+
+def test_a_spread_deployment_that_fits_one_node_has_no_cross_node_need():
+    wire = _plan_group(
+        _wire_group(spans_nodes=True),
+        _cluster_info([_node("n1", gpus=8), _node("n2", gpus=8)]),
+        autoscale_max_replicas=4,
+    )
+    t3 = next(d for d in wire["dropped"] if d["tier"] == "T3")
+    assert "fit on one node" in t3["reason"]
+
+
+def test_a_spread_deployment_with_its_card_on_one_node_has_no_cross_node_need():
+    """Replicas past that node's pool can't start on any other node, so there is nothing to share across nodes.
+
+    accubits (2026-11-03): one RTX 3050 node and one GTX 1650 node. qwen-t3b planned T3 for an autoscale maximum of
+    2, a second replica that could only ever be Pending.
+    """
+    nodes = [_node("n1", gpus=1), _node("n2", gpus=1, raw="A100")]
+    wire = _plan_group(_wire_group(spans_nodes=True), _cluster_info(nodes), autoscale_max_replicas=4)
+    assert not any(t["tier"] == "T3" for t in wire["tiers"])
+    t3 = next(d for d in wire["dropped"] if d["tier"] == "T3")
+    assert "only one node has its card" in t3["reason"]
+
+
+def test_a_second_node_with_the_card_restores_the_cross_node_need():
+    """The same deployment, once another node has the card: its replicas span nodes."""
+    nodes = [_node("n1", gpus=1), _node("n2", gpus=1), _node("n3", gpus=1, raw="A100")]
+    wire = _plan_group(_wire_group(spans_nodes=True), _cluster_info(nodes), autoscale_max_replicas=4)
+    assert any(t["tier"] == "T3" for t in wire["tiers"])
+
+
+def test_an_explicit_cross_node_need_is_not_second_guessed():
+    """PP or PD across nodes passes the need in; the card count is the replicas' rule, not theirs."""
+    from llm_memory_calculator.kv.planner import _cross_node_need
+    from llm_memory_calculator.kv.workload import DeploymentSpec
+
+    deploy = DeploymentSpec(
+        model_config=QWEN3_8B, input_tokens=1, output_tokens=1, concurrency=1, cross_node_need=True
+    )
+    assert _cross_node_need(deploy, 4, 1, card_nodes=1)[0] is True
+
+
+def test_a_mix_passes_its_deployment_wide_cross_node_need():
+    """FRD-028 FR-MIX-12: a group of a mix on its card's only node still shares the pool with the other group."""
+    nodes = [_node("n1", gpus=1), _node("n2", gpus=1, raw="A100")]
+    alone = _plan_group(_wire_group(spans_nodes=True), _cluster_info(nodes))
+    mixed = _plan_group(_wire_group(spans_nodes=True), _cluster_info(nodes), cross_node_need=True)
+    assert not any(t["tier"] == "T3" for t in alone["tiers"])
+    assert any(t["tier"] == "T3" for t in mixed["tiers"])
+    assert any("cross-node need given" in d for d in mixed["decisions"])
+
+
+def test_a_spread_deployment_with_unknown_node_pools_gets_no_t3():
+    """An unknown fact never enables a tier: no matching node reports its GPUs."""
+    nodes = [_node("n1", gpus=2, raw="A100"), _node("n2", gpus=2, raw="A100")]
+    wire = _plan_group(_wire_group(spans_nodes=True), _cluster_info(nodes), autoscale_max_replicas=4)
+    assert not any(t["tier"] == "T3" for t in wire["tiers"])
+
+
+def test_without_an_autoscaler_maximum_the_replica_count_decides():
+    one_each = _cluster_info([_node("n1", gpus=1), _node("n2", gpus=1)])
+    assert any(
+        t["tier"] == "T3"
+        for t in _plan_group(_wire_group(spans_nodes=True, replicas=2), one_each)["tiers"]
+    )
+    assert not any(
+        t["tier"] == "T3"
+        for t in _plan_group(_wire_group(spans_nodes=True, replicas=1), one_each)["tiers"]
+    )
+
+
+def test_a_spread_deployment_never_plans_the_node_disk_tier():
+    wire = _plan_group(
+        _wire_group(spans_nodes=True),
+        _cluster_info([_node("n1", host_gb=RAM_LIMITED), _node("n2", host_gb=RAM_LIMITED)]),
+        autoscale_max_replicas=4,
+    )
+    assert not any(t["tier"] == "T2" for t in wire["tiers"])
+    t2 = next(d for d in wire["dropped"] if d["tier"] == "T2")
+    assert "spans nodes" in t2["reason"]
+
+
+def test_t3_is_sized_for_the_autoscalers_maximum():
+    nodes = _cluster_info([_node("n1"), _node("n2")], t3={**POOL_FAST, "capacity_gib": 100000})
+    at = {
+        n: next(t for t in _plan_group(_wire_group(spans_nodes=True), nodes, autoscale_max_replicas=n)["tiers"] if t["tier"] == "T3")
+        for n in (2, 4)
+    }
+    assert at[4]["size_gib"] == pytest.approx(2 * at[2]["size_gib"], rel=0.02)
+
+
+def test_a_busy_pool_counts_the_other_deployments_load():
+    """FR-T3-6: the pool is shared, so its measured traffic shares the link."""
+    nodes = [_node("n1"), _node("n2")]
+    idle = _plan_group(_wire_group(spans_nodes=True), _cluster_info(nodes), autoscale_max_replicas=4)
+    busy = _plan_group(
+        _wire_group(spans_nodes=True),
+        _cluster_info(nodes, t3={**POOL_FAST, "busy_gbps": 39.0}),
+        autoscale_max_replicas=4,
+    )
+    assert any(t["tier"] == "T3" for t in idle["tiers"])
+    assert not any(t["tier"] == "T3" for t in busy["tiers"])
+
+
+def test_t3_reserves_host_memory_for_the_store_clients_buffers():
+    wire = _plan_group(
+        _wire_group(spans_nodes=True, tp_size=2),
+        _cluster_info([_node("n1", gpus=2), _node("n2", gpus=2)]),
+        autoscale_max_replicas=4,
+    )
+    t1 = next((t for t in wire["tiers"] if t["tier"] == "T1"), None)
+    t1_gib = t1["size_gib"] if t1 else 0.0
+    assert wire["resources"]["host_memory_gib"] == pytest.approx(
+        t1_gib + 2 * constants.T3_HOST_GIB_PER_RANK
+    )
+
+
+def test_a_pool_that_loses_break_even_is_dropped():
+    """TCP's 300 ms floor loses to a 69 ms recompute; nothing keeps the tier past break-even."""
+    nodes = _cluster_info([_node("n1"), _node("n2")], t3={**POOL_FAST, "transport": "tcp", "read_gbps": 20.0})
+    lost = _plan_group(_wire_group(spans_nodes=True), nodes, autoscale_max_replicas=4)
+    assert not any(t["tier"] == "T3" for t in lost["tiers"])
+    assert "break-even" in next(d for d in lost["dropped"] if d["tier"] == "T3")["reason"]
+
+
+# ------------------------------------------------- the master's read lease (FR-FAIL-7)
+
+
+def test_a_full_prompt_reload_must_fit_inside_the_pools_read_lease():
+    """A pool get that outlives the master's lease fails (LEASE_EXPIRED), and vLLM 0.32's async load then retries the
+    same blocks for as long as the client waits: accubits02, 2026-10-28, a 1024-token prefix (117 MB in one batch) at
+    11 MB/s against the 10 s lease. The longest prompt's reload, under the link's load, must take at most
+    T3_LEASE_SHARE of the lease."""
+    nodes = [_node("n1"), _node("n2")]
+    kept = _plan_group(_wire_group(spans_nodes=True), _cluster_info(nodes), autoscale_max_replicas=4)
+    short = _plan_group(
+        _wire_group(spans_nodes=True), _cluster_info(nodes, t3={**POOL_FAST, "lease_ms": 10.0}), autoscale_max_replicas=4
+    )
+    assert any(t["tier"] == "T3" for t in kept["tiers"])
+    t3 = next(d for d in short["dropped"] if d["tier"] == "T3")
+    assert "lease" in t3["reason"] and "10 ms" in t3["reason"], t3["reason"]
+    assert t3["reload_ms"] > 5.0, "the longest prompt's reload under load, against 50% of the 10 ms lease"
+
+
+def test_a_record_without_a_lease_is_held_to_mooncakes_default():
+    assert constants.T3_DEFAULT_LEASE_MS == 10_000 and constants.T3_LEASE_SHARE == 0.5
+
+
+def test_a_pool_whose_reads_would_outlive_the_lease_is_dropped():
+    """11 MB/s (the accubits02 link) can't reload a full prompt inside the 10 s lease, so T3 goes."""
+    nodes = _cluster_info([_node("n1"), _node("n2")], t3={**POOL_FAST, "transport": "tcp", "read_gbps": 0.011})
+    wire = _plan_group(_wire_group(spans_nodes=True), nodes, autoscale_max_replicas=4)
+    assert not any(t["tier"] == "T3" for t in wire["tiers"])
+    assert "T3" in {d["tier"] for d in wire["dropped"]}
+
+
+# ------------------------------------------------------------ spread node facts (FR-CAP-10)
+
+
+def test_a_spread_deployment_plans_on_its_most_constrained_node():
+    """One node can't use registered host memory at its host address: no node gets T1."""
+    vgpu_like = {**RDMA_NODE, "host_pointer_for_registered_mem": False}
+    wire = _plan_group(
+        _wire_group(spans_nodes=True),
+        _cluster_info([_node("n1", host_gb=RAM_LIMITED), _node("n2", caps=vgpu_like, host_gb=RAM_LIMITED)]),
+        autoscale_max_replicas=4,
+    )
+    assert not any(t["tier"] == "T1" for t in wire["tiers"])
+
+
+def test_spread_facts_take_the_smallest_free_host_memory():
+    from llm_memory_calculator.kv.infra import InfraSnapshot
+
+    infra = InfraSnapshot.from_cluster_info(
+        _cluster_info([_node("n1", host_gb=500.0), _node("n2", host_gb=120.0), _node("x", raw="A100")]),
+        "c1",
+        None,
+        spread_model_key="H100",
+    )
+    assert infra.host_free_gib() == pytest.approx(120.0)
+    assert infra.node_facts().pinned_copy_gbps == 50.0
+
+
+def test_an_unknown_fact_on_any_spread_node_is_unknown():
+    from llm_memory_calculator.kv.infra import InfraSnapshot
+
+    unprobed = {k: v for k, v in RDMA_NODE.items() if k != "pinned_offload_ok"}
+    infra = InfraSnapshot.from_cluster_info(
+        _cluster_info([_node("n1"), _node("n2", caps=unprobed)]), "c1", None, spread_model_key="H100"
+    )
+    facts = infra.node_facts()
+    assert facts.pinned_offload_ok is None and facts.host_pointer_for_registered_mem is True
+
+
+def test_spread_with_no_matching_node_has_no_facts():
+    from llm_memory_calculator.kv.infra import InfraSnapshot
+
+    infra = InfraSnapshot.from_cluster_info(
+        _cluster_info([_node("n1", raw="A100")]), "c1", None, spread_model_key="H100"
+    )
+    assert infra.node is None and infra.host_free_gib() is None
+
+
+# ------------------------------------------------------------------ namespace (FR-ISO-3)
+
+
+def _ns(**over):
+    return _plan_group(_wire_group(target_node_name="n1", **over), _cluster_info([_node("n1")]))["namespace"]
+
+
+def test_the_namespace_changes_with_the_engine_build():
+    assert _ns() != _ns(upstream_vllm="0.30.0")
+    assert _ns() != _ns(image="docker.io/vllm/vllm-openai@sha256:other")
+
+
+def test_the_namespace_hashes_the_resolved_dtype_and_attention_backend():
+    assert _ns(args={"dtype": "half"}) != _ns(args={"dtype": "bfloat16"})
+    # FRD-028 FR-MIX-13: backends that share the paged layout share a namespace; FlashInfer's differs
+    assert _ns(envs={"VLLM_ATTENTION_BACKEND": "TRITON_ATTN"}) == _ns(
+        envs={"VLLM_ATTENTION_BACKEND": "FLASH_ATTN"}
+    )
+    assert _ns(envs={"VLLM_ATTENTION_BACKEND": "FLASHINFER"}) != _ns(
+        envs={"VLLM_ATTENTION_BACKEND": "FLASH_ATTN"}
+    )
+    # "auto" resolves to the model's dtype: the same bytes as asking for it
+    assert _ns() == _ns(args={"dtype": "bfloat16"})
+
+
+def test_the_namespace_hashes_the_speculative_config():
+    assert _ns() != _ns(args={"speculative-config": {"method": "mtp", "num_speculative_tokens": 2}})
+
+
+def test_two_gpu_products_of_one_layout_share_a_namespace():
+    """accubits (FRD-028 FR-MIX-13): the 1650's own TRITON_ATTN and the 3050's own FLASH_ATTN share the paged layout.
+
+    The dtype still splits them: a Turing card computes this bf16 model in float16, so it can't share with the
+    Ampere card's bf16 blocks. An fp16 model (the AWQ one on accubits) shares on both, backends left to vLLM.
+    """
+    forced = dict(args={"dtype": "half"}, envs={"VLLM_ATTENTION_BACKEND": "TRITON_ATTN"})
+    assert _ns(raw_name="GTX1650", **forced) == _ns(raw_name="RTX3050", **forced)
+    assert _ns(raw_name="GTX1650", args={"dtype": "half"}) == _ns(raw_name="RTX3050", args={"dtype": "half"})
+    assert _ns(raw_name="GTX1650") != _ns(raw_name="RTX3050")
+    assert _ns(raw_name="B200") != _ns(raw_name="RTX3050")  # an auto-pick not known to share
+
+
+# ------------------------------------------------------------- gates the audit added
+
+
+def test_prefix_caching_off_plans_no_tier():
+    for args in ({"no-enable-prefix-caching": True}, {"enable-prefix-caching": False}):
+        wire = _plan_group(_wire_group(target_node_name="n1", args=args), _cluster_info([_node("n1")]))
+        assert wire["profile"] == "off" and wire["tiers"] == []
+        assert any("prefix caching is off" in d for d in wire["decisions"])
+
+
+def test_an_unknown_recompute_never_enables_t1():
+    """FR-PLAN-11: a GPU with no GenZ entry and no FLOPs can't be judged, so T1 stays off."""
+    plan = plan_kv(
+        _deploy(),
+        EngineSpec.of("vllm", FEATURES),
+        _group(device_tflops=None, device_model_key="UNKNOWN-GPU", hardware=None),
+        _infra(host_gb=RAM_LIMITED),
+        recompute_fn=lambda n: None,
+    )
+    assert plan.tier("T1") is None
+    assert any(d["tier"] == "T1" and "can't be checked" in d["reason"] for d in plan.dropped)
+
+
+# ------------------------------------------------- per-node pool rates (the gate measures every GPU node)
+
+
+def _rates(**rates):
+    return [{"node": n, "read_gbps": r, "error": None if r else "gate did not start"} for n, r in rates.items()]
+
+
+def test_a_spread_deployment_is_judged_by_its_slowest_nodes_pool_rate():
+    """The record's headline rate can be a node next to the pool (loopback); a replica on another node reads over the
+    network. A spread deployment plans on the slowest of the nodes it can land on (FR-CAP-10)."""
+    fast_everywhere = {**POOL_FAST, "gpu_nodes": _rates(n1=40.0, n2=40.0)}
+    slow_n2 = {**POOL_FAST, "gpu_nodes": _rates(n1=40.0, n2=0.012)}
+    nodes = [_node("n1"), _node("n2")]
+    kept = _plan_group(_wire_group(spans_nodes=True), _cluster_info(nodes, t3=fast_everywhere), autoscale_max_replicas=4)
+    lost = _plan_group(_wire_group(spans_nodes=True), _cluster_info(nodes, t3=slow_n2), autoscale_max_replicas=4)
+    assert any(t["tier"] == "T3" for t in kept["tiers"])
+    t3 = next(d for d in lost["dropped"] if d["tier"] == "T3")
+    assert "n2" in t3["reason"] or "0.012" in t3["reason"], t3["reason"]
+
+
+def test_a_spread_node_the_gate_never_measured_keeps_t3_off():
+    unmeasured = {**POOL_FAST, "gpu_nodes": _rates(n1=40.0, n2=None)}
+    wire = _plan_group(
+        _wire_group(spans_nodes=True),
+        _cluster_info([_node("n1"), _node("n2")], t3=unmeasured),
+        autoscale_max_replicas=4,
+    )
+    t3 = next(d for d in wire["dropped"] if d["tier"] == "T3")
+    assert "not measured" in t3["reason"] and "n2" in t3["reason"]
+
+
+def test_without_per_node_rates_the_headline_rate_is_used():
+    """An older record (no gpu_nodes) keeps the headline read_gbps."""
+    wire = _plan_group(_wire_group(spans_nodes=True), _cluster_info([_node("n1"), _node("n2")]), autoscale_max_replicas=4)
+    assert any(t["tier"] == "T3" for t in wire["tiers"])

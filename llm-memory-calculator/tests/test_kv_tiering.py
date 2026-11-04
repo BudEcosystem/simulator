@@ -317,10 +317,11 @@ def test_break_even_keeps_t1_for_large_prefixes_on_gen5(model, context):
     assert _t1(plan) is not None, plan.decisions
 
 
-def test_unknown_device_flops_skip_the_break_even_check_but_say_so():
-    """Keep T1 when break-even can't be judged, and record that it wasn't checked."""
+def test_unknown_device_flops_drop_t1_and_say_so():
+    """FR-PLAN-11 (2026-10-28 audit): when break-even can't be judged, T1 is not planned. An
+    unknown never enables a tier; it was kept unchecked before."""
     plan = _plan(device_tflops=None)
-    assert _t1(plan) is not None and any("not checked" in d for d in plan.decisions)
+    assert _t1(plan) is None and any("can't be checked" in d for d in plan.decisions)
 
 
 # ------------------------------------------------------------------------------------------------

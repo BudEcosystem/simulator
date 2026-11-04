@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, Mapping, Optional
+from typing import Any, Dict, FrozenSet, Mapping, Optional, Tuple
 
 from . import constants
 from .constants import DECODE_MS_PER_TOKEN, GIB
@@ -43,6 +43,13 @@ class PlanContext:
     cross_node_need: bool = False
     e2e_latency_s: Optional[float] = None
     model_id: Optional[str] = None
+    # FR-PLACE / FR-PLAN-19: whether replicas may land on several nodes, the most the autoscaler may
+    # run, and how many one node holds (None: unknown)
+    spans_nodes: bool = False
+    peak_replicas: int = 0
+    node_pool: Optional[int] = None
+    cross_node_reason: str = ""
+    spread_nodes: Tuple[str, ...] = ()  # the nodes a spread deployment's replicas can land on
     # -- filled in as the plan proceeds
     pool_gib: float = 0.0  # T0 KV pool per rank
     working_set_gib: float = 0.0  # per rank
@@ -107,7 +114,21 @@ class PlanContext:
         if size <= 0 or per_token <= 0:
             return 0.0
         tokens = size * GIB / per_token
-        return tokens / self.replicas if tier in ("T2", "T3") else tokens
+        if tier == "T3":
+            return tokens / self.peak
+        return tokens / self.replicas if tier == "T2" else tokens
+
+    @property
+    def peak(self) -> int:
+        """The most replicas the deployment runs: the autoscaler's maximum when larger (FR-PLAN-19)."""
+        return max(self.replicas, self.peak_replicas or 0, 1)
+
+    @property
+    def replicas_on_node(self) -> int:
+        """Replicas that can share one node's host memory: the peak, capped at what a node holds."""
+        if self.node_pool:
+            return max(min(self.peak, self.node_pool), 1)
+        return self.peak if not self.spans_nodes else max(self.replicas, 1)
 
     def pool_tokens(self) -> float:
         per = self.geometry.bytes_per_token_rank

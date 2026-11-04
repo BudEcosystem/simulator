@@ -68,7 +68,7 @@ def legacy_view(spec: RuntimeSpec, *, namespace: str, model_path: str):
     }
 
 
-def golden_spec(case, versions=LEGACY, **group_over):
+def golden_spec(case, versions=LEGACY, kv_plan=None, **group_over):
     g = golden(case)
     group = {**g["group"], **group_over}
     record = record_from_budconnect(
@@ -114,6 +114,7 @@ def golden_spec(case, versions=LEGACY, **group_over):
         ),
         placement=placement,
         versions=versions,
+        kv_plan=kv_plan,
     )
     return plan.spec(ctx), g
 

@@ -90,9 +90,6 @@ def keep_on_throughput(
     than recompute). One load must beat one recompute only where TTFT binds: an interactive
     deployment, or when the batched saving can't be estimated (no device FLOPs)."""
     plan, decisions = ctx.plan, ctx.plan.decisions
-    if verdict.recompute_ms is None:
-        decisions.append(f"{tier} break-even not checked: {source}")
-        return True
 
     def drop(reason: str, needed: bool = False) -> bool:
         decisions.append(f"{tier} dropped: {reason}")
@@ -104,6 +101,10 @@ def keep_on_throughput(
             needed_gbps=verdict.needed_gbps if needed else None,
         )
         return False
+
+    if verdict.recompute_ms is None:
+        # FR-PLAN-11: an unknown never enables a tier (no GenZ entry and no device FLOPs)
+        return drop(f"break-even can't be checked: {source}")
 
     if verdict.utilisation >= MAX_LINK_UTILISATION:
         return drop(f"the link would saturate: {verdict.describe()}", needed=True)
@@ -188,6 +189,35 @@ def check_write_through(ctx: PlanContext) -> None:
     )
 
 
+def _t3_can_follow(ctx: PlanContext) -> bool:
+    """Whether plan_t3 may add a Mooncake tier, whose client buffers the pod then requests with T1."""
+    pool = ctx.cluster.t3
+    return bool(
+        ctx.cross_node_need
+        and pool is not None
+        and pool.backend == "mooncake"
+        and ctx.device_type == "cuda"
+        and c.T3_FEATURE in ctx.features
+    )
+
+
+def _pod_base_gib(ctx: PlanContext) -> float:
+    """GiB per replica the pod requests besides T1 once T1 is on, as the runtime spec sizes it.
+
+    The pod's request and limit are both its engine limit: ``host_base_bytes`` plus the weights' host copy
+    (``limit_headroom_mib``). Leaving the copy out over-sized T1 by about the model's weights: on accubits
+    (2026-11-04) a 0.5B model's 16.11 GiB pod was refused on a node with 15.27 GiB unreserved.
+    """
+    from ...runtime.modules.legacy import (  # the spec renderer; imported late, it imports kv
+        MIB,
+        host_base_bytes,
+        limit_headroom_mib,
+    )
+
+    headroom = limit_headroom_mib(ctx.weight_gib * c.GIB, ctx.tp) * MIB
+    return (host_base_bytes(ctx.tp, t3=_t3_can_follow(ctx)) + headroom) / c.GIB
+
+
 def plan_t1(ctx: PlanContext) -> float:
     """Plan T1: its size in GiB, total across ranks, or 0 with the reason."""
     plan, decisions = ctx.plan, ctx.plan.decisions
@@ -239,7 +269,13 @@ def plan_t1(ctx: PlanContext) -> float:
     floor_gib = c.T1_MIN_POOL_MULTIPLE * pool_total
     ceiling_gib = c.T1_MAX_POOL_MULTIPLE * pool_total
     wanted = min(max(working_total, floor_gib), ceiling_gib)
-    available = c.T1_HOST_RAM_SHARE * host_free / ctx.replicas
+    # FR-PLAN-19: every replica that can land on this node takes its share, autoscaled ones included
+    per_replica = host_free / ctx.replicas_on_node
+    # With T1 the pod requests host memory for all of it, not just T1: its engine base, and the T3 client buffers
+    # when a T3 tier can follow. The whole request must fit the node, or the pod is unschedulable (accubits,
+    # 2026-11-02: a 13.15 GiB request on a node with 8.02 GiB free).
+    base_gib = _pod_base_gib(ctx)
+    available = min(c.T1_HOST_RAM_SHARE * per_replica, per_replica - base_gib)
     size = min(wanted, available)
     if available < wanted:
         limit = "the host memory"
@@ -251,8 +287,8 @@ def plan_t1(ctx: PlanContext) -> float:
         limit = "the working set"
     if size < pool_total:
         decisions.append(
-            f"T1 dropped: {available:.1f} GiB of host memory per replica is less than"
-            " the GPU pool it would back"
+            f"T1 dropped: {max(available, 0.0):.1f} GiB of host memory per replica ({per_replica:.1f} GiB free, less"
+            f" the pod's {base_gib:.2f} GiB base request) is less than the GPU pool it would back"
         )
         plan.drop("T1", "host memory per replica is less than the GPU pool")
         return 0.0

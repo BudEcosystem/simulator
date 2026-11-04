@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .facts import ClusterKVFacts, NodeKVFacts
 
@@ -227,12 +227,62 @@ def device_model_key(device: Mapping[str, Any]) -> str:
     return str(device.get("raw_name") or device.get("name") or device.get("device_name") or "")
 
 
+def _gpu_devices(node: Mapping[str, Any], model_key: str) -> List[Mapping[str, Any]]:
+    return [
+        d
+        for d in node.get("devices") or []
+        if str(d.get("type") or "").lower() not in CPU_TYPES and device_model_key(d) == model_key
+    ]
+
+
+def node_pool(node: Mapping[str, Any], model_key: str, devices_per_replica: int) -> Optional[int]:
+    """Replicas of ``devices_per_replica`` cards of ``model_key`` the node has free for, or None when
+    it reports no such card."""
+    devices = _gpu_devices(node, model_key)
+    if not devices:
+        return None
+    free = 0
+    for device in devices:
+        count = _num(device.get("available_count"))
+        free += max(int(count), 0) if count is not None else 1
+    return free // max(int(devices_per_replica), 1)
+
+
+def conservative_capabilities(records: Sequence[Optional[Mapping[str, Any]]]) -> Dict[str, Any]:
+    """One ``kv_capabilities`` record that every node of ``records`` satisfies (FRD-023 FR-CAP-10).
+
+    A spread deployment's single pod template lands on any of them, so it is planned on the worst
+    case: a flag is True only when every node reports True, a number is the smallest, a text is kept
+    only when every node agrees. Any node that doesn't report a fact makes it unknown (None), which
+    never enables a tier.
+    """
+    records = [r or {} for r in records]
+    merged: Dict[str, Any] = {}
+    for key in sorted({k for r in records for k in r}):
+        values = [r.get(key) for r in records]
+        if any(v is None for v in values):
+            merged[key] = None
+        elif all(isinstance(v, bool) for v in values):
+            merged[key] = all(values)
+        elif all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
+            merged[key] = min(values)
+        else:
+            merged[key] = values[0] if all(v == values[0] for v in values) else None
+    return merged
+
+
 @dataclass(frozen=True)
 class InfraSnapshot:
-    """The target node and its cluster as budcluster last reported them (``cluster_info``)."""
+    """The target node and its cluster as budcluster last reported them (``cluster_info``).
+
+    A deployment whose replicas spread over several nodes (FR-PLACE) has no target node: ``spread``
+    then holds every node with its card, and ``node`` is one synthetic record that all of them
+    satisfy (``conservative_capabilities``).
+    """
 
     node: Optional[Mapping[str, Any]] = None
     cluster: Optional[Mapping[str, Any]] = None
+    spread: Tuple[Mapping[str, Any], ...] = ()
 
     @classmethod
     def from_cluster_info(
@@ -240,8 +290,13 @@ class InfraSnapshot:
         cluster_info: Optional[Sequence[Mapping[str, Any]]],
         cluster_id: Any,
         node_name: Optional[str],
+        *,
+        spread_model_key: Optional[str] = None,
     ) -> "InfraSnapshot":
-        """Find the plan's cluster and target node; a missing node gives no facts at all."""
+        """Find the plan's cluster and target node; a missing node gives no facts at all.
+
+        With no ``node_name`` and a ``spread_model_key``, plan on every node that has that card.
+        """
         cluster = next((c for c in cluster_info or [] if str(c.get("id")) == str(cluster_id)), None)
         node = None
         if cluster is not None and node_name:
@@ -253,7 +308,35 @@ class InfraSnapshot:
                 ),
                 None,
             )
+        elif cluster is not None and spread_model_key:
+            nodes = tuple(
+                n for n in cluster.get("nodes") or [] if _gpu_devices(n, spread_model_key)
+            )
+            if nodes:
+                merged = {
+                    "name": "spread:" + ",".join(str(n.get("name") or n.get("id")) for n in nodes),
+                    "kv_capabilities": conservative_capabilities(
+                        [n.get("kv_capabilities") for n in nodes]
+                    ),
+                    "devices": [],
+                }
+                return cls(node=merged, cluster=cluster, spread=nodes)
         return cls(node=node, cluster=cluster)
+
+    def node_pool(self, model_key: str, devices_per_replica: int) -> Optional[int]:
+        """How many replicas one node holds: the target node's pool, or for a spread deployment the
+        largest pool among its nodes. None when no node reports the card."""
+        nodes = self.spread or ((self.node,) if self.node else ())
+        pools = [p for p in (node_pool(n, model_key, devices_per_replica) for n in nodes) if p is not None]
+        return max(pools) if pools else None
+
+    def card_nodes(self, model_key: str) -> Optional[int]:
+        """How many nodes have the card, busy or not: the spread's nodes, or 1 for a target node that reports it.
+        None when no node is known."""
+        nodes = self.spread or ((self.node,) if self.node else ())
+        if not nodes:
+            return None
+        return sum(1 for n in nodes if _gpu_devices(n, model_key))
 
     def node_facts(self) -> NodeKVFacts:
         return NodeKVFacts.from_capabilities((self.node or {}).get("kv_capabilities"))
@@ -280,6 +363,9 @@ class InfraSnapshot:
         The CPU entry's free memory (total minus requests), less what GPU engine pods use without
         requesting it (``ENGINE_RSS_ALLOWANCE_GIB`` each) and the cluster's reserved tier RAM.
         """
+        if self.spread:
+            frees = [InfraSnapshot(node=n, cluster=self.cluster).host_free_gib() for n in self.spread]
+            return None if any(f is None for f in frees) else min(frees)
         if self.node is None:
             return None
         cpus = [
@@ -295,7 +381,12 @@ class InfraSnapshot:
         return max(free, 0.0)
 
     def gpu_free_list(self, model_key: str) -> List[float]:
-        """The free memory (GiB) of every card of this model on the node, one entry per card."""
+        """The free memory (GiB) of every card of this model on the node, one entry per card. For a
+        spread deployment, the node whose best card has the least free memory."""
+        if self.spread:
+            lists = [InfraSnapshot(node=n, cluster=self.cluster).gpu_free_list(model_key) for n in self.spread]
+            lists = [f for f in lists if f]
+            return min(lists, key=max) if lists else []
         free: List[float] = []
         for device in (self.node or {}).get("devices") or []:
             dev_type = str(device.get("type") or "").lower()
