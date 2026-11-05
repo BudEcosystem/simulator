@@ -127,6 +127,14 @@ class PoolFacts:
     capacity_gib: Optional[float] = None
     floor_ms: Optional[float] = None  # fixed cost of one get, when the gate measured it
     storage_class: Optional[str] = None  # fs backend
+    master: Optional[str] = None  # host:port of the Mooncake master (mooncake backend)
+    # GB/s the pool already moves for other deployments (puts + gets, from the master's metrics):
+    # the pool is shared, so a new deployment's loads queue behind it (FR-T3-6)
+    busy_gbps: Optional[float] = None
+    lease_ms: Optional[float] = None  # the master's read lease (FR-FAIL-7); None: Mooncake's default
+    # The health gate's get rate from each GPU node (its ``gpu_nodes``): None for a node it didn't measure. A node next
+    # to the pool reads at loopback speed; the others read over the network.
+    node_rates: Tuple[Tuple[str, Optional[float]], ...] = ()
 
     @classmethod
     def from_record(cls, record: Optional[Mapping[str, Any]]) -> Optional["PoolFacts"]:
@@ -143,7 +151,27 @@ class PoolFacts:
             capacity_gib=_number(record, "capacity_gib"),
             floor_ms=_number(record, "floor_ms"),
             storage_class=_text(record, "storage_class"),
+            master=_text(record, "master"),
+            busy_gbps=_number(record, "busy_gbps", positive=False),
+            lease_ms=_number(record, "lease_ms"),
+            node_rates=tuple(
+                (str(entry["node"]), _number(entry, "read_gbps"))
+                for entry in record.get("gpu_nodes") or []
+                if isinstance(entry, Mapping) and _text(entry, "node")
+            ),
         )
+
+    def rate_for(self, nodes: Tuple[str, ...]) -> Tuple[Optional[float], str]:
+        """The rate a deployment on ``nodes`` plans with: the slowest of their measured rates (FR-CAP-10), or None and
+        the node the gate didn't measure. Without per-node rates (an older record), the headline rate."""
+        if not nodes or not self.node_rates:
+            return self.read_gbps, ""
+        rates = dict(self.node_rates)
+        missing = [n for n in nodes if rates.get(n) is None]
+        if missing:
+            return None, f"the pool's read rate was not measured from {', '.join(sorted(missing))}"
+        slowest = min(nodes, key=lambda n: rates[n])
+        return rates[slowest], f" from {slowest}, the slowest of this deployment's nodes"
 
 
 @dataclass(frozen=True)

@@ -6,7 +6,9 @@ supports_lora...). Until BudConnect carries the ``runtime`` block, the ``setting
 Features are the union of what BudConnect lists and what the vendored record lists for that exact build --
 both are "verified on that build" claims. A build with no vendored record gets the nearest record of the same
 engine and upstream minor with its build-specific features dropped (the grounding engine ladder treats it as a
-new build).
+new build). A build of a family with records but none of its upstream minor gets the family's **baseline record**
+(FRD-025 Revision 2, R2-2), so every such build is planned on a spec rather than left to budcluster's legacy sizing.
+Every record says how it was resolved in ``record_basis``: ``budconnect``, ``exact``, ``inherited`` or ``baseline``.
 """
 
 from __future__ import annotations
@@ -47,13 +49,42 @@ def _minor(version: Optional[str]) -> str:
     return ".".join(parts[:2])
 
 
+@lru_cache(maxsize=None)
+def _baseline(engine: str) -> Optional[Dict[str, Any]]:
+    """The family's baseline: what every recorded build of ``engine`` shares, and every conflict any of them has.
+
+    Launch, argument syntax, ports, probes, limits, runner and parsers must be identical across the family's records
+    to be carried (a field they disagree on is left out); settings are those every record maps, each as the oldest
+    record maps it; features are those every record verified, minus build-specific ones. None when the family has no
+    records.
+    """
+    family = sorted((r for r in vendored().values() if r.get("engine") == engine), key=lambda r: r["id"])
+    if not family:
+        return None
+    base: Dict[str, Any] = {"engine": engine, "build": "baseline", "baseline_of": [r["id"] for r in family]}
+    for key in ("runtime", "limits", "runner", "tool_parsers", "reasoning_parsers"):
+        values = [json.dumps(r.get(key), sort_keys=True) for r in family]
+        if len(set(values)) == 1 and family[0].get(key) is not None:
+            base[key] = copy.deepcopy(family[0][key])
+    shared = set.intersection(*(set(r.get("settings") or {}) for r in family))
+    base["settings"] = {name: copy.deepcopy(family[0]["settings"][name]) for name in sorted(shared)}
+    conflicts: Dict[str, Dict[str, Any]] = {}
+    for r in family:
+        for item in r.get("conflicts") or []:
+            conflicts.setdefault(str(item.get("id")), copy.deepcopy(item))
+    base["conflicts"] = [conflicts[k] for k in sorted(conflicts)]
+    base["features"] = sorted(set.intersection(*(set(r.get("features") or ()) for r in family)) - BUILD_FEATURES)
+    base["images"] = {}
+    return base
+
+
 def find_vendored(
     engine: str, version: Optional[str], upstream: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     records = list(vendored().values())
     for data in records:
         if data.get("engine") == engine and str(data.get("version")) == str(version):
-            return copy.deepcopy(data)
+            return {**copy.deepcopy(data), "record_basis": "exact"}
     for data in records:  # same upstream minor: inherit, without build-specific features
         if (
             data.get("engine") == engine
@@ -65,8 +96,19 @@ def find_vendored(
                 f for f in inherited.get("features", []) if f not in BUILD_FEATURES
             ]
             inherited["inherited_from"] = data["id"]
+            inherited["record_basis"] = "inherited"
             return inherited
-    return None
+    baseline = _baseline(engine) if version not in (None, "") else None
+    if baseline is None:  # no family records, or a row that names no build
+        return None
+    # FRD-025 R2-2: no record of this build or its upstream minor; plan it on what the family shares
+    return {
+        **copy.deepcopy(baseline),
+        "id": f"{engine}@{version}~baseline",
+        "version": str(version),
+        "upstream_vllm": upstream,
+        "record_basis": "baseline",
+    }
 
 
 def record_from_budconnect(row: Mapping[str, Any]) -> Optional[EngineRecord]:
@@ -76,7 +118,7 @@ def record_from_budconnect(row: Mapping[str, Any]) -> Optional[EngineRecord]:
     version = row.get("engine_version") or row.get("version")
     upstream = row.get("upstream_vllm")
     if row.get("runtime") and row.get("settings"):
-        data = dict(row)  # BudConnect already carries the FRD-025 block
+        data = {**dict(row), "record_basis": "budconnect"}  # BudConnect already carries the FRD-025 block
     else:
         data = find_vendored(engine, version, upstream)
         if data is None:

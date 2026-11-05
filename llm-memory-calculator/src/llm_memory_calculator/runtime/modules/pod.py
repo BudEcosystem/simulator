@@ -255,7 +255,8 @@ class SidecarAibrix(Module):
             {
                 "role": "sidecar",
                 "name": "aibrix-runtime",
-                "image": "aibrix/runtime:v0.3.0",
+                # Keep with budcluster _sidecar.yaml and its playbooks/vars aibrix_version.
+                "image": "aibrix/runtime:v0.8.0",
                 "command": ["aibrix_runtime", "--port", str(AIBRIX_PORT)],
                 "env": {
                     "INFERENCE_ENGINE": "vllm",

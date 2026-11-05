@@ -8,6 +8,7 @@ binary GiB device memory), so the v1 modules render the same pod budcluster rend
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -30,6 +31,15 @@ SLICE_TP_COMM_RESERVE = 1024 * MIB
 T1_DEFAULT_BLOCK_SIZE = 256
 T1_MODE_FEATURES = {"register": "cpu_offload_shm", "alloc": "cpu_offload_host_alloc"}
 T2_FEATURE = "tiering_fs"
+# FRD-023 Phase 4 (memory_plan.plan_t3): the Mooncake store connector's host buffers per rank, its config file, and the
+# one transport rendered (RDMA needs FR-RENDER-9).
+T3_FEATURE = "mooncake_store"
+T3_HOST_MIB_PER_RANK = 1024
+T3_DEFAULT_LOCAL_BUFFER_MIB = 512
+T3_CONFIG_PATH = "/tmp/bud-mooncake-config.json"
+T3_PROTOCOLS = ("tcp",)
+_MASTER_RE = re.compile(r"^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?:[0-9]{1,5}$")
+_KV_NAMESPACE_RE = re.compile(r"^kvns-[0-9a-f]{16}$")
 
 
 class SizingError(ValueError):
@@ -74,6 +84,30 @@ def shm_bytes(tp: int) -> int:
     return min(max(SHM_PER_RANK_MIB * max(tp, 1), SHM_MIN_MIB), SHM_MAX_MIB) * MIB
 
 
+#: The pod's memory limit (which the chart also requests) adds the weights' host copy, capped, to its request.
+LIMIT_WEIGHT_CAP_MIB = 2048
+
+
+def limit_headroom_mib(weight_bytes_per_rank: float, tp: int) -> int:
+    """MiB a cuda pod's memory limit adds to its request: its weights' host staging copy, capped."""
+    return min(ceil_mib(weight_bytes_per_rank * max(int(tp), 1)), LIMIT_WEIGHT_CAP_MIB)
+
+
+def host_base_bytes(tp: int, t3: bool = False) -> int:
+    """Host memory a cuda pod requests besides its T1 region and LoRA scratch, once it requests any (T1 on).
+
+    The KV planner sizes T1 within what is left of the node's free host memory after this (``kv.tiers.t1``).
+    """
+    tp = max(int(tp), 1)
+    return (
+        tp * HOST_PER_RANK_MIB * MIB
+        + FRAMEWORK_FLOOR_MIB * MIB
+        + COMPILE_PEAK_MIB * MIB
+        + shm_bytes(tp)
+        + (T3_HOST_MIB_PER_RANK * MIB * tp if t3 else 0)
+    )
+
+
 def shared_slice(demand: int, reserve: int) -> int:
     return max(
         math.ceil(demand * 100 / (94 * MIB)), math.ceil((demand + reserve) * 100 / (99 * MIB))
@@ -98,6 +132,7 @@ class CudaBudget:
     t1_mode: Optional[str] = None
     t1_block: Optional[int] = None
     t2: Optional[Dict[str, Any]] = None
+    t3: Optional[Dict[str, Any]] = None
     kv_cache_dtype: Optional[str] = None
     kv_skip_sliding: Optional[bool] = None
     engine_request_mib: int = 0
@@ -138,6 +173,57 @@ def plan_t1(
     block = int(math.ceil(requested / gpu_block) * gpu_block)
     size = int(float(tier["size_gib"]) * GIB) // MIB * MIB
     return {"bytes": size, "mode": mode, "block": block}
+
+
+def plan_t3(group: Mapping[str, Any], plan: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
+    """FRD-023 T3 gate (memory_plan.plan_t3): a Mooncake tier on cuda, generative vLLM, PP 1, the engine listing
+    ``mooncake_store``, TCP, a usable master, and store keys under the plan's KV namespace."""
+    if not plan:
+        return None
+    tier = next(
+        (t for t in plan.get("tiers") or [] if t.get("tier") == "T3" and t.get("backend") == "mooncake"),
+        None,
+    )
+    if tier is None or group.get("type") != "cuda" or int(group.get("pp_size") or 1) != 1:
+        return None
+    if str(group.get("engine_type") or "vllm") != "vllm" or group.get("is_embedding"):
+        return None
+    if T3_FEATURE not in set(group.get("kv_features") or ()):
+        return None
+    params = tier.get("params") or {}
+    protocol = str(params.get("protocol") or tier.get("transport") or "tcp").lower()
+    master = params.get("master_server_address")
+    namespace = plan.get("namespace")
+    if protocol not in T3_PROTOCOLS or not isinstance(master, str) or not _MASTER_RE.match(master):
+        return None
+    if not isinstance(namespace, str) or not _KV_NAMESPACE_RE.match(namespace):
+        return None
+    if params.get("cache_prefix") != namespace:
+        return None
+    buffer = params.get("local_buffer_size_mib")
+    buffer = int(buffer) if isinstance(buffer, (int, float)) and float(buffer).is_integer() and buffer > 0 else T3_DEFAULT_LOCAL_BUFFER_MIB
+    tp = max(int(group.get("tp_size") or 1), 1)
+    return {
+        "bytes": T3_HOST_MIB_PER_RANK * MIB * tp,
+        "master": master,
+        "protocol": protocol,
+        "cache_prefix": namespace,
+        "local_buffer_mib": buffer,
+    }
+
+
+def mooncake_config(t3: Mapping[str, Any]) -> Dict[str, Any]:
+    """The store client's JSON config (engine_processors.mooncake_config): standalone-store, no own segment."""
+    return {
+        "mode": "standalone-store",
+        "metadata_server": "P2PHANDSHAKE",
+        "master_server_address": t3["master"],
+        "global_segment_size": 0,
+        "local_buffer_size": f"{t3['local_buffer_mib']}MB",
+        "protocol": t3["protocol"],
+        "device_name": "",
+        "enable_offload": False,
+    }
 
 
 def plan_kv_dtype(group: Mapping[str, Any], plan: Optional[Mapping[str, Any]]) -> tuple:
@@ -190,6 +276,7 @@ def cuda_budget(
             raise SizingError("LoRA warm-up scratch missing")
     gpu_block = int((group.get("args") or {}).get("block-size") or 16)
     t1 = plan_t1(group, plan, gpu_block)
+    t3 = plan_t3(group, plan)
     kv_dtype, skip = (
         plan_kv_dtype(group, plan)
         if (str(group.get("engine_type") or "vllm") == "vllm" and not encoder)
@@ -197,16 +284,9 @@ def cuda_budget(
     )
     shm = shm_bytes(tp)
     demand = weight + kv_committed + act + logits + state + DEVICE_CTX_BYTES
-    engine_bytes = (
-        tp * HOST_PER_RANK_MIB * MIB
-        + FRAMEWORK_FLOOR_MIB * MIB
-        + COMPILE_PEAK_MIB * MIB
-        + lora
-        + shm
-        + t1["bytes"]
-    )
+    engine_bytes = host_base_bytes(tp) + lora + t1["bytes"] + (t3["bytes"] if t3 else 0)
     request = ceil_mib(engine_bytes)
-    limit = request + min(ceil_mib(weight * tp), 2048)
+    limit = request + limit_headroom_mib(weight, tp)
     if not device_total:
         raise SizingError("no device_total_memory_gb on an accelerator")
     raw = demand / device_total
@@ -272,6 +352,7 @@ def cuda_budget(
         t1_bytes=t1["bytes"],
         t1_mode=t1["mode"],
         t1_block=t1["block"],
+        t3=t3,
         kv_cache_dtype=kv_dtype,
         kv_skip_sliding=skip,
         engine_request_mib=request,

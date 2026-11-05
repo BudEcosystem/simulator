@@ -456,6 +456,63 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         },
     },
 
+    # NVIDIA laptop GPUs (the accubits02 lab, FRD-023 §19.6). Laptop parts run below their desktop boost clocks and
+    # have no NVLink; their figures come from the nodes' own nvidia-smi and NVIDIA's mobile specs.
+    'RTX3050_LAPTOP_GPU': {
+        # GA107 laptop: 2048 CUDA cores, 64 3rd-gen tensor cores; NVIDIA lists up to 17.7 TFLOPS dense FP16 tensor
+        # at the 1740 MHz boost (accubits01 measured prefill ~40-50% slower than 45% MFU of that implies). 4 GB
+        # GDDR6, 128-bit at 14 Gbps. PCIe Gen4 x4 on this laptop (measured 4.7 GB/s pinned host-to-device).
+        'name': 'RTX3050_LAPTOP_GPU',
+        'Flops': 17.7,
+        'Memory_size': 4,
+        'Memory_BW': 224,
+        'ICN': 8,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'AMPERE',
+        'generation': 'Consumer Laptop GPU',
+        'compute_capability': '8.6',
+        'release_year': 2021,
+        'tensor_cores': 'gen3',
+        'memory_type': 'GDDR6',
+        'interconnect': 'pcie4',
+        'interconnect_bandwidth_gbps': 8,
+        'pci_ids': ['25a2', '25e2'],
+        'aliases': [
+            'RTX 3050 Laptop',
+            'RTX 3050 Laptop GPU',
+            'NVIDIA GeForce RTX 3050 Laptop GPU',
+            'NVIDIA-GeForce-RTX-3050-Laptop-GPU',
+            'RTX3050-LAPTOP',
+        ],
+        'tdp_watts': 80,
+    },
+    'GTX1650_MOBILE_GPU': {
+        # TU117 mobile (PCI 1f99): 896 CUDA cores, no tensor cores; FP16 runs at twice FP32, 2 x 896 x 2 x 1.785 GHz
+        # = 6.4 TFLOPS (nvidia-smi max SM clock 1785 MHz). No bf16 and no FP8 (compute capability 7.5). 4 GB GDDR6,
+        # 128-bit at 12 Gbps. PCIe Gen3 x16.
+        'name': 'GTX1650_MOBILE_GPU',
+        'Flops': 6.4,
+        'Memory_size': 4,
+        'Memory_BW': 192,
+        'ICN': 16,
+        'real_values': True,
+        'type': 'gpu',
+        'manufacturer': 'NVIDIA',
+        'architecture': 'TURING',
+        'generation': 'Consumer Laptop GPU',
+        'compute_capability': '7.5',
+        'release_year': 2019,
+        'tensor_cores': 'none',
+        'memory_type': 'GDDR6',
+        'interconnect': 'pcie3',
+        'interconnect_bandwidth_gbps': 16,
+        'pci_ids': ['1f99', '1f91', '1f9d'],
+        'aliases': ['GTX 1650', 'NVIDIA GeForce GTX 1650', 'NVIDIA-GeForce-GTX-1650', 'GTX1650', 'GTX 1650 Mobile'],
+        'tdp_watts': 50,
+    },
+
     # NVIDIA Consumer GPUs (Ada Lovelace)
     'RTX4090_GPU': {
         'name': 'RTX4090_GPU',

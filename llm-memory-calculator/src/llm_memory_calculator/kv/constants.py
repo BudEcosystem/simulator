@@ -17,7 +17,8 @@ PLAN_VERSION = 1
 # The tiers a plan returns. T0 is always planned. Every tier is evaluated and tested; the ones not
 # listed here are withheld from the plan (and named in its decisions) until budcluster can render
 # them. Raising this is a package release, never configuration (FRD-023 §7).
-RELEASED_TIERS: FrozenSet[str] = frozenset({"T1", "T2"})
+# T3 joined on 2026-10-28 (FRD-023 revision 3): budcluster renders the Mooncake profiles and installs the pool.
+RELEASED_TIERS: FrozenSet[str] = frozenset({"T1", "T2", "T3"})
 OFFLOAD_TIERS: Tuple[str, ...] = ("T1", "T2", "T3")
 
 # -------------------------------------------------------------------------------------------- T0
@@ -148,6 +149,18 @@ T3_CONNECTOR_EFFICIENCY: Tuple[Tuple[int, float], ...] = ((64 * KIB, 0.5), (3 * 
 T3_RDMA_EFFICIENCY = 1.0
 # One deployment plans on at most this share of the pool's capacity. [MEASURE]
 T3_POOL_SHARE_MAX = 0.25
+# Where engines reach the pool when its record names no master (FRD-023 FR-INFRA-4: namespace bud-kv).
+T3_DEFAULT_MASTER = "mooncake-master.bud-kv.svc:50051"
+# Host memory each rank's store client pins: its 512 MB local buffer plus the TCP transport's staging
+# (TcpStagingBuffer, Mooncake 0.3.13). Charged to the pod beside T1. [MEASURE]
+T3_LOCAL_BUFFER_MIB = 512
+T3_HOST_GIB_PER_RANK = 1.0
+# FR-FAIL-7: a pool get must finish inside the master's read lease, or it fails (LEASE_EXPIRED) and vLLM 0.32's async
+# load retries the same blocks until the client gives up (accubits02, 2026-10-28). The connector fetches a request's
+# whole prefix in one batch, so the longest prompt's reload, under the link's load, may take at most this share of
+# the lease. A record without one is held to Mooncake's own default (budcluster renders it explicitly).
+T3_DEFAULT_LEASE_MS = 10_000.0
+T3_LEASE_SHARE = 0.5
 # FR-INFRA-4: an RDMA pool qualifies from this rate per GPU.
 RDMA_MIN_GBPS_PER_GPU = 10.0
 

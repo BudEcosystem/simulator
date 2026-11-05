@@ -39,10 +39,21 @@ class DeploymentSpec:
     # budsim's predicted end-to-end latency for one request, seconds; sets the request rate the
     # load model uses. Estimated from the prefill and DECODE_MS_PER_TOKEN when absent.
     e2e_latency_s: Optional[float] = None
-    # Why the cluster tier would be needed at all (FR-T3-1): replicas on several nodes, other
-    # deployments of the same model in the project, or durability across node loss.
+    # FR-T3-1 (revision 3): the cluster tier is planned only for a deployment that spans nodes. budsim
+    # sets ``spans_nodes`` when its replicas may land on several nodes (weights on shared storage,
+    # FR-PLACE-2); the planner then needs ``max(replicas, autoscale_max_replicas)`` to exceed what one
+    # node holds. ``cross_node_need`` forces the need (calibration fixtures, later PP/P-D across nodes).
     cross_node_need: bool = False
+    spans_nodes: bool = False
     autoscale_max_replicas: Optional[int] = None
+    # False when the engine runs with prefix caching off (FRD-027 turns it off for some speculative
+    # decoding): no block is ever reused, so no tier can pay (FR-PLAN-16).
+    prefix_caching: bool = True
+    # What else changes a block's bytes (FR-ISO-3), as the engine will run: the dtype it computes in
+    # (resolved, never "auto"), the attention backend that lays the cache out, the speculative config.
+    resolved_dtype: Optional[str] = None
+    attention_backend: Optional[str] = None
+    speculative: Optional[str] = None
     # fp8 KV, as the deployment form set it (dtype.kv_fp8_support): True asks for it, False keeps
     # the model's dtype, None wasn't asked.
     kv_fp8: Optional[bool] = None

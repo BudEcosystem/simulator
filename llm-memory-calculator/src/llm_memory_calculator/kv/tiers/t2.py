@@ -29,6 +29,11 @@ def plan_t2(ctx: PlanContext) -> float:
 
     if ctx.device_type != "cuda":
         return drop(f"vLLM's offloading connector isn't used on '{ctx.device_type}'")
+    if ctx.spans_nodes:
+        return drop(
+            "the deployment spans nodes: a node-local volume can't follow its replicas"
+            " (the cluster tier is their shared tier)"
+        )
     blocked = hybrid_offload_blocked(ctx)
     if blocked:
         return drop(blocked)

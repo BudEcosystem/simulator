@@ -43,6 +43,31 @@ def _round_gib(value: float) -> float:
     return math.ceil(value * 100) / 100
 
 
+_DTYPE_NAMES = {
+    "half": "float16",
+    "float16": "float16",
+    "fp16": "float16",
+    "bfloat16": "bfloat16",
+    "bf16": "bfloat16",
+    "float": "float32",
+    "float32": "float32",
+    "fp32": "float32",
+}
+
+
+def resolve_dtype(requested: Any, model_config: Mapping[str, Any]) -> str:
+    """The dtype the engine computes in: the requested one, or for ``auto`` the model's."""
+    name = _DTYPE_NAMES.get(str(requested or "").strip().lower())
+    return name or _model_dtype(model_config)
+
+
+def _model_dtype(model_config: Mapping[str, Any]) -> str:
+    cfg = model_config or {}
+    text = cfg.get("text_config") if isinstance(cfg.get("text_config"), Mapping) else {}
+    raw = cfg.get("torch_dtype") or cfg.get("dtype") or text.get("torch_dtype") or text.get("dtype")
+    return _DTYPE_NAMES.get(str(raw or "").strip().lower(), str(raw or "auto"))
+
+
 def plan_kv(
     deployment: DeploymentSpec,
     engine: EngineSpec,
@@ -61,6 +86,11 @@ def plan_kv(
     deployment's fields, for a measured benchmark whose reuse is known.
     """
     infra = infra or InfraSnapshot()
+    peak = max(group.replicas, int(deployment.autoscale_max_replicas or 0), 1)
+    pool_per_node = infra.node_pool(group.device_model_key, group.tp * group.pp)
+    cross_node, cross_reason = _cross_node_need(
+        deployment, peak, pool_per_node, card_nodes=infra.card_nodes(group.device_model_key)
+    )
     host_free = infra.host_free_gib()
     if group.device_type in ("cpu", "cpu_high") and host_free is not None:
         host_free = max(host_free - group.pod_host_gib(), 0.0)
@@ -74,7 +104,7 @@ def plan_kv(
             kv_committed=committed,
             engine=group.engine,
             device_total_gib=group.device_total_memory_gb,
-            replicas=group.replicas,
+            replicas=min(peak, pool_per_node) if pool_per_node else peak,
             free_gib=free_cards,
         )
         if slice_cap is None:
@@ -111,11 +141,50 @@ def plan_kv(
         hardware=hardware,
         hardware_name=hardware_name,
         recompute_fn=recompute_fn,
-        cross_node_need=deployment.cross_node_need,
+        cross_node_need=cross_node,
+        cross_node_reason=cross_reason,
+        spans_nodes=deployment.spans_nodes,
+        peak_replicas=peak,
+        node_pool=pool_per_node,
+        spread_nodes=tuple(str(n.get("name") or n.get("id")) for n in infra.spread),
+        prefix_caching=deployment.prefix_caching,
+        resolved_dtype=deployment.resolved_dtype,
+        attention_backend=deployment.attention_backend,
+        speculative=deployment.speculative,
         e2e_latency_s=deployment.e2e_latency_s,
         kv_fp8=deployment.kv_fp8,
         kv_fp8_hybrid_validated=deployment.kv_fp8_hybrid_validated,
     )
+
+
+def _cross_node_need(
+    deployment: DeploymentSpec,
+    peak: int,
+    pool_per_node: Optional[int],
+    card_nodes: Optional[int] = None,
+) -> "tuple[bool, str]":
+    """FR-T3-1 (revision 3): does the deployment span nodes, and why (or why not)?
+
+    ``card_nodes`` is how many nodes have the card at all. With one, replicas past its pool have nowhere else to
+    start (they stay Pending), so they never share anything across nodes (FR-PLACE-4).
+    """
+    if deployment.cross_node_need:
+        return True, "cross-node need given"
+    if not deployment.spans_nodes:
+        return False, "every replica runs on one node (its weights pin it there)"
+    if pool_per_node is None:
+        return False, "the deployment may spread, but no node reports how many replicas it holds"
+    if peak <= pool_per_node:
+        return False, (
+            f"up to {peak} replica{'s' if peak > 1 else ''} fit on one node"
+            f" ({pool_per_node} per node)"
+        )
+    if card_nodes is not None and card_nodes < 2:
+        return False, (
+            f"the deployment may spread, but only one node has its card: replicas past its {pool_per_node}"
+            " can't start on another node"
+        )
+    return True, f"up to {peak} replicas, {pool_per_node} per node"
 
 
 def plan_kv_tiers(
@@ -232,6 +301,15 @@ def _plan(
     e2e_latency_s: Optional[float] = None,
     kv_fp8: Optional[bool] = None,
     kv_fp8_hybrid_validated: bool = False,
+    cross_node_reason: str = "",
+    spans_nodes: bool = False,
+    peak_replicas: int = 0,
+    node_pool: Optional[int] = None,
+    spread_nodes: tuple = (),
+    prefix_caching: bool = True,
+    resolved_dtype: Optional[str] = None,
+    attention_backend: Optional[str] = None,
+    speculative: Optional[str] = None,
 ) -> KVTierPlan:
     plan = KVTierPlan(workload_profile=workload.profile)
     decisions = plan.decisions
@@ -250,6 +328,11 @@ def _plan(
     if not features:
         decisions.append("no KV plan: the engine record lists no KV features")
         return plan
+    if not prefix_caching:
+        decisions.append("no KV plan: prefix caching is off, so no block is ever reused (FR-PLAN-16)")
+        return plan
+    if cross_node_need:
+        decisions.append(f"cross-node need: {cross_node_reason}")
 
     plan.profile = "native"
     plan.events_enabled = "kv_events" in features
@@ -324,6 +407,11 @@ def _plan(
         cross_node_need=cross_node_need,
         e2e_latency_s=e2e_latency_s,
         model_id=model_id,
+        spans_nodes=spans_nodes,
+        peak_replicas=peak_replicas,
+        node_pool=node_pool,
+        cross_node_reason=cross_node_reason,
+        spread_nodes=tuple(spread_nodes),
     )
     working_tokens = ctx.working_set_tokens
     ctx.working_set_gib = working_tokens * geometry.bytes_per_token_rank / GIB
@@ -382,13 +470,19 @@ def _plan(
         model_id=model_id,
         revision=revision,
         weight_quantization=weight_quantization,
-        kv_cache_dtype=plan.kv_cache_dtype,
+        kv_cache_dtype=(
+            plan.kv_cache_dtype
+            if plan.kv_cache_dtype != "auto"
+            else (resolved_dtype or _model_dtype(model_config))
+        ),
         block_size=geometry.block_size,
         tensor_parallel=tp,
         pipeline_parallel=pp,
         attention_layout=attention,
         hash_algo=plan.hash_algo,
         engine_version=engine.version,
+        attention_backend=attention_backend,
+        speculative=speculative,
     )
     for entry in plan.tiers + plan.withheld:
         if entry["tier"] == "T3" and entry.get("backend") == "mooncake":

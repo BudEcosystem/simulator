@@ -65,6 +65,8 @@ class EngineRef(_Model):
     name: str
     version: str
     record: str
+    # FRD-025 R2-1: how the record was resolved (budconnect | exact | inherited | baseline); optional, additive
+    record_basis: str = "exact"
     image: str
     pull_policy: str = "IfNotPresent"
     arg_style: str = "--{key}={value}"

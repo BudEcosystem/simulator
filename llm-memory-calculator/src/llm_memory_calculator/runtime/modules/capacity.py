@@ -594,21 +594,12 @@ class MemoryHost(Module):
     def plan(self, ctx: PlanContext) -> Fragment:
         f = self.frag()
         b = legacy_budget(ctx)
+        # T1 makes the pod request host memory (its region is GBs); the request then carries T3's store-client buffers
+        # too. T3 alone fits the per-GPU allowance budsim keeps for pods that request none (memory_plan.compute_budget).
         if b.t1_bytes > 0:
-            f.resource(
-                "requests",
-                "memory_mib",
-                int(b.engine_limit_mib),
-                self.name,
-                "host memory with a T1 CPU tier",
-            )
-            f.resource(
-                "limits",
-                "memory_mib",
-                int(b.engine_limit_mib),
-                self.name,
-                "host memory with a T1 CPU tier",
-            )
+            why = "host memory with a T1 CPU tier" + (" and the T3 store client" if b.t3 else "")
+            f.resource("requests", "memory_mib", int(b.engine_limit_mib), self.name, why)
+            f.resource("limits", "memory_mib", int(b.engine_limit_mib), self.name, why)
             pods = max(1, int(ctx.placement.replicas)) if ctx.placement else 1
             node = ctx.placement.target_node if ctx.placement else None
             f.checks.append(

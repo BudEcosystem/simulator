@@ -211,6 +211,11 @@ PCI_ARCHITECTURE_MAP = {
     '10de:26b5': {'arch': 'ADA_LOVELACE', 'model': 'L40', 'variant': 'Professional'},
     '10de:26b9': {'arch': 'ADA_LOVELACE', 'model': 'L40S', 'variant': 'Professional'},
     '10de:26ba': {'arch': 'ADA_LOVELACE', 'model': 'L20', 'variant': 'Professional'},
+    '10de:25a2': {'arch': 'AMPERE', 'model': 'RTX3050_LAPTOP', 'variant': 'Mobile'},
+    '10de:25e2': {'arch': 'AMPERE', 'model': 'RTX3050_LAPTOP', 'variant': 'Mobile'},
+    '10de:1f99': {'arch': 'TURING', 'model': 'GTX1650_MOBILE', 'variant': 'Mobile'},
+    '10de:1f91': {'arch': 'TURING', 'model': 'GTX1650_MOBILE', 'variant': 'Mobile'},
+    '10de:1f9d': {'arch': 'TURING', 'model': 'GTX1650_MOBILE', 'variant': 'Mobile'},
     
     # NVIDIA Hopper
     '10de:2330': {'arch': 'HOPPER', 'model': 'H100', 'variant': 'SXM5'},

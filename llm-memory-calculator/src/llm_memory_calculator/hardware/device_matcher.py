@@ -347,6 +347,11 @@ class DeviceMatcher:
         '10de:26b5': 'L40',   # L40
         '10de:26b9': 'L40S',  # L40S
         '10de:26ba': 'L20',   # L20
+        '10de:25a2': 'RTX3050_LAPTOP',  # RTX 3050 Laptop (GA107M)
+        '10de:25e2': 'RTX3050_LAPTOP',  # RTX 3050 Laptop (GA107M)
+        '10de:1f99': 'GTX1650_MOBILE',  # GTX 1650 Mobile (TU117M)
+        '10de:1f91': 'GTX1650_MOBILE',  # GTX 1650 Mobile (TU117M)
+        '10de:1f9d': 'GTX1650_MOBILE',  # GTX 1650 Mobile (TU117M)
         '10de:27b8': 'L4',    # L4
         '10de:1db4': 'V100',  # V100 PCIe 16GB
         '10de:1db5': 'V100',  # V100 PCIe 32GB
@@ -387,6 +392,8 @@ class DeviceMatcher:
         'L40': ['L40', 'L40-48GB', 'NVIDIA L40'],
         'L40S': ['L40S', 'L40S-48GB', 'NVIDIA L40S', 'NVIDIA-L40S'],
         'L20': ['L20', 'L20-48GB', 'NVIDIA L20', 'NVIDIA-L20'],
+        'RTX3050_LAPTOP': ['RTX 3050 LAPTOP', 'RTX-3050-LAPTOP', 'RTX3050-LAPTOP', 'GEFORCE RTX 3050 LAPTOP'],
+        'GTX1650_MOBILE': ['GTX 1650', 'GTX-1650', 'GTX1650', 'GEFORCE GTX 1650'],
         'L4': ['L4', 'L4-24GB', 'NVIDIA L4'],
         'V100': ['V100', 'TESLA V100', 'V100-SXM2', 'V100-PCIE', 'VOLTA'],
         'T4': ['T4', 'TESLA T4', 'T4-16GB'],

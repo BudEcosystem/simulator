@@ -25,6 +25,8 @@ def kv_namespace(
     attention_layout: str,
     hash_algo: str,
     engine_version: Optional[str],
+    attention_backend: Optional[str] = None,
+    speculative: Optional[str] = None,
 ) -> Optional[str]:
     """``kvns-`` plus 16 hex digits of a SHA-256 over everything that changes the KV layout; None
     without a model id."""
@@ -42,5 +44,11 @@ def kv_namespace(
         "hash_algo": hash_algo,
         "engine_version": engine_version,
     }
+    # Added with FRD-023 revision 3 (FR-ISO-3): what lays the blocks out on the GPU, and the draft
+    # whose layers share the cache. Absent keys keep earlier namespaces unchanged.
+    if attention_backend:
+        fields["attention_backend"] = attention_backend
+    if speculative:
+        fields["speculative"] = speculative
     digest = hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
     return "kvns-" + digest[:16]
