@@ -70,6 +70,31 @@ def _is_cpu_system(system_name) -> bool:
     return bool(HAS_CPU_SUPPORT and isinstance(system_name, dict) and system_name.get('type') == 'cpu')
 
 
+def _scope_cpu_to_pod(system_name, cpu_threads=None, host_cores=None):
+    """The CPU record narrowed to the cores a serving pod's engine actually runs on.
+
+    A CPU hardware record describes the whole chip, but a pod's engine runs OMP_NUM_THREADS threads, one per
+    physical core (budcluster's launcher binds them), so its matrix throughput is that share of the chip's. Only
+    Flops is scaled. Memory_BW is not: on a Xeon 6767P (PNAP, vLLM CPU 0.31, 2026-11-06) Qwen3-0.6B decoded at the
+    same ~25 ms a token on 12 and 31 threads, while its prefill was ~1.6x slower on 12.
+
+    `host_cores` is the node's physical core count; without it the record's own `cores` is used, and without
+    either the record is returned unchanged. A GPU system, or no `cpu_threads`, is returned unchanged.
+    """
+    if not cpu_threads or not _is_cpu_system(system_name):
+        return system_name
+    cores = host_cores or system_name.get('cores')
+    try:
+        fraction = min(1.0, float(cpu_threads) / float(cores))
+    except (TypeError, ValueError, ZeroDivisionError):
+        return system_name
+    if fraction <= 0 or fraction >= 1.0:
+        return system_name
+    scoped = dict(system_name)
+    scoped['Flops'] = system_name['Flops'] * fraction
+    return scoped
+
+
 def estimate_prefill_performance(
     model: str = 'llama2_7b',
     batch_size: int = 1,
@@ -80,6 +105,8 @@ def estimate_prefill_performance(
     pipeline_parallel: int = 1,
     expert_parallel: int = 1,
     debug: bool = False,
+    cpu_threads: Optional[int] = None,
+    host_cores: Optional[int] = None,
     **kwargs
 ) -> Dict:
     """
@@ -124,6 +151,7 @@ def estimate_prefill_performance(
     
     # Default to A100 80GB configuration if not specified
     system_name = _coerce_system_name(system_name)
+    system_name = _scope_cpu_to_pod(system_name, cpu_threads, host_cores)
     
     # Check if this is a CPU system based on 'type' field
     if _is_cpu_system(system_name):
@@ -192,7 +220,9 @@ def estimate_decode_performance(
     tensor_parallel: int = 1,
     pipeline_parallel: int = 1,
     expert_parallel: int = 1,
-    debug: bool = False
+    debug: bool = False,
+    cpu_threads: Optional[int] = None,
+    host_cores: Optional[int] = None
 ) -> Dict:
     """
     Estimate decode phase performance for LLM inference on GPU or CPU.
@@ -239,6 +269,7 @@ def estimate_decode_performance(
     
     # Default to A100 80GB configuration if not specified
     system_name = _coerce_system_name(system_name)
+    system_name = _scope_cpu_to_pod(system_name, cpu_threads, host_cores)
     
     # Check if this is a CPU system based on 'type' field
     if _is_cpu_system(system_name):
@@ -342,7 +373,9 @@ def estimate_end_to_end_performance(
     tensor_parallel: int = 1,
     pipeline_parallel: int = 1,
     expert_parallel: int = 1,
-    debug: bool = False
+    debug: bool = False,
+    cpu_threads: Optional[int] = None,
+    host_cores: Optional[int] = None
 ) -> Dict:
     """
     Estimate end-to-end performance combining prefill and decode phases for GPU or CPU.
@@ -366,14 +399,19 @@ def estimate_end_to_end_performance(
         pipeline_parallel: Pipeline parallelism degree
         expert_parallel: Expert parallelism degree
         debug: Whether to print debug information
+        cpu_threads: On a CPU, the engine threads the serving pod runs (one per physical core); compute is priced
+            for that share of the chip. Ignored on accelerators.
+        host_cores: On a CPU, the node's physical core count; defaults to the record's `cores`.
         
     Returns:
         Dictionary with comprehensive performance metrics:
         - prefill: Prefill phase results
         - decode: Decode phase results  
         - total_latency: End-to-end latency in milliseconds
-        - ttft: Time to first token in milliseconds
+        - ttft: Time to first token in milliseconds, for the whole batch's prefill
+        - session_ttft: Time to first token one session waits (on a CPU, its own prompt's prefill)
         - average_tpot: Average time per output token in milliseconds
+        - session_throughput: Output tokens a second one session receives (1000 / average_tpot)
         - total_throughput: Overall throughput in tokens/second
         - memory_peak: Peak memory usage
         
@@ -396,7 +434,9 @@ def estimate_end_to_end_performance(
         tensor_parallel=tensor_parallel,
         pipeline_parallel=pipeline_parallel,
         expert_parallel=expert_parallel,
-        debug=debug
+        debug=debug,
+        cpu_threads=cpu_threads,
+        host_cores=host_cores
     )
     
     # Get decode performance
@@ -411,7 +451,9 @@ def estimate_end_to_end_performance(
         tensor_parallel=tensor_parallel,
         pipeline_parallel=pipeline_parallel,
         expert_parallel=expert_parallel,
-        debug=debug
+        debug=debug,
+        cpu_threads=cpu_threads,
+        host_cores=host_cores
     )
     
     # Combine results
@@ -419,6 +461,30 @@ def estimate_end_to_end_performance(
     ttft = prefill_result.get('TTFT', prefill_result.get('Latency', 0))
     tpot = decode_result.get('TPOT', decode_result.get('Latency', 0))
     
+    # What one session sees. A CPU prefill is compute-bound, so a batch gains nothing from being prefilled together
+    # (batch_size prompts take batch_size times one), and a continuously batching engine meets the sessions as they
+    # arrive: a session waits for its own prompt, not everyone's. On a Xeon 6767P pod (PNAP, 2026-11-06) Qwen3-0.6B's
+    # TTFT was 147 ms alone and 228 ms with 4 sessions, where the 4-prompt batch prefill prices 4x the first.
+    # Accelerators keep the batch's prefill: it finishes together.
+    session_ttft = ttft
+    if batch_size > 1 and _is_cpu_system(_coerce_system_name(system_name)):
+        single = estimate_prefill_performance(
+            model=model,
+            batch_size=1,
+            input_tokens=input_tokens,
+            system_name=system_name,
+            bits=bits,
+            tensor_parallel=tensor_parallel,
+            pipeline_parallel=pipeline_parallel,
+            expert_parallel=expert_parallel,
+            debug=debug,
+            cpu_threads=cpu_threads,
+            host_cores=host_cores
+        )
+        session_ttft = single.get('TTFT', single.get('Latency', ttft))
+    # Tokens a second one session receives while decoding. total_throughput is not it: it counts prompt tokens too.
+    session_throughput = 1000 / tpot if tpot > 0 else 0
+
     total_tokens = batch_size * (input_tokens + output_tokens)
     total_throughput = 0
     if total_latency > 0:
@@ -429,7 +495,9 @@ def estimate_end_to_end_performance(
         'decode': decode_result,
         'total_latency': total_latency,
         'ttft': ttft,
+        'session_ttft': session_ttft,
         'average_tpot': tpot,
+        'session_throughput': session_throughput,
         'total_throughput': total_throughput,
         'input_tokens': input_tokens,
         'output_tokens': output_tokens,
