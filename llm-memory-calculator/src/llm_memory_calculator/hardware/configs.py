@@ -1104,9 +1104,27 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'type': 'cpu',
         'manufacturer': 'Intel',
         'name': 'Intel Granite Rapids (Next-Gen Xeon)',
+        # Host cost of a vLLM CPU decode step, MEASURED (see _GRANITE_RAPIDS_VLLM_CPU_DECODE below). This is the
+        # record a Granite Rapids node resolves to from its NFD cpu-model id (family 6, model 173), which names no SKU.
+        'step_overhead_ms': {'decode': 8.8},
+        'per_sequence_overhead_ms': {'decode': 0.55},
         'url': 'https://www.intel.com/content/www/us/en/newsroom/news/intel-advances-ai-everywhere.html',
         'description': 'Expected to offer significant enhancements in core count, memory bandwidth, and AI acceleration.'
     },
+    # _GRANITE_RAPIDS_VLLM_CPU_DECODE. The vLLM CPU engine's host cost per decode step, declared on the two
+    # Granite Rapids records below (the INFERENCE REALISM section explains the keys). Measured on PNAP, one Xeon
+    # 6767P (64 cores, SNC2), vllm-cpu 0.10.0 (upstream 0.31), bf16, 12 engine threads bound to one NUMA node,
+    # unique prompts, fixed output length, 2026-11-06. Mean TPOT, ms:
+    #     Qwen3-0.6B            1024 in / 256 out    19.3 at 1 session    24.8 at 4
+    #     MiniCPM5-1B           1024 in / 256 out    24.3 at 1            25.7 at 4
+    #     Qwen2.5-0.5B-Instruct 2048 in / 128 out    17.0 at 1            22.7 at 8
+    # These models' bytes stream in 8-13 ms at this record's bandwidth, and decode was as fast on 12 threads as on 31,
+    # so the rest is host time: scheduling, sampling and the Python step, not bandwidth. Fitted as
+    # step + per_sequence x batch over the residual after this package's own decode estimate (memory floor
+    # included), each record against its own roofline: 6767P 6.1 + 0.55 b, Granite Rapids 8.8 + 0.55 b, all six
+    # points within 4%. Decode only: prefill was not measured apart from its compute. Small models only, so it is
+    # not separated from the decode memory efficiency (_ETA_MEM_DECODE_CPU_X86, fitted end-to-end on Qwen3-8B): for
+    # an 8B model it adds ~5% on top of an estimate that may already contain some of it.
     # Measured deployment part (Granite Rapids-AP). Memory_BW is the SOURCED datasheet peak:
     # 8 channels x DDR5-6400 (6.4 GT/s x 8 B) = 409.6 GB/s per socket. The two variants below make the
     # socket count EXPLICIT so TP=1 (1 socket) and TP=2 (2 sockets) are each verifiable against a
@@ -1117,6 +1135,7 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'Flops': 86,
         'Memory_size': 512,
         'Memory_BW': 819,              # 2 sockets x 409.6 GB/s (DDR5-6400, 8ch/socket)
+        'cores': 128,                  # physical, 2 x 64
         'ICN': 175,
         'Power': 700,
         'real_values': True,
@@ -1129,12 +1148,15 @@ HARDWARE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'Flops': 43,
         'Memory_size': 256,
         'Memory_BW': 409.6,            # 1 socket x 8ch DDR5-6400
+        'cores': 64,                   # physical
         'ICN': 175,
         'Power': 350,
         'real_values': True,
         'type': 'cpu',
         'manufacturer': 'Intel',
         'name': 'Intel Xeon 6767P (Granite Rapids-AP), 1-socket',
+        'step_overhead_ms': {'decode': 6.1},           # MEASURED, see _GRANITE_RAPIDS_VLLM_CPU_DECODE
+        'per_sequence_overhead_ms': {'decode': 0.55},
         'aliases': ['Xeon 6767P 1S', '6767P 1socket']
     },
     'SierraForest_CPU': {

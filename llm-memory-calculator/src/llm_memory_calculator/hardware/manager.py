@@ -5,6 +5,7 @@ This module provides the main HardwareManager class for read-only access
 to hardware configurations from both static configs and optional database.
 """
 
+import copy
 import logging
 import os
 from typing import Dict, List, Optional, Any, Union, Tuple
@@ -441,6 +442,10 @@ class HardwareManager:
                 'interconnect_bandwidth_gbs': matched_config.get('ICN', matched_config.get('icn', 0)),
                 'real_values': matched_config.get('real_values', True),
                 'matched': True,
+                # The record itself, for the estimators: it carries what the fields above leave out (a CPU's
+                # `cores`, declared overheads and calibration blocks, `type`), which a dict rebuilt from them
+                # silently drops.
+                'hardware_config': copy.deepcopy(matched_config),
 
                 # New cost fields
                 'cost': cost_data,
