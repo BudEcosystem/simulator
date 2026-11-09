@@ -1,0 +1,69 @@
+{
+ "source": "Bud spec 031 DM3 e2e, 2026-11-09: stock vLLM 0.32.0 (befccf), Qwen3-0.6B bf16, RTX 3050 Laptop 4 GB (accubits), --gpu-memory-utilization 0.80 --max-model-len 4096 --max-num-seqs 80; fresh state per call, /v1/systemone measured from a pod on the same node (specs/031-decision-models/spikes/dm3-e2e/measure.py)",
+ "rows": [
+  {
+   "questions_per_call": 16,
+   "state_tokens": 977,
+   "question_tokens": 40,
+   "calls_in_flight": 1,
+   "median_ms": 239.5,
+   "p90_ms": 240.2
+  },
+  {
+   "questions_per_call": 16,
+   "state_tokens": 977,
+   "question_tokens": 40,
+   "calls_in_flight": 2,
+   "median_ms": 380.4,
+   "p90_ms": 410.3
+  },
+  {
+   "questions_per_call": 16,
+   "state_tokens": 977,
+   "question_tokens": 40,
+   "calls_in_flight": 4,
+   "median_ms": 629.9,
+   "p90_ms": 787.7
+  },
+  {
+   "questions_per_call": 16,
+   "state_tokens": 977,
+   "question_tokens": 40,
+   "calls_in_flight": 5,
+   "median_ms": 793.3,
+   "p90_ms": 975.7
+  },
+  {
+   "questions_per_call": 16,
+   "state_tokens": 977,
+   "question_tokens": 40,
+   "calls_in_flight": 6,
+   "median_ms": 990.3,
+   "p90_ms": 999.6
+  },
+  {
+   "questions_per_call": 64,
+   "state_tokens": 978,
+   "question_tokens": 40,
+   "calls_in_flight": 1,
+   "median_ms": 517.0,
+   "p90_ms": 532.9
+  },
+  {
+   "questions_per_call": 64,
+   "state_tokens": 978,
+   "question_tokens": 40,
+   "calls_in_flight": 2,
+   "median_ms": 819.9,
+   "p90_ms": 835.5
+  },
+  {
+   "questions_per_call": 64,
+   "state_tokens": 978,
+   "question_tokens": 40,
+   "calls_in_flight": 3,
+   "median_ms": 1242.8,
+   "p90_ms": 1267.0
+  }
+ ]
+}

@@ -774,6 +774,16 @@ class VLLMEngine:
         hard_cap = min(r.max_running, lim.sequence_ceiling or r.max_running)
         # running (throughput, TPOT): sequences held at their full length -- growth past the pool is preempted
         cap = max(min(hard_cap, max(kv_capacity(per_seq_tokens), 1)), 1)
+        g = max(int(workload.group_size), 1)
+        group_ceiling: Optional[int] = None
+        if g > 1:
+            # a group runs as one batch or not at all: whole groups, each holding its shared prefix once (D-30, D-31)
+            kv_groups = group_kv_capacity(
+                lim, inp, out, prefix_tokens=workload.prefix_tokens, group_size=g, prefix_cache=r.prefix_cache
+            )
+            group_ceiling = max(min(kv_groups, hard_cap // g), 0)
+            if group_ceiling:
+                cap = group_ceiling * g
         m = min(c, cap)
         queueing = c > m
         # the median request carries the queue wait only when the load cannot run: in a prefill-heavy load the admitted
@@ -783,6 +793,10 @@ class VLLMEngine:
         # 2.3 s; TCS shared 8B chat c64 runs ~33, median 3.0 s)
         median_waits = (inp / (inp + out) >= 0.5) or (c - m) / c >= 0.5
         hit = workload.prefix_hit_rate
+        if hit is None and g > 1:
+            hit = group_hit_rate(
+                inp, workload.prefix_tokens, g, workload.prefix_reuse, block_tokens=lim.block_tokens
+            )
         if hit is None:
             hit = 0.0
             if workload.prefix_tokens and r.prefix_cache:
@@ -861,6 +875,7 @@ class VLLMEngine:
         ttft_m, tpot = ttft_steady, tpot_steady
         # the reported TTFT uses the shape's TTFT terms; TPOT and the cycle (throughput) keep the pooled ones
         ttft_shown = steady_ttft(t_pref_ttft)
+        last_shown = ttft_shown
         cycle_ttft = ttft_m
         if wave:
 
@@ -895,6 +910,23 @@ class VLLMEngine:
             )
             median_shown, _ = wave_terms(new_tokens, for_ttft=True)
             sync_shown = min(max(p.v("arrival.sync.ttft"), 0.0), 1.0)
+            if g > 1:
+                # a group answers with its LAST read: when the burst's own tokens are prefilled -- whole chunks, then
+                # the remainder. Not ceil(burst / chunk) full chunks: a burst just past one chunk is not two chunks'
+                # work (the spike's RTX 3050: 80 reads of ~115 new tokens ran 0.79 s, two full chunks would be 1.5 s)
+                burst = m * new_tokens
+                full, rest = divmod(burst, float(r.chunk))
+                t_full = self.prefill_ms(
+                    model, device, r, p, float(r.chunk), requests=max(int(r.chunk // max(new_tokens, 1)), 1), ttft=True
+                )
+                t_rest = (
+                    self.prefill_ms(
+                        model, device, r, p, rest, requests=max(int(rest // max(new_tokens, 1)), 1), ttft=True
+                    )
+                    if rest > 0
+                    else 0.0
+                )
+                last_shown = sync_shown * (int(full) * t_full + t_rest + api) + (1.0 - sync_shown) * ttft_shown
             ttft_shown = sync_shown * (median_shown + api) + (1.0 - sync_shown) * ttft_shown
             cycle_ttft = ttft_m
             if cold_share:
@@ -937,13 +969,16 @@ class VLLMEngine:
         }
         ttft = ttft_shown
         e2e_m = ttft_m + (out - 1) * tpot
+        queue_ms = 0.0
         if queueing and median_waits:
             response = c / x
-            ttft += max(response - e2e_m, 0.0)
+            queue_ms = max(response - e2e_m, 0.0)
+            ttft += queue_ms
         # the reported TPOT carries the stratum's bias (other requests' prefill stalls); the cycle above does not
         if "spec.scale" in p.found:
             tpot = tpot * max(p.v("spec.scale"), 0.0)
         e2e = ttft + (out - 1) * tpot
+        group_ms = (last_shown + queue_ms + (out - 1) * tpot) if wave else e2e
 
         # bands come from fitted entries only; the structural host terms are absorbed by the fitted efficiencies
         dec_names = ["decode.kappa"]
@@ -985,6 +1020,11 @@ class VLLMEngine:
                     f"parallelism: TP={r.tp} PP={r.pp} ungrounded (no point measured at this parallelism on "
                     f"{getattr(device, 'sku', None) or 'this device'})"
                 )
+        if group_ceiling == 0:
+            notes.append(
+                f"a group of {g} reads does not fit one batch (batch limit {hard_cap}, KV pool "
+                f"{lim.kv_tokens} tokens): its reads run in rounds"
+            )
         if not getattr(model, "recognised", True):
             notes.append("architecture: unrecognised")
         if r.spec_method and "kernel_warmup" not in self.record.features:
@@ -1008,6 +1048,12 @@ class VLLMEngine:
             limits=lim,
             levels=levels,
             notes=notes,
+            group_ceiling=group_ceiling,
+            group_latency_ms=(
+                flagged(Estimate.around(group_ms, r_ttft * widen, ceiling=ceiling_ttft, noise=noise["ttft"]))
+                if g > 1
+                else None
+            ),
         )
 
     # ================================================================== boot time
@@ -1072,6 +1118,42 @@ LEVEL_ORDER = {
     "engine": ("record", "minor", "family", "prior"),
     "model": ("family", "class", "pooled", "prior"),
 }
+
+
+def group_kv_capacity(
+    lim: Limits, inp: float, out: float, *, prefix_tokens: int, group_size: int, prefix_cache: bool
+) -> int:
+    """Whole groups of ``group_size`` sequences the KV pool holds at once (Bud spec 031 D-30).
+
+    With the prefix cache on, a group holds the block-aligned part of its shared prefix once -- vLLM shares full blocks
+    only -- and every sequence holds the rest of its prompt and its output. With it off, every sequence holds its whole
+    prompt (why the spike's uncached 64-question call was ~21x slower). A hybrid model still charges each sequence its
+    recurrent state.
+    """
+    g = max(int(group_size), 1)
+    block = max(int(lim.block_tokens), 1)
+    shared = (int(prefix_tokens) // block) * block if prefix_cache else 0
+    shared = min(shared, max(int(inp) - 1, 0) // block * block)  # vLLM always computes a prompt's last token
+    per_seq = max(float(inp) - shared, 0.0) + float(out)
+    if lim.state_bytes_per_sequence and lim.block_bytes:
+        per_seq_blocks = lim.attn_groups * math.ceil(per_seq / block) + lim.state_bytes_per_sequence / lim.block_bytes
+        group_blocks = lim.attn_groups * (shared // block) + g * per_seq_blocks
+        return int(lim.num_blocks // max(group_blocks, 1e-9))
+    if not lim.kv_tokens:
+        return 0
+    return int(lim.kv_tokens // max(shared + g * per_seq, 1.0))
+
+
+def group_hit_rate(inp: float, prefix_tokens: int, group_size: int, reuse: str, *, block_tokens: int) -> float:
+    """The prefix-cache hit rate of a group's reads (Bud spec 031 D-30): the block-aligned shared prefix's share of each
+    prompt, on every read when the prefix is ``repeated`` (already cached), on all but one read per group when it is
+    ``fresh`` (computed once per group)."""
+    block = max(int(block_tokens), 1)
+    cached = (int(prefix_tokens) // block) * block
+    share = min(cached / max(float(inp), 1.0), 1.0)
+    if reuse == "repeated":
+        return share
+    return (1.0 - 1.0 / max(int(group_size), 1)) * share
 
 
 def band_strata(

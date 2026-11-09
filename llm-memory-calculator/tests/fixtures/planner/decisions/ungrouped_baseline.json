@@ -1,0 +1,1586 @@
+{
+ "gpt-oss-20b|h100xm-80c-vgpu|0": {
+  "e2e_s": {
+   "high": 2.3693,
+   "low": 0.8612,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 1.6153
+  },
+  "kv_tokens": 2485760,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 16,
+  "sequence_ceiling": 155360,
+  "throughput_tok_s": {
+   "high": 3719.5337,
+   "low": 1352.0248,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 2535.7793
+  },
+  "tpot_ms": {
+   "high": 9.0548,
+   "low": 3.2913,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 6.173
+  },
+  "ttft_ms": {
+   "high": 59.9912,
+   "low": 22.3192,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 41.1552
+  }
+ },
+ "gpt-oss-20b|h100xm-80c-vgpu|1": {
+  "e2e_s": {
+   "high": 6.8724,
+   "low": 2.3603,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 4.6163
+  },
+  "kv_tokens": 2485760,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 155360,
+  "throughput_tok_s": {
+   "high": 2641.8162,
+   "low": 907.3273,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 1774.5718
+  },
+  "tpot_ms": {
+   "high": 33.7712,
+   "low": 11.5987,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 22.6849
+  },
+  "ttft_ms": {
+   "high": 2516.2379,
+   "low": 954.4351,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 1735.3365
+  }
+ },
+ "gpt-oss-20b|h100xm-80c-vgpu|2": {
+  "e2e_s": {
+   "high": 0.6412,
+   "low": 0.0145,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 0.2894
+  },
+  "kv_tokens": 2485760,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 155360,
+  "throughput_tok_s": {
+   "high": 489.8463,
+   "low": 11.0557,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 221.1139
+  },
+  "tpot_ms": {
+   "high": 12.2395,
+   "low": 4.2036,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 8.2216
+  },
+  "ttft_ms": {
+   "high": 641.221,
+   "low": 14.4722,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 289.4436
+  }
+ },
+ "gpt-oss-20b|h100xm-80c-vgpu|3": {
+  "e2e_s": {
+   "high": 1.6554,
+   "low": 0.0374,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 0.7472
+  },
+  "kv_tokens": 2485760,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 155360,
+  "throughput_tok_s": {
+   "high": 68.706,
+   "low": 16.8145,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 42.7602
+  },
+  "tpot_ms": {
+   "high": 1106.2048,
+   "low": 379.9242,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 743.0645
+  },
+  "ttft_ms": {
+   "high": 1655.4116,
+   "low": 37.3622,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 747.2436
+  }
+ },
+ "gpt-oss-20b|h100xm-80c-vgpu|4": {
+  "e2e_s": {
+   "high": 3.873,
+   "low": 1.4078,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 2.6404
+  },
+  "kv_tokens": 2485760,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 8,
+  "sequence_ceiling": 155360,
+  "throughput_tok_s": {
+   "high": 2275.4533,
+   "low": 827.1115,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 1551.2824
+  },
+  "tpot_ms": {
+   "high": 7.4415,
+   "low": 2.7049,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 5.0732
+  },
+  "ttft_ms": {
+   "high": 69.9392,
+   "low": 26.0203,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 47.9798
+  }
+ },
+ "gpt-oss-20b|h100xm-80c-vgpu|5": {
+  "e2e_s": {
+   "high": 0.2742,
+   "low": 0.104,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 0.1891
+  },
+  "kv_tokens": 2485760,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": true,
+  "running": 301,
+  "sequence_ceiling": 155360,
+  "throughput_tok_s": {
+   "high": 3926.534,
+   "low": 1489.375,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 2707.9545
+  },
+  "tpot_ms": {
+   "high": 184.3328,
+   "low": 69.9193,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 127.1261
+  },
+  "ttft_ms": {
+   "high": 274.1553,
+   "low": 103.9899,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 189.0726
+  }
+ },
+ "gpt-oss-20b|l40s-48gb|0": {
+  "e2e_s": {
+   "high": 8.4938,
+   "low": 2.1234,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 5.3086
+  },
+  "kv_tokens": 1104592,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 16,
+  "sequence_ceiling": 69037,
+  "throughput_tok_s": {
+   "high": 1118.7869,
+   "low": 424.3674,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 771.5772
+  },
+  "tpot_ms": {
+   "high": 29.8453,
+   "low": 11.3206,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 20.583
+  },
+  "ttft_ms": {
+   "high": 95.9266,
+   "low": 23.9816,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 59.9541
+  }
+ },
+ "gpt-oss-20b|l40s-48gb|1": {
+  "e2e_s": {
+   "high": 20.0968,
+   "low": 5.0242,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 12.5605
+  },
+  "kv_tokens": 1104592,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 69037,
+  "throughput_tok_s": {
+   "high": 945.6932,
+   "low": 358.7112,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 652.2022
+  },
+  "tpot_ms": {
+   "high": 90.5324,
+   "low": 34.3399,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 62.4361
+  },
+  "ttft_ms": {
+   "high": 7409.8172,
+   "low": 1852.4543,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 4631.1358
+  }
+ },
+ "gpt-oss-20b|l40s-48gb|2": {
+  "e2e_s": {
+   "high": 0.1812,
+   "low": 0.0453,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 0.1133
+  },
+  "kv_tokens": 1104592,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 69037,
+  "throughput_tok_s": {
+   "high": 819.248,
+   "low": 310.7492,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 564.9986
+  },
+  "tpot_ms": {
+   "high": 32.0036,
+   "low": 12.1393,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 22.0714
+  },
+  "ttft_ms": {
+   "high": 181.2394,
+   "low": 45.3098,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 113.2746
+  }
+ },
+ "gpt-oss-20b|l40s-48gb|3": {
+  "e2e_s": {
+   "high": 0.4436,
+   "low": 0.1109,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 0.2773
+  },
+  "kv_tokens": 1104592,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 69037,
+  "throughput_tok_s": {
+   "high": 169.4077,
+   "low": 64.2581,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 116.8329
+  },
+  "tpot_ms": {
+   "high": 416.6521,
+   "low": 158.0405,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 287.3463
+  },
+  "ttft_ms": {
+   "high": 443.6398,
+   "low": 110.9099,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 277.2749
+  }
+ },
+ "gpt-oss-20b|l40s-48gb|4": {
+  "e2e_s": {
+   "high": 13.3969,
+   "low": 3.3492,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 8.373
+  },
+  "kv_tokens": 1104592,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 8,
+  "sequence_ceiling": 69037,
+  "throughput_tok_s": {
+   "high": 709.3248,
+   "low": 269.0542,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 489.1895
+  },
+  "tpot_ms": {
+   "high": 23.5475,
+   "low": 8.9318,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 16.2397
+  },
+  "ttft_ms": {
+   "high": 119.2961,
+   "low": 29.824,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 74.5601
+  }
+ },
+ "gpt-oss-20b|l40s-48gb|5": {
+  "e2e_s": {
+   "high": 1.3469,
+   "low": 0.3367,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 0.8418
+  },
+  "kv_tokens": 1104592,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": true,
+  "running": 134,
+  "sequence_ceiling": 69037,
+  "throughput_tok_s": {
+   "high": 881.9023,
+   "low": 334.5147,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 608.2085
+  },
+  "tpot_ms": {
+   "high": 81.5498,
+   "low": 30.9327,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 56.2412
+  },
+  "ttft_ms": {
+   "high": 1346.9065,
+   "low": 336.7266,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 841.8166
+  }
+ },
+ "qwen3-8b|h100xm-80c-vgpu|0": {
+  "e2e_s": {
+   "high": 3.1899,
+   "low": 1.3845,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 2.2872
+  },
+  "kv_tokens": 396656,
+  "levels": {
+   "engine": "record",
+   "hardware": "sku",
+   "model": "class"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 16,
+  "sequence_ceiling": 24791,
+  "throughput_tok_s": {
+   "high": 2029.242,
+   "low": 1552.3955,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 1790.8187
+  },
+  "tpot_ms": {
+   "high": 9.8856,
+   "low": 7.5626,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 8.7241
+  },
+  "ttft_ms": {
+   "high": 87.2744,
+   "low": 37.8806,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 62.5775
+  }
+ },
+ "qwen3-8b|h100xm-80c-vgpu|1": {
+  "e2e_s": {
+   "high": 13.8386,
+   "low": 5.2491,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 9.5439
+  },
+  "kv_tokens": 396656,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 24791,
+  "throughput_tok_s": {
+   "high": 1078.9551,
+   "low": 637.747,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 858.3511
+  },
+  "tpot_ms": {
+   "high": 58.6144,
+   "low": 34.6457,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 46.6301
+  },
+  "ttft_ms": {
+   "high": 5251.6983,
+   "low": 1992.0235,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 3621.8609
+  }
+ },
+ "qwen3-8b|h100xm-80c-vgpu|2": {
+  "e2e_s": {
+   "high": 0.1088,
+   "low": 0.0586,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 0.0837
+  },
+  "kv_tokens": 396656,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 24791,
+  "throughput_tok_s": {
+   "high": 961.2955,
+   "low": 568.201,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 764.7482
+  },
+  "tpot_ms": {
+   "high": 13.0192,
+   "low": 7.6954,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 10.3573
+  },
+  "ttft_ms": {
+   "high": 108.794,
+   "low": 58.5814,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 83.6877
+  }
+ },
+ "qwen3-8b|h100xm-80c-vgpu|3": {
+  "e2e_s": {
+   "high": 0.265,
+   "low": 0.1427,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 0.2038
+  },
+  "kv_tokens": 396656,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 24791,
+  "throughput_tok_s": {
+   "high": 199.388,
+   "low": 117.854,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 158.621
+  },
+  "tpot_ms": {
+   "high": 257.6308,
+   "low": 152.28,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 204.9554
+  },
+  "ttft_ms": {
+   "high": 264.9727,
+   "low": 142.6776,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 203.8252
+  }
+ },
+ "qwen3-8b|h100xm-80c-vgpu|4": {
+  "e2e_s": {
+   "high": 5.7026,
+   "low": 2.4752,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 4.0889
+  },
+  "kv_tokens": 396656,
+  "levels": {
+   "engine": "record",
+   "hardware": "sku",
+   "model": "class"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 8,
+  "sequence_ceiling": 24791,
+  "throughput_tok_s": {
+   "high": 1135.1074,
+   "low": 868.3714,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 1001.7394
+  },
+  "tpot_ms": {
+   "high": 8.9051,
+   "low": 6.8125,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 7.8588
+  },
+  "ttft_ms": {
+   "high": 101.8516,
+   "low": 44.2077,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 73.0296
+  }
+ },
+ "qwen3-8b|h100xm-80c-vgpu|5": {
+  "e2e_s": {
+   "high": 0.9108,
+   "low": 0.4904,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 0.7006
+  },
+  "kv_tokens": 396656,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": true,
+  "running": 48,
+  "sequence_ceiling": 24791,
+  "throughput_tok_s": {
+   "high": 918.6072,
+   "low": 542.9689,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 730.788
+  },
+  "tpot_ms": {
+   "high": 33.3121,
+   "low": 19.6901,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 26.5011
+  },
+  "ttft_ms": {
+   "high": 910.7976,
+   "low": 490.4295,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 700.6136
+  }
+ },
+ "qwen3-8b|l40s-48gb|0": {
+  "e2e_s": {
+   "high": 12.3075,
+   "low": 3.0769,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 7.6922
+  },
+  "kv_tokens": 166256,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 16,
+  "sequence_ceiling": 10391,
+  "throughput_tok_s": {
+   "high": 772.1111,
+   "low": 292.8697,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 532.4904
+  },
+  "tpot_ms": {
+   "high": 43.1509,
+   "low": 16.3676,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 29.7592
+  },
+  "ttft_ms": {
+   "high": 165.6857,
+   "low": 41.4214,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 103.5536
+  }
+ },
+ "qwen3-8b|l40s-48gb|1": {
+  "e2e_s": {
+   "high": 49.0851,
+   "low": 12.2713,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 30.6782
+  },
+  "kv_tokens": 166256,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": true,
+  "running": 39,
+  "sequence_ceiling": 10391,
+  "throughput_tok_s": {
+   "high": 387.194,
+   "low": 146.8667,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 267.0303
+  },
+  "tpot_ms": {
+   "high": 145.4571,
+   "low": 55.1734,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 100.3152
+  },
+  "ttft_ms": {
+   "high": 28701.0063,
+   "low": 7175.2516,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 17938.129
+  }
+ },
+ "qwen3-8b|l40s-48gb|2": {
+  "e2e_s": {
+   "high": 0.3523,
+   "low": 0.0881,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 0.2202
+  },
+  "kv_tokens": 166256,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 10391,
+  "throughput_tok_s": {
+   "high": 421.5148,
+   "low": 159.8849,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 290.6999
+  },
+  "tpot_ms": {
+   "high": 51.4936,
+   "low": 19.5321,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 35.5128
+  },
+  "ttft_ms": {
+   "high": 352.2533,
+   "low": 88.0633,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 220.1583
+  }
+ },
+ "qwen3-8b|l40s-48gb|3": {
+  "e2e_s": {
+   "high": 0.9013,
+   "low": 0.2253,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 0.5633
+  },
+  "kv_tokens": 166256,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 10391,
+  "throughput_tok_s": {
+   "high": 82.1915,
+   "low": 31.1761,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 56.6838
+  },
+  "tpot_ms": {
+   "high": 850.9029,
+   "low": 322.7563,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 586.8296
+  },
+  "ttft_ms": {
+   "high": 901.3068,
+   "low": 225.3267,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 563.3167
+  }
+ },
+ "qwen3-8b|l40s-48gb|4": {
+  "e2e_s": {
+   "high": 22.3854,
+   "low": 5.5964,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 13.9909
+  },
+  "kv_tokens": 166256,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 8,
+  "sequence_ceiling": 10391,
+  "throughput_tok_s": {
+   "high": 424.5044,
+   "low": 161.0189,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 292.7617
+  },
+  "tpot_ms": {
+   "high": 39.3124,
+   "low": 14.9116,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 27.112
+  },
+  "ttft_ms": {
+   "high": 218.696,
+   "low": 54.674,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 136.685
+  }
+ },
+ "qwen3-8b|l40s-48gb|5": {
+  "e2e_s": {
+   "high": 3.2247,
+   "low": 0.8062,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 2.0154
+  },
+  "kv_tokens": 166256,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": true,
+  "running": 20,
+  "sequence_ceiling": 10391,
+  "throughput_tok_s": {
+   "high": 368.3617,
+   "low": 139.7234,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 254.0425
+  },
+  "tpot_ms": {
+   "high": 78.8686,
+   "low": 29.9157,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 54.3921
+  },
+  "ttft_ms": {
+   "high": 3224.6569,
+   "low": 806.1642,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 2015.4106
+  }
+ },
+ "qwen3.8-27b|h100xm-80c-vgpu|0": {
+  "e2e_s": {
+   "high": 10.1885,
+   "low": 4.3224,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 7.2554
+  },
+  "kv_tokens": 296352,
+  "levels": {
+   "engine": "record",
+   "hardware": "sku",
+   "model": "class"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 16,
+  "sequence_ceiling": 378,
+  "throughput_tok_s": {
+   "high": 618.8378,
+   "low": 510.2453,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 564.5415
+  },
+  "tpot_ms": {
+   "high": 30.3545,
+   "low": 25.028,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 27.6913
+  },
+  "ttft_ms": {
+   "high": 272.6693,
+   "low": 115.6768,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 194.1731
+  }
+ },
+ "qwen3.8-27b|h100xm-80c-vgpu|1": {
+  "e2e_s": {
+   "high": 40.6415,
+   "low": 15.4157,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 28.0286
+  },
+  "kv_tokens": 296352,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": true,
+  "running": 42,
+  "sequence_ceiling": 378,
+  "throughput_tok_s": {
+   "high": 357.6871,
+   "low": 226.8581,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 292.2726
+  },
+  "tpot_ms": {
+   "high": 103.0578,
+   "low": 65.363,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 84.2104
+  },
+  "ttft_ms": {
+   "high": 25134.1716,
+   "low": 9533.6513,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 17333.9114
+  }
+ },
+ "qwen3.8-27b|h100xm-80c-vgpu|2": {
+  "e2e_s": {
+   "high": 1.9151,
+   "low": 0.8125,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 1.3638
+  },
+  "kv_tokens": 296352,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 378,
+  "throughput_tok_s": {
+   "high": 57.4316,
+   "low": 36.4252,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 46.9284
+  },
+  "tpot_ms": {
+   "high": 845.1749,
+   "low": 536.0404,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 690.6076
+  },
+  "ttft_ms": {
+   "high": 1915.099,
+   "low": 812.4589,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 1363.779
+  }
+ },
+ "qwen3.8-27b|h100xm-80c-vgpu|3": {
+  "e2e_s": {
+   "high": 1.9151,
+   "low": 0.8125,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 1.3638
+  },
+  "kv_tokens": 296352,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 378,
+  "throughput_tok_s": {
+   "high": 42.0289,
+   "low": 26.6562,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 34.3426
+  },
+  "tpot_ms": {
+   "high": 845.1749,
+   "low": 536.0404,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 690.6076
+  },
+  "ttft_ms": {
+   "high": 1915.099,
+   "low": 812.4589,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 1363.779
+  }
+ },
+ "qwen3.8-27b|h100xm-80c-vgpu|4": {
+  "e2e_s": {
+   "high": 17.6384,
+   "low": 7.4829,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 12.5606
+  },
+  "kv_tokens": 296352,
+  "levels": {
+   "engine": "record",
+   "hardware": "sku",
+   "model": "class"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 8,
+  "sequence_ceiling": 378,
+  "throughput_tok_s": {
+   "high": 357.4621,
+   "low": 294.7353,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 326.0987
+  },
+  "tpot_ms": {
+   "high": 26.3362,
+   "low": 21.7148,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 24.0255
+  },
+  "ttft_ms": {
+   "high": 398.2195,
+   "low": 168.9401,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 283.5798
+  }
+ },
+ "qwen3.8-27b|h100xm-80c-vgpu|5": {
+  "e2e_s": {
+   "high": 18.7347,
+   "low": 7.948,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 13.3413
+  },
+  "kv_tokens": 296352,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": true,
+  "running": 27,
+  "sequence_ceiling": 378,
+  "throughput_tok_s": {
+   "high": 46.9662,
+   "low": 29.7877,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 38.3769
+  },
+  "tpot_ms": {
+   "high": 845.3484,
+   "low": 536.1504,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 690.7494
+  },
+  "ttft_ms": {
+   "high": 18734.7011,
+   "low": 7947.9836,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 13341.3423
+  }
+ },
+ "qwen3.8-27b|l40s-48gb|0": {
+  "e2e_s": {
+   "high": 38.3126,
+   "low": 9.5782,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 23.9454
+  },
+  "kv_tokens": 0,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 16,
+  "sequence_ceiling": 0,
+  "throughput_tok_s": {
+   "high": 248.0309,
+   "low": 94.0807,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 171.0558
+  },
+  "tpot_ms": {
+   "high": 134.39,
+   "low": 50.9755,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 92.6827
+  },
+  "ttft_ms": {
+   "high": 498.0955,
+   "low": 124.5239,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 311.3097
+  }
+ },
+ "qwen3.8-27b|l40s-48gb|1": {
+  "e2e_s": {
+   "high": 121.1923,
+   "low": 30.2981,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 75.7452
+  },
+  "kv_tokens": 0,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 0,
+  "throughput_tok_s": {
+   "high": 156.8205,
+   "low": 59.4836,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 108.1521
+  },
+  "tpot_ms": {
+   "high": 507.3896,
+   "low": 192.4581,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 349.9239
+  },
+  "ttft_ms": {
+   "high": 50087.7648,
+   "low": 12521.9412,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 31304.853
+  }
+ },
+ "qwen3.8-27b|l40s-48gb|2": {
+  "e2e_s": {
+   "high": 5.9898,
+   "low": 1.4975,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 3.7436
+  },
+  "kv_tokens": 0,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 0,
+  "throughput_tok_s": {
+   "high": 24.7888,
+   "low": 9.4027,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 17.0957
+  },
+  "tpot_ms": {
+   "high": 2854.8156,
+   "low": 1082.8611,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 1968.8384
+  },
+  "ttft_ms": {
+   "high": 5989.8002,
+   "low": 1497.4501,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 3743.6251
+  }
+ },
+ "qwen3.8-27b|l40s-48gb|3": {
+  "e2e_s": {
+   "high": 5.9898,
+   "low": 1.4975,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 3.7436
+  },
+  "kv_tokens": 0,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 64,
+  "sequence_ceiling": 0,
+  "throughput_tok_s": {
+   "high": 18.0027,
+   "low": 6.8286,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 12.4157
+  },
+  "tpot_ms": {
+   "high": 2854.8156,
+   "low": 1082.8611,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 1968.8384
+  },
+  "ttft_ms": {
+   "high": 5989.8002,
+   "low": 1497.4501,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 3743.6251
+  }
+ },
+ "qwen3.8-27b|l40s-48gb|4": {
+  "e2e_s": {
+   "high": 68.0153,
+   "low": 17.0038,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 42.5096
+  },
+  "kv_tokens": 0,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": false,
+  "running": 8,
+  "sequence_ceiling": 0,
+  "throughput_tok_s": {
+   "high": 139.7145,
+   "low": 52.9952,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 96.3548
+  },
+  "tpot_ms": {
+   "high": 119.0743,
+   "low": 45.1661,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 82.1202
+  },
+  "ttft_ms": {
+   "high": 873.8104,
+   "low": 218.4526,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 546.1315
+  }
+ },
+ "qwen3.8-27b|l40s-48gb|5": {
+  "e2e_s": {
+   "high": 41.8715,
+   "low": 10.4679,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 26.1697
+  },
+  "kv_tokens": 0,
+  "levels": {
+   "engine": "prior",
+   "hardware": "prior",
+   "model": "prior"
+  },
+  "notes": [],
+  "queueing": true,
+  "running": 256,
+  "sequence_ceiling": 0,
+  "throughput_tok_s": {
+   "high": 28.3687,
+   "low": 10.7605,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 19.5646
+  },
+  "tpot_ms": {
+   "high": 16769.277,
+   "low": 6360.7602,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": true,
+   "value": 11565.0186
+  },
+  "ttft_ms": {
+   "high": 41871.4799,
+   "low": 10467.87,
+   "noise": 0.0,
+   "noise_limited": false,
+   "ungrounded": false,
+   "value": 26169.6749
+  }
+ }
+}
