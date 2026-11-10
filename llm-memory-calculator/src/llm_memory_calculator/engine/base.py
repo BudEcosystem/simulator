@@ -90,6 +90,10 @@ def draft_key(path: str) -> str:
     return re.sub(r"[/_\-]+", "-", ident.lower()).strip("-")
 
 
+#: how a group's shared prefix is found in the cache (``Workload.prefix_reuse``)
+PREFIX_REUSE = ("fresh", "repeated")
+
+
 @dataclass(frozen=True)
 class Workload:
     """A text-generation workload (FRD-027 §10.1). Other tasks extend this shape later."""
@@ -112,9 +116,25 @@ class Workload:
     # a fixed-count benchmark of this many requests: the run lasts until its last request finishes, so its throughput
     # over the duration drains below the open-ended rate (arrival.drain); None for a plan's open-ended traffic
     requests: Optional[int] = None
+    # Bud spec 031 DM3 (D-30): requests that arrive together and share ``prefix_tokens`` -- a decision call's
+    # one-token reads over one state. With the prefix cache on, a group holds its block-aligned prefix once.
+    group_size: int = 1
+    # a group's shared prefix: ``fresh`` (a new state per group, computed once) or ``repeated`` (already cached, every
+    # read hits it). Read only when ``group_size > 1`` and no ``prefix_hit_rate`` is given.
+    prefix_reuse: str = "fresh"
+
+    def __post_init__(self) -> None:
+        if int(self.group_size) < 1:
+            raise ValueError(f"group_size must be at least 1, got {self.group_size}")
+        if self.prefix_reuse not in PREFIX_REUSE:
+            raise ValueError(f"prefix_reuse must be one of {PREFIX_REUSE}, got {self.prefix_reuse!r}")
+
+    @property
+    def grouped(self) -> bool:
+        return int(self.group_size) > 1
 
     def digest_key(self) -> Tuple[Any, ...]:
-        return (
+        key: Tuple[Any, ...] = (
             round(float(self.input_tokens), 1),
             round(float(self.output_tokens), 1),
             int(self.concurrency),
@@ -128,6 +148,10 @@ class Workload:
             self.arrival,
             self.requests,
         )
+        # an ungrouped workload keeps the key it had before groups existed, so nothing cached on it goes stale
+        if self.grouped:
+            key += (int(self.group_size), self.prefix_reuse)
+        return key
 
     @property
     def shape(self) -> str:
@@ -257,13 +281,18 @@ class Prediction:
     limits: Limits
     levels: Dict[str, str] = field(default_factory=dict)
     notes: List[str] = field(default_factory=list)
+    # grouped workloads only (``Workload.group_size > 1``, Bud spec 031 DM3): the whole groups the replica holds at once
+    # as one batch each (KV pool and batch limit; 0 when one group does not fit), and the time until a group's LAST
+    # read answers -- a decision call returns with all of its answers
+    group_ceiling: Optional[int] = None
+    group_latency_ms: Optional[Estimate] = None
 
     @property
     def ungrounded(self) -> bool:
         return any(e.ungrounded for e in (self.ttft_ms, self.tpot_ms, self.throughput_tok_s))
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        out = {
             "ttft_ms": self.ttft_ms.to_dict(),
             "tpot_ms": self.tpot_ms.to_dict(),
             "throughput_tok_s": self.throughput_tok_s.to_dict(),
@@ -273,6 +302,11 @@ class Prediction:
             "levels": dict(self.levels),
             "notes": list(self.notes),
         }
+        if self.group_ceiling is not None:
+            out["group_ceiling"] = self.group_ceiling
+        if self.group_latency_ms is not None:
+            out["group_latency_ms"] = self.group_latency_ms.to_dict()
+        return out
 
 
 class EngineModel(Protocol):

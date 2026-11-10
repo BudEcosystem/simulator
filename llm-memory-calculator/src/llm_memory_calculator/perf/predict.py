@@ -62,10 +62,20 @@ def predict(
     cfg = sim_config(engine, settings, model, device, profile, draft=draft)
     from .lengths import lengths_for
 
+    from ..engine.vllm import group_hit_rate, group_kv_capacity
+
     c = max(int(workload.concurrency), 1)
     n = int(workload.requests) if workload.requests else max(8 * c, 32)
+    r = engine.resolve(settings, model, device)
+    g = max(int(getattr(workload, "group_size", 1)), 1)
+    hit = workload.prefix_hit_rate
+    if hit is None and g > 1 and r.prefix_cache:
+        # a decision call's reads share their state (Bud spec 031 D-30)
+        hit = group_hit_rate(
+            workload.input_tokens, workload.prefix_tokens, g, workload.prefix_reuse, block_tokens=lim.block_tokens
+        )
     # a prefix-cache hit spares that share of every prompt's prefill
-    new_tokens = float(workload.input_tokens) * (1.0 - float(workload.prefix_hit_rate or 0.0))
+    new_tokens = float(workload.input_tokens) * (1.0 - float(hit or 0.0))
     res = simulate(profile, cfg, lengths_for(replace(workload, input_tokens=max(new_tokens, 1.0)), n), concurrency=c)
     interp = profile.interpolation_error()
 
@@ -123,6 +133,28 @@ def predict(
     def rel(est: Estimate) -> float:
         return est.high / est.value - 1.0 if est.value > 0 else 0.0
 
+    group_ceiling: Optional[int] = None
+    group_latency: Optional[Estimate] = None
+    if g > 1:
+        # the simulation holds only each read's new tokens, so a group's shared prefix is counted by the engine rule
+        kv_groups = group_kv_capacity(
+            lim,
+            float(workload.input_tokens),
+            float(workload.output_tokens),
+            prefix_tokens=workload.prefix_tokens,
+            group_size=g,
+            prefix_cache=r.prefix_cache,
+        )
+        group_ceiling = max(min(kv_groups, cfg.max_num_seqs // g), 0)
+        if group_ceiling == 0:
+            notes.append(
+                f"a group of {g} reads does not fit one batch (batch limit {cfg.max_num_seqs}, KV pool "
+                f"{lim.kv_tokens} tokens): its reads run in rounds"
+            )
+        # a call answers with its last read: the slow tail of the simulated reads, moved by the TTFT correction
+        last = res.percentile(res.e2e_samples, 0.9) + (ttft.value - res.ttft_ms)
+        group_latency = Estimate.around(max(last, ttft.value), rel(ttft), ceiling=ceiling_ttft)
+
     return Prediction(
         ttft_ms=ttft,
         tpot_ms=tpot,
@@ -133,6 +165,8 @@ def predict(
         limits=lim,
         levels=levels,
         notes=notes,
+        group_ceiling=group_ceiling,
+        group_latency_ms=group_latency,
     )
 
 
