@@ -21,10 +21,26 @@ from typing import Any, Mapping, Optional, Tuple
 
 MIXED16, HALF16, FLOAT32 = "mixed16", "half16", "float32"
 PRECISIONS = (MIXED16, HALF16, FLOAT32)
-#: bytes of a weight held in each precision. ``mixed16`` assumes the runtime holds its weights in bfloat16; Laya,
-#: Julia and GLiNER store theirs in float32, so if it autocasts over the stored weights instead, the term is half the
-#: real one (about 0.8 GiB short for Laya). Unverified until the benchmark records peak memory (runtime v0.1.1,
-#: ``tools/decision_calibration.py``); ``tests/test_decision_runtime.py::test_memory_terms`` pins the assumption.
+#: Bytes of a weight held in each precision.
+#:
+#: ``mixed16`` is 2 because the runtime HOLDS its weights in bfloat16, not because it autocasts over float32 ones:
+#: ``basal_engine.weights.Weights.wide`` maps ``mixed16`` to ``torch.bfloat16``, and ``matrix()`` -- every
+#: matrix-multiply weight, its bias and the token embeddings -- casts to it as it loads. ``backbones/modernbert.py``
+#: states the policy: "``mixed16`` keeps matrix-multiply weights in bfloat16 and the residual stream, norms and rotary
+#: arithmetic in float32". The 32-bit half of that is arithmetic, which the activation term already carries. (The
+#: engine's research benchmarks describe the same mode as "16-bit multiplies, 32-bit residual stream", which reads
+#: like autocast over stored float32 but is not how the weights are held.)
+#:
+#: What stays float32 is ``exact()``: the norms (one vector per layer) and the small readout heads (Laya's scorer and
+#: act head, GLiNER's ``classifier``). A few MB on a model of hundreds, so it is not modelled -- and the checkpoints'
+#: stored dtype (float32 for Laya, Julia and GLiNER; bfloat16 for Kev's Qwen2.5 base) does not enter the term at all.
+#:
+#: Not modelled, and a CPU-only transient: ``models/*.py`` load with ``safetensors.torch.load_file``, which is eager,
+#: so while a replica builds its bfloat16 copies host RAM also holds the whole checkpoint at its stored dtype --
+#: about 6 bytes per parameter at the peak against 2 in the steady state. Nothing retains the staging dict (both
+#: ``ModernBert`` and ``MarkerProgram`` copy out of it and drop it), so it is freed once the model is built, and on a
+#: GPU replica it is host RAM the pod does not request. On a CPU replica it lands inside the cgroup, where
+#: budcluster's own CPU transient headroom (``max(1 GiB, 10% of model bytes)``) is what covers it today.
 WEIGHT_BYTES = {MIXED16: 2.0, HALF16: 2.0, FLOAT32: 4.0}
 
 CUDA, CPU = "cuda", "cpu"

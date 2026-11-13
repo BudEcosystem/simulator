@@ -446,10 +446,16 @@ def test_cpu_plan_scales_with_threads():
 
 
 def test_memory_terms():
+    """`mixed16` weights are 2 bytes each: the engine holds them in bfloat16.
+
+    `Weights.wide` maps `mixed16` to `torch.bfloat16` and `matrix()` casts every matmul weight, bias and token
+    embedding to it as it loads, so the checkpoints' stored float32 does not enter the term (see WEIGHT_BYTES).
+    Were this 4, Laya's weights alone would be 1.57 GiB and GLiNER would be refused on the 4 GB 3050 it serves on.
+    """
     f = _facts("laya")
     gpu = dr.size(f, RTX3050, workload=_wl())
-    # mixed16 holds its weights in bfloat16: an assumption until runtime v0.1.1's benchmark records peak memory. If
-    # the runtime autocasts over Laya's stored float32 weights instead, this term is half the real one.
+    # mixed16 holds its weights in bfloat16, read from the engine rather than assumed: `Weights.wide`, `matrix()`
+    # and the ModernBERT policy. v0.1.1's peak-memory benchmark is now a check of this, not the thing that settles it.
     assert gpu.weight_bytes == f.params_total * 2
     assert gpu.state_bytes == 0 and gpu.activation_bytes > 0 and gpu.overhead_bytes > 0
     assert gpu.total_bytes < 4 * 2**30                                  # Laya serves on the 4 GB 3050 (measured)
