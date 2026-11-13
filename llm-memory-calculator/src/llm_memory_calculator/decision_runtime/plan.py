@@ -12,6 +12,12 @@ runtime packs the rows of many calls into passes, so a replica is a queue in fro
 Measured on the RTX 3050: throughput is flat from 16 to 1,024 closed-loop clients and latency is all queue, so a call
 with ``C`` calls in flight takes about ``C x W / R_tok``. A device on which one call already takes longer than ``T`` is
 refused with the reason.
+
+Memory follows the deployment's own rule (budcluster ``memory_plan``, ``runtime.modules.legacy.cuda_budget``): on a
+GPU the replica's demand, its weights, activations and state plus the CUDA context reserve, is at most 94% of the
+card, the same in dedicated and shared mode (the engine's HAMi slice is its demand). When that does not hold at the
+runtime's defaults, the plan first gives Kev's state cache, when the deployment names none, down to one state, then
+lowers ``[limits] max_pass_tokens``, never below the longest row; below that it refuses.
 """
 
 from __future__ import annotations
@@ -20,24 +26,34 @@ import math
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Mapping, Optional, Tuple
 
+from ..kv.infra import DEVICE_CTX_BYTES_CUDA, GPU_UTIL_MAX_CENTI, device_model_key
 from . import calibration
 from .families import BRANCH, ONE_SEQUENCE, DecisionFacts
-from .precision import FLOAT32, PRECISIONS, WEIGHT_BYTES, choose, is_cpu
+from .precision import CPU, FLOAT32, PRECISIONS, WEIGHT_BYTES, choose, device_kind, is_cpu
 
+MIB = 2**20
+GIB = 2**30
 #: the queue's utilisation ceiling (FRD §5.16.3)
 RHO_MAX = 0.8
 #: the runtime's pass-size ceiling (``crates/sched`` ``Limits::max_pass_tokens``); a row longer than it raises it
 MAX_PASS_TOKENS = 16_384
+#: a lowered pass ceiling is a multiple of this, unless the longest row sets it
+PASS_STEP = 64
 #: CPU compute threads beyond this scale badly (runtime PERFORMANCE.md §4.5): more load gets more replicas
 MAX_CPU_THREADS = 16
 #: activation memory over the analytic figure until the benchmark measures peak memory (runtime v0.1.1)
 ACTIVATION_MARGIN = 1.5
-#: the CUDA context, cuBLAS / Triton workspaces and the allocator's slack, until measured
-DEFAULT_CUDA_CONTEXT_BYTES = 700 * 2**20
+#: the CUDA context budcluster reserves beside every replica's terms (memory_plan DEVICE_CTX_BYTES); a measured
+#: context larger than it replaces it
+CUDA_CONTEXT_BYTES = DEVICE_CTX_BYTES_CUDA
+#: the most of a card a replica's demand may take (budcluster's gpu-memory-utilization ceiling)
+GPU_UTIL_MAX = GPU_UTIL_MAX_CENTI / 100.0
 #: the Python process, torch, the tokenizer and its 4M-token caches on a CPU replica
-DEFAULT_CPU_PROCESS_BYTES = 1536 * 2**20
+DEFAULT_CPU_PROCESS_BYTES = 1536 * MIB
 #: Kev's state cache when the deployment names none (basal_engine.models.kev.STATE_CACHE_MB)
 DEFAULT_STATE_CACHE_MB = 2048
+#: the smallest state cache the plan gives Kev when it has to shrink the default
+MIN_STATE_CACHE_MB = 64
 #: the runtime's own pass-time ceiling for its automatic target (``max_auto_pass_ms``)
 RUNTIME_MAX_AUTO_PASS_MS = 300.0
 
@@ -63,6 +79,8 @@ class DecisionPlan:
     max_pass_tokens: int = MAX_PASS_TOKENS
     target_call_latency_ms: Optional[float] = None
     limits: Dict[str, float] = field(default_factory=dict)
+    #: the state cache the replica runs with, MiB (families that keep states; None otherwise)
+    state_cache_mb: Optional[int] = None
 
     @property
     def total_bytes(self) -> int:
@@ -96,8 +114,21 @@ def call_work(facts: DecisionFacts, workload: Mapping[str, Any]) -> Tuple[int, f
         return row, row * facts.flops_per_token(row), row, None
     if facts.layout == BRANCH:
         row = state + question
+        if facts.max_state_tokens and state > facts.max_state_tokens:
+            return 0, 0.0, row, (
+                f"a state of {state:,} tokens is over the {facts.family} family's {facts.max_state_tokens:,}-token "
+                "state limit: the runtime refuses it"
+            )
+        if facts.max_question_tokens and question > facts.max_question_tokens:
+            return 0, 0.0, row, (
+                f"a question of {question:,} tokens is over the {facts.family} family's "
+                f"{facts.max_question_tokens:,}-token question limit: the runtime refuses it"
+            )
         if row > facts.max_len:
-            return 0, 0.0, row, f"a state of {state:,} tokens is over the {facts.family} family's limit"
+            return 0, 0.0, row, (
+                f"a state of {state:,} tokens and a question of {question:,} tokens are over the {facts.family} "
+                f"family's {facts.max_len:,}-token limit"
+            )
         tokens = state + q_count * question
         flops = facts.linear_flops_per_token() * tokens
         flops += state * facts.attention_flops_per_token(state, context=state / 2.0)
@@ -109,21 +140,17 @@ def call_work(facts: DecisionFacts, workload: Mapping[str, Any]) -> Tuple[int, f
 
 
 def resolve_hardware(device: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
-    """The device's hardware-table entry, from what budsim passes: ``hardware`` itself, else a match on its name."""
+    """The device's hardware entry, from what budsim passes: ``hardware`` itself, else the hardware manager's match on
+    its name (the static table and any hardware added through the DB; matches are cached)."""
     given = device.get("hardware")
     if isinstance(given, Mapping) and given:
         return given
     if is_cpu(device):
         return None
-    try:
-        from ..hardware.configs import HARDWARE_CONFIGS
-        from ..hardware.device_matcher import match_device
-    except ImportError:  # pragma: no cover - the package always ships both
-        return None
-    name = device.get("raw_name") or device.get("name") or device.get("device_name") or device.get("product_name")
+    name = device_model_key(device) or str(device.get("product_name") or "")
     if not name:
         return None
-    info: Dict[str, Any] = {"raw_name": str(name)}
+    info: Dict[str, Any] = {"raw_name": name}
     mem = device.get("mem_per_GPU_in_GB") or device.get("mem_per_gpu_in_gb") or device.get("memory_gb")
     try:
         if mem:
@@ -134,7 +161,9 @@ def resolve_hardware(device: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
         if device.get(key):
             info[key] = device[key]
     try:
-        return match_device(info, HARDWARE_CONFIGS)
+        from ..hardware.manager import default_manager
+
+        return default_manager().match_cluster_device(info)
     except Exception:  # noqa: BLE001 - an unmatched name is an unknown device, never a failed plan
         return None
 
@@ -171,6 +200,12 @@ def admission_limits(target_call_latency_ms: Optional[float]) -> Dict[str, float
     return limits
 
 
+def min_pass_tokens(facts: DecisionFacts, row: int) -> int:
+    """The smallest pass ceiling the runtime keeps: the longest row it may be sent (it raises its ceiling to that
+    itself), which for a per-question or one-sequence family is the family's limit, and for Kev the workload's row."""
+    return max(PASS_STEP, int(row), int(facts.max_len if facts.layout != BRANCH else row))
+
+
 def size(
     facts: DecisionFacts,
     device: Mapping[str, Any],
@@ -178,32 +213,37 @@ def size(
     workload: Mapping[str, Any],
     precision: Optional[str] = None,
     threads: Optional[int] = None,
-    mode: str = "dedicated",
     state_cache_mb: Optional[float] = None,
     memory_budget_bytes: Optional[float] = None,
 ) -> DecisionPlan:
     """Size one replica of ``facts`` on ``device`` for ``workload`` (DM3's decisions block). Never raises: a failure
     is a plan with ``refused`` set and ``calls_per_replica`` 0.
 
-    ``memory_budget_bytes`` is what the caller's memory gate leaves the replica's weights, activations and state.
-    When the runtime's default pass ceiling does not fit in it, the plan lowers ``[limits] max_pass_tokens`` until it
-    does, never below the longest row (the runtime raises its ceiling to that row itself), and refuses below that.
+    Dedicated and shared mode size alike: the runtime takes no fraction of the card, so its HAMi slice is its demand.
+
+    ``memory_budget_bytes`` is what the caller's memory gate leaves the replica's weights, activations and state; on
+    a GPU the card bounds them too (94% of it, less the CUDA context reserve), whichever is smaller. ``state_cache_mb``
+    is the Kev state cache the deployment names (0 keeps no states); when it names none the plan sizes it, at most the
+    runtime's default 2 GiB, and reports it as ``state_cache_mb``.
     """
     try:
-        return _size(facts, device, workload=workload, precision=precision, threads=threads, mode=mode,
+        return _size(facts, device, workload=workload, precision=precision, threads=threads,
                      state_cache_mb=state_cache_mb, memory_budget_bytes=memory_budget_bytes)
     except Exception as exc:  # noqa: BLE001 - the planner reports a refusal, it never fails a simulation
-        return DecisionPlan(
-            precision=precision or FLOAT32, precision_reason="", tokens_per_second=0.0, single_call_ms=0.0,
-            call_latency_ms=0.0, calls_per_replica=0, threads=None, weight_bytes=0, activation_bytes=0,
-            state_bytes=0, overhead_bytes=0, basis=calibration.ESTIMATED, calibration=None,
-            refused=f"the decision plan could not be computed: {exc}",
-        )
+        return _refused(precision or FLOAT32, f"the decision plan could not be computed: {exc}")
 
 
-def _size(facts, device, *, workload, precision, threads, mode, state_cache_mb, memory_budget_bytes) -> DecisionPlan:
-    cpu = is_cpu(device)
+def _refused(precision: str, reason: str, precision_reason: str = "") -> DecisionPlan:
+    return DecisionPlan(
+        precision=precision, precision_reason=precision_reason, tokens_per_second=0.0, single_call_ms=0.0,
+        call_latency_ms=0.0, calls_per_replica=0, threads=None, weight_bytes=0, activation_bytes=0, state_bytes=0,
+        overhead_bytes=0, basis=calibration.ESTIMATED, calibration=None, refused=reason,
+    )
+
+
+def _size(facts, device, *, workload, precision, threads, state_cache_mb, memory_budget_bytes) -> DecisionPlan:
     hardware = resolve_hardware(device)
+    kind = device_kind(device, hardware)
     chosen, reason = choose(device, hardware)
     if precision:
         if precision not in PRECISIONS:
@@ -211,6 +251,12 @@ def _size(facts, device, *, workload, precision, threads, mode, state_cache_mb, 
         if precision != chosen:
             reason = f"{precision} as asked ({chosen} is what the runtime would choose: {reason})"
         chosen = precision
+    if kind is None:
+        kind_name = str(device.get("type") or device.get("device_type") or "unknown type")
+        name = device_model_key(device) or "this device"
+        return _refused(chosen, f"Bud-Decision-Runtime serves CUDA GPUs and CPUs: {name} ({kind_name}) cannot run it",
+                        reason)
+    cpu = kind == CPU
     n_threads = cpu_threads(device, threads) if cpu else None
     target = workload.get("target_call_latency_ms")
     target = float(target) if target not in (None, "", 0) else None
@@ -219,7 +265,8 @@ def _size(facts, device, *, workload, precision, threads, mode, state_cache_mb, 
     entry, eff, basis = calibration.lookup(device, hardware, chosen, facts.family, facts.kind)
     peak = calibration.peak_flops(device, hardware, chosen, n_threads)
 
-    memory = _memory(facts, cpu=cpu, precision=chosen, entry=entry, state_cache_mb=state_cache_mb, row=row)
+    memory, per_token = _memory(facts, cpu=cpu, precision=chosen, entry=entry, basis=basis,
+                                state_cache_mb=state_cache_mb, row=row)
     plan = DecisionPlan(
         precision=chosen, precision_reason=reason, tokens_per_second=0.0, single_call_ms=0.0, call_latency_ms=0.0,
         calls_per_replica=0, threads=n_threads, basis=basis, calibration=entry.key if entry else None, refused=None,
@@ -229,8 +276,10 @@ def _size(facts, device, *, workload, precision, threads, mode, state_cache_mb, 
     if refusal:
         plan.refused = refusal
         return plan
-    if memory_budget_bytes:
-        fitted = _fit_pass_ceiling(plan, facts, row, float(memory_budget_bytes))
+    budget, where = _budget(plan, device, hardware, cpu=cpu, memory_budget_bytes=memory_budget_bytes)
+    if budget is not None:
+        state_min = _min_state_bytes(facts, workload, chosen) if state_cache_mb is None else plan.state_bytes
+        fitted = _fit(plan, facts, row, budget, per_token=per_token, state_min=state_min, where=where)
         if fitted:
             plan.refused = fitted
             return plan
@@ -246,12 +295,6 @@ def _size(facts, device, *, workload, precision, threads, mode, state_cache_mb, 
     plan.tokens_per_second = round(r_tok, 1)
     plan.single_call_ms = round(t_1, 2)
 
-    device_gb = _float(device.get("mem_per_GPU_in_GB") or device.get("mem_per_gpu_in_gb"))
-    if not cpu and device_gb and plan.total_bytes > device_gb * 2**30:
-        plan.refused = (
-            f"one replica needs {plan.total_bytes / 2**30:.1f} GiB ({chosen}) and the GPU has {device_gb:.1f} GiB"
-        )
-        return plan
     if target is None:
         plan.refused = "the decisions workload names no target_call_latency_ms: a decision replica is sized to one"
         return plan
@@ -269,22 +312,71 @@ def _size(facts, device, *, workload, precision, threads, mode, state_cache_mb, 
     return plan
 
 
-def _fit_pass_ceiling(plan: DecisionPlan, facts: DecisionFacts, row: int, budget: float) -> Optional[str]:
-    """Lower the plan's pass ceiling until weights, activations and state fit ``budget``; the refusal, or None."""
-    used = plan.weight_bytes + plan.activation_bytes + plan.state_bytes
-    if used <= budget:
+def _device_bytes(device: Mapping[str, Any], hardware: Optional[Mapping[str, Any]]) -> float:
+    """The card's memory in bytes (GiB as the inventory reports it), else the hardware table's; 0 when unknown."""
+    for value in (device.get("mem_per_GPU_in_GB"), device.get("mem_per_gpu_in_gb"), device.get("memory_gb"),
+                  (hardware or {}).get("Memory_size")):
+        gb = _float(value)
+        if gb > 0:
+            return gb * GIB
+    return 0.0
+
+
+def _budget(
+    plan: DecisionPlan, device: Mapping[str, Any], hardware: Optional[Mapping[str, Any]], *, cpu: bool,
+    memory_budget_bytes: Optional[float],
+) -> Tuple[Optional[float], str]:
+    """(bytes the weights, activations and state may take, what sets it); (None, "") when nothing bounds them."""
+    budgets = []
+    if memory_budget_bytes is not None:
+        budgets.append((float(memory_budget_bytes), "the memory budget"))
+    card = 0.0 if cpu else _device_bytes(device, hardware)
+    if card:
+        budgets.append((
+            GPU_UTIL_MAX * card - plan.overhead_bytes,
+            f"the {card / GIB:.1f} GiB GPU ({GPU_UTIL_MAX:.0%} of it, less {plan.overhead_bytes / GIB:.1f} GiB of "
+            "CUDA context)",
+        ))
+    if not budgets:
+        return None, ""
+    return min(budgets, key=lambda b: b[0])
+
+
+def _min_state_bytes(facts: DecisionFacts, workload: Mapping[str, Any], precision: str) -> float:
+    """The smallest state cache the plan gives a family that keeps states: one of the workload's states."""
+    if not facts.keeps_state:
+        return 0.0
+    compute = 4.0 if precision == FLOAT32 else 2.0
+    state = max(int(workload.get("state_tokens") or 0), 0) * facts.kv_bytes_per_token(compute)
+    return float(max(MIN_STATE_CACHE_MB, math.ceil(state / MIB)) * MIB)
+
+
+def _fit(
+    plan: DecisionPlan, facts: DecisionFacts, row: int, budget: float, *, per_token: float, state_min: float,
+    where: str,
+) -> Optional[str]:
+    """Bring weights, activations and state within ``budget``: an unnamed state cache gives way first (down to
+    ``state_min``), then the pass ceiling (down to the longest row). The refusal, or None."""
+    if plan.weight_bytes + plan.activation_bytes + plan.state_bytes <= budget:
         return None
-    per_token = plan.activation_bytes / max(plan.max_pass_tokens, 1)
-    floor = max(64, int(row), int(facts.max_len if facts.layout != BRANCH else row))
+    if plan.state_bytes > state_min:
+        room = budget - plan.weight_bytes - plan.activation_bytes
+        plan.state_bytes = int(max(state_min, min(plan.state_bytes, room // MIB * MIB)))
+        plan.state_cache_mb = int(plan.state_bytes // MIB)
+        if plan.weight_bytes + plan.activation_bytes + plan.state_bytes <= budget:
+            return None
+    floor = min_pass_tokens(facts, row)
     room = budget - plan.weight_bytes - plan.state_bytes
-    allowed = int(room // per_token) // 64 * 64 if per_token > 0 and room > 0 else 0
+    allowed = int(room // per_token) if per_token > 0 and room > 0 else 0
     if allowed < floor:
         need = plan.weight_bytes + plan.state_bytes + per_token * floor
+        state = f" and a state cache of {plan.state_bytes / MIB:,.0f} MiB" if facts.keeps_state else ""
         return (
-            f"one replica needs {need / 2**30:.1f} GiB ({plan.precision}) even with passes of {floor:,} tokens, and "
-            f"the device has {max(budget, 0.0) / 2**30:.1f} GiB free for it"
+            f"one replica needs {need / GIB:.1f} GiB ({plan.precision}) for its weights and activations even with "
+            f"passes of {floor:,} tokens{state}, and {where} leaves {max(budget, 0.0) / GIB:.1f} GiB for them"
         )
-    plan.max_pass_tokens = min(allowed, plan.max_pass_tokens)
+    ceiling = max(floor, allowed // PASS_STEP * PASS_STEP)
+    plan.max_pass_tokens = min(ceiling, plan.max_pass_tokens)
     plan.activation_bytes = int(per_token * plan.max_pass_tokens)
     plan.limits = {**plan.limits, "max_pass_tokens": plan.max_pass_tokens}
     return None
@@ -297,26 +389,38 @@ def _float(value: Any) -> float:
         return 0.0
 
 
-def _memory(facts: DecisionFacts, *, cpu: bool, precision: str, entry, state_cache_mb, row: int) -> Dict[str, int]:
-    """The replica's memory terms (FRD §5.16.3): weights, activations at the pass ceiling, Kev's state cache, and the
-    process overhead. There is no KV term."""
+def _memory(
+    facts: DecisionFacts, *, cpu: bool, precision: str, entry, basis: str, state_cache_mb, row: int,
+) -> Tuple[Dict[str, Any], float]:
+    """The replica's memory terms (FRD §5.16.3) at the runtime's defaults, and the activation bytes per pass token:
+    weights, activations at the pass ceiling, Kev's state cache, and the process overhead. There is no KV term.
+
+    A measured activation figure is used only from this family's entry in this precision (another model's per-token
+    bytes say nothing about this one); a measured CUDA context only from the device's own class.
+    """
     weights = facts.params_total * WEIGHT_BYTES[precision]
     if cpu and precision != FLOAT32:
         # oneDNN keeps a packed bfloat16 copy of each linear weight beside the one it was given
         weights += facts.linear_params * 2.0
     compute = 4.0 if precision == FLOAT32 else 2.0
-    pass_tokens = max(MAX_PASS_TOKENS, int(row), int(facts.max_len if facts.layout != BRANCH else row))
-    measured = entry.act_bytes_per_token if entry is not None else None
+    pass_tokens = max(MAX_PASS_TOKENS, min_pass_tokens(facts, row))
+    own = entry is not None and entry.family == facts.family and entry.precision == precision
+    measured = entry.act_bytes_per_token if own and basis != calibration.ESTIMATED else None
     per_token = float(measured) if measured else facts.activation_bytes_per_token(compute) * ACTIVATION_MARGIN
     activation = per_token * pass_tokens
-    state = 0.0
+    state, cache_mb = 0.0, None
     if facts.keeps_state:
-        state = float(state_cache_mb or DEFAULT_STATE_CACHE_MB) * 2**20
+        cache_mb = float(state_cache_mb) if state_cache_mb is not None else float(DEFAULT_STATE_CACHE_MB)
+        cache_mb = max(cache_mb, 0.0)
+        state = cache_mb * MIB
     if cpu:
         overhead = DEFAULT_CPU_PROCESS_BYTES
     else:
-        overhead = float(entry.context_bytes) if entry is not None and entry.context_bytes else DEFAULT_CUDA_CONTEXT_BYTES
-    return {
+        context = entry.context_bytes if entry is not None and basis == calibration.CALIBRATED else None
+        overhead = max(float(context or 0.0), float(CUDA_CONTEXT_BYTES))
+    terms = {
         "weight_bytes": int(weights), "activation_bytes": int(activation), "state_bytes": int(state),
         "overhead_bytes": int(overhead), "max_pass_tokens": int(pass_tokens),
+        "state_cache_mb": int(cache_mb) if cache_mb is not None else None,
     }
+    return terms, per_token

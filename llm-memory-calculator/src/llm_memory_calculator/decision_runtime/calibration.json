@@ -97,8 +97,8 @@
       "runtime": "0.1.0",
       "source": "rtx3050-laya-new.json"
     },
-    "cpu-amx/mixed16/julia": {
-      "device_class": "cpu-amx",
+    "cpu-xeon-6767p/mixed16/julia": {
+      "device_class": "cpu-xeon-6767p",
       "device_type": "cpu",
       "architecture": "cpu-amx",
       "precision": "mixed16",
@@ -113,8 +113,8 @@
       "runtime": "0.1.0",
       "source": "xeon6767p-16t-julia-new.json"
     },
-    "cpu-amx/mixed16/laya": {
-      "device_class": "cpu-amx",
+    "cpu-xeon-6767p/mixed16/laya": {
+      "device_class": "cpu-xeon-6767p",
       "device_type": "cpu",
       "architecture": "cpu-amx",
       "precision": "mixed16",
@@ -128,22 +128,6 @@
       "threads": 16,
       "runtime": "0.1.0",
       "source": "xeon6767p-16t-laya-new.json"
-    },
-    "cpu-avx512/float32/laya": {
-      "device_class": "cpu-avx512",
-      "device_type": "cpu",
-      "architecture": "cpu-avx512",
-      "precision": "float32",
-      "family": "laya",
-      "kind": "encoder",
-      "eff": 0.6359,
-      "t_pass_min_ms": 182.76,
-      "measured_tokens_per_s": 435.0,
-      "act_bytes_per_token": null,
-      "context_bytes": null,
-      "threads": 4,
-      "runtime": "0.1.0",
-      "source": "i7-11370h-4t-laya-new.json"
     }
   }
 }

@@ -9,6 +9,10 @@ For each result file: the family (``model``), the machine (its GPU, or its CPU's
 saturated throughput of the ``typical`` load (16 closed-loop clients, 3 questions of 60 words). The efficiency is
 tokens/s x FLOPs per token / the device's peak; ``t_pass_min_ms`` is the one-question latency at one client.
 
+A load the runtime mostly shed (503) is not a measurement of its saturated throughput: the rejected requests' handling
+competes for the same cores (on a CPU replica, its compute threads), and the few requests that succeed are too small
+a sample. Such a result makes no entry (``unclean``); the tests apply the same rule to the loads they compare against.
+
 Peak memory (``memory``, recorded from runtime v0.1.1) becomes ``act_bytes_per_token`` and ``context_bytes`` when a
 result carries it; without it the sizing keeps its analytic activation figure.
 """
@@ -29,10 +33,13 @@ from llm_memory_calculator.decision_runtime.plan import (
     call_work,
     resolve_hardware,
 )
-from llm_memory_calculator.decision_runtime.precision import choose
+from llm_memory_calculator.decision_runtime.precision import PRECISIONS, choose
 
 #: question tokens assumed per question of a branch (Kev) benchmark call, to split its tokens between state and questions
 _BRANCH_QUESTION_TOKENS = 10
+#: a load is a clean measurement when at least this share of its requests succeeded, and at least this many did
+MIN_OK_SHARE = 0.9
+MIN_OK_REQUESTS = 100
 
 
 def _device(machine: Dict[str, Any], engine: str) -> Dict[str, Any]:
@@ -49,9 +56,31 @@ def _threads(engine: str) -> Optional[int]:
 
 
 def _precision(engine: str, device: Dict[str, Any], hardware) -> str:
-    parts = engine.split()
-    asked = parts[1] if len(parts) > 1 else "auto"
-    return choose(device, hardware)[0] if asked == "auto" else asked
+    """The precision the engine ran in: the first bare word after the engine's name (``basal half16 device=cuda``),
+    ``auto`` resolved by the sizing's own rule. Raises on a precision the sizing does not know (``int8`` included)."""
+    words = [w for w in engine.split()[1:] if "=" not in w]
+    asked = words[0].lower() if words else "auto"
+    if asked == "auto":
+        return choose(device, hardware)[0]
+    if asked not in PRECISIONS:
+        raise ValueError(f"the engine ran in '{asked}', not one of {', '.join(PRECISIONS)} or auto")
+    return asked
+
+
+def unclean(load: Dict[str, Any]) -> Optional[str]:
+    """Why a benchmark load's throughput is not a clean saturated measurement, or None when it is."""
+    statuses = load.get("statuses") or {}
+    if statuses:
+        ok = int(statuses.get("200") or 0)
+        total = sum(int(v or 0) for v in statuses.values())
+    else:
+        ok = total = int(load.get("n") or 0)
+    total += int(load.get("failed") or 0)
+    if ok < MIN_OK_REQUESTS:
+        return f"only {ok:,} of {total:,} requests succeeded (at least {MIN_OK_REQUESTS} are needed)"
+    if ok < MIN_OK_SHARE * total:
+        return f"{total - ok:,} of {total:,} requests failed or were shed (at most {1 - MIN_OK_SHARE:.0%})"
+    return None
 
 
 def _workload(facts, load: Dict[str, Any]) -> Dict[str, Any]:
@@ -74,11 +103,19 @@ def entry_from_result(result: Dict[str, Any], source: str, runtime: str, configs
     latency = result.get("latency") or {}
     if not throughput or not latency.get("typical"):
         return None
+    why = unclean(throughput)
+    if why:
+        print(f"skip {source}: its typical load is not a clean measurement: {why}", file=sys.stderr)
+        return None
     facts = configs[family]
     engine = str(result.get("engine") or "")
     device = _device(result.get("machine") or {}, engine)
     hardware = resolve_hardware(device)
-    precision = _precision(engine, device, hardware)
+    try:
+        precision = _precision(engine, device, hardware)
+    except ValueError as exc:
+        print(f"skip {source}: {exc}", file=sys.stderr)
+        return None
     threads = _threads(engine) if device["type"] == "cpu" else None
     peak = calibration.peak_flops(device, hardware, precision, threads)
     if not peak:
@@ -92,7 +129,7 @@ def entry_from_result(result: Dict[str, Any], source: str, runtime: str, configs
     short = latency.get("short") or latency["typical"]
     entry: Dict[str, Any] = {
         "device_class": calibration.device_class(device, hardware),
-        "device_type": calibration.device_type(device),
+        "device_type": calibration.device_type(device, hardware),
         "architecture": calibration.architecture(device, hardware),
         "precision": precision,
         "family": family,

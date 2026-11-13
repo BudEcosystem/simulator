@@ -10,6 +10,9 @@ mirrors the rule from the facts NFD and the hardware table give:
 
 ``int8`` is never sized: it changes answers (D-35). When the runtime finds a faster mode on the node, the plan stays
 conservative.
+
+The runtime serves CUDA GPUs and CPUs only: a ROCm, Gaudi, Intel or other accelerator is not a device it runs on
+(``device_kind`` is None for it, and the plan refuses it).
 """
 
 from __future__ import annotations
@@ -18,16 +21,43 @@ from typing import Any, Mapping, Optional, Tuple
 
 MIXED16, HALF16, FLOAT32 = "mixed16", "half16", "float32"
 PRECISIONS = (MIXED16, HALF16, FLOAT32)
-#: bytes of a weight held in each precision
+#: bytes of a weight held in each precision. ``mixed16`` assumes the runtime holds its weights in bfloat16; Laya,
+#: Julia and GLiNER store theirs in float32, so if it autocasts over the stored weights instead, the term is half the
+#: real one (about 0.8 GiB short for Laya). Unverified until the benchmark records peak memory (runtime v0.1.1,
+#: ``tools/decision_calibration.py``); ``tests/test_decision_runtime.py::test_memory_terms`` pins the assumption.
 WEIGHT_BYTES = {MIXED16: 2.0, HALF16: 2.0, FLOAT32: 4.0}
+
+CUDA, CPU = "cuda", "cpu"
+
+
+def _type(device: Mapping[str, Any]) -> str:
+    return str(device.get("type") or device.get("device_type") or "").lower()
 
 
 def is_cpu(device: Mapping[str, Any]) -> bool:
-    kind = str(device.get("type") or device.get("device_type") or "").lower()
-    return kind.startswith("cpu")
+    return _type(device).startswith("cpu")
 
 
-def _capability(device: Mapping[str, Any], hardware: Optional[Mapping[str, Any]]) -> Optional[float]:
+def device_kind(device: Mapping[str, Any], hardware: Optional[Mapping[str, Any]] = None) -> Optional[str]:
+    """``cuda`` | ``cpu`` | None: what the runtime would run on, None for a device it does not serve.
+
+    ``cuda`` is a device reported as CUDA, or a GPU reported generically (``gpu``) that the hardware table or its
+    name says is NVIDIA's. ROCm, HPU, XPU and every other accelerator are None.
+    """
+    kind = _type(device)
+    if kind.startswith("cpu"):
+        return CPU
+    if kind == CUDA:
+        return CUDA
+    if kind in ("gpu", ""):
+        vendor = str((hardware or {}).get("manufacturer") or "").lower()
+        name = str(device.get("raw_name") or device.get("name") or device.get("device_name") or "").lower()
+        if vendor == "nvidia" or "nvidia" in name or str(device.get("pci_vendor") or "").lower() == "10de":
+            return CUDA
+    return None
+
+
+def compute_capability(device: Mapping[str, Any], hardware: Optional[Mapping[str, Any]]) -> Optional[float]:
     for source in (device, hardware or {}):
         value = source.get("compute_capability")
         if value in (None, ""):
@@ -63,11 +93,14 @@ def cpu_isa(device: Mapping[str, Any]) -> str:
 
 def choose(device: Mapping[str, Any], hardware: Optional[Mapping[str, Any]] = None) -> Tuple[str, str]:
     """(precision, reason) for ``device`` (budsim's device dict); ``hardware`` is its hardware-table entry."""
-    if is_cpu(device):
+    kind = device_kind(device, hardware)
+    if kind is None:
+        return FLOAT32, f"Bud-Decision-Runtime does not run on {_type(device) or 'this'} devices: it serves CUDA and CPU"
+    if kind == CPU:
         if cpu_isa(device) == "amx":
             return MIXED16, "bfloat16 on the CPU's AMX units"
         return FLOAT32, "no AMX on this CPU: bfloat16 would be emulated, 3.3x slower than float32"
-    cc = _capability(device, hardware)
+    cc = compute_capability(device, hardware)
     cores = str((hardware or {}).get("tensor_cores") or "").lower()
     if cc is not None and cc >= 8.0:
         return MIXED16, f"bfloat16 tensor cores (compute capability {cc:g})"

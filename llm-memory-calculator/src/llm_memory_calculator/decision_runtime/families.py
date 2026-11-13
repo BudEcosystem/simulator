@@ -2,8 +2,10 @@
 
 Bud-Decision-Runtime serves a handful of model *families*. Each family keeps its backbone's configuration in its own
 place and adds a head of its own; the tables below are copied from the runtime's loaders
-(``engine/python/basal_engine/models/*.py``) and must change with them (``tests/test_decision_runtime.py`` compares the
-family list with the runtime's ``FAMILIES``).
+(``engine/python/basal_engine/models/*.py``) and must change with them. ``tests/test_decision_runtime.py`` compares the
+family list with the runtime's ``FAMILIES`` when ``basal_engine`` is installed, and with a snapshot of it (v0.1.0)
+otherwise: the snapshot is typed by hand, so a family renamed in the runtime fails only where the runtime is
+installed.
 
 The facts are counted from the configuration alone, so budsim can size a checkpoint from its small JSON files without
 downloading the weights. The counts match the checkpoints' safetensors headers within 1% (TC-DO-07).
@@ -95,6 +97,8 @@ class DecisionFacts:
     bidirectional: bool = True
     glu: bool = False             # the MLP's input projection is gated (two halves of 2 x intermediate)
     keeps_state: bool = False
+    max_state_tokens: Optional[int] = None     # the longest state the family takes (Kev), beside max_len
+    max_question_tokens: Optional[int] = None  # the longest question the family takes (Kev)
 
     @property
     def params_total(self) -> int:
@@ -129,6 +133,10 @@ class DecisionFacts:
 
     def flops_per_token(self, row: int, context: Optional[float] = None) -> float:
         return self.linear_flops_per_token() + self.attention_flops_per_token(row, context)
+
+    def kv_bytes_per_token(self, compute_bytes: float) -> float:
+        """Keys and values of one token over every layer: what a decoder keeps of a state (Kev's state cache)."""
+        return 2.0 * self.num_layers * self.num_kv_heads * self.head_dim * compute_bytes
 
     def activation_bytes_per_token(self, compute_bytes: float) -> float:
         """Live activation bytes per token of a pass, from the backbones' forward (``basal_engine.backbones``).
@@ -224,12 +232,14 @@ def facts_from_configs(
         kw = dict(full_layers=layers, window_layers=0, window=None, relative_buckets=0, glu=True,
                   num_kv_heads=kv_heads, bidirectional=False)
         layer_params = layers * (layer + bias + 2 * h)
-        tied = bool(cfg.get("tie_word_embeddings", True))
+        # transformers' Llama, Qwen2, Qwen3 and Mistral configs all default to a separate lm_head
+        tied = bool(cfg.get("tie_word_embeddings", False))
         embedding = vocab * h * (1 if tied else 2) + h
     else:
         raise FamilyError(f"the {fam.name} family's backbone '{model_type or 'unknown'}' is not one the runtime serves")
 
     head, lora, max_len = 0, 0, 0
+    limits: Dict[str, int] = {}
     if fam.name in ("laya", "julia"):
         head_layers = int(own.get("head_layers") or 2)
         head = head_layers * 12 * h * h + h * h + 256 * h      # the marker head's layers, scorer and act head
@@ -254,12 +264,13 @@ def facts_from_configs(
         lora = layers * per_layer
         head = 2 * (h * h + h)                                # the pointer head's q and k projections
         max_len = _KEV_MAX_STATE + _KEV_QUESTION_TOKENS
+        limits = {"max_state_tokens": _KEV_MAX_STATE, "max_question_tokens": _KEV_QUESTION_TOKENS}
 
     return DecisionFacts(
         family=fam.name, kind=fam.kind, layout=fam.layout, backbone=model_type,
         hidden_size=h, intermediate_size=i, num_layers=layers, num_heads=heads, head_dim=head_dim,
         vocab_size=vocab, max_len=max_len, embedding_params=int(embedding), layer_params=int(layer_params),
-        head_params=int(head), lora_params=int(lora), keeps_state=fam.keeps_state, **kw,
+        head_params=int(head), lora_params=int(lora), keeps_state=fam.keeps_state, **limits, **kw,
     )
 
 
