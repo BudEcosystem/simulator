@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
+from ...kv.infra import NO_KV_ENGINES, SLICE_DEMAND_ONLY_ENGINES
+
 GIB = 2**30
 MIB = 2**20
 CONTEXT_SAFETY = 1.10
@@ -253,7 +255,7 @@ def cuda_budget(
     kv = gb(group.get("kv_cache_memory_gb"))
     act = gb(group.get("activation_memory_gb"))
     state = gb(group.get("state_memory_gb"))
-    encoder = str(group.get("engine_type")) == "latentbud" or bool(group.get("is_embedding"))
+    encoder = str(group.get("engine_type")) in NO_KV_ENGINES or bool(group.get("is_embedding"))
     if not encoder and kv <= 0:
         raise SizingError("a decoder with no KV term")
     if act <= 0:
@@ -293,7 +295,7 @@ def cuda_budget(
     shared = (
         group.get("type") == "cuda"
         and group.get("hardware_mode") == "shared"
-        and str(group.get("engine_type")) != "latentbud"
+        and str(group.get("engine_type")) not in SLICE_DEMAND_ONLY_ENGINES
     )
     fallback_mib = fallback_util = None
     if raw > GPU_UTIL_MAX and not shared:

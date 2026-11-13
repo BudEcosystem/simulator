@@ -112,6 +112,8 @@ llm_memory_calculator = [
     "runtime/schema/*.json",
     "runtime/settings/*.json",
     "runtime/validation_records/*.json",
+    # Bud spec 031 DM4: Bud-Decision-Runtime efficiency per device, from its decision benchmark
+    "decision_runtime/calibration.json",
 ]
 
 [tool.black]

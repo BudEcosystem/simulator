@@ -562,3 +562,11 @@ def set_hardware_db_path(db_path: str):
     """
     global _default_manager
     _default_manager = HardwareManager(db_path)
+
+def default_manager() -> HardwareManager:
+    """The module's shared manager: the static configs, plus the hardware DB when one is configured
+    (``set_hardware_db_path``, ``BUDSIM_HARDWARE_DB``). Its device matches are cached across calls."""
+    global _default_manager
+    if _default_manager is None:
+        _default_manager = HardwareManager()
+    return _default_manager

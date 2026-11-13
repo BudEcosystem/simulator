@@ -1,0 +1,88 @@
+{
+ "schema": "decision-bench/1",
+ "label": "RTX 3050, new engine half16 (the T4 mode)",
+ "model": "laya",
+ "engine": "basal half16 device=cuda threads=4 target_ms=default queue_passes=default executors=auto limits=default",
+ "machine": {
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11370H @ 3.30GHz",
+  "cpus": 8,
+  "cpu_features": [
+   "avx2",
+   "avx512_vnni",
+   "avx512f"
+  ],
+  "gpu": "NVIDIA GeForce RTX 3050 Laptop GPU, 4096 MiB"
+ },
+ "limit": 0,
+ "seconds": 20.0,
+ "latency": {
+  "short": {
+   "state_words": 30,
+   "questions": 1,
+   "input_tokens": 51,
+   "failed": 0,
+   "p50_ms": 9.39,
+   "p90_ms": 9.52,
+   "p99_ms": 9.58,
+   "max_ms": 9.58,
+   "n": 40
+  },
+  "typical": {
+   "state_words": 60,
+   "questions": 3,
+   "input_tokens": 239,
+   "failed": 0,
+   "p50_ms": 20.51,
+   "p90_ms": 21.12,
+   "p99_ms": 28.2,
+   "max_ms": 28.2,
+   "n": 40
+  },
+  "long": {
+   "state_words": 300,
+   "questions": 8,
+   "input_tokens": 2619,
+   "failed": 0,
+   "p50_ms": 222.19,
+   "p90_ms": 222.81,
+   "p99_ms": 223.06,
+   "max_ms": 223.06,
+   "n": 40
+  }
+ },
+ "throughput": {
+  "typical": {
+   "clients": 16,
+   "state_words": 60,
+   "questions": 3,
+   "seconds": 20.3,
+   "requests_per_s": 50.77,
+   "tokens_per_s": 12228,
+   "statuses": {
+    "200": 1031
+   },
+   "p50_ms": 315.04,
+   "p90_ms": 316.39,
+   "p99_ms": 317.52,
+   "max_ms": 334.77,
+   "n": 1031
+  },
+  "long": {
+   "clients": 16,
+   "state_words": 300,
+   "questions": 8,
+   "seconds": 22.6,
+   "requests_per_s": 4.21,
+   "tokens_per_s": 10982,
+   "statuses": {
+    "200": 95,
+    "503": 4382
+   },
+   "p50_ms": 2728.11,
+   "p90_ms": 2736.88,
+   "p99_ms": 2862.77,
+   "max_ms": 2862.77,
+   "n": 95
+  }
+ }
+}

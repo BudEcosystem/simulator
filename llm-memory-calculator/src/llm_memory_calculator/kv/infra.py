@@ -22,7 +22,12 @@ DEVICE_CTX_BYTES_CUDA = 1536 * MIB
 SLICE_OUTSIDE_RESERVE_BYTES_CUDA = 1536 * MIB
 SLICE_TP_COMM_RESERVE_BYTES_CUDA = 1024 * MIB
 GPU_UTIL_MAX_CENTI = 94
-SLICE_DEMAND_ONLY_ENGINES = ("latentbud",)
+# Engines that take no fraction of the device: their HAMi slice is their demand, which already carries
+# the CUDA context. Bud spec 031 DM4: Bud-Decision-Runtime is one.
+SLICE_DEMAND_ONLY_ENGINES = ("latentbud", "bud-decision")
+# Engines with no KV cache: no KV commit and no sampler logits in their demand (LatentBud's encoders,
+# Bud-Decision-Runtime's decision models, Kev included: its kept states are its state term, not KV).
+NO_KV_ENGINES = ("latentbud", "bud-decision")
 # Host memory an engine pod uses that its node's `utilized_memory_gb` doesn't show: that figure sums
 # pod memory REQUESTS, and a GPU engine pod without a T1 tier requests none. Spike S2 measured
 # 2.7-3.9 GiB anonymous memory for 0.6B-8B models. [MEASURE]
@@ -111,7 +116,7 @@ def grown_slice_mib(
     """(slice MiB, util hundredths or None, grown) once a plan's ``gpu_kv_gib`` grows the slice.
 
     Mirrors compute_budget: the slice's KV part becomes ``gpu_kv_gib`` when that is more than the
-    committed KV, and a grown slice larger than the card is not used. LatentBud never grows.
+    committed KV, and a grown slice larger than the card is not used. A demand-only engine never grows.
     """
     base_mib, base_centi = slice_mib(device_demand, engine, tp_size)
     if engine in SLICE_DEMAND_ONLY_ENGINES or not gpu_kv_gib or gpu_kv_gib <= 0:
@@ -144,7 +149,7 @@ def wire_slice_mib(terms: Mapping[str, Any], engine: str, tp_size: int = 1) -> i
         wire_gb("activation_memory"),
         wire_gb("state_memory"),
         wire_gb("sampler_logits_memory") or None,
-        is_encoder=engine == "latentbud",
+        is_encoder=engine in NO_KV_ENGINES,
     )
     return slice_mib(demand, engine, tp_size)[0]
 

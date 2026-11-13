@@ -1,0 +1,152 @@
+{
+ "schema": "decision-bench/1",
+ "label": "GTX 1650, new engine defaults",
+ "model": "laya",
+ "engine": "basal auto device=cuda",
+ "machine": {
+  "cpu": "Intel(R) Core(TM) i5-10300H CPU @ 2.50GHz",
+  "cpus": 8,
+  "cpu_features": [
+   "avx2"
+  ],
+  "gpu": "NVIDIA GeForce GTX 1650, 4096 MiB"
+ },
+ "limit": 0,
+ "seconds": 20.0,
+ "latency": {
+  "short": {
+   "state_words": 30,
+   "questions": 1,
+   "input_tokens": 51,
+   "failed": 0,
+   "p50_ms": 44.23,
+   "p90_ms": 44.4,
+   "p99_ms": 44.72,
+   "max_ms": 44.72,
+   "n": 40
+  },
+  "typical": {
+   "state_words": 60,
+   "questions": 3,
+   "input_tokens": 239,
+   "failed": 0,
+   "p50_ms": 129.28,
+   "p90_ms": 131.48,
+   "p99_ms": 275.77,
+   "max_ms": 275.77,
+   "n": 40
+  },
+  "long": {
+   "state_words": 300,
+   "questions": 8,
+   "input_tokens": 2619,
+   "failed": 0,
+   "p50_ms": 1698.19,
+   "p90_ms": 1700.81,
+   "p99_ms": 1846.97,
+   "max_ms": 1846.97,
+   "n": 40
+  }
+ },
+ "throughput": {
+  "typical": {
+   "clients": 16,
+   "state_words": 60,
+   "questions": 3,
+   "seconds": 22.4,
+   "requests_per_s": 6.38,
+   "tokens_per_s": 1537,
+   "statuses": {
+    "200": 143
+   },
+   "p50_ms": 2511.07,
+   "p90_ms": 2522.19,
+   "p99_ms": 2538.6,
+   "max_ms": 2609.81,
+   "n": 143
+  },
+  "long": {
+   "clients": 16,
+   "state_words": 300,
+   "questions": 8,
+   "seconds": 23.1,
+   "requests_per_s": 0.61,
+   "tokens_per_s": 1583,
+   "statuses": {
+    "200": 14,
+    "503": 12668
+   },
+   "p50_ms": 4093.02,
+   "p90_ms": 4182.1,
+   "p99_ms": 4978.07,
+   "max_ms": 4978.07,
+   "n": 14
+  }
+ },
+ "openloop": {
+  "50%": {
+   "offered_per_s": 3.19,
+   "state_words": 60,
+   "questions": 3,
+   "sent": 111,
+   "answered_per_s": 3.61,
+   "statuses": {
+    "200": 111
+   },
+   "p50_ms": 143.77,
+   "p90_ms": 446.55,
+   "p99_ms": 565.39,
+   "max_ms": 619.09,
+   "n": 111
+  },
+  "80%": {
+   "offered_per_s": 5.1,
+   "state_words": 60,
+   "questions": 3,
+   "sent": 173,
+   "answered_per_s": 5.7,
+   "statuses": {
+    "200": 173
+   },
+   "p50_ms": 577.34,
+   "p90_ms": 1251.36,
+   "p99_ms": 1745.88,
+   "max_ms": 1929.0,
+   "n": 173
+  }
+ },
+ "concurrency": {
+  "clients": 256,
+  "state_words": 60,
+  "questions": 3,
+  "seconds": 22.8,
+  "requests_per_s": 6.4,
+  "tokens_per_s": 1540,
+  "statuses": {
+   "200": 146,
+   "503": 52138
+  },
+  "p50_ms": 2904.33,
+  "p90_ms": 2997.44,
+  "p99_ms": 3070.61,
+  "max_ms": 3085.02,
+  "n": 146
+ },
+ "repeats": {
+  "clients": 8,
+  "state_words": 300,
+  "questions": 8,
+  "seconds": 20.0,
+  "requests_per_s": 288.08,
+  "tokens_per_s": 752463,
+  "statuses": {
+   "200": 5762,
+   "503": 4392
+  },
+  "p50_ms": 2.88,
+  "p90_ms": 4.38,
+  "p99_ms": 6.39,
+  "max_ms": 4956.4,
+  "n": 5762
+ }
+}

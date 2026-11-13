@@ -1,0 +1,8 @@
+{
+  "format_version": 1,
+  "architecture": "JuliaDecisionModel",
+  "julia_config_file": "julia_config.json",
+  "encoder_config_file": "encoder/config.json",
+  "weights_file": "model.safetensors",
+  "tokenizer_directory": "tokenizer"
+}
