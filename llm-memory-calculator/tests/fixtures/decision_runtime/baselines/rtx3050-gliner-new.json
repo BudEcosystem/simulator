@@ -1,0 +1,152 @@
+{
+ "schema": "decision-bench/1",
+ "label": "RTX 3050, gliner, new engine defaults",
+ "model": "gliner",
+ "engine": "basal auto device=cuda threads=4 target_ms=default queue_passes=default executors=auto limits=default",
+ "machine": {
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11370H @ 3.30GHz",
+  "cpus": 8,
+  "cpu_features": [
+   "avx2",
+   "avx512_vnni",
+   "avx512f"
+  ],
+  "gpu": "NVIDIA GeForce RTX 3050 Laptop GPU, 4096 MiB"
+ },
+ "limit": 0,
+ "seconds": 20.0,
+ "latency": {
+  "short": {
+   "state_words": 30,
+   "questions": 1,
+   "input_tokens": 50,
+   "failed": 0,
+   "p50_ms": 8.48,
+   "p90_ms": 8.58,
+   "p99_ms": 8.78,
+   "max_ms": 8.78,
+   "n": 40
+  },
+  "typical": {
+   "state_words": 60,
+   "questions": 3,
+   "input_tokens": 115,
+   "failed": 0,
+   "p50_ms": 11.4,
+   "p90_ms": 11.48,
+   "p99_ms": 11.62,
+   "max_ms": 11.62,
+   "n": 40
+  },
+  "long": {
+   "state_words": 300,
+   "questions": 8,
+   "input_tokens": 449,
+   "failed": 0,
+   "p50_ms": 48.89,
+   "p90_ms": 49.08,
+   "p99_ms": 49.1,
+   "max_ms": 49.1,
+   "n": 40
+  }
+ },
+ "throughput": {
+  "typical": {
+   "clients": 16,
+   "state_words": 60,
+   "questions": 3,
+   "seconds": 20.1,
+   "requests_per_s": 104.13,
+   "tokens_per_s": 11975,
+   "statuses": {
+    "200": 2097
+   },
+   "p50_ms": 153.56,
+   "p90_ms": 155.01,
+   "p99_ms": 156.16,
+   "max_ms": 156.7,
+   "n": 2097
+  },
+  "long": {
+   "clients": 16,
+   "state_words": 300,
+   "questions": 8,
+   "seconds": 20.7,
+   "requests_per_s": 22.51,
+   "tokens_per_s": 10108,
+   "statuses": {
+    "200": 465
+   },
+   "p50_ms": 709.5,
+   "p90_ms": 710.4,
+   "p99_ms": 735.54,
+   "max_ms": 756.18,
+   "n": 465
+  }
+ },
+ "openloop": {
+  "50%": {
+   "offered_per_s": 52.06,
+   "state_words": 60,
+   "questions": 3,
+   "sent": 1612,
+   "answered_per_s": 53.69,
+   "statuses": {
+    "200": 1612
+   },
+   "p50_ms": 15.02,
+   "p90_ms": 41.65,
+   "p99_ms": 96.08,
+   "max_ms": 128.13,
+   "n": 1612
+  },
+  "80%": {
+   "offered_per_s": 83.3,
+   "state_words": 60,
+   "questions": 3,
+   "sent": 2571,
+   "answered_per_s": 85.5,
+   "statuses": {
+    "200": 2571
+   },
+   "p50_ms": 50.11,
+   "p90_ms": 121.78,
+   "p99_ms": 188.71,
+   "max_ms": 266.76,
+   "n": 2571
+  }
+ },
+ "concurrency": {
+  "clients": 256,
+  "state_words": 60,
+  "questions": 3,
+  "seconds": 22.3,
+  "requests_per_s": 97.91,
+  "tokens_per_s": 11259,
+  "statuses": {
+   "200": 2183,
+   "503": 17386
+  },
+  "p50_ms": 2390.76,
+  "p90_ms": 2572.61,
+  "p99_ms": 2576.25,
+  "max_ms": 2578.24,
+  "n": 2183
+ },
+ "repeats": {
+  "clients": 8,
+  "state_words": 300,
+  "questions": 8,
+  "seconds": 20.0,
+  "requests_per_s": 3145.1,
+  "tokens_per_s": 1412150,
+  "statuses": {
+   "200": 62906
+  },
+  "p50_ms": 2.25,
+  "p90_ms": 3.34,
+  "p99_ms": 5.21,
+  "max_ms": 404.84,
+  "n": 62906
+ }
+}

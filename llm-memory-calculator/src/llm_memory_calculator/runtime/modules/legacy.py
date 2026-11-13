@@ -27,6 +27,9 @@ COMPILE_PEAK_MIB = 2048
 GPU_UTIL_MIN, GPU_UTIL_MAX = 0.10, 0.94
 T0_GPU_UTIL_FLOOR = 0.92
 SLICE_OUTSIDE_RESERVE = 1536 * MIB
+# Engines that take no fraction of the device: their HAMi slice is their demand, which already carries the CUDA context
+# (budsim shared_slice.py, budcluster memory_plan). Bud spec 031 DM4: Bud-Decision-Runtime is one.
+SLICE_DEMAND_ONLY_ENGINES = ("latentbud", "bud-decision")
 SLICE_TP_COMM_RESERVE = 1024 * MIB
 T1_DEFAULT_BLOCK_SIZE = 256
 T1_MODE_FEATURES = {"register": "cpu_offload_shm", "alloc": "cpu_offload_host_alloc"}
@@ -293,7 +296,7 @@ def cuda_budget(
     shared = (
         group.get("type") == "cuda"
         and group.get("hardware_mode") == "shared"
-        and str(group.get("engine_type")) != "latentbud"
+        and str(group.get("engine_type")) not in SLICE_DEMAND_ONLY_ENGINES
     )
     fallback_mib = fallback_util = None
     if raw > GPU_UTIL_MAX and not shared:
