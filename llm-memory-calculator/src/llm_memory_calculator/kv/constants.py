@@ -218,7 +218,14 @@ INTERACTIVE_TTFT_MS = 500.0
 PREFILL_MFU = 0.45
 
 # ---------------------------------------------------------------------------------- geometry
-VLLM_BLOCK_SIZE = 16  # vLLM's default KV block on CUDA
+VLLM_BLOCK_SIZE = 16  # vLLM's default KV block on CUDA before v0.34.0; every measurement in this package ran on it
+# vLLM's default from v0.34.0 (vllm-project/vllm#63231). Bud's vLLM builds are numbered apart: Bud 0.12.0 is upstream
+# v0.34.0. Neither budsim nor budcluster passes --block-size, so the engine's own default is the block it pages with.
+VLLM_BLOCK_SIZE_V034 = 64
+VLLM_BLOCK_SIZE_V034_UPSTREAM = (0, 34)
+VLLM_BLOCK_SIZE_V034_BUD = (0, 12)
+# A 0.x minor below this is a Bud build number; every upstream vLLM this package plans for is above it.
+BUD_VLLM_MINOR_CEILING = 20
 VLLM_KERNEL_BLOCK_ALIGNMENT = 16  # attention backends take block sizes in multiples of 16
 
 # ------------------------------------------------------------------------------------- dtype

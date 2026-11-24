@@ -21,7 +21,7 @@ from .context import PlanContext
 from .cost import RecomputeModel
 from .dtype import choose_kv_dtype
 from .facts import ClusterKVFacts, EngineSpec, NodeKVFacts
-from .geometry import KVGeometry
+from .geometry import KVGeometry, vllm_default_block_size
 from .group import NodeGroup, genz_hardware
 from .infra import InfraSnapshot, fit_grown_slice
 from .namespace import kv_namespace
@@ -358,6 +358,7 @@ def _plan(
         precision=kv_precision,
         engine_capabilities=engine.capabilities,
         data_parallel_attention=data_parallel_attention,
+        default_block_size=vllm_default_block_size(engine.version),
     )
     if geometry.bytes_per_token_rank <= 0:
         decisions.append("no KV plan: the model has no per-token KV cache")
