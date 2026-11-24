@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
+from ...kv.geometry import vllm_default_block_size
 from ...kv.infra import NO_KV_ENGINES, SLICE_DEMAND_ONLY_ENGINES
 
 GIB = 2**30
@@ -150,6 +151,15 @@ def active_kv_plan(
     return kv_plan if (kv_plan and group.get("kv_features")) else None
 
 
+def engine_block_size(group: Mapping[str, Any]) -> int:
+    """The KV block (tokens) the group's engine pages with: budsim's ``--block-size``, else the engine's own default,
+    64 from vLLM v0.34.0 and 16 before (budcluster's memory_plan.engine_block_size)."""
+    explicit = (group.get("args") or {}).get("block-size")
+    if explicit:
+        return int(explicit)
+    return vllm_default_block_size(group.get("upstream_vllm") or group.get("engine_version"))
+
+
 def plan_t1(
     group: Mapping[str, Any], plan: Optional[Mapping[str, Any]], gpu_block: int
 ) -> Dict[str, Any]:
@@ -276,7 +286,7 @@ def cuda_budget(
         lora = gb(group.get("lora_prefill_scratch_gb"))
         if lora == 0 and not group.get("lora_scratch_zero_by_device"):
             raise SizingError("LoRA warm-up scratch missing")
-    gpu_block = int((group.get("args") or {}).get("block-size") or 16)
+    gpu_block = engine_block_size(group)
     t1 = plan_t1(group, plan, gpu_block)
     t3 = plan_t3(group, plan)
     kv_dtype, skip = (

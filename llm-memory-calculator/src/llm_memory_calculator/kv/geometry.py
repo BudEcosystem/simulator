@@ -10,13 +10,39 @@ prefix, and sizes its block so one attention page holds at least one state page
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Tuple
 
 from ..calculator import ModelMemoryCalculator
 from ..layer_plan import resolve_layer_plan
 from ..state_memory import calculate_recurrent_state_bytes
-from .constants import VLLM_BLOCK_SIZE, VLLM_KERNEL_BLOCK_ALIGNMENT
+from .constants import (
+    BUD_VLLM_MINOR_CEILING,
+    VLLM_BLOCK_SIZE,
+    VLLM_BLOCK_SIZE_V034,
+    VLLM_BLOCK_SIZE_V034_BUD,
+    VLLM_BLOCK_SIZE_V034_UPSTREAM,
+    VLLM_KERNEL_BLOCK_ALIGNMENT,
+)
+
+
+def vllm_default_block_size(engine_version: Optional[str]) -> int:
+    """The KV block vLLM pages a dense model with when no ``--block-size`` is passed: 64 from v0.34.0, 16 before.
+
+    ``engine_version`` is :func:`kv.budsim.engine_version`'s ``"<version>|<image>"`` (or a bare version): the
+    upstream vLLM base when BudConnect lists one, else the Bud build number. A 0.x minor below
+    ``BUD_VLLM_MINOR_CEILING`` reads as a Bud build. No parsable version keeps the measured default (16), which is
+    what every calibration and fixture here ran on.
+    """
+    head = str(engine_version or "").split("|", 1)[0].strip().lstrip("v")
+    match = re.match(r"^(\d+)\.(\d+)", head)
+    if not match:
+        return VLLM_BLOCK_SIZE
+    major_minor = (int(match.group(1)), int(match.group(2)))
+    is_bud_build = major_minor[0] == 0 and major_minor[1] < BUD_VLLM_MINOR_CEILING
+    threshold = VLLM_BLOCK_SIZE_V034_BUD if is_bud_build else VLLM_BLOCK_SIZE_V034_UPSTREAM
+    return VLLM_BLOCK_SIZE_V034 if major_minor >= threshold else VLLM_BLOCK_SIZE
 
 
 def _text_config(config: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -77,7 +103,9 @@ class KVGeometry:
         precision: str = "bf16",
         engine_capabilities: Any = None,
         data_parallel_attention: bool = False,
+        default_block_size: int = VLLM_BLOCK_SIZE,
     ) -> "KVGeometry":
+        """``default_block_size`` is the engine's dense block (:func:`vllm_default_block_size`)."""
         per_rank, total, attention = kv_bytes_per_token_per_rank(
             model_config,
             seq_length=seq_length,
@@ -109,7 +137,7 @@ class KVGeometry:
             kv_layers=kv_layers,
             recurrent_layers=recurrent,
             state_bytes_per_layer=state_per_layer,
-            block_size=VLLM_BLOCK_SIZE,
+            block_size=int(default_block_size),
             tp=max(int(tensor_parallel or 1), 1),
         )
         return cls(**{**geometry.__dict__, "block_size": geometry.vllm_block_size()})
@@ -124,13 +152,17 @@ class KVGeometry:
         return self.bytes_per_token_total / self.kv_layers if self.kv_layers else 0.0
 
     def vllm_block_size(self) -> int:
-        """vLLM's block: 16 tokens, or for a hybrid the smallest aligned block whose attention page
-        holds a state page (vLLM 0.30, ``mamba_cache_mode=align``)."""
+        """vLLM's block: the engine's dense default (``self.block_size`` as constructed), or for a hybrid the
+        smallest aligned block whose attention page holds a state page (vLLM 0.30, ``mamba_cache_mode=align``).
+
+        The alignment unit is the larger of the kernel's 16 and the dense default, as vLLM v0.34.0's
+        ``Platform._align_hybrid_block_size`` takes it: a 784-token block at 16 is 832 at 64.
+        """
         if not self.hybrid or self.attention_page_per_token <= 0:
-            return VLLM_BLOCK_SIZE
-        align = VLLM_KERNEL_BLOCK_ALIGNMENT
+            return self.block_size
+        align = max(VLLM_KERNEL_BLOCK_ALIGNMENT, self.block_size)
         pages = math.ceil(self.state_bytes_per_layer / (align * self.attention_page_per_token))
-        return max(VLLM_BLOCK_SIZE, align * pages)
+        return align * max(pages, 1)
 
     def segment_bytes(self, block_size: Optional[int] = None) -> float:
         """One layer's bytes for one block on one rank: the unit vLLM's Mooncake connector moves."""
